@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
+from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import (
@@ -66,6 +68,7 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Float32,
     Float64,
     Int8,
     Int16,
@@ -76,7 +79,6 @@ from polars.datatypes import (
     Object,
     String,
     Time,
-    UInt8,
     UInt16,
     UInt32,
     UInt64,
@@ -100,7 +102,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ModuleUpgradeRequired, ShapeError
+from polars.exceptions import ComputeError, ModuleUpgradeRequired, ShapeError
 from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
@@ -118,6 +120,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    import jax
+    import numpy.typing as npt
     import torch
     from hvplot.plotting.core import hvPlotTabularPolars
 
@@ -451,7 +455,7 @@ class Series:
 
     @classmethod
     def _from_buffer(
-        self, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
+        cls, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
     ) -> Self:
         """
         Construct a Series from information about its underlying buffer.
@@ -479,11 +483,11 @@ class Series:
         -----
         This method is mainly intended for use with the dataframe interchange protocol.
         """
-        return self._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
+        return cls._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
 
     @classmethod
     def _from_buffers(
-        self,
+        cls,
         dtype: PolarsDataType,
         data: Series | Sequence[Series],
         validity: Series | None = None,
@@ -532,7 +536,7 @@ class Series:
             data = [s._s for s in data]
         if validity is not None:
             validity = validity._s
-        return self._from_pyseries(PySeries._from_buffers(dtype, data, validity))
+        return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
     @property
     def dtype(self) -> DataType:
@@ -1296,7 +1300,7 @@ class Series:
 
     def __getitem__(
         self,
-        item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
+        item: int | Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Any:
         if isinstance(item, Series) and item.dtype.is_integer():
             return self._take_with_series(item._pos_idxs(self.len()))
@@ -1375,20 +1379,49 @@ class Series:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)
 
-    def __array__(self, dtype: Any | None = None) -> np.ndarray[Any, Any]:
+    def __array__(
+        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+    ) -> np.ndarray[Any, Any]:
         """
-        Numpy __array__ interface protocol.
+        Return a NumPy ndarray with the given data type.
 
-        Ensures that `np.asarray(pl.Series(..))` works as expected, see
-        https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
+        This method ensures a Polars Series can be treated as a NumPy ndarray.
+        It enables `np.asarray` and NumPy universal functions.
+
+        See the NumPy documentation for more information:
+        https://numpy.org/doc/stable/user/basics.interoperability.html#the-array-method
+
+        See Also
+        --------
+        __array_ufunc__
         """
+        # Cast String types to fixed-length string to support string ufuncs
+        # TODO: Use variable-length strings instead when NumPy 2.0.0 comes out:
+        # https://numpy.org/devdocs/reference/routines.dtypes.html#numpy.dtypes.StringDType
         if dtype is None and self.null_count() == 0 and self.dtype == String:
             dtype = np.dtype("U")
 
-        if dtype:
-            return self.to_numpy().__array__(dtype)
+        if copy is None:
+            writable, allow_copy = False, True
+        elif copy is True:
+            writable, allow_copy = True, True
+        elif copy is False:
+            writable, allow_copy = False, False
         else:
-            return self.to_numpy().__array__()
+            msg = f"invalid input for `copy`: {copy!r}"
+            raise TypeError(msg)
+
+        arr = self.to_numpy(writable=writable, allow_copy=allow_copy)
+
+        if dtype is not None and dtype != arr.dtype:
+            if copy is False:
+                # TODO: Only raise when data must be copied
+                msg = f"copy not allowed: cast from {arr.dtype} to {dtype} prohibited"
+                raise RuntimeError(msg)
+
+            arr = arr.__array__(dtype)
+
+        return arr
 
     def __array_ufunc__(
         self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
@@ -1405,13 +1438,10 @@ class Series:
                 raise NotImplementedError(msg)
 
             args: list[int | float | np.ndarray[Any, Any]] = []
-
-            validity_mask = self.is_not_null()
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    validity_mask &= arg.is_not_null()
                     args.append(arg.to_physical()._s.to_numpy_view())
                 else:
                     msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
@@ -1444,6 +1474,24 @@ class Series:
                 else dtype_char_minimum
             )
 
+            # Only generalized ufuncs have a signature set:
+            is_generalized_ufunc = bool(ufunc.signature)
+            if is_generalized_ufunc:
+                # Generalized ufuncs will operate on the whole array, so
+                # missing data can corrupt the results.
+                if self.null_count() > 0:
+                    msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
+                    raise ComputeError(msg)
+                # If the input and output are the same size, e.g. "(n)->(n)" we
+                # can allocate ourselves and save a copy. If they're different,
+                # we let the ufunc do the allocation, since only it knows the
+                # output size.
+                assert ufunc.signature is not None  # pacify MyPy
+                ufunc_input, ufunc_output = ufunc.signature.split("->")
+                allocate_output = ufunc_input == ufunc_output
+            else:
+                allocate_output = True
+
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
             if f is None:
@@ -1453,13 +1501,28 @@ class Series:
                 )
                 raise NotImplementedError(msg)
 
-            series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
+            series = f(
+                lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
+                allocate_output,
+            )
+            result = self._from_pyseries(series)
+            if is_generalized_ufunc:
+                # In this case we've disallowed passing in missing data, so no
+                # further processing is needed.
+                return result
+
+            # We're using a regular ufunc, that operates value by value. That
+            # means we allowed missing data in the input, so filter it out:
+            validity_mask = self.is_not_null()
+            for arg in inputs:
+                if isinstance(arg, Series):
+                    validity_mask &= arg.is_not_null()
             return (
-                self._from_pyseries(series)
-                .to_frame()
+                result.to_frame()
                 .select(F.when(validity_mask).then(F.col(self.name)))
                 .to_series(0)
             )
+
         else:
             msg = (
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
@@ -2699,7 +2762,9 @@ class Series:
         else:
             return out.struct.unnest()
 
-    def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
+    def value_counts(
+        self, *, sort: bool = False, parallel: bool = False, name: str = "count"
+    ) -> DataFrame:
         """
         Count the occurrences of unique values.
 
@@ -2714,6 +2779,8 @@ class Series:
             .. note::
                 This option should likely not be enabled in a group by context,
                 as the computation is already parallelized per group.
+        name
+            Give the resulting count column a specific name; defaults to "count".
 
         Returns
         -------
@@ -2735,22 +2802,22 @@ class Series:
         │ blue  ┆ 3     │
         └───────┴───────┘
 
-        Sort the output by count.
+        Sort the output by count and customize the count column name.
 
-        >>> s.value_counts(sort=True)
+        >>> s.value_counts(sort=True, name="n")
         shape: (3, 2)
-        ┌───────┬───────┐
-        │ color ┆ count │
-        │ ---   ┆ ---   │
-        │ str   ┆ u32   │
-        ╞═══════╪═══════╡
-        │ blue  ┆ 3     │
-        │ red   ┆ 2     │
-        │ green ┆ 1     │
-        └───────┴───────┘
+        ┌───────┬─────┐
+        │ color ┆ n   │
+        │ ---   ┆ --- │
+        │ str   ┆ u32 │
+        ╞═══════╪═════╡
+        │ blue  ┆ 3   │
+        │ red   ┆ 2   │
+        │ green ┆ 1   │
+        └───────┴─────┘
         """
         return pl.DataFrame._from_pydf(
-            self._s.value_counts(sort=sort, parallel=parallel)
+            self._s.value_counts(sort=sort, parallel=parallel, name=name)
         )
 
     def unique_counts(self) -> Series:
@@ -2902,7 +2969,7 @@ class Series:
 
         Concatenate Series with rechunk = True
 
-        >>> pl.concat([s, s2]).chunk_lengths()
+        >>> pl.concat([s, s2], rechunk=True).chunk_lengths()
         [6]
 
         Concatenate Series with rechunk = False
@@ -2925,7 +2992,7 @@ class Series:
 
         Concatenate Series with rechunk = True
 
-        >>> pl.concat([s, s2]).n_chunks()
+        >>> pl.concat([s, s2], rechunk=True).n_chunks()
         1
 
         Concatenate Series with rechunk = False
@@ -3315,6 +3382,28 @@ class Series:
         See Also
         --------
         head
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.limit(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+
+        Pass a negative value to get all rows `except` the last `abs(n)`.
+
+        >>> s.limit(-3)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+        ]
         """
         return self.head(n)
 
@@ -3701,7 +3790,7 @@ class Series:
         """
         return self.len() == 0
 
-    def is_sorted(self, *, descending: bool = False) -> bool:
+    def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
         """
         Check if the Series is sorted.
 
@@ -3709,6 +3798,8 @@ class Series:
         ----------
         descending
             Check if the Series is sorted in descending order
+        nulls_last
+            Set nulls at the end of the Series in sorted check.
 
         Examples
         --------
@@ -3720,7 +3811,7 @@ class Series:
         >>> s.is_sorted(descending=True)
         True
         """
-        return self._s.is_sorted(descending)
+        return self._s.is_sorted(descending, nulls_last)
 
     def not_(self) -> Series:
         """
@@ -4065,6 +4156,28 @@ class Series:
         --------
         Series.list.explode : Explode a list column.
         Series.str.explode : Explode a string column.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+        >>> s
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2, 3]
+                [4, 5, 6]
+        ]
+        >>> s.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
         """
 
     def equals(
@@ -4100,7 +4213,7 @@ class Series:
 
     def cast(
         self,
-        dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
+        dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
         *,
         strict: bool = True,
     ) -> Self:
@@ -4213,6 +4326,29 @@ class Series:
         ----------
         in_place
             In place or not.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s1.n_chunks()
+        1
+        >>> s2 = pl.Series("a", [4, 5, 6])
+        >>> s = pl.concat([s1, s2], rechunk=False)
+        >>> s.n_chunks()
+        2
+        >>> s.rechunk(in_place=True)
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+        >>> s.n_chunks()
+        1
         """
         opt_s = self._s.rechunk(in_place)
         return self if in_place else self._from_pyseries(opt_s)
@@ -4317,35 +4453,42 @@ class Series:
     def to_numpy(
         self,
         *,
-        allow_copy: bool = True,
         writable: bool = False,
-        use_pyarrow: bool = True,
+        allow_copy: bool = True,
+        use_pyarrow: bool | None = None,
         zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
 
-        This operation may copy data, but is completely safe. Note that:
+        This operation copies data only when necessary. The conversion is zero copy when
+        all of the following hold:
 
-        - Data which is purely numeric AND without null values is not cloned
-        - Floating point `nan` values can be zero-copied
-        - Booleans cannot be zero-copied
-
-        To ensure that no data is copied, set `allow_copy=False`.
+        - The data type is an integer, float, `Datetime`, `Duration`, or `Array`.
+        - The Series contains no null values.
+        - The Series consists of a single chunk.
+        - The `writable` parameter is set to `False` (default).
 
         Parameters
         ----------
+        writable
+            Ensure the resulting array is writable. This will force a copy of the data
+            if the array was created without copy as the underlying Arrow data is
+            immutable.
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
-        writable
-            Ensure the resulting array is writable. This will force a copy of the data
-            if the array was created without copy, as the underlying Arrow data is
-            immutable.
+
         use_pyarrow
-            Use `pyarrow.Array.to_numpy
+            First convert to PyArrow, then call `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-            for the conversion to NumPy.
+            to convert to NumPy. If set to `False`, Polars' own conversion logic is
+            used.
+
+            .. deprecated:: 0.20.28
+                Polars now uses its native engine by default for conversion to NumPy.
+                To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.
+
         zero_copy_only
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
@@ -4357,13 +4500,43 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        Numeric data without nulls can be converted without copying data.
+        The resulting array will not be writable.
+
+        >>> s = pl.Series([1, 2, 3], dtype=pl.Int8)
         >>> arr = s.to_numpy()
-        >>> arr  # doctest: +IGNORE_RESULT
-        array([1, 2, 3], dtype=int64)
-        >>> type(arr)
-        <class 'numpy.ndarray'>
-        """
+        >>> arr
+        array([1, 2, 3], dtype=int8)
+        >>> arr.flags.writeable
+        False
+
+        Set `writable=True` to force data copy to make the array writable.
+
+        >>> s.to_numpy(writable=True).flags.writeable
+        True
+
+        Integer Series containing nulls will be cast to a float type with `nan`
+        representing a null value. This requires data to be copied.
+
+        >>> s = pl.Series([1, 2, None], dtype=pl.UInt16)
+        >>> s.to_numpy()
+        array([ 1.,  2., nan], dtype=float32)
+
+        Set `allow_copy=False` to raise an error if data would be copied.
+
+        >>> s.to_numpy(allow_copy=False)  # doctest: +SKIP
+        Traceback (most recent call last):
+        ...
+        RuntimeError: copy not allowed: cannot convert to a NumPy array without copying data
+
+        Series of data type `Array` and `Struct` will result in an array with more than
+        one dimension.
+
+        >>> s = pl.Series([[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.to_numpy()
+        array([[1, 2, 3],
+               [4, 5, 6]])
+        """  # noqa: W505
         if zero_copy_only is not None:
             issue_deprecation_warning(
                 "The `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
@@ -4372,88 +4545,105 @@ class Series:
             )
             allow_copy = not zero_copy_only
 
-        def raise_on_copy() -> None:
-            if not allow_copy and not self.is_empty():
-                msg = "cannot return a zero-copy array"
-                raise ValueError(msg)
-
-        def temporal_dtype_to_numpy(dtype: PolarsDataType) -> Any:
-            if dtype == Date:
-                return np.dtype("datetime64[D]")
-            elif dtype == Duration:
-                return np.dtype(f"timedelta64[{dtype.time_unit}]")  # type: ignore[union-attr]
-            elif dtype == Datetime:
-                return np.dtype(f"datetime64[{dtype.time_unit}]")  # type: ignore[union-attr]
-            else:
-                msg = f"invalid temporal type: {dtype}"
-                raise TypeError(msg)
-
-        if self.n_chunks() > 1:
-            raise_on_copy()
-            self = self.rechunk()
-
-        dtype = self.dtype
-
-        if dtype == Array:
-            np_array = self.explode().to_numpy(
-                allow_copy=allow_copy,
-                writable=writable,
-                use_pyarrow=use_pyarrow,
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
+                " Polars now uses its native engine for conversion to NumPy by default."
+                " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+                version="0.20.28",
             )
-            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
-            return np_array
+        else:
+            use_pyarrow = False
 
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
-            and dtype not in (Object, Datetime, Duration, Date)
+            and self.dtype not in (Date, Datetime, Duration, Array, Object)
         ):
+            if not allow_copy and self.n_chunks() > 1 and not self.is_empty():
+                msg = "cannot return a zero-copy array"
+                raise ValueError(msg)
+
             return self.to_arrow().to_numpy(
                 zero_copy_only=not allow_copy, writable=writable
             )
 
-        if self.null_count() == 0:
-            if dtype.is_integer() or dtype.is_float():
-                np_array = self._s.to_numpy_view()
-            elif dtype == Boolean:
-                raise_on_copy()
-                s_u8 = self.cast(UInt8)
-                np_array = s_u8._s.to_numpy_view().view(bool)
-            elif dtype in (Datetime, Duration):
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                s_i64 = self.to_physical()
-                np_array = s_i64._s.to_numpy_view().view(np_dtype)
-            elif dtype == Date:
-                raise_on_copy()
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                s_i32 = self.to_physical()
-                np_array = s_i32._s.to_numpy_view().astype(np_dtype)
-            else:
-                raise_on_copy()
-                np_array = self._s.to_numpy()
+        return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
+    @unstable()
+    def to_jax(self, device: jax.Device | str | None = None) -> jax.Array:
+        """
+        Convert this Series to a Jax Array.
+
+        .. versionadded:: 0.20.27
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        device
+            Specify the jax `Device` on which the array will be created; can provide
+            a string (such as "cpu", "gpu", or "tpu") in which case the device is
+            retrieved as `jax.devices(string)[0]`. For more specific control you
+            can supply the instantiated `Device` directly. If None, arrays are
+            created on the default device.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", [10.5, 0.0, -10.0, 5.5])
+        >>> s.to_jax()
+        Array([ 10.5,   0. , -10. ,   5.5], dtype=float32)
+        """
+        jx = import_optional(
+            "jax",
+            install_message="Please see `https://jax.readthedocs.io/en/latest/installation.html` "
+            "for specific installation recommendations for the Jax package",
+        )
+        if isinstance(device, str):
+            device = jx.devices(device)[0]
+        if (
+            jx.config.jax_enable_x64
+            or bool(int(os.environ.get("JAX_ENABLE_X64", "0")))
+            or self.dtype not in {Float64, Int64, UInt64}
+        ):
+            srs = self
         else:
-            raise_on_copy()
-            np_array = self._s.to_numpy()
-            if dtype in (Datetime, Duration, Date):
-                np_dtype = temporal_dtype_to_numpy(dtype)
-                np_array = np_array.view(np_dtype)
+            single_precision = {Float64: Float32, Int64: Int32, UInt64: UInt32}
+            srs = self.cast(single_precision[self.dtype])  # type: ignore[index]
 
-        if writable and not np_array.flags.writeable:
-            raise_on_copy()
-            np_array = np_array.copy()
+        with nullcontext() if device is None else jx.default_device(device):
+            return jx.numpy.asarray(
+                # note: jax arrays are immutable, so can avoid a copy (vs torch)
+                a=srs.to_numpy(writable=False),
+                order="K",
+            )
 
-        return np_array
-
+    @unstable()
     def to_torch(self) -> torch.Tensor:
         """
-        Convert this Series to a PyTorch tensor.
+        Convert this Series to a PyTorch Tensor.
+
+        .. versionadded:: 0.20.23
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Notes
+        -----
+        PyTorch tensors do not support UInt16, UInt32, or UInt64; these dtypes
+        will be automatically cast to Int32, Int64, and Int64, respectively.
 
         Examples
         --------
         >>> s = pl.Series("x", [1, 0, 1, 2, 0], dtype=pl.UInt8)
         >>> s.to_torch()
         tensor([1, 0, 1, 2, 0], dtype=torch.uint8)
+        >>> s = pl.Series("x", [5.5, -10.0, 2.5], dtype=pl.Float32)
+        >>> s.to_torch()
+        tensor([  5.5000, -10.0000,   2.5000])
         """
         torch = import_optional("torch")
 
@@ -4467,7 +4657,7 @@ class Series:
 
         # we have to build the tensor from a writable array or PyTorch will complain
         # about it (as writing to readonly array results in undefined behavior)
-        numpy_array = srs.to_numpy(writable=True, use_pyarrow=False)
+        numpy_array = srs.to_numpy(writable=True)
         tensor = torch.from_numpy(numpy_array)
 
         # note: named tensors are currently experimental
@@ -6279,6 +6469,26 @@ class Series:
         ----------
         signed
             If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-(2**60), -2, 3])
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                -1152921504606846976
+                -2
+                3
+        ]
+        >>> s.reinterpret(signed=False)
+        shape: (3,)
+        Series: 'a' [u64]
+        [
+                17293822569102704640
+                18446744073709551614
+                3
+        ]
         """
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
@@ -6302,6 +6512,32 @@ class Series:
             3.0
             4.0
             5.0
+        ]
+        """
+
+    def interpolate_by(self, by: IntoExpr) -> Series:
+        """
+        Fill null values using interpolation based on another column.
+
+        Parameters
+        ----------
+        by
+            Column to interpolate values based on.
+
+        Examples
+        --------
+        Fill null values using linear interpolation.
+
+        >>> s = pl.Series([1, None, None, 3])
+        >>> by = pl.Series([1, 2, 7, 8])
+        >>> s.interpolate_by(by)
+        shape: (4,)
+        Series: '' [f64]
+        [
+            1.0
+            1.285714
+            2.714286
+            3.0
         ]
         """
 
@@ -6941,7 +7177,7 @@ class Series:
 
     def ewm_mean_by(
         self,
-        by: str | IntoExpr,
+        by: IntoExpr,
         *,
         half_life: str | timedelta,
     ) -> Series:
@@ -7247,7 +7483,21 @@ class Series:
         return self._from_pyseries(self._s.set_sorted_flag(descending))
 
     def new_from_index(self, index: int, length: int) -> Self:
-        """Create a new Series filled with values from the given index."""
+        """
+        Create a new Series filled with values from the given index.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.new_from_index(1, 3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            2
+            2
+            2
+        ]
+        """
         return self._from_pyseries(self._s.new_from_index(index, length))
 
     def shrink_dtype(self) -> Series:
@@ -7256,10 +7506,58 @@ class Series:
 
         Shrink to the dtype needed to fit the extrema of this [`Series`].
         This can be used to reduce memory pressure.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5, 6])
+        >>> s
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+        >>> s.shrink_dtype()
+        shape: (6,)
+        Series: 'a' [i8]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
         """
 
     def get_chunks(self) -> list[Series]:
-        """Get the chunks of this Series as a list of Series."""
+        """
+        Get the chunks of this Series as a list of Series.
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("a", [4, 5, 6])
+        >>> s = pl.concat([s1, s2], rechunk=False)
+        >>> s.get_chunks()
+        [shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+        ], shape: (3,)
+        Series: 'a' [i64]
+        [
+                4
+                5
+                6
+        ]]
+        """
         return self._s.get_chunks()
 
     def implode(self) -> Self:

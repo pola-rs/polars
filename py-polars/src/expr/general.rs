@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -6,6 +7,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
@@ -83,14 +85,15 @@ impl PyExpr {
         ciborium::ser::into_writer(&self.inner, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        Ok(PyBytes::new_bound(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                self.inner = ciborium::de::from_reader(s.as_bytes())
+                let cursor = Cursor::new(&*s);
+                self.inner = ciborium::de::from_reader(cursor)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
             },
@@ -247,8 +250,8 @@ impl PyExpr {
     fn len(&self) -> Self {
         self.inner.clone().len().into()
     }
-    fn value_counts(&self, sort: bool, parallel: bool) -> Self {
-        self.inner.clone().value_counts(sort, parallel).into()
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> Self {
+        self.inner.clone().value_counts(sort, parallel, name).into()
     }
     fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
@@ -777,6 +780,9 @@ impl PyExpr {
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
     }
+    fn interpolate_by(&self, by: PyExpr) -> Self {
+        self.inner.clone().interpolate_by(by.inner).into()
+    }
 
     fn lower_bound(&self) -> Self {
         self.inner.clone().lower_bound().into()
@@ -855,11 +861,11 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_mean_by(&self, times: PyExpr, half_life: &str, check_sorted: bool) -> Self {
+    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> Self {
         let half_life = Duration::parse(half_life);
         self.inner
             .clone()
-            .ewm_mean_by(times.inner, half_life, check_sorted)
+            .ewm_mean_by(times.inner, half_life)
             .into()
     }
 

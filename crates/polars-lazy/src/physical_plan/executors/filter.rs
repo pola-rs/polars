@@ -63,7 +63,7 @@ impl FilterExec {
 
     fn execute_impl(
         &mut self,
-        df: DataFrame,
+        mut df: DataFrame,
         state: &mut ExecutionState,
     ) -> PolarsResult<DataFrame> {
         let n_partitions = POOL.current_num_threads();

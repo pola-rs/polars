@@ -43,7 +43,7 @@ def read_parquet(
     hive_partitioning: bool = True,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
-    rechunk: bool = True,
+    rechunk: bool = False,
     low_memory: bool = False,
     storage_options: dict[str, Any] | None = None,
     retries: int = 0,
@@ -130,14 +130,6 @@ def read_parquet(
     --------
     scan_parquet
     scan_pyarrow_dataset
-
-    Notes
-    -----
-    * When benchmarking:
-        This operation defaults to a `rechunk` operation at the end, meaning that all
-        data will be stored continuously in memory. Set `rechunk=False` if you are
-        benchmarking the parquet-reader as `rechunk` can be an expensive operation
-        that should not contribute to the timings.
     """
     if hive_schema is not None:
         msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
@@ -160,6 +152,7 @@ def read_parquet(
             storage_options=storage_options,
             pyarrow_options=pyarrow_options,
             memory_map=memory_map,
+            rechunk=rechunk,
         )
 
     # Read file and bytes inputs using `read_parquet`
@@ -209,6 +202,7 @@ def _read_parquet_with_pyarrow(
     storage_options: dict[str, Any] | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
+    rechunk: bool = True,
 ) -> DataFrame:
     pyarrow_parquet = import_optional(
         "pyarrow.parquet",
@@ -228,7 +222,7 @@ def _read_parquet_with_pyarrow(
             columns=columns,
             **pyarrow_options,
         )
-    return from_arrow(pa_table)  # type: ignore[return-value]
+    return from_arrow(pa_table, rechunk=rechunk)  # type: ignore[return-value]
 
 
 def _read_parquet_binary(
@@ -240,7 +234,7 @@ def _read_parquet_binary(
     row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     low_memory: bool = False,
 ) -> DataFrame:
     projection, columns = parse_columns_arg(columns)
@@ -415,7 +409,7 @@ def _scan_parquet_impl(
     n_rows: int | None = None,
     cache: bool = True,
     parallel: ParallelStrategy = "auto",
-    rechunk: bool = True,
+    rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, object] | None = None,

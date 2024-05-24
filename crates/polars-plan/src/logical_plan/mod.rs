@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -5,9 +6,7 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use recursive::recursive;
 
-use crate::logical_plan::DslPlan::DataFrameScan;
 use crate::prelude::*;
-use crate::utils::{expr_to_leaf_column_names, get_single_leaf};
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
@@ -19,7 +18,6 @@ mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
-pub(crate) mod expr_expansion;
 pub mod expr_ir;
 mod file_scan;
 mod format;
@@ -33,7 +31,6 @@ mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
-pub(crate) mod tree_format;
 pub mod visitor;
 
 pub use aexpr::*;
@@ -53,8 +50,6 @@ pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
-
-use self::tree_format::{TreeFmtNode, TreeFmtVisitor};
 
 pub type ColumnName = Arc<str>;
 
@@ -208,7 +203,7 @@ impl Default for DslPlan {
     fn default() -> Self {
         let df = DataFrame::new::<Series>(vec![]).unwrap();
         let schema = df.schema();
-        DataFrameScan {
+        DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema: Arc::new(schema),
             output_schema: None,
@@ -219,22 +214,31 @@ impl Default for DslPlan {
 }
 
 impl DslPlan {
-    pub fn describe(&self) -> String {
-        format!("{self:#?}")
+    pub fn describe(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe())
     }
 
-    pub fn describe_tree_format(&self) -> String {
-        let mut visitor = TreeFmtVisitor::default();
-        TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
-        format!("{visitor:#?}")
+    pub fn describe_tree_format(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe_tree_format())
     }
 
-    pub fn to_alp(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
+    pub fn display(&self) -> PolarsResult<impl fmt::Display> {
+        struct DslPlanDisplay(IRPlan);
+        impl fmt::Display for DslPlanDisplay {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.as_ref().display().fmt(f)
+            }
+        }
+        Ok(DslPlanDisplay(self.clone().to_alp()?))
+    }
+
+    pub fn to_alp(self) -> PolarsResult<IRPlan> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
 
         let node = to_alp(self, &mut expr_arena, &mut lp_arena, true, true)?;
+        let plan = IRPlan::new(node, lp_arena, expr_arena);
 
-        Ok((node, lp_arena, expr_arena))
+        Ok(plan)
     }
 }

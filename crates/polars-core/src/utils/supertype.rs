@@ -168,7 +168,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Datetime(_, _), Float32) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Float64) => Some(Float64),
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype=date"))]
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
 
             (Boolean, Float32) => Some(Float32),

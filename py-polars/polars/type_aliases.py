@@ -140,7 +140,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "outer", "semi", "anti", "cross", "outer_coalesce"
+    "inner", "left", "full", "semi", "anti", "cross", "outer", "outer_coalesce"
 ]  # JoinType
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
@@ -163,6 +163,7 @@ DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
 DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
+JaxExportType: TypeAlias = Literal["array", "dict"]
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
 TorchExportType: TypeAlias = Literal["tensor", "dataset", "dict"]

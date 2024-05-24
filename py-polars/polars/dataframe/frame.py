@@ -72,11 +72,13 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
+    Float32,
     Float64,
     Int32,
     Int64,
     Object,
     String,
+    Struct,
     UInt16,
     UInt32,
     UInt64,
@@ -100,20 +102,9 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
-from polars.io.csv._utils import _check_arg_is_1byte
-from polars.io.spreadsheet._write_utils import (
-    _unpack_multi_column_dict,
-    _xl_apply_conditional_formats,
-    _xl_inject_sparklines,
-    _xl_setup_table_columns,
-    _xl_setup_table_options,
-    _xl_setup_workbook,
-    _xl_unique_table_name,
-    _XLFormatCache,
-)
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
-from polars.type_aliases import DbWriteMode, TorchExportType
+from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -126,6 +117,8 @@ if TYPE_CHECKING:
     from typing import Literal
 
     import deltalake
+    import jax
+    import numpy.typing as npt
     import torch
     from hvplot.plotting.core import hvPlotTabularPolars
     from xlsxwriter import Workbook
@@ -741,17 +734,39 @@ class DataFrame:
         """
         return OrderedDict(zip(self.columns, self.dtypes))
 
-    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+    def __array__(
+        self, dtype: npt.DTypeLike | None = None, copy: bool | None = None
+    ) -> np.ndarray[Any, Any]:
         """
-        Numpy __array__ interface protocol.
+        Return a NumPy ndarray with the given data type.
 
-        Ensures that `np.asarray(pl.DataFrame(..))` works as expected, see
-        https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
+        This method ensures a Polars DataFrame can be treated as a NumPy ndarray.
+        It enables `np.asarray` and NumPy universal functions.
+
+        See the NumPy documentation for more information:
+        https://numpy.org/doc/stable/user/basics.interoperability.html#the-array-method
         """
-        if dtype:
-            return self.to_numpy().__array__(dtype)
+        if copy is None:
+            writable, allow_copy = False, True
+        elif copy is True:
+            writable, allow_copy = True, True
+        elif copy is False:
+            writable, allow_copy = False, False
         else:
-            return self.to_numpy().__array__()
+            msg = f"invalid input for `copy`: {copy!r}"
+            raise TypeError(msg)
+
+        arr = self.to_numpy(writable=writable, allow_copy=allow_copy)
+
+        if dtype is not None and dtype != arr.dtype:
+            if copy is False:
+                # TODO: Only raise when data must be copied
+                msg = f"copy not allowed: cast from {arr.dtype} to {dtype} prohibited"
+                raise RuntimeError(msg)
+
+            arr = arr.__array__(dtype)
+
+        return arr
 
     def __dataframe__(
         self,
@@ -1506,12 +1521,22 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
-        allow_copy: bool = True,
         writable: bool = False,
-        use_pyarrow: bool = True,
+        allow_copy: bool = True,
+        use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
+
+        This operation copies data only when necessary. The conversion is zero copy when
+        all of the following hold:
+
+        - The DataFrame is fully contiguous in memory, with all Series back-to-back and
+          all Series consisting of a single chunk.
+        - The data type is an integer or float.
+        - The DataFrame contains no null values.
+        - The `order` parameter is set to `fortran` (default).
+        - The `writable` parameter is set to `False` (default).
 
         Parameters
         ----------
@@ -1526,24 +1551,68 @@ class DataFrame:
             Fortran-like. In general, using the Fortran-like index order is faster.
             However, the C-like order might be more appropriate to use for downstream
             applications to prevent cloning data, e.g. when reshaping into a
-            one-dimensional array. Note that this option only takes effect if
-            `structured` is set to `False` and the DataFrame dtypes allow for a
-            global dtype for all columns.
-        allow_copy
-            Allow memory to be copied to perform the conversion. If set to `False`,
-            causes conversions that are not zero-copy to fail.
+            one-dimensional array.
         writable
             Ensure the resulting array is writable. This will force a copy of the data
             if the array was created without copy, as the underlying Arrow data is
             immutable.
+        allow_copy
+            Allow memory to be copied to perform the conversion. If set to `False`,
+            causes conversions that are not zero-copy to fail.
+
         use_pyarrow
             Use `pyarrow.Array.to_numpy
             <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
 
-            function for the conversion to numpy if necessary.
+            function for the conversion to NumPy if necessary.
+
+            .. deprecated:: 0.20.28
+                Polars now uses its native engine by default for conversion to NumPy.
 
         Examples
         --------
+        Numeric data without nulls can be converted without copying data in some cases.
+        The resulting array will not be writable.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> arr = df.to_numpy()
+        >>> arr
+        array([[1],
+               [2],
+               [3]])
+        >>> arr.flags.writeable
+        False
+
+        Set `writable=True` to force data copy to make the array writable.
+
+        >>> df.to_numpy(writable=True).flags.writeable
+        True
+
+        If the DataFrame contains different numeric data types, the resulting data type
+        will be the supertype. This requires data to be copied. Integer types with
+        nulls are cast to a float type with `nan` representing a null value.
+
+        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4.0, 5.0, 6.0]})
+        >>> df.to_numpy()
+        array([[ 1.,  4.],
+               [ 2.,  5.],
+               [nan,  6.]])
+
+        Set `allow_copy=False` to raise an error if data would be copied.
+
+        >>> s.to_numpy(allow_copy=False)  # doctest: +SKIP
+        Traceback (most recent call last):
+        ...
+        RuntimeError: copy not allowed: cannot convert to a NumPy array without copying data
+
+        Polars defaults to F-contiguous order. Use `order="c"` to force the resulting
+        array to be C-contiguous.
+
+        >>> df.to_numpy(order="c").flags.c_contiguous
+        True
+
+        DataFrames with mixed types will result in an array with an object dtype.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
@@ -1552,41 +1621,42 @@ class DataFrame:
         ...     },
         ...     schema_overrides={"foo": pl.UInt8, "bar": pl.Float32},
         ... )
-
-        Export to a standard 2D numpy array.
-
         >>> df.to_numpy()
         array([[1, 6.5, 'a'],
                [2, 7.0, 'b'],
                [3, 8.5, 'c']], dtype=object)
 
-        Export to a structured array, which can better-preserve individual
-        column data, such as name and dtype...
+        Set `structured=True` to convert to a structured array, which can better
+        preserve individual column data such as name and data type.
 
         >>> df.to_numpy(structured=True)
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
-
-        ...optionally going on to view as a record array:
-
-        >>> import numpy as np
-        >>> df.to_numpy(structured=True).view(np.recarray)
-        rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
-                  dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
-        """
-
-        def raise_on_copy(msg: str) -> None:
-            if not allow_copy and not self.is_empty():
-                msg = f"copy not allowed: {msg}"
-                raise RuntimeError(msg)
+        """  # noqa: W505
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
+                " Polars now uses its native engine by default for conversion to NumPy.",
+                version="0.20.28",
+            )
 
         if structured:
-            raise_on_copy("cannot create structured array without copying data")
+            if not allow_copy and not self.is_empty():
+                msg = "copy not allowed: cannot create structured array without copying data"
+                raise RuntimeError(msg)
 
             arrays = []
             struct_dtype = []
             for s in self.iter_columns():
-                arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                if s.dtype == Struct:
+                    arr = s.struct.unnest().to_numpy(
+                        structured=True,
+                        allow_copy=True,
+                        use_pyarrow=use_pyarrow,
+                    )
+                else:
+                    arr = s.to_numpy(use_pyarrow=use_pyarrow)
+
                 if s.dtype == String and s.null_count() == 0:
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)
@@ -1597,28 +1667,209 @@ class DataFrame:
                 out[c] = arrays[idx]
             return out
 
-        if order == "fortran":
-            array = self._df.to_numpy_view()
-            if array is not None:
-                if writable and not array.flags.writeable:
-                    raise_on_copy("cannot create writable array without copying data")
-                    array = array.copy()
-                return array
+        return self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
 
-        raise_on_copy(
-            "only numeric data without nulls in Fortran-like order can be converted without copy"
+    @overload
+    def to_jax(
+        self,
+        return_type: Literal["array"] = ...,
+        *,
+        device: jax.Device | str | None = ...,
+        label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
+        dtype: PolarsDataType | None = ...,
+        order: IndexOrder = ...,
+    ) -> jax.Array: ...
+
+    @overload
+    def to_jax(
+        self,
+        return_type: Literal["dict"],
+        *,
+        device: jax.Device | str | None = ...,
+        label: str | Expr | Sequence[str | Expr] | None = ...,
+        features: str | Expr | Sequence[str | Expr] | None = ...,
+        dtype: PolarsDataType | None = ...,
+        order: IndexOrder = ...,
+    ) -> dict[str, jax.Array]: ...
+
+    @unstable()
+    def to_jax(
+        self,
+        return_type: JaxExportType = "array",
+        *,
+        device: jax.Device | str | None = None,
+        label: str | Expr | Sequence[str | Expr] | None = None,
+        features: str | Expr | Sequence[str | Expr] | None = None,
+        dtype: PolarsDataType | None = None,
+        order: IndexOrder = "fortran",
+    ) -> jax.Array | dict[str, jax.Array]:
+        """
+        Convert DataFrame to a Jax Array, or dict of Jax Arrays.
+
+        .. versionadded:: 0.20.27
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        return_type : {"array", "dict"}
+            Set return type; a Jax Array, or dict of Jax Arrays.
+        device
+            Specify the jax `Device` on which the array will be created; can provide
+            a string (such as "cpu", "gpu", or "tpu") in which case the device is
+            retrieved as `jax.devices(string)[0]`. For more specific control you
+            can supply the instantiated `Device` directly. If None, arrays are
+            created on the default device.
+        label
+            One or more column names, expressions, or selectors that label the feature
+            data; results in a `{"label": ..., "features": ...}` dict being returned
+            when `return_type` is "dict" instead of a `{"col": array, }` dict.
+        features
+            One or more column names, expressions, or selectors that contain the feature
+            data; if omitted, all columns that are not designated as part of the label
+            are used. Only applies when `return_type` is "dict".
+        dtype
+            Unify the dtype of all returned arrays; this casts any column that is
+            not already of the required dtype before converting to Array. Note that
+            export will be single-precision (32bit) unless the Jax config/environment
+            directs otherwise (eg: "jax_enable_x64" was set True in the config object
+            at startup, or "JAX_ENABLE_X64" is set to "1" in the environment).
+        order : {"c", "fortran"}
+            The index order of the returned Jax array, either C-like (row-major) or
+            Fortran-like (column-major).
+
+        See Also
+        --------
+        to_dummies
+        to_numpy
+        to_torch
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lbl": [0, 1, 2, 3],
+        ...         "feat1": [1, 0, 0, 1],
+        ...         "feat2": [1.5, -0.5, 0.0, -2.25],
+        ...     }
+        ... )
+
+        Standard return type (2D Array), on the standard device:
+
+        >>> df.to_jax()
+        Array([[ 0.  ,  1.  ,  1.5 ],
+               [ 1.  ,  0.  , -0.5 ],
+               [ 2.  ,  0.  ,  0.  ],
+               [ 3.  ,  1.  , -2.25]], dtype=float32)
+
+        Create the Array on the default GPU device:
+
+        >>> a = df.to_jax(device="gpu")  # doctest: +SKIP
+        >>> a.device()  # doctest: +SKIP
+        GpuDevice(id=0, process_index=0)
+
+        Create the Array on a specific GPU device:
+
+        >>> gpu_device = jax.devices("gpu")[1])  # doctest: +SKIP
+        >>> a = df.to_jax(device=gpu_device)  # doctest: +SKIP
+        >>> a.device()  # doctest: +SKIP
+        GpuDevice(id=1, process_index=0)
+
+        As a dictionary of individual Arrays:
+
+        >>> df.to_jax("dict")
+        {'lbl': Array([0, 1, 2, 3], dtype=int32),
+         'feat1': Array([1, 0, 0, 1], dtype=int32),
+         'feat2': Array([ 1.5 , -0.5 ,  0.  , -2.25], dtype=float32)}
+
+        As a "label" and "features" dictionary; note that as "features" is not
+        declared, it defaults to all the columns that are not in "label":
+
+        >>> df.to_jax("dict", label="lbl")
+        {'label': Array([[0],
+                [1],
+                [2],
+                [3]], dtype=int32),
+         'features': Array([[ 1.  ,  1.5 ],
+                [ 0.  , -0.5 ],
+                [ 0.  ,  0.  ],
+                [ 1.  , -2.25]], dtype=float32)}
+
+        As a "label" and "features" dictionary where each is designated using
+        a col or selector expression (which can also be used to cast the data
+        if the label and features are better-represented with different dtypes):
+
+        >>> import polars.selectors as cs
+        >>> df.to_jax(
+        ...     return_type="dict",
+        ...     features=cs.float(),
+        ...     label=pl.col("lbl").cast(pl.UInt8),
+        ... )
+        {'label': Array([[0],
+                [1],
+                [2],
+                [3]], dtype=uint8),
+         'features': Array([[ 1.5 ],
+                [-0.5 ],
+                [ 0.  ],
+                [-2.25]], dtype=float32)}
+        """
+        if return_type != "dict" and (label is not None or features is not None):
+            msg = "`label` and `features` only apply when `return_type` is 'dict'"
+            raise ValueError(msg)
+        elif return_type == "dict" and label is None and features is not None:
+            msg = "`label` is required if setting `features` when `return_type='dict'"
+            raise ValueError(msg)
+
+        jx = import_optional(
+            "jax",
+            install_message="Please see `https://jax.readthedocs.io/en/latest/installation.html` "
+            "for specific installation recommendations for the Jax package",
         )
+        enabled_double_precision = jx.config.jax_enable_x64 or bool(
+            int(os.environ.get("JAX_ENABLE_X64", "0"))
+        )
+        if dtype:
+            frame = self.cast(dtype)
+        elif not enabled_double_precision:
+            # enforce single-precision unless environment/config directs otherwise
+            frame = self.cast({Float64: Float32, Int64: Int32, UInt64: UInt32})
+        else:
+            frame = self
 
-        out = self._df.to_numpy(order)
-        if out is None:
-            return np.vstack(
-                [
-                    self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
-                    for i in range(self.width)
-                ]
-            ).T
+        if isinstance(device, str):
+            device = jx.devices(device)[0]
 
-        return out
+        with contextlib.nullcontext() if device is None else jx.default_device(device):
+            if return_type == "array":
+                return jx.numpy.asarray(
+                    # note: jax arrays are immutable, so can avoid a copy (vs torch)
+                    a=frame.to_numpy(writable=False, order=order),
+                    order="K",
+                )
+            elif return_type == "dict":
+                if label is not None:
+                    # return a {"label": array(s), "features": array(s)} dict
+                    label_frame = frame.select(label)
+                    features_frame = (
+                        frame.select(features)
+                        if features is not None
+                        else frame.drop(*label_frame.columns)
+                    )
+                    return {
+                        "label": label_frame.to_jax(),
+                        "features": features_frame.to_jax(),
+                    }
+                else:
+                    # return a {"col": array} dict
+                    return {srs.name: srs.to_jax() for srs in frame}
+            else:
+                valid_jax_types = ", ".join(get_args(JaxExportType))
+                msg = f"invalid `return_type`: {return_type!r}\nExpected one of: {valid_jax_types}"
+                raise ValueError(msg)
 
     @overload
     def to_torch(
@@ -1650,6 +1901,7 @@ class DataFrame:
         dtype: PolarsDataType | None = ...,
     ) -> dict[str, torch.Tensor]: ...
 
+    @unstable()
     def to_torch(
         self,
         return_type: TorchExportType = "tensor",
@@ -1659,30 +1911,39 @@ class DataFrame:
         dtype: PolarsDataType | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor] | PolarsDataset:
         """
-        Convert DataFrame to a 2D PyTorch tensor, Dataset, or dict of Tensors.
+        Convert DataFrame to a PyTorch Tensor, Dataset, or dict of Tensors.
 
         .. versionadded:: 0.20.23
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
         return_type : {"tensor", "dataset", "dict"}
-            Set return type; a 2D PyTorch tensor, PolarsDataset (a frame-specialized
+            Set return type; a PyTorch Tensor, PolarsDataset (a frame-specialized
             TensorDataset), or dict of Tensors.
         label
-            One or more column names or expressions that label the feature data; when
-            `return_type` is "dataset", the PolarsDataset returns `(features, label)`
-            tensor tuples for each row. Otherwise, it returns `(features,)` tensor
-            tuples where the feature contains all the row data. This parameter is a
-            no-op for the other return-types.
+            One or more column names, expressions, or selectors that label the feature
+            data; when `return_type` is "dataset", the PolarsDataset will return
+            `(features, label)` tensor tuples for each row. Otherwise, it returns
+            `(features,)` tensor tuples where the feature contains all the row data.
         features
-            One or more column names or expressions that contain the feature data; if
-            omitted, all columns that are not designated as part of the label are used.
-            This parameter is a no-op for return-types other than "dataset".
+            One or more column names, expressions, or selectors that contain the feature
+            data; if omitted, all columns that are not designated as part of the label
+            are used.
         dtype
-            Unify the dtype of all returned tensors; this casts any frame Series
-            that are not of the required dtype before converting to tensor. This
-            includes the label column *unless* the label is an expression (such
-            as `pl.col("label_column").cast(pl.Int16)`).
+            Unify the dtype of all returned tensors; this casts any column that is
+            not of the required dtype before converting to Tensor. This includes
+            the label column *unless* the label is an expression (such as
+            `pl.col("label_column").cast(pl.Int16)`).
+
+        See Also
+        --------
+        to_dummies
+        to_jax
+        to_numpy
 
         Examples
         --------
@@ -1709,6 +1970,19 @@ class DataFrame:
          'feat1': tensor([1, 0, 0, 1]),
          'feat2': tensor([ 1.5000, -0.5000,  0.0000, -2.2500], dtype=torch.float64)}
 
+        As a "label" and "features" dictionary; note that as "features" is not
+        declared, it defaults to all the columns that are not in "label":
+
+        >>> df.to_torch("dict", label="lbl", dtype=pl.Float32)
+        {'label': tensor([[0.],
+                 [1.],
+                 [2.],
+                 [3.]]),
+         'features': tensor([[ 1.0000,  1.5000],
+                 [ 0.0000, -0.5000],
+                 [ 0.0000,  0.0000],
+                 [ 1.0000, -2.2500]])}
+
         As a PolarsDataset, with f64 supertype:
 
         >>> ds = df.to_torch("dataset", dtype=pl.Float64)
@@ -1721,7 +1995,7 @@ class DataFrame:
         (tensor([[ 0.0000,  1.0000,  1.5000],
                  [ 3.0000,  1.0000, -2.2500]], dtype=torch.float64),)
 
-        As a convenience the PolarsDataset can opt-in to half-precision data
+        As a convenience the PolarsDataset can opt in to half-precision data
         for experimentation (usually this would be set on the model/pipeline):
 
         >>> list(ds.half())
@@ -1745,7 +2019,7 @@ class DataFrame:
         supported).
 
         >>> ds = df.to_torch(
-        ...     "dataset",
+        ...     return_type="dataset",
         ...     dtype=pl.Float32,
         ...     label=pl.col("lbl").cast(pl.Int16),
         ... )
@@ -1770,6 +2044,15 @@ class DataFrame:
         ...     batch_size=64,
         ... )  # doctest: +SKIP
         """
+        if return_type not in ("dataset", "dict") and (
+            label is not None or features is not None
+        ):
+            msg = "`label` and `features` only apply when `return_type` is 'dataset' or 'dict'"
+            raise ValueError(msg)
+        elif return_type == "dict" and label is None and features is not None:
+            msg = "`label` is required if setting `features` when `return_type='dict'"
+            raise ValueError(msg)
+
         torch = import_optional("torch")
 
         if dtype in (UInt16, UInt32, UInt64):
@@ -1780,10 +2063,28 @@ class DataFrame:
             frame = self.cast(to_dtype)  # type: ignore[arg-type]
 
         if return_type == "tensor":
-            return torch.from_numpy(frame.to_numpy(writable=True, use_pyarrow=False))
+            # note: torch tensors are not immutable, so we must consider them writable
+            return torch.from_numpy(frame.to_numpy(writable=True))
+
         elif return_type == "dict":
-            return {srs.name: srs.to_torch() for srs in frame}
+            if label is not None:
+                # return a {"label": tensor(s), "features": tensor(s)} dict
+                label_frame = frame.select(label)
+                features_frame = (
+                    frame.select(features)
+                    if features is not None
+                    else frame.drop(*label_frame.columns)
+                )
+                return {
+                    "label": label_frame.to_torch(),
+                    "features": features_frame.to_torch(),
+                }
+            else:
+                # return a {"col": tensor} dict
+                return {srs.name: srs.to_torch() for srs in frame}
+
         elif return_type == "dataset":
+            # return a torch Dataset object
             from polars.ml.torch import PolarsDataset
 
             return PolarsDataset(frame, label=label, features=features)
@@ -2290,6 +2591,8 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.csv"
         >>> df.write_csv(path, separator=",")
         """
+        from polars.io.csv._utils import _check_arg_is_1byte
+
         _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
         if not null_value:
@@ -2672,7 +2975,7 @@ class DataFrame:
         ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
 
         Export a table containing two different types of sparklines. Use default
-        options for the "trend" sparkline and customised options (and positioning)
+        options for the "trend" sparkline and customized options (and positioning)
         for the "+/-" win_loss sparkline, with non-default integer dtype formatting,
         column totals, a subtle two-tone heatmap and hidden worksheet gridlines:
 
@@ -2692,7 +2995,7 @@ class DataFrame:
         ...     sparklines={
         ...         # default options; just provide source cols
         ...         "trend": ["q1", "q2", "q3", "q4"],
-        ...         # customised sparkline type, with positioning directive
+        ...         # customized sparkline type, with positioning directive
         ...         "+/-": {
         ...             "columns": ["q1", "q2", "q3", "q4"],
         ...             "insert_after": "id",
@@ -2745,6 +3048,17 @@ class DataFrame:
         ...     sheet_zoom=125,
         ... )
         """  # noqa: W505
+        from polars.io.spreadsheet._write_utils import (
+            _unpack_multi_column_dict,
+            _xl_apply_conditional_formats,
+            _xl_inject_sparklines,
+            _xl_setup_table_columns,
+            _xl_setup_table_options,
+            _xl_setup_workbook,
+            _xl_unique_table_name,
+            _XLFormatCache,
+        )
+
         xlsxwriter = import_optional("xlsxwriter", err_prefix="Excel export requires")
         from xlsxwriter.utility import xl_cell_to_rowcol
 
@@ -6256,7 +6570,7 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
+        how : {'inner', 'left', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
             * *inner*
@@ -6264,16 +6578,14 @@ class DataFrame:
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
-            * *outer*
+            * *full*
                  Returns all rows when there is a match in either left or right table
-            * *outer_coalesce*
-                 Same as 'outer', but coalesces the key columns
             * *cross*
                  Returns the Cartesian product of rows from both tables
             * *semi*
                  Filter rows that have a match in the right table.
             * *anti*
-                 Filter rows that not have a match in the right table.
+                 Filter rows that do not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -6340,7 +6652,7 @@ class DataFrame:
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
 
-        >>> df.join(other_df, on="ham", how="outer")
+        >>> df.join(other_df, on="ham", how="full")
         shape: (4, 5)
         ┌──────┬──────┬──────┬───────┬───────────┐
         │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
@@ -7284,9 +7596,7 @@ class DataFrame:
         Parameters
         ----------
         values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well. If None, all remaining columns
-            will be used.
+            Column values to aggregate. If None, all remaining columns will be used.
         index
             One or multiple keys to group by.
         columns
@@ -7304,7 +7614,7 @@ class DataFrame:
         sort_columns
             Sort the transposed columns by name. Default is by order of discovery.
         separator
-            Used as separator/delimiter in generated column names.
+            Used as separator/delimiter in generated column names in case of multiple value columns.
 
         Returns
         -------
@@ -7401,6 +7711,33 @@ class DataFrame:
         │ a    ┆ 0.998347 ┆ null     │
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
+
+        Using a custom `separator` in generated column names:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "ix": [1, 1, 2, 2, 1, 2],
+        ...         "col": ["a", "a", "a", "a", "b", "b"],
+        ...         "foo": [0, 1, 2, 2, 7, 1],
+        ...         "bar": [0, 2, 0, 0, 9, 4],
+        ...     }
+        ... )
+        >>> df.pivot(
+        ...     index="ix",
+        ...     columns="col",
+        ...     values=["foo", "bar"],
+        ...     aggregate_function="sum",
+        ...     separator="/",
+        ... )
+        shape: (2, 5)
+        ┌─────┬───────────┬───────────┬───────────┬───────────┐
+        │ ix  ┆ foo/col/a ┆ foo/col/b ┆ bar/col/a ┆ bar/col/b │
+        │ --- ┆ ---       ┆ ---       ┆ ---       ┆ ---       │
+        │ i64 ┆ i64       ┆ i64       ┆ i64       ┆ i64       │
+        ╞═════╪═══════════╪═══════════╪═══════════╪═══════════╡
+        │ 1   ┆ 1         ┆ 7         ┆ 2         ┆ 9         │
+        │ 2   ┆ 4         ┆ 1         ┆ 0         ┆ 4         │
+        └─────┴───────────┴───────────┴───────────┴───────────┘
         """  # noqa: W505
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
@@ -10123,7 +10460,7 @@ class DataFrame:
 
     def is_empty(self) -> bool:
         """
-        Check if the dataframe is empty.
+        Returns `True` if the DataFrame contains no rows.
 
         Examples
         --------
@@ -10133,7 +10470,7 @@ class DataFrame:
         >>> df.filter(pl.col("foo") > 99).is_empty()
         True
         """
-        return self.height == 0
+        return self._df.is_empty()
 
     def to_struct(self, name: str = "") -> Series:
         """
@@ -10350,7 +10687,7 @@ class DataFrame:
         self,
         other: DataFrame,
         on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
+        how: Literal["left", "inner", "full"] = "left",
         *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
@@ -10374,11 +10711,11 @@ class DataFrame:
         on
             Column names that will be joined on. If set to `None` (default),
             the implicit row index of each frame is used as a join key.
-        how : {'left', 'inner', 'outer'}
+        how : {'left', 'inner', 'full'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
-            * 'outer' will update existing rows where the key matches while also
+            * 'full' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
         left_on
            Join column(s) of the left DataFrame.
@@ -10450,10 +10787,10 @@ class DataFrame:
         │ 3   ┆ -99 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values with the non-null values in `new_df`, using a full
+        outer join strategy that defines explicit join columns in each frame:
 
-        >>> df.update(new_df, left_on=["A"], right_on=["C"], how="outer")
+        >>> df.update(new_df, left_on=["A"], right_on=["C"], how="full")
         shape: (5, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -10467,12 +10804,10 @@ class DataFrame:
         │ 5   ┆ -66 │
         └─────┴─────┘
 
-        Update `df` values including null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values including null values in `new_df`, using a full outer
+        join strategy that defines explicit join columns in each frame:
 
-        >>> df.update(
-        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
-        ... )
+        >>> df.update(new_df, left_on="A", right_on="C", how="full", include_nulls=True)
         shape: (5, 2)
         ┌─────┬──────┐
         │ A   ┆ B    │

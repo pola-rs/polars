@@ -13,7 +13,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
-protocol_dtypes = [
+protocol_dtypes: list[pl.PolarsDataType] = [
     pl.Int8,
     pl.Int16,
     pl.Int32,
@@ -27,13 +27,19 @@ protocol_dtypes = [
     pl.Boolean,
     pl.String,
     pl.Datetime,
-    pl.Categorical,
+    # TODO: Enable lexically ordered categoricals
+    pl.Categorical("physical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
 
 
-@given(dataframes(allowed_dtypes=protocol_dtypes))
+@given(
+    dataframes(
+        allowed_dtypes=protocol_dtypes,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+    )
+)
 def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pa = pa.interchange.from_dataframe(dfi)
@@ -50,7 +56,7 @@ def test_to_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
         ],
-        chunked=False,
+        allow_chunks=False,
     )
 )
 def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
@@ -68,7 +74,12 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
-@given(dataframes(allowed_dtypes=protocol_dtypes))
+@given(
+    dataframes(
+        allowed_dtypes=protocol_dtypes,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+    )
+)
 def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     df_pd = pd.api.interchange.from_dataframe(dfi)
@@ -90,7 +101,8 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
             pl.String,  # Polars String type does not match protocol spec
             pl.Categorical,
         ],
-        chunked=False,
+        allow_chunks=False,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
 )
 def test_to_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
@@ -122,7 +134,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
             pl.Categorical,  # Polars copies the categories to construct a mapping
             pl.Boolean,  # pyarrow exports boolean buffers as byte-packed: https://github.com/apache/arrow/issues/37991
         ],
-        chunked=False,
+        allow_chunks=False,
     )
 )
 def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
@@ -164,7 +176,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
-        chunked=False,
+        allow_chunks=False,
     )
 )
 @pytest.mark.skipif(
@@ -188,7 +200,12 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         # Empty string columns cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56703
         min_size=1,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
+)
+@pytest.mark.skipif(
+    sys.version_info < (3, 9),
+    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
@@ -209,8 +226,13 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         # Empty dataframes cause an error due to a bug in pandas.
         # https://github.com/pandas-dev/pandas/issues/56700
         min_size=1,
-        chunked=False,
+        allow_chunks=False,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
+)
+@pytest.mark.skipif(
+    sys.version_info < (3, 9),
+    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()

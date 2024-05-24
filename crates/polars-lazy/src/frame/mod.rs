@@ -37,8 +37,9 @@ use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
 use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::{create_physical_expr, create_physical_plan};
-use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::planner::{
+    create_physical_expr, create_physical_plan, ExpressionConversionState,
+};
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
@@ -127,6 +128,7 @@ impl LazyFrame {
         self.with_optimizations(OptState {
             projection_pushdown: false,
             predicate_pushdown: false,
+            cluster_with_columns: false,
             type_coercion: true,
             simplify_expr: false,
             slice_pushdown: false,
@@ -146,6 +148,12 @@ impl LazyFrame {
     /// Toggle projection pushdown optimization.
     pub fn with_projection_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.projection_pushdown = toggle;
+        self
+    }
+
+    /// Toggle cluster with columns optimization.
+    pub fn with_cluster_with_columns(mut self, toggle: bool) -> Self {
+        self.opt_state.cluster_with_columns = toggle;
         self
     }
 
@@ -206,39 +214,27 @@ impl LazyFrame {
     }
 
     /// Return a String describing the naive (un-optimized) logical plan.
-    pub fn describe_plan(&self) -> String {
-        self.logical_plan.describe()
+    pub fn describe_plan(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe())
     }
 
     /// Return a String describing the naive (un-optimized) logical plan in tree format.
-    pub fn describe_plan_tree(&self) -> String {
-        self.logical_plan.describe_tree_format()
-    }
-
-    fn optimized_plan(&self) -> PolarsResult<DslPlan> {
-        let mut expr_arena = Arena::with_capacity(64);
-        let mut lp_arena = Arena::with_capacity(64);
-        let lp_top = self.clone().optimize_with_scratch(
-            &mut lp_arena,
-            &mut expr_arena,
-            &mut vec![],
-            true,
-        )?;
-        Ok(node_to_lp(lp_top, &expr_arena, &mut lp_arena))
+    pub fn describe_plan_tree(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe_tree_format())
     }
 
     /// Return a String describing the optimized logical plan.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
-        Ok(self.optimized_plan()?.describe())
+        Ok(self.clone().to_alp_optimized()?.describe())
     }
 
     /// Return a String describing the optimized logical plan in tree format.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
-        Ok(self.optimized_plan()?.describe_tree_format())
+        Ok(self.clone().to_alp_optimized()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -249,7 +245,7 @@ impl LazyFrame {
         if optimized {
             self.describe_optimized_plan()
         } else {
-            Ok(self.describe_plan())
+            self.describe_plan()
         }
     }
 
@@ -520,15 +516,16 @@ impl LazyFrame {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
-    pub fn to_alp_optimized(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
+    pub fn to_alp_optimized(self) -> PolarsResult<IRPlan> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
         let node =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], false)?;
-        Ok((node, lp_arena, expr_arena))
+
+        Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
 
-    pub fn to_alp(self) -> PolarsResult<(Node, Arena<IR>, Arena<AExpr>)> {
+    pub fn to_alp(self) -> PolarsResult<IRPlan> {
         self.logical_plan.to_alp()
     }
 
@@ -561,7 +558,7 @@ impl LazyFrame {
                     Context::Default,
                     expr_arena,
                     None,
-                    &mut Default::default(),
+                    &mut ExpressionConversionState::new(true, 0),
                 )
                 .ok()?;
                 let io_expr = phys_expr_to_io_expr(phys_expr);
@@ -1075,7 +1072,7 @@ impl LazyFrame {
         self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
     }
 
-    /// Left join this query with another lazy query.
+    /// Left outer join this query with another lazy query.
     ///
     /// Matches on the values of the expressions `left_on` and `right_on`. For more
     /// flexible join logic, see [`join`](LazyFrame::join) or
@@ -1125,7 +1122,7 @@ impl LazyFrame {
         )
     }
 
-    /// Outer join this query with another lazy query.
+    /// Full outer join this query with another lazy query.
     ///
     /// Matches on the values of the expressions `left_on` and `right_on`. For more
     /// flexible join logic, see [`join`](LazyFrame::join) or
@@ -1136,17 +1133,17 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn outer_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn full_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .outer_join(other, col("foo"), col("bar"))
+    ///         .full_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn full_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
         self.join(
             other,
             [left_on.into()],
             [right_on.into()],
-            JoinArgs::new(JoinType::Outer),
+            JoinArgs::new(JoinType::Full),
         )
     }
 
@@ -1602,7 +1599,7 @@ impl LazyFrame {
                 ..
             } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
                 options.row_index = Some(RowIndex {
-                    name: name.to_string(),
+                    name: Arc::from(name),
                     offset: offset.unwrap_or(0),
                 });
                 false

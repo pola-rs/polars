@@ -60,7 +60,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     arrow_schema: &ArrowSchema,
     row_index: Option<RowIndex>,
 ) -> PolarsResult<DataFrame> {
-    use polars_core::utils::accumulate_dataframes_vertical;
+    use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
     let mut num_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
@@ -96,7 +96,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         parsed_dfs.push(df);
     }
 
-    let df = {
+    let mut df = {
         if parsed_dfs.is_empty() {
             // Create an empty dataframe with the correct data types
             let empty_cols = arrow_schema
@@ -109,9 +109,12 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             DataFrame::new(empty_cols)?
         } else {
             // If there are any rows, accumulate them into a df
-            accumulate_dataframes_vertical(parsed_dfs)?
+            accumulate_dataframes_vertical_unchecked(parsed_dfs)
         }
     };
 
-    Ok(if rechunk { df.agg_chunks() } else { df })
+    if rechunk {
+        df.as_single_chunk_par();
+    }
+    Ok(df)
 }

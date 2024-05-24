@@ -59,7 +59,7 @@ use crate::utils::{first_non_null, last_non_null};
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
 
-pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
+pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
 /// # ChunkedArray
 ///
@@ -359,8 +359,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Ok(unsafe { self.unpack_series_matching_physical_type(series) })
     }
 
-    /// Unique id representing the number of chunks
-    pub fn chunk_id(&self) -> ChunkIdIter {
+    /// Returns an iterator over the lengths of the chunks of the array.
+    pub fn chunk_lengths(&self) -> ChunkLenIter {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
@@ -641,7 +641,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Contiguous slice
+    /// Returns the values of the array as a contiguous slice.
     pub fn cont_slice(&self) -> PolarsResult<&[T::Native]> {
         polars_ensure!(
             self.chunks.len() == 1 && self.chunks[0].null_count() == 0,
@@ -650,7 +650,7 @@ where
         Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
     }
 
-    /// Contiguous mutable slice
+    /// Returns the values of the array as a contiguous mutable slice.
     pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
         if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
             // SAFETY, we will not swap the PrimitiveArray.

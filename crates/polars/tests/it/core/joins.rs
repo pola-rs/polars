@@ -113,13 +113,13 @@ fn test_left_join() {
 
 #[test]
 #[cfg_attr(miri, ignore)]
-fn test_outer_join() -> PolarsResult<()> {
+fn test_full_outer_join() -> PolarsResult<()> {
     let (temp, rain) = create_frames();
     let joined = temp.join(
         &rain,
         ["days"],
         ["days"],
-        JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+        JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(joined.height(), 5);
     assert_eq!(joined.column("days")?.sum::<i32>().unwrap(), 7);
@@ -139,7 +139,7 @@ fn test_outer_join() -> PolarsResult<()> {
         &df_right,
         ["a"],
         ["a"],
-        JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+        JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
 
@@ -248,19 +248,19 @@ fn test_join_multiple_columns() {
         .unwrap()
         .equals_missing(joined_inner.column("ham").unwrap()));
 
-    let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
-    let joined_outer = df_a
+    let joined_full_outer_hack = df_a.full_join(&df_b, ["dummy"], ["dummy"]).unwrap();
+    let joined_full_outer = df_a
         .join(
             &df_b,
             ["a", "b"],
             ["foo", "bar"],
-            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();
-    assert!(joined_outer_hack
+    assert!(joined_full_outer_hack
         .column("ham")
         .unwrap()
-        .equals_missing(joined_outer.column("ham").unwrap()));
+        .equals_missing(joined_full_outer.column("ham").unwrap()));
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn test_join_categorical() {
     assert_eq!(Vec::from(ca), correct_ham);
 
     // test dispatch
-    for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
+    for jt in [JoinType::Left, JoinType::Inner, JoinType::Full] {
         let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(
@@ -348,11 +348,11 @@ fn empty_df_join() -> PolarsResult<()> {
     assert_eq!(out.height(), 0);
     let out = empty_df.left_join(&df, ["key"], ["key"]).unwrap();
     assert_eq!(out.height(), 0);
-    let out = empty_df.outer_join(&df, ["key"], ["key"]).unwrap();
+    let out = empty_df.full_join(&df, ["key"], ["key"]).unwrap();
     assert_eq!(out.height(), 1);
     df.left_join(&empty_df, ["key"], ["key"])?;
     df.inner_join(&empty_df, ["key"], ["key"])?;
-    df.outer_join(&empty_df, ["key"], ["key"])?;
+    df.full_join(&empty_df, ["key"], ["key"])?;
 
     let empty: Vec<String> = vec![];
     let _empty_df = DataFrame::new(vec![
@@ -420,10 +420,6 @@ fn test_join_err() -> PolarsResult<()> {
     assert!(df1
         .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left.into())
         .is_err());
-    // length of join keys don't match error
-    assert!(df1
-        .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left.into())
-        .is_err());
     Ok(())
 }
 
@@ -462,24 +458,24 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
     assert_eq!(df_left_join.column("int_col")?.null_count(), 0);
     assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
 
-    let df_outer_join = df_left
+    let df_full_outer_join = df_left
         .join(
             &df_right,
             ["col1"],
             ["join_col1"],
-            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();
 
     // ensure the column names don't get swapped by the drop we do
     assert_eq!(
-        df_outer_join.get_column_names(),
+        df_full_outer_join.get_column_names(),
         &["col1", "int_col", "dbl_col"]
     );
-    assert_eq!(df_outer_join.height(), 12);
-    assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
-    assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
-    assert_eq!(df_outer_join.column("dbl_col")?.null_count(), 1);
+    assert_eq!(df_full_outer_join.height(), 12);
+    assert_eq!(df_full_outer_join.column("col1")?.null_count(), 0);
+    assert_eq!(df_full_outer_join.column("int_col")?.null_count(), 1);
+    assert_eq!(df_full_outer_join.column("dbl_col")?.null_count(), 1);
 
     Ok(())
 }
@@ -534,20 +530,20 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
     assert_eq!(df_left_join.column("int_col")?.null_count(), 0);
     assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
 
-    let df_outer_join = df_left
+    let df_full_outer_join = df_left
         .join(
             &df_right,
             &["col1", "join_col2"],
             &["join_col1", "col2"],
-            JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .unwrap();
 
-    assert_eq!(df_outer_join.height(), 12);
-    assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
-    assert_eq!(df_outer_join.column("join_col2")?.null_count(), 0);
-    assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
-    assert_eq!(df_outer_join.column("dbl_col")?.null_count(), 1);
+    assert_eq!(df_full_outer_join.height(), 12);
+    assert_eq!(df_full_outer_join.column("col1")?.null_count(), 0);
+    assert_eq!(df_full_outer_join.column("join_col2")?.null_count(), 0);
+    assert_eq!(df_full_outer_join.column("int_col")?.null_count(), 1);
+    assert_eq!(df_full_outer_join.column("dbl_col")?.null_count(), 1);
 
     Ok(())
 }
@@ -582,7 +578,7 @@ fn test_join_floats() -> PolarsResult<()> {
         &df_b,
         vec!["a", "c"],
         vec!["foo", "bar"],
-        JoinArgs::new(JoinType::Outer).with_coalesce(JoinCoalesce::CoalesceColumns),
+        JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
     )?;
     assert_eq!(
         out.dtypes(),

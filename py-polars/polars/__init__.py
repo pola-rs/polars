@@ -135,6 +135,7 @@ from polars.functions import (
     duration,
     element,
     exclude,
+    field,
     first,
     fold,
     format,
@@ -385,6 +386,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "field",
     "first",
     "fold",
     "format",

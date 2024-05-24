@@ -133,8 +133,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.physical_mut().rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.physical().chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.physical().chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.physical().name()
@@ -285,12 +285,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::min_as_series(&self.0))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::min_reduce(&self.0))
     }
 
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::max_as_series(&self.0))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::max_reduce(&self.0))
     }
     fn as_any(&self) -> &dyn Any {
         &self.0

@@ -93,15 +93,29 @@ def small_parquet_path(io_files_path: Path) -> Path:
 def test_to_from_buffer(
     df: pl.DataFrame, compression: ParquetCompression, use_pyarrow: bool
 ) -> None:
-    print(df)
     df = df[["list_str"]]
-    print(df)
     buf = io.BytesIO()
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-    print(read_df)
     assert_frame_equal(df, read_df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+def test_read_parquet_respects_rechunk_16416(
+    use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
+) -> None:
+    # Create a dataframe with 3 chunks:
+    df = pl.DataFrame({"a": [1]})
+    df = pl.concat([df, df, df])
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=1)
+    buf.seek(0)
+
+    rechunk, expected_chunks = rechunk_and_expected_chunks
+    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow, rechunk=rechunk)
+    assert result.n_chunks() == expected_chunks
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
@@ -892,3 +906,68 @@ def test_no_glob_windows(tmp_path: Path) -> None:
     df.write_parquet(str(p2))
 
     assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
+
+
+@pytest.mark.slow()
+def test_hybrid_rle() -> None:
+    # 10_007 elements to test if not a nice multiple of 8
+    n = 10_007
+    literal_literal = []
+    literal_rle = []
+    for i in range(500):
+        literal_literal.append(np.repeat(i, 5))
+        literal_literal.append(np.repeat(i + 2, 11))
+        literal_rle.append(np.repeat(i, 5))
+        literal_rle.append(np.repeat(i + 2, 15))
+    literal_literal.append(np.random.randint(0, 10, size=2007))
+    literal_rle.append(np.random.randint(0, 10, size=7))
+    literal_literal = np.concatenate(literal_literal)
+    literal_rle = np.concatenate(literal_rle)
+    df = pl.DataFrame(
+        {
+            # Primitive types
+            "i64": pl.Series([1, 2], dtype=pl.Int64).sample(n, with_replacement=True),
+            "u64": pl.Series([1, 2], dtype=pl.UInt64).sample(n, with_replacement=True),
+            "i8": pl.Series([1, 2], dtype=pl.Int8).sample(n, with_replacement=True),
+            "u8": pl.Series([1, 2], dtype=pl.UInt8).sample(n, with_replacement=True),
+            "string": pl.Series(["abc", "def"], dtype=pl.String).sample(
+                n, with_replacement=True
+            ),
+            "categorical": pl.Series(["aaa", "bbb"], dtype=pl.Categorical).sample(
+                n, with_replacement=True
+            ),
+            # Fill up bit-packing buffer in middle of consecutive run
+            "large_bit_pack": np.concatenate(
+                [np.repeat(i, 5) for i in range(2000)]
+                + [np.random.randint(0, 10, size=7)]
+            ),
+            # Literal run that is not a multiple of 8 followed by consecutive
+            # run initially long enough to RLE but not after padding literal
+            "literal_literal": literal_literal,
+            # Literal run that is not a multiple of 8 followed by consecutive
+            # run long enough to RLE even after padding literal
+            "literal_rle": literal_rle,
+            # Final run not long enough to RLE
+            "final_literal": np.concatenate(
+                [np.random.randint(0, 100, 10_000), np.repeat(-1, 7)]
+            ),
+            # Final run long enough to RLE
+            "final_rle": np.concatenate(
+                [np.random.randint(0, 100, 9_998), np.repeat(-1, 9)]
+            ),
+            # Test filling up bit-packing buffer for encode_bool,
+            # which is only used to encode validities
+            "large_bit_pack_validity": [0, None] * 4092
+            + [0] * 9
+            + [1] * 9
+            + [2] * 10
+            + [0] * 1795,
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    for column in pq.ParquetFile(f).metadata.to_dict()["row_groups"][0]["columns"]:
+        assert "RLE_DICTIONARY" in column["encodings"]
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)

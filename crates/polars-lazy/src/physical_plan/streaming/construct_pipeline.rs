@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -10,11 +9,9 @@ use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{
     create_pipeline, execute_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
 };
-use polars_pipe::SExecutionContext;
 use polars_plan::prelude::expr_ir::ExprIR;
 
 use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
-use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::streaming::tree::{PipelineNode, Tree};
 use crate::prelude::*;
 
@@ -33,8 +30,7 @@ impl PhysicalIoExpr for Wrap {
     }
 }
 impl PhysicalPipedExpr for Wrap {
-    fn evaluate(&self, chunk: &DataChunk, state: &dyn Any) -> PolarsResult<Series> {
-        let state = state.downcast_ref::<ExecutionState>().unwrap();
+    fn evaluate(&self, chunk: &DataChunk, state: &ExecutionState) -> PolarsResult<Series> {
         self.0.evaluate(&chunk.data, state)
     }
     fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -57,7 +53,7 @@ fn to_physical_piped_expr(
         Context::Default,
         expr_arena,
         schema,
-        &mut ExpressionConversionState::new(false),
+        &mut ExpressionConversionState::new(false, 0),
     )
     .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
@@ -68,10 +64,12 @@ fn jit_insert_slice(
     sink_nodes: &mut Vec<(usize, Node, Rc<RefCell<u32>>)>,
     operator_offset: usize,
 ) {
-    // if the join/union has a slice, we add a new slice node
+    // if the join has a slice, we add a new slice node
     // note that we take the offset + 1, because we want to
     // slice AFTER the join has happened and the join will be an
     // operator
+    // NOTE: Don't do this for union, that doesn't work.
+    // TODO! Deal with this in the optimizer.
     use IR::*;
     let (offset, len) = match lp_arena.get(node) {
         Join { options, .. } if options.args.slice.is_some() => {
@@ -80,19 +78,11 @@ fn jit_insert_slice(
             };
             (offset, len)
         },
-        Union {
-            options:
-                UnionOptions {
-                    slice: Some((offset, len)),
-                    ..
-                },
-            ..
-        } => (*offset, *len),
         _ => return,
     };
 
     let slice_node = lp_arena.add(Slice {
-        input: Node::default(),
+        input: node,
         offset,
         len: len as IdxSize,
     });
@@ -178,7 +168,6 @@ pub(super) fn construct(
                 },
                 PipelineNode::Union(node) => {
                     operator_nodes.push(node);
-                    jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
                 },
@@ -240,16 +229,6 @@ pub(super) fn construct(
     Ok(Some(final_sink))
 }
 
-impl SExecutionContext for ExecutionState {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn should_stop(&self) -> PolarsResult<()> {
-        ExecutionState::should_stop(self)
-    }
-}
-
 fn get_pipeline_node(
     lp_arena: &mut Arena<IR>,
     mut pipelines: Vec<PipeLine>,
@@ -275,7 +254,6 @@ fn get_pipeline_node(
                     eprintln!("{:?}", &pipelines)
                 }
                 state.set_in_streaming_engine();
-                let state = Box::new(state) as Box<dyn SExecutionContext>;
                 execute_pipeline(state, std::mem::take(&mut pipelines))
             }),
             schema,

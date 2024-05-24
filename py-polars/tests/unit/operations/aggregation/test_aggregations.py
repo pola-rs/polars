@@ -34,8 +34,8 @@ def test_boolean_aggs() -> None:
     ]
     assert df.select(aggs).to_dict(as_series=False) == {
         "mean": [0.6666666666666666],
-        "std": [0.5773502588272095],
-        "var": [0.3333333432674408],
+        "std": [0.5773502691896258],
+        "var": [0.33333333333333337],
     }
 
     assert df.group_by(pl.lit(1)).agg(aggs).to_dict(as_series=False) == {

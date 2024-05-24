@@ -5,6 +5,7 @@ use crate::prelude::*;
 mod cache_states;
 mod delay_rechunk;
 
+mod cluster_with_columns;
 mod collapse_and_project;
 mod collect_members;
 mod count_star;
@@ -20,7 +21,6 @@ mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
-mod type_coercion;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -31,10 +31,10 @@ pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
-pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+pub use crate::logical_plan::conversion::type_coercion::TypeCoercionRule;
 use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::logical_plan::optimizer::cse::prune_unused_caches;
@@ -67,6 +67,7 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
     // get toggle values
+    let cluster_with_columns = opt_state.cluster_with_columns;
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
     let type_coercion = opt_state.type_coercion;
@@ -154,6 +155,10 @@ pub fn optimize(
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
+    }
+
+    if cluster_with_columns {
+        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
     }
 
     // Make sure its before slice pushdown.

@@ -13,13 +13,14 @@ use polars::time::*;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
 use pyo3::types::{PyBytes, PyDict, PyList};
 pub(crate) use visit::PyExprIR;
 
-use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
+use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
@@ -53,14 +54,14 @@ impl PyLazyFrame {
         ciborium::ser::into_writer(&self.ldf.logical_plan, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        Ok(PyBytes::new_bound(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let lp: DslPlan = ciborium::de::from_reader(s.as_bytes())
+                let lp: DslPlan = ciborium::de::from_reader(&*s)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 self.ldf = LazyFrame::from(lp);
                 Ok(())
@@ -116,7 +117,10 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         ignore_errors: bool,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
 
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
@@ -156,7 +160,7 @@ impl PyLazyFrame {
         skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
@@ -180,12 +184,15 @@ impl PyLazyFrame {
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let separator = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
                 .into_iter()
-                .map(|(name, dtype)| Field::new(name, dtype.0))
+                .map(|(name, dtype)| Field::new(&name, dtype.0))
                 .collect::<Schema>()
         });
 
@@ -198,17 +205,17 @@ impl PyLazyFrame {
         let mut r = r
             .with_infer_schema_length(infer_schema_length)
             .with_separator(separator)
-            .has_header(has_header)
+            .with_has_header(has_header)
             .with_ignore_errors(ignore_errors)
             .with_skip_rows(skip_rows)
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
-            .low_memory(low_memory)
+            .with_low_memory(low_memory)
             .with_comment_prefix(comment_prefix)
             .with_quote_char(quote_char)
-            .with_end_of_line_char(eol_char)
+            .with_eol_char(eol_char)
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding.0)
@@ -216,16 +223,16 @@ impl PyLazyFrame {
             .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
-            .truncate_ragged_lines(truncate_ragged_lines)
+            .with_truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
-            .raise_if_empty(raise_if_empty);
+            .with_raise_if_empty(raise_if_empty);
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
                 let iter = schema.iter_names().map(|s| s.as_str());
                 Python::with_gil(|py| {
-                    let names = PyList::new(py, iter);
+                    let names = PyList::new_bound(py, iter);
 
                     let out = lambda.call1(py, (names,)).expect("python function failed");
                     let new_names = out
@@ -292,7 +299,10 @@ impl PyLazyFrame {
                         options
                     });
         }
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
         let hive_options = HiveOptions {
             enabled: hive_partitioning,
             schema: hive_schema,
@@ -334,7 +344,10 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         retries: usize,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
 
         #[cfg(feature = "cloud")]
         let cloud_options = {
@@ -383,7 +396,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     fn scan_from_python_function_arrow_schema(
-        schema: &PyList,
+        schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
@@ -393,36 +406,41 @@ impl PyLazyFrame {
 
     #[staticmethod]
     fn scan_from_python_function_pl_schema(
-        schema: Vec<(&str, Wrap<DataType>)>,
+        schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(name, dt.0)));
+        let schema =
+            Schema::from_iter(schema.into_iter().map(|(name, dt)| Field::new(&name, dt.0)));
         Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
     }
 
-    fn describe_plan(&self) -> String {
-        self.ldf.describe_plan()
+    fn describe_plan(&self) -> PyResult<String> {
+        self.ldf
+            .describe_plan()
+            .map_err(PyPolarsErr::from)
+            .map_err(Into::into)
     }
 
     fn describe_optimized_plan(&self) -> PyResult<String> {
-        let result = self
-            .ldf
+        self.ldf
             .describe_optimized_plan()
-            .map_err(PyPolarsErr::from)?;
-        Ok(result)
+            .map_err(PyPolarsErr::from)
+            .map_err(Into::into)
     }
 
-    fn describe_plan_tree(&self) -> String {
-        self.ldf.describe_plan_tree()
+    fn describe_plan_tree(&self) -> PyResult<String> {
+        self.ldf
+            .describe_plan_tree()
+            .map_err(PyPolarsErr::from)
+            .map_err(Into::into)
     }
 
     fn describe_optimized_plan_tree(&self) -> PyResult<String> {
-        let result = self
-            .ldf
+        self.ldf
             .describe_optimized_plan_tree()
-            .map_err(PyPolarsErr::from)?;
-        Ok(result)
+            .map_err(PyPolarsErr::from)
+            .map_err(Into::into)
     }
 
     fn to_dot(&self, optimized: bool) -> PyResult<String> {
@@ -439,6 +457,7 @@ impl PyLazyFrame {
         slice_pushdown: bool,
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
+        cluster_with_columns: bool,
         streaming: bool,
         _eager: bool,
     ) -> Self {
@@ -448,6 +467,7 @@ impl PyLazyFrame {
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
             .with_slice_pushdown(slice_pushdown)
+            .with_cluster_with_columns(cluster_with_columns)
             .with_streaming(streaming)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
@@ -868,8 +888,8 @@ impl PyLazyFrame {
         other: Self,
         left_on: PyExpr,
         right_on: PyExpr,
-        left_by: Option<Vec<&str>>,
-        right_by: Option<Vec<&str>>,
+        left_by: Option<Vec<PyBackedStr>>,
+        right_by: Option<Vec<PyBackedStr>>,
         allow_parallel: bool,
         force_parallel: bool,
         suffix: String,
@@ -1135,9 +1155,9 @@ impl PyLazyFrame {
         ldf.drop(columns).into()
     }
 
-    fn cast(&self, dtypes: HashMap<&str, Wrap<DataType>>, strict: bool) -> Self {
+    fn cast(&self, dtypes: HashMap<PyBackedStr, Wrap<DataType>>, strict: bool) -> Self {
         let mut cast_map = PlHashMap::with_capacity(dtypes.len());
-        cast_map.extend(dtypes.iter().map(|(k, v)| (*k, v.0.clone())));
+        cast_map.extend(dtypes.iter().map(|(k, v)| (k.as_ref(), v.0.clone())));
         self.ldf.clone().cast(cast_map, strict).into()
     }
 
@@ -1152,7 +1172,7 @@ impl PyLazyFrame {
     fn columns(&self, py: Python) -> PyResult<PyObject> {
         let schema = self.get_schema()?;
         let iter = schema.iter_names().map(|s| s.as_str());
-        Ok(PyList::new(py, iter).to_object(py))
+        Ok(PyList::new_bound(py, iter).to_object(py))
     }
 
     fn dtypes(&self, py: Python) -> PyResult<PyObject> {
@@ -1160,12 +1180,12 @@ impl PyLazyFrame {
         let iter = schema
             .iter_dtypes()
             .map(|dt| Wrap(dt.clone()).to_object(py));
-        Ok(PyList::new(py, iter).to_object(py))
+        Ok(PyList::new_bound(py, iter).to_object(py))
     }
 
     fn schema(&self, py: Python) -> PyResult<PyObject> {
         let schema = self.get_schema()?;
-        let schema_dict = PyDict::new(py);
+        let schema_dict = PyDict::new_bound(py);
 
         schema.iter_fields().for_each(|fld| {
             schema_dict

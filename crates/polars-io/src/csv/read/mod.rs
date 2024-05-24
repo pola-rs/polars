@@ -1,8 +1,5 @@
 //! Functionality for reading CSV files.
 //!
-//! Note: currently, `CsvReader::new` has an extra copy. If you want optimal performance,
-//! it is advised to use [`CsvReader::from_path`] instead.
-//!
 //! # Examples
 //!
 //! ```
@@ -12,8 +9,9 @@
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     // Prefer `from_path` over `new` as it is faster.
-//!     CsvReader::from_path("example.csv")?
-//!         .has_header(true)
+//!     CsvReadOptions::default()
+//!         .with_has_header(true)
+//!         .try_into_reader_with_file_path(Some("example.csv".into()))?
 //!         .finish()
 //! }
 //! ```
@@ -23,12 +21,13 @@ mod options;
 mod parser;
 mod read_impl;
 mod reader;
+pub mod schema_inference;
 mod splitfields;
 mod utils;
 
-pub use options::{CommentPrefix, CsvEncoding, CsvReaderOptions, NullValues};
+pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 pub use parser::count_rows;
-pub use read_impl::batched_mmap::{BatchedCsvReaderMmap, OwnedBatchedCsvReaderMmap};
-pub use read_impl::batched_read::{BatchedCsvReaderRead, OwnedBatchedCsvReader};
+pub use read_impl::batched::{BatchedCsvReader, OwnedBatchedCsvReader};
 pub use reader::CsvReader;
-pub use utils::{infer_file_schema, is_compressed};
+pub use schema_inference::infer_file_schema;
+pub use utils::is_compressed;

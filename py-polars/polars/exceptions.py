@@ -27,8 +27,8 @@ except ImportError:
         """
         Exception raised when a specified column is not found.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select("b")
         polars.exceptions.ColumnNotFoundError: b
@@ -41,8 +41,8 @@ except ImportError:
         """
         Exception raised when a column name is duplicated.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 1, 1]})
         >>> pl.concat([df, df], how="horizontal")
         polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
@@ -52,8 +52,8 @@ except ImportError:
         """
         Exception raised when an operation is not allowed (or possible) against a given object or data structure.
 
-        Example
-        -------
+        Examples
+        --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.is_in(["x", "y"])
         polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data

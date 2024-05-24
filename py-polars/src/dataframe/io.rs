@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::mmap::ReaderBytes;
+use polars::io::mmap::{try_create_file, ReaderBytes};
 use polars::io::RowIndex;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -14,7 +14,8 @@ use super::*;
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::Wrap;
 use crate::file::{
-    get_either_file, get_file_like, get_mmap_bytes_reader, read_if_bytesio, EitherRustPythonFile,
+    get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
+    read_if_bytesio, EitherRustPythonFile,
 };
 
 #[pymethods]
@@ -63,7 +64,10 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
         let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
@@ -86,36 +90,40 @@ impl PyDataFrame {
         py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
-            CsvReader::new(mmap_bytes_r)
-                .infer_schema(infer_schema_length)
-                .has_header(has_header)
+            CsvReadOptions::default()
+                .with_path(path)
+                .with_infer_schema_length(infer_schema_length)
+                .with_has_header(has_header)
                 .with_n_rows(n_rows)
-                .with_separator(separator.as_bytes()[0])
                 .with_skip_rows(skip_rows)
                 .with_ignore_errors(ignore_errors)
-                .with_projection(projection)
+                .with_projection(projection.map(Arc::new))
                 .with_rechunk(rechunk)
                 .with_chunk_size(chunk_size)
-                .with_encoding(encoding.0)
-                .with_columns(columns)
+                .with_columns(columns.map(Arc::new))
                 .with_n_threads(n_threads)
-                .with_path(path)
-                .with_dtypes(overwrite_dtype.map(Arc::new))
-                .with_dtypes_slice(overwrite_dtype_slice.as_deref())
+                .with_schema_overwrite(overwrite_dtype.map(Arc::new))
+                .with_dtype_overwrite(overwrite_dtype_slice.map(Arc::new))
                 .with_schema(schema.map(|schema| Arc::new(schema.0)))
-                .low_memory(low_memory)
-                .with_null_values(null_values)
-                .with_missing_is_null(!missing_utf8_is_empty_string)
-                .with_comment_prefix(comment_prefix)
-                .with_try_parse_dates(try_parse_dates)
-                .with_quote_char(quote_char)
-                .with_end_of_line_char(eol_char)
+                .with_low_memory(low_memory)
                 .with_skip_rows_after_header(skip_rows_after_header)
                 .with_row_index(row_index)
-                .sample_size(sample_size)
-                .raise_if_empty(raise_if_empty)
-                .truncate_ragged_lines(truncate_ragged_lines)
-                .with_decimal_comma(decimal_comma)
+                .with_sample_size(sample_size)
+                .with_raise_if_empty(raise_if_empty)
+                .with_parse_options(
+                    CsvParseOptions::default()
+                        .with_separator(separator.as_bytes()[0])
+                        .with_encoding(encoding.0)
+                        .with_missing_is_null(!missing_utf8_is_empty_string)
+                        .with_comment_prefix(comment_prefix)
+                        .with_null_values(null_values)
+                        .with_try_parse_dates(try_parse_dates)
+                        .with_quote_char(quote_char)
+                        .with_eol_char(eol_char)
+                        .with_truncate_ragged_lines(truncate_ragged_lines)
+                        .with_decimal_comma(decimal_comma),
+                )
+                .into_reader_with_file_handle(mmap_bytes_r)
                 .finish()
                 .map_err(PyPolarsErr::from)
         })?;
@@ -139,7 +147,10 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
@@ -264,16 +275,21 @@ impl PyDataFrame {
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
         py_f = read_if_bytesio(py_f);
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
+
+        let mmap_path = if memory_map { mmap_path } else { None };
         let df = py.allow_threads(move || {
             IpcReader::new(mmap_bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)
                 .with_n_rows(n_rows)
                 .with_row_index(row_index)
-                .memory_mapped(memory_map)
+                .memory_mapped(mmap_path)
                 .finish()
                 .map_err(PyPolarsErr::from)
         })?;
@@ -292,7 +308,10 @@ impl PyDataFrame {
         row_index: Option<(String, IdxSize)>,
         rechunk: bool,
     ) -> PyResult<Self> {
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
         py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
@@ -472,7 +491,9 @@ impl PyDataFrame {
         future: bool,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let f = std::fs::File::create(&*s)?;
+            let s: &str = s.as_ref();
+            let path = std::path::Path::new(s);
+            let f = try_create_file(path).map_err(PyPolarsErr::from)?;
             py.allow_threads(|| {
                 IpcWriter::new(f)
                     .with_compression(compression.0)

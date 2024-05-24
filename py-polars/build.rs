@@ -1,6 +1,8 @@
 /// Build script using 'built' crate to generate build info.
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(allocator, values(\"default\", \"mimalloc\"))");
+
     #[cfg(feature = "build_info")]
     {
         println!("cargo:rerun-if-changed=build.rs");

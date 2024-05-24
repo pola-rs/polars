@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
@@ -9,10 +9,13 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
+if TYPE_CHECKING:
+    from polars.type_aliases import JoinStrategy
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-def test_streaming_outer_joins() -> None:
+def test_streaming_full_outer_joins() -> None:
     n = 100
     dfa = pl.DataFrame(
         {
@@ -29,12 +32,16 @@ def test_streaming_outer_joins() -> None:
         }
     )
 
-    join_strategies: list[Literal["outer", "outer_coalesce"]] = [
-        "outer",
-        "outer_coalesce",
+    join_strategies: list[tuple[JoinStrategy, bool]] = [
+        ("full", False),
+        ("full", True),
     ]
-    for how in join_strategies:
-        q = dfa.lazy().join(dfb.lazy(), on="a", how=how).sort(["idx"])
+    for how, coalesce in join_strategies:
+        q = (
+            dfa.lazy()
+            .join(dfb.lazy(), on="a", how=how, coalesce=coalesce)
+            .sort(["idx"])
+        )
         a = q.collect(streaming=True)
         b = q.collect(streaming=False)
         assert_frame_equal(a, b)
@@ -172,14 +179,14 @@ def test_join_null_matches(streaming: bool) -> None:
         df_a.join(df_b, on="a", how="inner").collect(streaming=streaming), expected
     )
 
-    # Left
+    # Left outer
     expected = pl.DataFrame(
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
         df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
     )
-    # Outer
+    # Full outer
     expected = pl.DataFrame(
         {
             "idx_a": [None, 2, 1, None, 0],
@@ -188,7 +195,7 @@ def test_join_null_matches(streaming: bool) -> None:
             "a_right": [None, 2, 1, None, None],
         }
     )
-    assert_frame_equal(df_a.join(df_b, on="a", how="outer").collect(), expected)
+    assert_frame_equal(df_a.join(df_b, on="a", how="full").collect(), expected)
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -231,7 +238,7 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
         }
     )
     assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="outer").sort("a").collect(), expected
+        df_a.join(df_b, on=["a", "idx"], how="full").sort("a").collect(), expected
     )
 
 

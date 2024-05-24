@@ -12,11 +12,17 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing.parametric.profiles import load_profile
+from polars.testing.parametric import load_profile
 
 load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
 )
+
+
+@pytest.fixture()
+def partition_limit() -> int:
+    """The limit at which Polars will start partitioning in debug builds."""
+    return 15
 
 
 @pytest.fixture()
@@ -192,7 +198,7 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
 
     Memory usage from PyArrow is not tracked.
     """
-    if not pl.build_info()["build"]["debug"]:
+    if not pl.build_info()["compiler"]["debug"]:
         pytest.skip("Memory usage only available in debug/dev builds.")
 
     if sys.platform == "win32":

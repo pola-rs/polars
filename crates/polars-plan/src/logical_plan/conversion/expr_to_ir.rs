@@ -185,36 +185,36 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                 AggExpr::Min {
                     input,
                     propagate_nans,
-                } => AAggExpr::Min {
+                } => IRAggExpr::Min {
                     input: to_aexpr_impl_materialized_lit(owned(input), arena, state),
                     propagate_nans,
                 },
                 AggExpr::Max {
                     input,
                     propagate_nans,
-                } => AAggExpr::Max {
+                } => IRAggExpr::Max {
                     input: to_aexpr_impl_materialized_lit(owned(input), arena, state),
                     propagate_nans,
                 },
                 AggExpr::Median(expr) => {
-                    AAggExpr::Median(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::Median(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::NUnique(expr) => {
-                    AAggExpr::NUnique(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::NUnique(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::First(expr) => {
-                    AAggExpr::First(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::First(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Last(expr) => {
-                    AAggExpr::Last(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::Last(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Mean(expr) => {
-                    AAggExpr::Mean(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::Mean(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
                 AggExpr::Implode(expr) => {
-                    AAggExpr::Implode(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::Implode(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
-                AggExpr::Count(expr, include_nulls) => AAggExpr::Count(
+                AggExpr::Count(expr, include_nulls) => IRAggExpr::Count(
                     to_aexpr_impl_materialized_lit(owned(expr), arena, state),
                     include_nulls,
                 ),
@@ -222,24 +222,24 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
                     expr,
                     quantile,
                     interpol,
-                } => AAggExpr::Quantile {
+                } => IRAggExpr::Quantile {
                     expr: to_aexpr_impl_materialized_lit(owned(expr), arena, state),
                     quantile: to_aexpr_impl_materialized_lit(owned(quantile), arena, state),
                     interpol,
                 },
                 AggExpr::Sum(expr) => {
-                    AAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::Sum(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
-                AggExpr::Std(expr, ddof) => AAggExpr::Std(
+                AggExpr::Std(expr, ddof) => IRAggExpr::Std(
                     to_aexpr_impl_materialized_lit(owned(expr), arena, state),
                     ddof,
                 ),
-                AggExpr::Var(expr, ddof) => AAggExpr::Var(
+                AggExpr::Var(expr, ddof) => IRAggExpr::Var(
                     to_aexpr_impl_materialized_lit(owned(expr), arena, state),
                     ddof,
                 ),
                 AggExpr::AggGroups(expr) => {
-                    AAggExpr::AggGroups(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
+                    IRAggExpr::AggGroups(to_aexpr_impl_materialized_lit(owned(expr), arena, state))
                 },
             };
             AExpr::Agg(a_agg)
@@ -280,22 +280,33 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             options,
         } => {
             match function {
+                // This can be created by col(*).is_null() on empty dataframes.
+                FunctionExpr::Boolean(
+                    BooleanFunction::AllHorizontal | BooleanFunction::AnyHorizontal,
+                ) if input.is_empty() => {
+                    return to_aexpr_impl(lit(true), arena, state);
+                },
                 // Convert to binary expression as the optimizer understands those.
+                // Don't exceed 128 expressions as we might stackoverflow.
                 FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
-                    let expr = input
-                        .into_iter()
-                        .reduce(|l, r| l.logical_and(r))
-                        .unwrap()
-                        .cast(DataType::Boolean);
-                    return to_aexpr_impl(expr, arena, state);
+                    if input.len() < 128 {
+                        let expr = input
+                            .into_iter()
+                            .reduce(|l, r| l.logical_and(r))
+                            .unwrap()
+                            .cast(DataType::Boolean);
+                        return to_aexpr_impl(expr, arena, state);
+                    }
                 },
                 FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) => {
-                    let expr = input
-                        .into_iter()
-                        .reduce(|l, r| l.logical_or(r))
-                        .unwrap()
-                        .cast(DataType::Boolean);
-                    return to_aexpr_impl(expr, arena, state);
+                    if input.len() < 128 {
+                        let expr = input
+                            .into_iter()
+                            .reduce(|l, r| l.logical_or(r))
+                            .unwrap()
+                            .cast(DataType::Boolean);
+                        return to_aexpr_impl(expr, arena, state);
+                    }
                 },
                 _ => {},
             }
@@ -341,8 +352,17 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             AExpr::Len
         },
         Expr::Nth(i) => AExpr::Nth(i),
+        Expr::IndexColumn(idx) => {
+            if idx.len() == 1 {
+                AExpr::Nth(idx[0])
+            } else {
+                panic!("no multi-value `index-columns` expected at this point")
+            }
+        },
         Expr::Wildcard => AExpr::Wildcard,
-        Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
+        #[cfg(feature = "dtype-struct")]
+        Expr::Field(_) => unreachable!(), // replaced during expansion
+        Expr::SubPlan { .. } => panic!("no SQL subquery expected at this point"),
         Expr::KeepName(_) => panic!("no `name.keep` expected at this point"),
         Expr::Exclude(_, _) => panic!("no `exclude` expected at this point"),
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),

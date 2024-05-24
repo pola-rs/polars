@@ -145,7 +145,7 @@ impl<T> Buffer<T> {
 
     /// Slices this buffer starting at `offset`.
     /// # Panics
-    /// Panics iff `offset` is larger than `len`.
+    /// Panics iff `offset + length` is larger than `len`.
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(

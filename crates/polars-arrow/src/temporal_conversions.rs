@@ -328,7 +328,7 @@ fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
 /// Parses `value` to a [`chrono_tz::Tz`] with the Arrow's definition of timestamp with a timezone.
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
-pub(crate) fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
+pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
     timezone
         .parse::<chrono_tz::Tz>()
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))

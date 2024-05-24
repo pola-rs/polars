@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use pyo3::prelude::*;
@@ -212,7 +214,7 @@ impl PyExpr {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
                     let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: SmartString = out.extract::<&str>(py).unwrap().into();
+                    let out: SmartString = out.extract::<Cow<str>>(py).unwrap().into();
                     out
                 })
             }) as NameGenerator

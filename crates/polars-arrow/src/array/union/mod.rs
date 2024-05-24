@@ -227,7 +227,7 @@ impl UnionArray {
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
     /// # Panic
-    /// This function panics iff `offset + length >= self.len()`.
+    /// This function panics iff `offset + length > self.len()`.
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(

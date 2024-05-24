@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use polars::io::csv::read::{OwnedBatchedCsvReader, OwnedBatchedCsvReaderMmap};
+use polars::io::csv::read::OwnedBatchedCsvReader;
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
@@ -10,15 +10,10 @@ use pyo3::pybacked::PyBackedStr;
 
 use crate::{PyDataFrame, PyPolarsErr, Wrap};
 
-enum BatchedReader {
-    MMap(OwnedBatchedCsvReaderMmap),
-    Read(OwnedBatchedCsvReader),
-}
-
 #[pyclass]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
-    reader: Mutex<BatchedReader>,
+    reader: Mutex<OwnedBatchedCsvReader>,
 }
 
 #[pymethods]
@@ -64,7 +59,10 @@ impl PyBatchedCsv {
     ) -> PyResult<PyBatchedCsv> {
         let null_values = null_values.map(|w| w.0);
         let eol_char = eol_char.as_bytes()[0];
-        let row_index = row_index.map(|(name, offset)| RowIndex { name, offset });
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: Arc::from(name.as_str()),
+            offset,
+        });
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
                 None
@@ -94,45 +92,41 @@ impl PyBatchedCsv {
 
         let file = std::fs::File::open(path).map_err(PyPolarsErr::from)?;
         let reader = Box::new(file) as Box<dyn MmapBytesReader>;
-        let reader = CsvReader::new(reader)
-            .infer_schema(infer_schema_length)
-            .has_header(has_header)
+        let reader = CsvReadOptions::default()
+            .with_infer_schema_length(infer_schema_length)
+            .with_has_header(has_header)
             .with_n_rows(n_rows)
-            .with_separator(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
-            .with_projection(projection)
+            .with_projection(projection.map(Arc::new))
             .with_rechunk(rechunk)
             .with_chunk_size(chunk_size)
-            .with_encoding(encoding.0)
-            .with_columns(columns)
+            .with_columns(columns.map(Arc::new))
             .with_n_threads(n_threads)
-            .with_dtypes_slice(overwrite_dtype_slice.as_deref())
-            .with_missing_is_null(!missing_utf8_is_empty_string)
-            .low_memory(low_memory)
-            .with_comment_prefix(comment_prefix)
-            .with_null_values(null_values)
-            .with_try_parse_dates(try_parse_dates)
-            .with_quote_char(quote_char)
-            .with_end_of_line_char(eol_char)
+            .with_dtype_overwrite(overwrite_dtype_slice.map(Arc::new))
+            .with_low_memory(low_memory)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_index(row_index)
-            .sample_size(sample_size)
-            .truncate_ragged_lines(truncate_ragged_lines)
-            .with_decimal_comma(decimal_comma)
-            .raise_if_empty(raise_if_empty);
+            .with_sample_size(sample_size)
+            .with_raise_if_empty(raise_if_empty)
+            .with_parse_options(
+                CsvParseOptions::default()
+                    .with_separator(separator.as_bytes()[0])
+                    .with_encoding(encoding.0)
+                    .with_missing_is_null(!missing_utf8_is_empty_string)
+                    .with_comment_prefix(comment_prefix)
+                    .with_null_values(null_values)
+                    .with_try_parse_dates(try_parse_dates)
+                    .with_quote_char(quote_char)
+                    .with_eol_char(eol_char)
+                    .with_truncate_ragged_lines(truncate_ragged_lines)
+                    .with_decimal_comma(decimal_comma),
+            )
+            .into_reader_with_file_handle(reader);
 
-        let reader = if low_memory {
-            let reader = reader
-                .batched_read(overwrite_dtype.map(Arc::new))
-                .map_err(PyPolarsErr::from)?;
-            BatchedReader::Read(reader)
-        } else {
-            let reader = reader
-                .batched_mmap(overwrite_dtype.map(Arc::new))
-                .map_err(PyPolarsErr::from)?;
-            BatchedReader::MMap(reader)
-        };
+        let reader = reader
+            .batched(overwrite_dtype.map(Arc::new))
+            .map_err(PyPolarsErr::from)?;
 
         Ok(PyBatchedCsv {
             reader: Mutex::new(reader),
@@ -142,14 +136,11 @@ impl PyBatchedCsv {
     fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
         let batches = py.allow_threads(move || {
-            let reader = &mut *reader
+            reader
                 .lock()
-                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
-            match reader {
-                BatchedReader::MMap(reader) => reader.next_batches(n),
-                BatchedReader::Read(reader) => reader.next_batches(n),
-            }
-            .map_err(PyPolarsErr::from)
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?
+                .next_batches(n)
+                .map_err(PyPolarsErr::from)
         })?;
 
         // SAFETY: same memory layout

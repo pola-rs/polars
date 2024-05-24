@@ -1,5 +1,4 @@
-pub(super) mod batched_mmap;
-pub(super) mod batched_read;
+pub(super) mod batched;
 
 use std::fmt;
 
@@ -18,11 +17,12 @@ use super::parser::{
     get_line_stats, is_comment_line, next_line_position, next_line_position_naive, parse_lines,
     skip_bom, skip_line_ending, skip_this_line, skip_whitespace_exclude,
 };
+use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
+use super::utils::get_file_chunks;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
 use super::utils::is_compressed;
-use super::utils::{check_decimal_comma, get_file_chunks, infer_file_schema};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::update_row_counts;
@@ -96,7 +96,7 @@ pub(crate) struct CoreReader<'a> {
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// Current line number, used in error reporting
-    line_number: usize,
+    current_line: usize,
     ignore_errors: bool,
     skip_rows_before_header: usize,
     // after the header, we need to take embedded lines into account
@@ -126,7 +126,7 @@ impl<'a> fmt::Debug for CoreReader<'a> {
         f.debug_struct("Reader")
             .field("schema", &self.schema)
             .field("projection", &self.projection)
-            .field("line_number", &self.line_number)
+            .field("current_line", &self.current_line)
             .finish()
     }
 }
@@ -136,18 +136,18 @@ impl<'a> CoreReader<'a> {
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
-        mut skip_rows: usize,
+        skip_rows: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
         separator: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Vec<String>>,
+        columns: Option<Arc<Vec<String>>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
-        dtype_overwrite: Option<&'a [DataType]>,
+        dtype_overwrite: Option<Arc<Vec<DataType>>>,
         sample_size: usize,
         chunk_size: usize,
         low_memory: bool,
@@ -165,7 +165,9 @@ impl<'a> CoreReader<'a> {
         truncate_ragged_lines: bool,
         decimal_comma: bool,
     ) -> PolarsResult<CoreReader<'a>> {
-        check_decimal_comma(decimal_comma, separator.unwrap_or(b','))?;
+        let separator = separator.unwrap_or(b',');
+
+        check_decimal_comma(decimal_comma, separator)?;
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
@@ -176,10 +178,6 @@ impl<'a> CoreReader<'a> {
                 compile with feature 'decompress' or 'decompress-fast'"
             );
         }
-
-        // check if schema should be inferred
-        let separator = separator.unwrap_or(b',');
-
         // We keep track of the inferred schema bool
         // In case the file is compressed this schema inference is wrong and has to be done
         // again after decompression.
@@ -203,7 +201,7 @@ impl<'a> CoreReader<'a> {
                     max_records,
                     has_header,
                     schema_overwrite.as_deref(),
-                    &mut skip_rows,
+                    skip_rows,
                     skip_rows_after_header,
                     comment_prefix.as_ref(),
                     quote_char,
@@ -229,8 +227,8 @@ impl<'a> CoreReader<'a> {
 
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
-            for col in cols {
-                let i = schema.try_index_of(&col)?;
+            for col in cols.as_ref() {
+                let i = schema.try_index_of(col)?;
                 prj.push(i);
             }
             projection = Some(prj);
@@ -240,7 +238,7 @@ impl<'a> CoreReader<'a> {
             reader_bytes: Some(reader_bytes),
             schema,
             projection,
-            line_number: usize::from(has_header),
+            current_line: usize::from(has_header),
             ignore_errors,
             skip_rows_before_header: skip_rows,
             skip_rows_after_header,

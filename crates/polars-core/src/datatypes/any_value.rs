@@ -9,6 +9,40 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
+#[derive(Clone)]
+pub struct Scalar {
+    dtype: DataType,
+    value: AnyValue<'static>,
+}
+
+impl Scalar {
+    pub fn new(dtype: DataType, value: AnyValue<'static>) -> Self {
+        Self { dtype, value }
+    }
+
+    pub fn value(&self) -> &AnyValue<'static> {
+        &self.value
+    }
+
+    pub fn as_any_value(&self) -> AnyValue {
+        self.value
+            .strict_cast(&self.dtype)
+            .unwrap_or_else(|| self.value.clone())
+    }
+
+    pub fn into_series(self, name: &str) -> Series {
+        Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
+    }
+
+    pub fn dtype(&self) -> &DataType {
+        &self.dtype
+    }
+
+    pub fn update(&mut self, value: AnyValue<'static>) {
+        self.value = value;
+    }
+}
+
 use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
@@ -335,6 +369,23 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             }
         }
         deserializer.deserialize_enum("AnyValue", VARIANTS, OuterVisitor)
+    }
+}
+
+impl AnyValue<'static> {
+    pub fn zero(dtype: &DataType) -> Self {
+        match dtype {
+            DataType::String => AnyValue::StringOwned("".into()),
+            DataType::Boolean => AnyValue::Boolean(false),
+            // SAFETY:
+            // Numeric values are static, inform the compiler of this.
+            d if d.is_numeric() => unsafe {
+                std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
+                    AnyValue::UInt8(0).cast(dtype),
+                )
+            },
+            _ => AnyValue::Null,
+        }
     }
 }
 
@@ -735,43 +786,43 @@ where
 
 impl<'a> AnyValue<'a> {
     #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-    pub(crate) fn into_date(self) -> Self {
+    pub(crate) fn as_date(&self) -> AnyValue<'static> {
         match self {
             #[cfg(feature = "dtype-date")]
-            AnyValue::Int32(v) => AnyValue::Date(v),
+            AnyValue::Int32(v) => AnyValue::Date(*v),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
     #[cfg(feature = "dtype-datetime")]
-    pub(crate) fn into_datetime(self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> Self {
+    pub(crate) fn as_datetime(&self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> AnyValue<'a> {
         match self {
-            AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
+            AnyValue::Int64(v) => AnyValue::Datetime(*v, tu, tz),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
     #[cfg(feature = "dtype-duration")]
-    pub(crate) fn into_duration(self, tu: TimeUnit) -> Self {
+    pub(crate) fn as_duration(&self, tu: TimeUnit) -> AnyValue<'static> {
         match self {
-            AnyValue::Int64(v) => AnyValue::Duration(v, tu),
+            AnyValue::Int64(v) => AnyValue::Duration(*v, tu),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(self) -> Self {
+    pub(crate) fn as_time(&self) -> AnyValue<'static> {
         match self {
-            AnyValue::Int64(v) => AnyValue::Time(v),
+            AnyValue::Int64(v) => AnyValue::Time(*v),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {dt}"),
         }
     }
 
     #[must_use]
-    pub fn add(&self, rhs: &AnyValue) -> Self {
+    pub fn add(&self, rhs: &AnyValue) -> AnyValue<'static> {
         use AnyValue::*;
         match (self, rhs) {
             (Null, _) => Null,
@@ -972,7 +1023,7 @@ impl PartialOrd for AnyValue<'_> {
     /// Only implemented for the same types and physical types!
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         use AnyValue::*;
-        match (self.as_borrowed(), &other.as_borrowed()) {
+        match (self, &other) {
             (UInt8(l), UInt8(r)) => l.partial_cmp(r),
             (UInt16(l), UInt16(r)) => l.partial_cmp(r),
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
@@ -983,10 +1034,19 @@ impl PartialOrd for AnyValue<'_> {
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Float32(l), Float32(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
             (Float64(l), Float64(r)) => l.to_total_ord().partial_cmp(&r.to_total_ord()),
-            (String(l), String(r)) => l.partial_cmp(*r),
-            (Binary(l), Binary(r)) => l.partial_cmp(*r),
-            _ => None,
+            _ => match (self.as_borrowed(), other.as_borrowed()) {
+                (String(l), String(r)) => l.partial_cmp(r),
+                (Binary(l), Binary(r)) => l.partial_cmp(r),
+                _ => None,
+            },
         }
+    }
+}
+
+impl TotalEq for AnyValue<'_> {
+    #[inline]
+    fn tot_eq(&self, other: &Self) -> bool {
+        self.eq_missing(other, true)
     }
 }
 
@@ -1142,7 +1202,7 @@ impl GetAnyValue for ArrayRef {
     }
 }
 
-impl<K: NumericNative> From<K> for AnyValue<'_> {
+impl<K: NumericNative> From<K> for AnyValue<'static> {
     fn from(value: K) -> Self {
         unsafe {
             match K::PRIMITIVE {
@@ -1180,6 +1240,24 @@ impl<K: NumericNative> From<K> for AnyValue<'_> {
                 _ => unreachable!(),
             }
         }
+    }
+}
+
+impl<'a> From<&'a [u8]> for AnyValue<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        AnyValue::Binary(value)
+    }
+}
+
+impl<'a> From<&'a str> for AnyValue<'a> {
+    fn from(value: &'a str) -> Self {
+        AnyValue::String(value)
+    }
+}
+
+impl From<bool> for AnyValue<'static> {
+    fn from(value: bool) -> Self {
+        AnyValue::Boolean(value)
     }
 }
 

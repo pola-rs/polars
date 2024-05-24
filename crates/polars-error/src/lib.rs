@@ -120,14 +120,6 @@ impl From<avro_schema::error::Error> for PolarsError {
     }
 }
 
-#[cfg(feature = "parquet2")]
-impl From<PolarsError> for parquet2::error::Error {
-    fn from(value: PolarsError) -> Self {
-        // catch all needed :(.
-        parquet2::error::Error::OutOfSpec(format!("error: {value}"))
-    }
-}
-
 impl From<simdutf8::basic::Utf8Error> for PolarsError {
     fn from(value: simdutf8::basic::Utf8Error) -> Self {
         polars_err!(ComputeError: "invalid utf8: {}", value)

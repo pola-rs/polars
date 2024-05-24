@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsIntegerType, TimeUnit
@@ -173,22 +173,20 @@ def test_ewma_by_empty() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_ewma_by_warn_if_unsorted() -> None:
+def test_ewma_by_if_unsorted() -> None:
     df = pl.DataFrame({"values": [3.0, 2.0], "by": [3, 1]})
-
-    # Check that with `check_sorted=False`, the user can get incorrect results
-    # if they really want to.
-    result = df.select(
-        pl.col("values").ewm_mean_by("by", half_life="2i", check_sorted=False),
-    )
-    expected = pl.DataFrame({"values": [3.0, 4.0]})
-    assert_frame_equal(result, expected)
-
     result = df.with_columns(
         pl.col("values").ewm_mean_by("by", half_life="2i"),
     )
     expected = pl.DataFrame({"values": [2.5, 2.0], "by": [3, 1]})
     assert_frame_equal(result, expected)
+
+    with pytest.deprecated_call(match="you can safely remove this argument"):
+        result = df.with_columns(
+            pl.col("values").ewm_mean_by("by", half_life="2i", check_sorted=False),
+        )
+    assert_frame_equal(result, expected)
+
     result = df.sort("by").with_columns(
         pl.col("values").ewm_mean_by("by", half_life="2i"),
     )
@@ -223,3 +221,18 @@ def test_ewma_by_warn_two_chunks() -> None:
         pl.col("values").ewm_mean_by("by", half_life="2i"),
     )
     assert_frame_equal(result, expected.sort("by"))
+
+
+def test_ewma_by_multiple_chunks() -> None:
+    # times contains null
+    times = pl.Series([1, 2]).append(pl.Series([None], dtype=pl.Int64))
+    values = pl.Series([1, 2]).append(pl.Series([3]))
+    result = values.ewm_mean_by(times, half_life="2i")
+    expected = pl.Series([1.0, 1.292893, None])
+    assert_series_equal(result, expected)
+
+    # values contains null
+    times = pl.Series([1, 2]).append(pl.Series([3]))
+    values = pl.Series([1, 2]).append(pl.Series([None], dtype=pl.Int64))
+    result = values.ewm_mean_by(times, half_life="2i")
+    assert_series_equal(result, expected)

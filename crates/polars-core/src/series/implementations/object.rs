@@ -9,8 +9,6 @@ use crate::chunked_array::Settings;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
@@ -82,8 +80,8 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        ObjectChunked::chunk_id(&self.0)
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        ObjectChunked::chunk_lengths(&self.0)
     }
 
     fn name(&self) -> &str {

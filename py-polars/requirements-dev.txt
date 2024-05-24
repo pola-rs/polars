@@ -17,6 +17,7 @@ pip
 
 # Interoperability
 numpy
+numba; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
@@ -28,9 +29,7 @@ SQLAlchemy
 adbc_driver_manager; python_version >= '3.9' and platform_system != 'Windows'
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 aiosqlite
-# TODO: Remove version constraint for connectorx when Python 3.12 is supported:
-# https://github.com/sfu-db/connector-x/issues/527
-connectorx; python_version <= '3.11'
+connectorx
 kuzu
 # Cloud
 cloudpickle
@@ -44,7 +43,6 @@ pyxlsb
 xlsx2csv
 XlsxWriter
 deltalake>=0.15.0
-pyiceberg>=0.5.0
 # Csv
 zstandard
 # Plotting
@@ -58,7 +56,7 @@ nest_asyncio
 # TOOLING
 # -------
 
-hypothesis==6.97.4
+hypothesis==6.100.4
 pytest==8.2.0
 pytest-codspeed==2.2.1
 pytest-cov==5.0.0

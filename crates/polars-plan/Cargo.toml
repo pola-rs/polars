@@ -37,7 +37,7 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive", "rc"], optional = true }
+serde = { workspace = true, features = ["rc"], optional = true }
 smartstring = { workspace = true }
 strum_macros = { workspace = true }
 
@@ -118,11 +118,16 @@ range = []
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
+interpolate_by = ["polars-ops/interpolate_by"]
 rolling_window = [
   "polars-core/rolling_window",
   "polars-time/rolling_window",
   "polars-ops/rolling_window",
-  "polars-time/rolling_window",
+]
+rolling_window_by = [
+  "polars-core/rolling_window_by",
+  "polars-time/rolling_window_by",
+  "polars-ops/rolling_window_by",
 ]
 rank = ["polars-ops/rank"]
 diff = ["polars-ops/diff"]
@@ -177,9 +182,11 @@ panic_on_schema = []
 
 [package.metadata.docs.rs]
 features = [
+  "approx_n_unique",
   "temporal",
   "serde",
   "rolling_window",
+  "rolling_window_by",
   "timezones",
   "dtype-date",
   "extract_groups",
@@ -247,6 +254,7 @@ features = [
   "peaks",
   "abs",
   "interpolate",
+  "interpolate_by",
   "list_count",
   "cum_agg",
   "top_k",

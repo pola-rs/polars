@@ -47,6 +47,7 @@ deltalake = ["deltalake >= 0.15.0"]
 fastexcel = ["fastexcel >= 0.9"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
+iceberg = ["pyiceberg >= 0.5.0"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
@@ -54,15 +55,13 @@ pandas = ["pyarrow >= 7.0.0", "pandas"]
 plot = ["hvplot >= 0.9.1"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
-pyiceberg = ["pyiceberg >= 0.5.0"]
 pyxlsb = ["pyxlsb >= 1.0"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
-torch = ["torch"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,torch,xlsx2csv,xlsxwriter]",
+  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,iceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
 ]
 
 [tool.maturin]
@@ -92,6 +91,7 @@ module = [
   "fsspec.*",
   "gevent",
   "hvplot.*",
+  "jax.*",
   "kuzu",
   "matplotlib.*",
   "moto.server",
@@ -100,6 +100,7 @@ module = [
   "polars.polars",
   "pyarrow.*",
   "pydantic",
+  "pyiceberg.*",
   "pyxlsb",
   "sqlalchemy.*",
   "torch.*",
@@ -234,6 +235,7 @@ filterwarnings = [
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
   "ignore:the 'pyxlsb' engine is deprecated.*:DeprecationWarning",
+  "ignore:Use of `how='outer(_coalesce)?'` should be replaced with `how='full'.*:DeprecationWarning",
 ]
 xfail_strict = true
 

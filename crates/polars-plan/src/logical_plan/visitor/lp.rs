@@ -24,7 +24,7 @@ impl IRNode {
     /// Replace the current `Node` with a new `IR`.
     pub fn replace(&mut self, ae: IR, arena: &mut Arena<IR>) {
         let node = self.node;
-        arena.replace(node, ae)
+        arena.replace(node, ae);
     }
 
     pub fn to_alp<'a>(&self, arena: &'a Arena<IR>) -> &'a IR {

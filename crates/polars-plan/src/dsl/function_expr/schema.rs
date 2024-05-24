@@ -64,13 +64,18 @@ impl FunctionExpr {
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) => {
-                        mapper.with_same_dtype()
-                    },
-                    Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
-                    | Std(_) | StdBy(_) => mapper.map_to_float_dtype(),
+                    Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
+                    Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew(..) => mapper.map_to_float_dtype(),
+                }
+            },
+            #[cfg(feature = "rolling_window_by")]
+            RollingExprBy(rolling_func, ..) => {
+                use RollingFunctionBy::*;
+                match rolling_func {
+                    MinBy(_) | MaxBy(_) | SumBy(_) => mapper.with_same_dtype(),
+                    MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),
@@ -100,10 +105,14 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
-            ValueCounts { .. } => mapper.map_dtype(|dt| {
+            ValueCounts {
+                sort: _,
+                parallel: _,
+                name,
+            } => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
                     Field::new(fields[0].name().as_str(), dt.clone()),
-                    Field::new("count", IDX_DTYPE),
+                    Field::new(name, IDX_DTYPE),
                 ])
             }),
             #[cfg(feature = "unique_counts")]
@@ -167,6 +176,8 @@ impl FunctionExpr {
                 InterpolationMethod::Linear => mapper.map_numeric_to_float_dtype(),
                 InterpolationMethod::Nearest => mapper.with_same_dtype(),
             },
+            #[cfg(feature = "interpolate_by")]
+            InterpolateBy => mapper.map_numeric_to_float_dtype(),
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data
@@ -331,6 +342,10 @@ impl<'a> FieldsMapper<'a> {
         Self { fields }
     }
 
+    pub fn args(&self) -> &[Field] {
+        self.fields
+    }
+
     /// Field with the same dtype.
     pub fn with_same_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| dtype.clone())
@@ -477,10 +492,10 @@ impl<'a> FieldsMapper<'a> {
             .cloned()
             .unwrap_or_else(|| Unknown(Default::default()));
 
-        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
-            first.coerce(Int64);
-        } else {
-            first.coerce(dt);
+        match dt {
+            Boolean => first.coerce(IDX_DTYPE),
+            UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
+            _ => {},
         }
         Ok(first)
     }

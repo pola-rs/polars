@@ -147,8 +147,10 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn rechunk(&self) -> Self {
-        self.df.agg_chunks().into()
+    pub fn rechunk(&self, py: Python) -> Self {
+        let mut df = self.df.clone();
+        py.allow_threads(|| df.as_single_chunk_par());
+        df.into()
     }
 
     /// Format `DataFrame` as String
@@ -197,6 +199,10 @@ impl PyDataFrame {
 
     pub fn width(&self) -> usize {
         self.df.width()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.df.is_empty()
     }
 
     pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {

@@ -25,6 +25,8 @@ mod fused;
 mod horizontal;
 mod index;
 mod int_range;
+#[cfg(any(feature = "interpolate_by", feature = "interpolate"))]
+mod interpolation;
 #[cfg(feature = "is_between")]
 mod is_between;
 #[cfg(feature = "is_first_distinct")]
@@ -89,6 +91,12 @@ pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
 pub use int_range::*;
+#[cfg(feature = "interpolate")]
+pub use interpolation::interpolate::*;
+#[cfg(feature = "interpolate_by")]
+pub use interpolation::interpolate_by::*;
+#[cfg(any(feature = "interpolate", feature = "interpolate_by"))]
+pub use interpolation::*;
 #[cfg(feature = "is_between")]
 pub use is_between::*;
 #[cfg(feature = "is_first_distinct")]

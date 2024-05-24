@@ -8,6 +8,9 @@ use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use regex::{Regex, RegexBuilder};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "dtype-decimal")]
 use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
@@ -21,6 +24,21 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::functions::SQLFunctionVisitor;
 use crate::SQLContext;
+
+static DATE_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+static TIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
+    Ok(match prec {
+        None => TimeUnit::Microseconds,
+        Some(n) if (1u64..=3u64).contains(n) => TimeUnit::Milliseconds,
+        Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
+        Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
+        Some(n) => {
+            polars_bail!(ComputeError: "invalid temporal type precision; expected 1-9, found {}", n)
+        },
+    })
+}
 
 pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
@@ -106,22 +124,12 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
                 polars_bail!(ComputeError: "`time` with timezone is not supported; found tz={}", tz)
             },
         },
-        SQLDataType::Timestamp(prec, tz) => {
-            let tu = match prec {
-                None => TimeUnit::Microseconds,
-                Some(n) if (1u64..=3u64).contains(n) => TimeUnit::Milliseconds,
-                Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
-                Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
-                Some(n) => {
-                    polars_bail!(ComputeError: "unsupported `timestamp` precision; expected a value between 1 and 9, found {}", n)
-                },
-            };
-            match tz {
-                TimezoneInfo::None => DataType::Datetime(tu, None),
-                _ => {
-                    polars_bail!(ComputeError: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
-                },
-            }
+        SQLDataType::Datetime(prec) => DataType::Datetime(timeunit_from_precision(prec)?, None),
+        SQLDataType::Timestamp(prec, tz) => match tz {
+            TimezoneInfo::None => DataType::Datetime(timeunit_from_precision(prec)?, None),
+            _ => {
+                polars_bail!(ComputeError: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
+            },
         },
 
         // ---------------------------------
@@ -173,6 +181,7 @@ pub enum SubqueryRestriction {
 /// Recursively walks a SQL Expr to create a polars Expr
 pub(crate) struct SQLExprVisitor<'a> {
     ctx: &'a mut SQLContext,
+    active_schema: Option<&'a Schema>,
 }
 
 impl SQLExprVisitor<'_> {
@@ -396,9 +405,70 @@ impl SQLExprVisitor<'_> {
         }
     }
 
+    /// Handle implicit temporal string comparisons.
+    ///
+    /// eg: "dt >= '2024-04-30'", or "dtm::date = '2077-10-10'"
+    fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
+        if let (Some(name), Some(s), expr_dtype) = match (left, right) {
+            // identify "col <op> string" expressions
+            (Expr::Column(name), Expr::Literal(LiteralValue::String(s))) => {
+                (Some(name.clone()), Some(s), None)
+            },
+            // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
+            (
+                Expr::Cast {
+                    expr, data_type, ..
+                },
+                Expr::Literal(LiteralValue::String(s)),
+            ) => {
+                if let Expr::Column(name) = &**expr {
+                    (Some(name.clone()), Some(s), Some(data_type))
+                } else {
+                    (None, Some(s), Some(data_type))
+                }
+            },
+            _ => (None, None, None),
+        } {
+            if expr_dtype.is_none() && self.active_schema.is_none() {
+                right.clone()
+            } else {
+                let left_dtype = expr_dtype
+                    .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
+
+                let dt_regex = DATE_LITERAL_RE
+                    .get_or_init(|| RegexBuilder::new(r"^\d{4}-[01]\d-[0-3]\d").build().unwrap());
+                let tm_regex = TIME_LITERAL_RE.get_or_init(|| {
+                    RegexBuilder::new(r"^[012]\d:[0-5]\d:[0-5]\d")
+                        .build()
+                        .unwrap()
+                });
+
+                match left_dtype {
+                    DataType::Time if tm_regex.is_match(s) => {
+                        right.clone().strict_cast(left_dtype.clone())
+                    },
+                    DataType::Date if dt_regex.is_match(s) => {
+                        right.clone().strict_cast(left_dtype.clone())
+                    },
+                    DataType::Datetime(_, _) if dt_regex.is_match(s) => {
+                        if s.len() == 10 {
+                            // handle upcast from ISO date string (10 chars) to datetime
+                            lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
+                        } else {
+                            lit(s.replacen(' ', "T", 1)).strict_cast(left_dtype.clone())
+                        }
+                    },
+                    _ => right.clone(),
+                }
+            }
+        } else {
+            right.clone()
+        }
+    }
+
     /// Visit a SQL binary operator.
     ///
-    /// e.g. column + 1 or column1 / column2
+    /// e.g. "column + 1", "column1 <= column2"
     fn visit_binary_op(
         &mut self,
         left: &SQLExpr,
@@ -406,7 +476,9 @@ impl SQLExprVisitor<'_> {
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
-        let right = self.visit_expr(right)?;
+        let mut right = self.visit_expr(right)?;
+        right = self.convert_temporal_strings(&left, &right);
+
         Ok(match op {
             SQLBinaryOperator::And => left.and(right),
             SQLBinaryOperator::Divide => left / right,
@@ -656,6 +728,8 @@ impl SQLExprVisitor<'_> {
         let low = self.visit_expr(low)?;
         let high = self.visit_expr(high)?;
 
+        let low = self.convert_temporal_strings(&expr, &low);
+        let high = self.convert_temporal_strings(&expr, &high);
         if negated {
             Ok(expr.clone().lt(low).or(expr.gt(high)))
         } else {
@@ -747,8 +821,25 @@ impl SQLExprVisitor<'_> {
                 }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let s = Series::from_any_values("", &list, true)?;
 
+        let mut s = Series::from_any_values("", &list, true)?;
+
+        // handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+        // (not yet as versatile as the temporal string conversions in visit_binary_op)
+        if s.dtype() == &DataType::String {
+            // handle implicit temporal string comparisons, eg: "dt >= '2024-04-30'"
+            if let Expr::Column(name) = &expr {
+                if self.active_schema.is_some() {
+                    let schema = self.active_schema.as_ref().unwrap();
+                    let left_dtype = schema.get(name);
+                    if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
+                        left_dtype
+                    {
+                        s = s.strict_cast(&left_dtype.unwrap().clone())?;
+                    }
+                }
+            }
+        }
         if negated {
             Ok(expr.is_in(lit(s)).not())
         } else {
@@ -1011,16 +1102,20 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(expr, &mut ctx)?;
+            let expr = parse_sql_expr(expr, &mut ctx, None)?;
             expr.alias(&alias.value)
         },
-        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx)?,
+        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
     })
 }
 
-pub(crate) fn parse_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Expr> {
-    let mut visitor = SQLExprVisitor { ctx };
+pub(crate) fn parse_sql_expr(
+    expr: &SQLExpr,
+    ctx: &mut SQLContext,
+    active_schema: Option<&Schema>,
+) -> PolarsResult<Expr> {
+    let mut visitor = SQLExprVisitor { ctx, active_schema };
     visitor.visit_expr(expr)
 }
 

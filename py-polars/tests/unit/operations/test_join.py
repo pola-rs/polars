@@ -174,7 +174,7 @@ def test_join() -> None:
     assert joined["c_right"].is_null().sum() == 1
     assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2, 4]))
 
-    joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
+    joined = df_left.join(df_right, left_on="a", right_on="a", how="full").sort("a")
     assert joined["c_right"].null_count() == 1
     assert joined["c"].null_count() == 1
     assert joined["b"].null_count() == 1
@@ -221,7 +221,7 @@ def test_joins_dispatch() -> None:
         [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
     )
 
-    join_strategies: list[JoinStrategy] = ["left", "inner", "outer"]
+    join_strategies: list[JoinStrategy] = ["left", "inner", "full"]
     for how in join_strategies:
         dfa.join(dfa, on=["a", "b", "date", "datetime"], how=how)
         dfa.join(dfa, on=["date", "datetime"], how=how)
@@ -572,9 +572,9 @@ def test_update() -> None:
         a.update(b, how="inner", left_on="a", right_on="c").collect().to_series()
     )
     print(a, b)
-    print(a.update(b.rename({"b": "a"}), how="outer", on="a").collect())
+    print(a.update(b.rename({"b": "a"}), how="full", on="a").collect())
     assert [1, 2, 3, 4, 5] == sorted(
-        a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
+        a.update(b.rename({"b": "a"}), how="full", on="a").collect().to_series()
     )
 
     # check behavior of include_nulls=True
@@ -590,7 +590,7 @@ def test_update() -> None:
             "C": [5, 3, 1],
         }
     )
-    out = df.update(new_df, left_on="A", right_on="C", how="outer", include_nulls=True)
+    out = df.update(new_df, left_on="A", right_on="C", how="full", include_nulls=True)
     expected = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
@@ -602,13 +602,13 @@ def test_update() -> None:
     # edge-case #11684
     x = pl.DataFrame({"a": [0, 1]})
     y = pl.DataFrame({"a": [2, 3]})
-    assert [0, 1, 2, 3] == sorted(x.update(y, on="a", how="outer")["a"].to_list())
+    assert [0, 1, 2, 3] == sorted(x.update(y, on="a", how="full")["a"].to_list())
 
     # disallowed join strategies
     for join_strategy in ("cross", "anti", "semi"):
         with pytest.raises(
             ValueError,
-            match=f"`how` must be one of {{'left', 'inner', 'outer'}}; found '{join_strategy}'",
+            match=f"`how` must be one of {{'left', 'inner', 'full'}}; found '{join_strategy}'",
         ):
             a.update(b, how=join_strategy)  # type: ignore[arg-type]
 
@@ -652,19 +652,19 @@ def test_join_sorted_fast_paths_null() -> None:
     }
     assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
     assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
-    assert df1.join(df2, on="x", how="outer").to_dict(as_series=False) == {
+    assert df1.join(df2, on="x", how="full").to_dict(as_series=False) == {
         "x": [0, 0, 1, None],
         "x_right": [0, 0, None, None],
         "y": [0, 0, None, 1],
     }
 
 
-def test_outer_join_list_() -> None:
+def test_full_outer_join_list_() -> None:
     schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
 
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
-    assert df1.join(df2, on="id", how="outer").to_dict(as_series=False) == {
+    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
         "id": [None, None, 1],
         "vals": [None, None, []],
         "id_right": [2, 3, None],
@@ -743,7 +743,7 @@ def test_join_validation() -> None:
         }
     )
 
-    join_strategies: list[JoinStrategy] = ["inner", "outer", "left"]
+    join_strategies: list[JoinStrategy] = ["inner", "full", "left"]
 
     for join_col in ["id", "id_str"]:
         for how in join_strategies:
@@ -772,7 +772,7 @@ def test_join_validation_many_keys() -> None:
             "val2": [1, 2, 3, 4],
         }
     )
-    for join_type in ["inner", "left", "outer"]:
+    for join_type in ["inner", "left", "full"]:
         for val in ["m:m", "m:1", "1:1", "1:m"]:
             df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
@@ -784,7 +784,7 @@ def test_join_validation_many_keys() -> None:
         }
     )
 
-    for join_type in ["inner", "left", "outer"]:
+    for join_type in ["inner", "left", "full"]:
         for val in ["1:1", "1:m"]:
             with pytest.raises(pl.ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
@@ -803,16 +803,16 @@ def test_join_validation_many_keys() -> None:
         }
     )
 
-    for join_type in ["inner", "left", "outer"]:
+    for join_type in ["inner", "left", "full"]:
         for val in ["m:1", "1:1"]:
             with pytest.raises(pl.ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
 
-def test_outer_join_bool() -> None:
+def test_full_outer_join_bool() -> None:
     df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
     df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
-    assert df1.join(df2, on="id", how="outer").to_dict(as_series=False) == {
+    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
         "id": [True, False],
         "val": [1, 2],
         "id_right": [True, False],
@@ -820,7 +820,7 @@ def test_outer_join_bool() -> None:
     }
 
 
-def test_outer_join_coalesce_different_names_13450() -> None:
+def test_full_outer_join_coalesce_different_names_13450() -> None:
     df1 = pl.DataFrame({"L1": ["a", "b", "c"], "L3": ["b", "c", "d"], "L2": [1, 2, 3]})
     df2 = pl.DataFrame({"L3": ["a", "c", "d"], "R2": [7, 8, 9]})
 
@@ -842,7 +842,8 @@ def test_join_on_wildcard_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError, match="wildcard column selection not supported at this point"
+        pl.ComputeError,
+        match="wildcard column selection not supported at this point",
     ):
         df.join(df2, on=pl.all())
 
@@ -851,7 +852,8 @@ def test_join_on_nth_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError, match="nth column selection not supported at this point"
+        pl.ComputeError,
+        match=r"nth column selection not supported at this point \(n=0\)",
     ):
         df.join(df2, on=pl.first())
 
@@ -990,3 +992,20 @@ def test_join_coalesce(how: str) -> None:
     out = q.collect()
     assert q.schema == out.schema
     assert out.columns == ["a", "b", "c"]
+
+
+@pytest.mark.parametrize("how", ["left", "inner", "full", "outer"])
+@typing.no_type_check
+def test_join_empties(how: str) -> None:
+    df1 = pl.DataFrame({"col1": [], "col2": [], "col3": []})
+    df2 = pl.DataFrame({"col2": [], "col4": [], "col5": []})
+
+    df = df1.join(df2, on="col2", how=how)
+    assert df.height == 0
+
+
+def test_join_raise_on_redundant_keys() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
+    right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
+    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+        left.join(right, on=["a", "a"], how="outer_coalesce")

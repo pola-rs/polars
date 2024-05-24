@@ -1,5 +1,6 @@
 mod convert_utils;
 mod dsl_to_ir;
+mod expr_expansion;
 mod expr_to_ir;
 mod ir_to_dsl;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
@@ -14,6 +15,9 @@ pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+pub(crate) mod type_coercion;
+
+pub(crate) use expr_expansion::{is_regex_projection, prepare_projection, rewrite_projections};
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -116,6 +120,15 @@ impl IR {
                     expr,
                     input: Arc::new(i),
                     options,
+                }
+            },
+            IR::Reduce { exprs, input, .. } => {
+                let i = convert_to_lp(input, lp_arena);
+                let expr = expr_irs_to_exprs(exprs, expr_arena);
+                DslPlan::Select {
+                    expr,
+                    input: Arc::new(i),
+                    options: Default::default(),
                 }
             },
             IR::SimpleProjection { input, columns } => {

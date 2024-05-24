@@ -647,15 +647,17 @@ impl PySeries {
             .with_pl_flavor(true)
             .finish(&mut df)
             .expect("ipc writer");
-        Ok(PyBytes::new(py, &buf).to_object(py))
+        Ok(PyBytes::new_bound(py, &buf).to_object(py))
     }
 
     #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+
+        use pyo3::pybacked::PyBackedBytes;
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let c = Cursor::new(s.as_bytes());
+                let c = Cursor::new(&s);
                 let reader = IpcStreamReader::new(c);
                 let mut df = reader.finish().map_err(PyPolarsErr::from)?;
 
@@ -708,10 +710,10 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool) -> PyResult<bool> {
+    fn is_sorted(&self, descending: bool, nulls_last: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
-            nulls_last: descending,
+            nulls_last,
             multithreaded: true,
             maintain_order: false,
         };
@@ -730,10 +732,10 @@ impl PySeries {
         self.series.tail(Some(n)).into()
     }
 
-    fn value_counts(&self, sort: bool, parallel: bool) -> PyResult<PyDataFrame> {
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> PyResult<PyDataFrame> {
         let out = self
             .series
-            .value_counts(sort, parallel)
+            .value_counts(sort, parallel, name)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

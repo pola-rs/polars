@@ -296,7 +296,7 @@ def test_expression_appends() -> None:
     assert df.select(pl.repeat(None, 3).append(pl.col("a"))).n_chunks() == 2
     assert df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()).n_chunks() == 1
 
-    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")]))
+    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")], rechunk=True))
 
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]

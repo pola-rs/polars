@@ -1,5 +1,6 @@
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
+mod datetime;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
@@ -61,12 +62,12 @@ impl<T> From<T> for Wrap<T> {
 }
 
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
-pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
+pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
     Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
-pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
+pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_ldf"))?;
     Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }
@@ -275,53 +276,59 @@ impl ToPyObject for Wrap<DataType> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<Field> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<Field> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
-        let name = ob.getattr(intern!(py, "name"))?.str()?.to_str()?;
+        let name = ob
+            .getattr(intern!(py, "name"))?
+            .str()?
+            .extract::<PyBackedStr>()?;
         let dtype = ob
             .getattr(intern!(py, "dtype"))?
             .extract::<Wrap<DataType>>()?;
-        Ok(Wrap(Field::new(name, dtype.0)))
+        Ok(Wrap(Field::new(&name, dtype.0)))
     }
 }
 
-impl FromPyObject<'_> for Wrap<DataType> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<DataType> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let type_name = ob.get_type().qualname()?;
 
         let dtype = match &*type_name {
             "DataTypeClass" => {
                 // just the class, not an object
-                let name = ob.getattr(intern!(py, "__name__"))?.str()?.to_str()?;
-                match name {
-                    "UInt8" => DataType::UInt8,
-                    "UInt16" => DataType::UInt16,
-                    "UInt32" => DataType::UInt32,
-                    "UInt64" => DataType::UInt64,
+                let name = ob
+                    .getattr(intern!(py, "__name__"))?
+                    .str()?
+                    .extract::<PyBackedStr>()?;
+                match &*name {
                     "Int8" => DataType::Int8,
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
+                    "UInt8" => DataType::UInt8,
+                    "UInt16" => DataType::UInt16,
+                    "UInt32" => DataType::UInt32,
+                    "UInt64" => DataType::UInt64,
+                    "Float32" => DataType::Float32,
+                    "Float64" => DataType::Float64,
+                    "Boolean" => DataType::Boolean,
                     "String" => DataType::String,
                     "Binary" => DataType::Binary,
-                    "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None, Default::default()),
                     "Enum" => DataType::Enum(None, Default::default()),
                     "Date" => DataType::Date,
-                    "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
+                    "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
                     "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
-                    "Float32" => DataType::Float32,
-                    "Float64" => DataType::Float64,
-                    #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME, None),
-                    "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "List" => DataType::List(Box::new(DataType::Null)),
+                    "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
+                    #[cfg(feature = "object")]
+                    "Object" => DataType::Object(OBJECT_NAME, None),
                     "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
@@ -338,9 +345,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
             "UInt64" => DataType::UInt64,
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Boolean" => DataType::Boolean,
             "String" => DataType::String,
             "Binary" => DataType::Binary,
-            "Boolean" => DataType::Boolean,
             "Categorical" => {
                 let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
                 let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
@@ -355,21 +364,17 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             "Date" => DataType::Date,
             "Time" => DataType::Time,
-            "Float32" => DataType::Float32,
-            "Float64" => DataType::Float64,
-            "Null" => DataType::Null,
-            "Unknown" => DataType::Unknown(Default::default()),
-            "Duration" => {
-                let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
-                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
-                DataType::Duration(time_unit)
-            },
             "Datetime" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract()?;
                 DataType::Datetime(time_unit, time_zone)
+            },
+            "Duration" => {
+                let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
+                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
+                DataType::Duration(time_unit)
             },
             "Decimal" => {
                 let precision = ob.getattr(intern!(py, "precision"))?.extract()?;
@@ -397,6 +402,10 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     .collect::<Vec<Field>>();
                 DataType::Struct(fields)
             },
+            "Null" => DataType::Null,
+            #[cfg(feature = "object")]
+            "Object" => DataType::Object(OBJECT_NAME, None),
+            "Unknown" => DataType::Unknown(Default::default()),
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",
@@ -429,16 +438,16 @@ impl ToPyObject for Wrap<TimeUnit> {
 }
 
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
-    fn extract(ob: &'s PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
         let vals = vec_extract_wrapped(vals);
         Ok(Wrap(Row(vals)))
     }
 }
 
-impl FromPyObject<'_> for Wrap<Schema> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let dict = ob.extract::<&PyDict>()?;
+impl<'py> FromPyObject<'py> for Wrap<Schema> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
 
         Ok(Wrap(
             dict.iter()
@@ -455,7 +464,7 @@ impl FromPyObject<'_> for Wrap<Schema> {
 
 impl IntoPy<PyObject> for Wrap<&Schema> {
     fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         for (k, v) in self.0.iter() {
             dict.set_item(k.as_str(), Wrap(v.clone())).unwrap();
         }
@@ -528,7 +537,7 @@ impl From<PyObject> for ObjectValue {
 }
 
 impl<'a> FromPyObject<'a> for ObjectValue {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
         Python::with_gil(|py| {
             Ok(ObjectValue {
                 inner: ob.to_object(py),
@@ -560,7 +569,7 @@ impl Default for ObjectValue {
 }
 
 impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
-    fn extract(obj: &'a PyAny) -> PyResult<Self> {
+    fn extract_bound(obj: &Bound<'a, PyAny>) -> PyResult<Self> {
         let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.iter()? {
@@ -571,8 +580,8 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
 }
 
 #[cfg(feature = "asof_join")]
-impl FromPyObject<'_> for Wrap<AsofStrategy> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<AsofStrategy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*(ob.extract::<PyBackedStr>()?) {
             "backward" => AsofStrategy::Backward,
             "forward" => AsofStrategy::Forward,
@@ -587,8 +596,8 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<InterpolationMethod> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<InterpolationMethod> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*(ob.extract::<PyBackedStr>()?) {
             "linear" => InterpolationMethod::Linear,
             "nearest" => InterpolationMethod::Nearest,
@@ -603,8 +612,8 @@ impl FromPyObject<'_> for Wrap<InterpolationMethod> {
 }
 
 #[cfg(feature = "avro")]
-impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "snappy" => Some(AvroCompression::Snappy),
@@ -619,8 +628,8 @@ impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<CategoricalOrdering> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "physical" => CategoricalOrdering::Physical,
             "lexical" => CategoricalOrdering::Lexical,
@@ -634,8 +643,8 @@ impl FromPyObject<'_> for Wrap<CategoricalOrdering> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<StartBy> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<StartBy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "window" => StartBy::WindowBound,
             "datapoint" => StartBy::DataPoint,
@@ -656,8 +665,8 @@ impl FromPyObject<'_> for Wrap<StartBy> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<ClosedWindow> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
@@ -674,8 +683,8 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
 }
 
 #[cfg(feature = "csv")]
-impl FromPyObject<'_> for Wrap<CsvEncoding> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
@@ -690,8 +699,8 @@ impl FromPyObject<'_> for Wrap<CsvEncoding> {
 }
 
 #[cfg(feature = "ipc")]
-impl FromPyObject<'_> for Wrap<Option<IpcCompression>> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
@@ -706,15 +715,15 @@ impl FromPyObject<'_> for Wrap<Option<IpcCompression>> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<JoinType> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<JoinType> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
-            "outer" => JoinType::Outer,
+            "full" => JoinType::Full,
             "outer_coalesce" => {
                 // TODO! deprecate
-                JoinType::Outer
+                JoinType::Full
             },
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
@@ -722,7 +731,7 @@ impl FromPyObject<'_> for Wrap<JoinType> {
             "cross" => JoinType::Cross,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`how` must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross'}}, got {v}",
+                "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",
             )))
             },
         };
@@ -730,8 +739,8 @@ impl FromPyObject<'_> for Wrap<JoinType> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<Label> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<Label> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "left" => Label::Left,
             "right" => Label::Right,
@@ -746,8 +755,8 @@ impl FromPyObject<'_> for Wrap<Label> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<ListToStructWidthStrategy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
             "max_width" => ListToStructWidthStrategy::MaxWidth,
@@ -761,8 +770,8 @@ impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<NonExistent> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<NonExistent> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "null" => NonExistent::Null,
             "raise" => NonExistent::Raise,
@@ -776,8 +785,8 @@ impl FromPyObject<'_> for Wrap<NonExistent> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<NullBehavior> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<NullBehavior> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "drop" => NullBehavior::Drop,
             "ignore" => NullBehavior::Ignore,
@@ -791,8 +800,8 @@ impl FromPyObject<'_> for Wrap<NullBehavior> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<NullStrategy> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<NullStrategy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "ignore" => NullStrategy::Ignore,
             "propagate" => NullStrategy::Propagate,
@@ -807,8 +816,8 @@ impl FromPyObject<'_> for Wrap<NullStrategy> {
 }
 
 #[cfg(feature = "parquet")]
-impl FromPyObject<'_> for Wrap<ParallelStrategy> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "auto" => ParallelStrategy::Auto,
             "columns" => ParallelStrategy::Columns,
@@ -824,8 +833,8 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<IndexOrder> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "fortran" => IndexOrder::Fortran,
             "c" => IndexOrder::C,
@@ -839,8 +848,8 @@ impl FromPyObject<'_> for Wrap<IndexOrder> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<QuantileInterpolOptions> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "lower" => QuantileInterpolOptions::Lower,
             "higher" => QuantileInterpolOptions::Higher,
@@ -857,8 +866,8 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<RankMethod> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<RankMethod> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "min" => RankMethod::Min,
             "max" => RankMethod::Max,
@@ -876,8 +885,8 @@ impl FromPyObject<'_> for Wrap<RankMethod> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<Roll> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<Roll> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "raise" => Roll::Raise,
             "forward" => Roll::Forward,
@@ -892,8 +901,8 @@ impl FromPyObject<'_> for Wrap<Roll> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<TimeUnit> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<TimeUnit> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "ns" => TimeUnit::Nanoseconds,
             "us" => TimeUnit::Microseconds,
@@ -908,8 +917,8 @@ impl FromPyObject<'_> for Wrap<TimeUnit> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<UniqueKeepStrategy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "first" => UniqueKeepStrategy::First,
             "last" => UniqueKeepStrategy::Last,
@@ -926,8 +935,8 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
 }
 
 #[cfg(feature = "ipc")]
-impl FromPyObject<'_> for Wrap<IpcCompression> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<IpcCompression> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "zstd" => IpcCompression::ZSTD,
             "lz4" => IpcCompression::LZ4,
@@ -942,8 +951,8 @@ impl FromPyObject<'_> for Wrap<IpcCompression> {
 }
 
 #[cfg(feature = "search_sorted")]
-impl FromPyObject<'_> for Wrap<SearchSortedSide> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<SearchSortedSide> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "any" => SearchSortedSide::Any,
             "left" => SearchSortedSide::Left,
@@ -958,8 +967,8 @@ impl FromPyObject<'_> for Wrap<SearchSortedSide> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<ClosedInterval> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<ClosedInterval> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "both" => ClosedInterval::Both,
             "left" => ClosedInterval::Left,
@@ -975,8 +984,8 @@ impl FromPyObject<'_> for Wrap<ClosedInterval> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<WindowMapping> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<WindowMapping> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "group_to_rows" => WindowMapping::GroupsToRows,
             "join" => WindowMapping::Join,
@@ -991,8 +1000,8 @@ impl FromPyObject<'_> for Wrap<WindowMapping> {
     }
 }
 
-impl FromPyObject<'_> for Wrap<JoinValidation> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "1:1" => JoinValidation::OneToOne,
             "1:m" => JoinValidation::OneToMany,
@@ -1009,8 +1018,8 @@ impl FromPyObject<'_> for Wrap<JoinValidation> {
 }
 
 #[cfg(feature = "csv")]
-impl FromPyObject<'_> for Wrap<QuoteStyle> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "always" => QuoteStyle::Always,
             "necessary" => QuoteStyle::Necessary,
@@ -1033,8 +1042,8 @@ pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyRes
 }
 
 #[cfg(feature = "list_sets")]
-impl FromPyObject<'_> for Wrap<SetOperation> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "union" => SetOperation::Union,
             "difference" => SetOperation::Difference,

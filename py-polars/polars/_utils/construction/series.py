@@ -205,12 +205,18 @@ def sequence_to_pyseries(
 
         if (values_dtype == Date) & (dtype == Datetime):
             return (
-                s.cast(Datetime(time_unit or "us")).dt.replace_time_zone(time_zone)._s
+                s.cast(Datetime(time_unit or "us"))
+                .dt.replace_time_zone(
+                    time_zone,
+                    ambiguous="raise" if strict else "null",
+                    non_existent="raise" if strict else "null",
+                )
+                ._s
             )
 
         if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
             values_tz = str(value.tzinfo) if value.tzinfo is not None else None
-            dtype_tz = dtype.time_zone  # type: ignore[union-attr]
+            dtype_tz = time_zone
             if values_tz is not None and (dtype_tz is not None and dtype_tz != "UTC"):
                 msg = (
                     "time-zone-aware datetimes are converted to UTC"
@@ -228,7 +234,11 @@ def sequence_to_pyseries(
                     TimeZoneAwareConstructorWarning,
                     stacklevel=find_stacklevel(),
                 )
-            return s.dt.replace_time_zone(dtype_tz or "UTC")._s
+            return s.dt.replace_time_zone(
+                dtype_tz or "UTC",
+                ambiguous="raise" if strict else "null",
+                non_existent="raise" if strict else "null",
+            )._s
         return s._s
 
     elif (

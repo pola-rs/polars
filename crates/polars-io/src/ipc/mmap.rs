@@ -2,11 +2,10 @@ use arrow::io::ipc::read;
 use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use arrow::record_batch::RecordBatch;
-use memmap::Mmap;
 use polars_core::prelude::*;
 
 use super::ipc_file::IpcReader;
-use crate::mmap::MmapBytesReader;
+use crate::mmap::{MMapSemaphore, MmapBytesReader};
 use crate::predicates::PhysicalIoExpr;
 use crate::shared::{finish_reader, ArrowReader};
 use crate::utils::{apply_projection, columns_to_projection};
@@ -19,7 +18,10 @@ impl<R: MmapBytesReader> IpcReader<R> {
         match self.reader.to_file() {
             Some(file) => {
                 let mmap = unsafe { memmap::Mmap::map(file).unwrap() };
-                let metadata = read::read_file_metadata(&mut std::io::Cursor::new(mmap.as_ref()))?;
+                let mmap_key = self.memory_map.take().unwrap();
+                let semaphore = MMapSemaphore::new(mmap_key, mmap);
+                let metadata =
+                    read::read_file_metadata(&mut std::io::Cursor::new(semaphore.as_ref()))?;
 
                 if let Some(columns) = &self.columns {
                     let schema = &metadata.schema;
@@ -33,7 +35,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
                     metadata.schema.clone()
                 };
 
-                let reader = MMapChunkIter::new(mmap, metadata, &self.projection)?;
+                let reader = MMapChunkIter::new(Arc::new(semaphore), metadata, &self.projection)?;
 
                 finish_reader(
                     reader,
@@ -53,7 +55,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
 struct MMapChunkIter<'a> {
     dictionaries: Dictionaries,
     metadata: FileMetadata,
-    mmap: Arc<Mmap>,
+    mmap: Arc<MMapSemaphore>,
     idx: usize,
     end: usize,
     projection: &'a Option<Vec<usize>>,
@@ -61,12 +63,10 @@ struct MMapChunkIter<'a> {
 
 impl<'a> MMapChunkIter<'a> {
     fn new(
-        mmap: Mmap,
+        mmap: Arc<MMapSemaphore>,
         metadata: FileMetadata,
         projection: &'a Option<Vec<usize>>,
     ) -> PolarsResult<Self> {
-        let mmap = Arc::new(mmap);
-
         let end = metadata.blocks.len();
         // mmap the dictionaries
         let dictionaries = unsafe { mmap_dictionaries_unchecked(&metadata, mmap.clone())? };

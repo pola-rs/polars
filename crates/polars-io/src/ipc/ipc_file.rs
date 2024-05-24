@@ -33,6 +33,7 @@
 //! assert!(df.equals(&df_read));
 //! ```
 use std::io::{Read, Seek};
+use std::path::PathBuf;
 
 use arrow::datatypes::ArrowSchemaRef;
 use arrow::io::ipc::read;
@@ -79,7 +80,8 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) projection: Option<Vec<usize>>,
     pub(crate) columns: Option<Vec<String>>,
     pub(super) row_index: Option<RowIndex>,
-    memory_map: bool,
+    // Stores the as key semaphore to make sure we don't write to the memory mapped file.
+    pub(super) memory_map: Option<PathBuf>,
     metadata: Option<read::FileMetadata>,
     schema: Option<ArrowSchemaRef>,
 }
@@ -138,8 +140,9 @@ impl<R: MmapBytesReader> IpcReader<R> {
     }
 
     /// Set if the file is to be memory_mapped. Only works with uncompressed files.
-    pub fn memory_mapped(mut self, toggle: bool) -> Self {
-        self.memory_map = toggle;
+    /// The file name must be passed to register the memory mapped file.
+    pub fn memory_mapped(mut self, path_buf: Option<PathBuf>) -> Self {
+        self.memory_map = path_buf;
         self
     }
 
@@ -150,7 +153,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
-        if self.memory_map && self.reader.to_file().is_some() {
+        if self.memory_map.is_some() && self.reader.to_file().is_some() {
             if verbose {
                 eprintln!("memory map ipc file")
             }
@@ -199,7 +202,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             columns: None,
             projection: None,
             row_index: None,
-            memory_map: true,
+            memory_map: None,
             metadata: None,
             schema: None,
         }
@@ -211,7 +214,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
     }
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
-        if self.memory_map && self.reader.to_file().is_some() {
+        if self.memory_map.is_some() && self.reader.to_file().is_some() {
             match self.finish_memmapped(None) {
                 Ok(df) => return Ok(df),
                 Err(err) => check_mmap_err(err)?,

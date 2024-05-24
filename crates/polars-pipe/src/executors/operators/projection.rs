@@ -75,7 +75,7 @@ impl Operator for ProjectionOperator {
             .iter()
             .map(|e| {
                 #[allow(unused_mut)]
-                let mut s = e.evaluate(chunk, context.execution_state.as_any())?;
+                let mut s = e.evaluate(chunk, &context.execution_state)?;
 
                 has_literals |= s.len() == 1;
                 has_empty |= s.len() == 0;
@@ -146,7 +146,7 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
+            .map(|e| e.evaluate(chunk, &context.execution_state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let columns = chunk.data.get_columns()[..width].to_vec();

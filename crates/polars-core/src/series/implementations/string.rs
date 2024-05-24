@@ -99,8 +99,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -235,23 +235,19 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::sum_as_series(&self.0))
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::sum_reduce(&self.0))
     }
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::max_as_series(&self.0))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::max_reduce(&self.0))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::min_as_series(&self.0))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::min_reduce(&self.0))
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "concat_str")]
-    fn str_concat(&self, delimiter: &str) -> StringChunked {
-        self.0.str_concat(delimiter)
-    }
     fn as_any(&self) -> &dyn Any {
         &self.0
     }

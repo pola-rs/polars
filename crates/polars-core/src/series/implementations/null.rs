@@ -35,7 +35,11 @@ impl NullChunked {
         }
     }
 }
-impl PrivateSeriesNumeric for NullChunked {}
+impl PrivateSeriesNumeric for NullChunked {
+    fn bit_repr_small(&self) -> UInt32Chunked {
+        UInt32Chunked::full_null(self.name.as_ref(), self.len())
+    }
+}
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
@@ -156,7 +160,7 @@ impl SeriesTrait for NullChunked {
         &mut self.chunks
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 

@@ -14,7 +14,7 @@ use smartstring::alias::String as SmartString;
 use super::*;
 use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
-use crate::executors::sinks::joins::generic_probe_outer::GenericOuterJoinProbe;
+use crate::executors::sinks::joins::generic_probe_outer::GenericFullOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -139,7 +139,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
     ) -> PolarsResult<&BinaryArray<i64>> {
         debug_assert!(self.join_columns.is_empty());
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
         }
@@ -337,9 +337,9 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 self.placeholder.replace(Box::new(probe_operator));
                 Ok(FinalizedSink::Operator)
             },
-            JoinType::Outer => {
-                let coalesce = self.join_args.coalesce.coalesce(&JoinType::Outer);
-                let probe_operator = GenericOuterJoinProbe::new(
+            JoinType::Full => {
+                let coalesce = self.join_args.coalesce.coalesce(&JoinType::Full);
+                let probe_operator = GenericFullOuterJoinProbe::new(
                     left_df,
                     materialized_join_cols,
                     suffix,

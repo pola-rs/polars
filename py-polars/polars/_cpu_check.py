@@ -24,7 +24,6 @@
 from __future__ import annotations
 
 import ctypes
-import ctypes.util
 import os
 from ctypes import CFUNCTYPE, POINTER, c_long, c_size_t, c_uint32, c_ulong, c_void_p
 from typing import ClassVar
@@ -50,6 +49,20 @@ _POLARS_LTS_CPU = False
 
 _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
+
+
+def _open_posix_libc() -> ctypes.CDLL:
+    # Avoid importing ctypes.util if possible.
+    try:
+        if os.uname().sysname == "Darwin":
+            return ctypes.CDLL("libc.dylib", use_errno=True)
+        else:
+            return ctypes.CDLL("libc.so.6", use_errno=True)
+    except Exception:
+        from ctypes import util as ctutil
+
+        return ctypes.CDLL(ctutil.find_library("c"), use_errno=True)
+
 
 # Posix x86_64:
 # Three first call registers : RDI, RSI, RDX
@@ -162,7 +175,7 @@ class CPUID:
 
             # On some platforms PROT_WRITE + PROT_EXEC is forbidden, so we first
             # only write and then mprotect into PROT_EXEC.
-            libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+            libc = _open_posix_libc()
             mprotect = libc.mprotect
             mprotect.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
             mprotect.restype = ctypes.c_int

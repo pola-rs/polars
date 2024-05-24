@@ -60,43 +60,39 @@ impl Series {
             Cow::Borrowed(self)
         };
 
-        // No rows.
-        if dimensions[0] == 0 {
-            let s = reshape_fast_path(self.name(), &s);
-            return Ok(s);
-        }
-
         let s_ref = s.as_ref();
 
-        let mut dimensions = dimensions.to_vec();
-        if let Some(idx) = dimensions.iter().position(|i| *i == -1) {
-            let mut product = 1;
+        let dimensions = dimensions.to_vec();
 
-            for (cnt, dim) in dimensions.iter().enumerate() {
-                if cnt != idx {
-                    product *= *dim
-                }
-            }
-            dimensions[idx] = s_ref.len() as i64 / product;
-        }
-
-        let prod = dimensions.iter().product::<i64>() as usize;
-        polars_ensure!(
-            prod == s_ref.len(),
-            ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
-        );
         match dimensions.len() {
-            1 => Ok(s_ref.slice(0, dimensions[0] as usize)),
+            1 => {
+                polars_ensure!(
+                    dimensions[0] as usize == s_ref.len() || dimensions[0] == -1_i64,
+                    ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
+                );
+                Ok(s_ref.clone())
+            },
             2 => {
                 let mut rows = dimensions[0];
                 let mut cols = dimensions[1];
 
-                // Infer dimension.
-                if rows == -1 {
-                    rows = cols / s_ref.len() as i64
+                if s_ref.len() == 0_usize {
+                    if (rows == -1 || rows == 0) && (cols == -1 || cols == 0) {
+                        let s = reshape_fast_path(self.name(), s_ref);
+                        return Ok(s);
+                    } else {
+                        polars_bail!(ComputeError: "cannot reshape len 0 into shape {:?}", dimensions,)
+                    }
                 }
-                if cols == -1 {
-                    cols = rows / s_ref.len() as i64
+
+                // Infer dimension.
+                if rows == -1 && cols >= 1 {
+                    rows = s_ref.len() as i64 / cols
+                } else if cols == -1 && rows >= 1 {
+                    cols = s_ref.len() as i64 / rows
+                } else if rows == -1 && cols == -1 {
+                    rows = s_ref.len() as i64;
+                    cols = 1_i64;
                 }
 
                 // Fast path, we can create a unit list so we only allocate offsets.
@@ -104,6 +100,11 @@ impl Series {
                     let s = reshape_fast_path(self.name(), s_ref);
                     return Ok(s);
                 }
+
+                polars_ensure!(
+                    (rows*cols) as usize == s_ref.len() && rows >= 1 && cols >= 1,
+                    ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
+                );
 
                 let mut builder =
                     get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, self.name())?;

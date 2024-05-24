@@ -170,22 +170,22 @@ impl SlicePushDown {
                 paths,
                 file_info,
                 output_schema,
-                file_options: mut options,
+                mut file_options,
                 predicate,
-                scan_type: FileScan::Csv {options: mut csv_options}
+                scan_type: FileScan::Csv { options },
             }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
-                options.n_rows = Some(state.len as usize);
-                csv_options.skip_rows += state.offset as usize;
+                file_options.n_rows = Some(state.offset as usize + state.len as usize);
 
                 let lp = Scan {
                     paths,
                     file_info,
                     output_schema,
-                    scan_type: FileScan::Csv {options: csv_options},
-                    file_options: options,
+                    scan_type: FileScan::Csv { options },
+                    file_options,
                     predicate,
                 };
-                Ok(lp)
+
+                self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
             },
             // TODO! we currently skip slice pushdown if there is a predicate.
             (Scan {
@@ -209,7 +209,6 @@ impl SlicePushDown {
                 Ok(lp)
             }
             (Union {mut inputs, mut options }, Some(state)) => {
-                options.slice = Some((state.offset, state.len as usize));
                 if state.offset == 0 {
                     for input in &mut inputs {
                         let input_lp = lp_arena.take(*input);
@@ -217,7 +216,17 @@ impl SlicePushDown {
                         lp_arena.replace(*input, input_lp);
                     }
                 }
-                Ok(Union {inputs, options})
+                // The in-memory union node is slice aware.
+                // We still set this information, but the streaming engine will ignore it.
+                options.slice = Some((state.offset, state.len as usize));
+                let lp = Union {inputs, options};
+
+                if self.streaming {
+                    // Ensure the slice node remains.
+                    self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
+                } else {
+                    Ok(lp)
+                }
             },
             (Join {
                 input_left,

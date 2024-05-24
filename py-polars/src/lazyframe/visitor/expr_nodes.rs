@@ -1,9 +1,11 @@
 use polars_core::series::IsSorted;
+use polars_ops::prelude::ClosedInterval;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
+use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
-use polars_plan::dsl::BooleanFunction;
+use polars_plan::dsl::{BooleanFunction, StringFunction};
 use polars_plan::prelude::{
-    AAggExpr, AExpr, FunctionExpr, GroupbyOptions, LiteralValue, Operator, PowFunction,
+    AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
 };
 use polars_time::prelude::RollingGroupOptions;
@@ -34,7 +36,20 @@ pub struct Literal {
     dtype: PyObject,
 }
 
-#[pyclass]
+impl IntoPy<PyObject> for Wrap<ClosedInterval> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self.0 {
+            ClosedInterval::Both => "both",
+            ClosedInterval::Left => "left",
+            ClosedInterval::Right => "right",
+            ClosedInterval::None => "none",
+        }
+        .into_py(py)
+    }
+}
+
+#[pyclass(name = "Operator")]
+#[derive(Copy, Clone)]
 pub enum PyOperator {
     Eq,
     EqValidity,
@@ -60,30 +75,8 @@ pub enum PyOperator {
 
 #[pymethods]
 impl PyOperator {
-    fn __hash__(&self) -> u64 {
-        use PyOperator::*;
-        match self {
-            Eq => Eq as u64,
-            EqValidity => EqValidity as u64,
-            NotEq => NotEq as u64,
-            NotEqValidity => NotEqValidity as u64,
-            Lt => Lt as u64,
-            LtEq => LtEq as u64,
-            Gt => Gt as u64,
-            GtEq => GtEq as u64,
-            Plus => Plus as u64,
-            Minus => Minus as u64,
-            Multiply => Multiply as u64,
-            Divide => Divide as u64,
-            TrueDivide => TrueDivide as u64,
-            FloorDivide => FloorDivide as u64,
-            Modulus => Modulus as u64,
-            And => And as u64,
-            Or => Or as u64,
-            Xor => Xor as u64,
-            LogicalAnd => LogicalAnd as u64,
-            LogicalOr => LogicalOr as u64,
-        }
+    fn __hash__(&self) -> isize {
+        *self as isize
     }
 }
 
@@ -115,6 +108,90 @@ impl IntoPy<PyObject> for Wrap<Operator> {
     }
 }
 
+#[pyclass(name = "StringFunction")]
+#[derive(Copy, Clone)]
+pub enum PyStringFunction {
+    ConcatHorizontal,
+    ConcatVertical,
+    Contains,
+    CountMatches,
+    EndsWith,
+    Explode,
+    Extract,
+    ExtractAll,
+    ExtractGroups,
+    Find,
+    ToInteger,
+    LenBytes,
+    LenChars,
+    Lowercase,
+    JsonDecode,
+    JsonPathMatch,
+    Replace,
+    Reverse,
+    PadStart,
+    PadEnd,
+    Slice,
+    Head,
+    Tail,
+    HexEncode,
+    HexDecode,
+    Base64Encode,
+    Base64Decode,
+    StartsWith,
+    StripChars,
+    StripCharsStart,
+    StripCharsEnd,
+    StripPrefix,
+    StripSuffix,
+    SplitExact,
+    SplitN,
+    Strptime,
+    Split,
+    ToDecimal,
+    Titlecase,
+    Uppercase,
+    ZFill,
+    ContainsMany,
+    ReplaceMany,
+}
+
+#[pymethods]
+impl PyStringFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "BooleanFunction")]
+#[derive(Copy, Clone)]
+pub enum PyBooleanFunction {
+    Any,
+    All,
+    IsNull,
+    IsNotNull,
+    IsFinite,
+    IsInfinite,
+    IsNan,
+    IsNotNan,
+    IsFirstDistinct,
+    IsLastDistinct,
+    IsUnique,
+    IsDuplicated,
+    IsBetween,
+    IsIn,
+    AllHorizontal,
+    AnyHorizontal,
+    Not,
+}
+
+#[pymethods]
+impl PyBooleanFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
 #[pyclass]
 pub struct BinaryExpr {
     #[pyo3(get)]
@@ -140,7 +217,8 @@ pub struct Sort {
     #[pyo3(get)]
     expr: usize,
     #[pyo3(get)]
-    options: PyObject,
+    /// maintain_order, nulls_last, descending
+    options: (bool, bool, bool),
 }
 
 #[pyclass]
@@ -168,8 +246,8 @@ pub struct SortBy {
     #[pyo3(get)]
     by: Vec<usize>,
     #[pyo3(get)]
-    /// descending, nulls_last, maintain_order
-    sort_options: (Vec<bool>, bool, bool),
+    /// maintain_order, nulls_last, descending
+    sort_options: (bool, bool, Vec<bool>),
 }
 
 #[pyclass]
@@ -216,7 +294,7 @@ pub struct Window {
     options: PyObject,
 }
 
-#[pyclass]
+#[pyclass(name = "WindowMapping")]
 pub struct PyWindowMapping {
     inner: WindowMapping,
 }
@@ -234,7 +312,7 @@ impl PyWindowMapping {
     }
 }
 
-#[pyclass]
+#[pyclass(name = "RollingGroupOptions")]
 pub struct PyRollingGroupOptions {
     inner: RollingGroupOptions,
 }
@@ -289,7 +367,7 @@ impl PyRollingGroupOptions {
     }
 }
 
-#[pyclass]
+#[pyclass(name = "GroupbyOptions")]
 pub struct PyGroupbyOptions {
     inner: GroupbyOptions,
 }
@@ -433,8 +511,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 options.maintain_order,
                 options.nulls_last,
                 options.descending,
-            )
-                .to_object(py),
+            ),
         }
         .into_py(py),
         AExpr::Gather {
@@ -460,14 +537,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             expr: expr.0,
             by: by.iter().map(|n| n.0).collect(),
             sort_options: (
-                sort_options.descending.clone(),
-                sort_options.nulls_last,
                 sort_options.maintain_order,
+                sort_options.nulls_last,
+                sort_options.descending.clone(),
             ),
         }
         .into_py(py),
         AExpr::Agg(aggexpr) => match aggexpr {
-            AAggExpr::Min {
+            IRAggExpr::Min {
                 input,
                 propagate_nans,
             } => Agg {
@@ -475,7 +552,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: input.0,
                 options: propagate_nans.to_object(py),
             },
-            AAggExpr::Max {
+            IRAggExpr::Max {
                 input,
                 propagate_nans,
             } => Agg {
@@ -483,54 +560,54 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 arguments: input.0,
                 options: propagate_nans.to_object(py),
             },
-            AAggExpr::Median(n) => Agg {
+            IRAggExpr::Median(n) => Agg {
                 name: "median".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::NUnique(n) => Agg {
+            IRAggExpr::NUnique(n) => Agg {
                 name: "nunique".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::First(n) => Agg {
+            IRAggExpr::First(n) => Agg {
                 name: "first".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Last(n) => Agg {
+            IRAggExpr::Last(n) => Agg {
                 name: "last".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Mean(n) => Agg {
+            IRAggExpr::Mean(n) => Agg {
                 name: "mean".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Implode(_) => return Err(PyNotImplementedError::new_err("implode")),
-            AAggExpr::Quantile { .. } => return Err(PyNotImplementedError::new_err("quantile")),
-            AAggExpr::Sum(n) => Agg {
+            IRAggExpr::Implode(_) => return Err(PyNotImplementedError::new_err("implode")),
+            IRAggExpr::Quantile { .. } => return Err(PyNotImplementedError::new_err("quantile")),
+            IRAggExpr::Sum(n) => Agg {
                 name: "sum".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
-            AAggExpr::Count(n, include_null) => Agg {
+            IRAggExpr::Count(n, include_null) => Agg {
                 name: "count".to_object(py),
                 arguments: n.0,
                 options: include_null.to_object(py),
             },
-            AAggExpr::Std(n, ddof) => Agg {
+            IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".to_object(py),
                 arguments: n.0,
                 options: ddof.to_object(py),
             },
-            AAggExpr::Var(n, ddof) => Agg {
+            IRAggExpr::Var(n, ddof) => Agg {
                 name: "var".to_object(py),
                 arguments: n.0,
                 options: ddof.to_object(py),
             },
-            AAggExpr::AggGroups(n) => Agg {
+            IRAggExpr::AggGroups(n) => Agg {
                 name: "agg_groups".to_object(py),
                 arguments: n.0,
                 options: py.None(),
@@ -570,8 +647,152 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ListExpr(_) => {
                     return Err(PyNotImplementedError::new_err("list expr"))
                 },
-                FunctionExpr::StringExpr(_) => {
-                    return Err(PyNotImplementedError::new_err("string expr"))
+                FunctionExpr::StringExpr(strfun) => match strfun {
+                    StringFunction::ConcatHorizontal {
+                        delimiter,
+                        ignore_nulls,
+                    } => (
+                        PyStringFunction::ConcatHorizontal.into_py(py),
+                        delimiter,
+                        ignore_nulls,
+                    )
+                        .to_object(py),
+                    StringFunction::ConcatVertical {
+                        delimiter,
+                        ignore_nulls,
+                    } => (
+                        PyStringFunction::ConcatVertical.into_py(py),
+                        delimiter,
+                        ignore_nulls,
+                    )
+                        .to_object(py),
+                    StringFunction::Contains { literal, strict } => {
+                        (PyStringFunction::Contains.into_py(py), literal, strict).to_object(py)
+                    },
+                    StringFunction::CountMatches(_) => {
+                        (PyStringFunction::CountMatches.into_py(py),).to_object(py)
+                    },
+                    StringFunction::EndsWith => {
+                        (PyStringFunction::EndsWith.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Explode => {
+                        (PyStringFunction::Explode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Extract(_) => {
+                        (PyStringFunction::Extract.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ExtractAll => {
+                        (PyStringFunction::ExtractAll.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ExtractGroups { dtype, pat } => (
+                        PyStringFunction::ExtractGroups.into_py(py),
+                        Wrap(dtype.clone()).to_object(py),
+                        pat,
+                    )
+                        .to_object(py),
+                    StringFunction::Find { literal, strict } => {
+                        (PyStringFunction::Find.into_py(py), literal, strict).to_object(py)
+                    },
+                    StringFunction::ToInteger(_) => {
+                        (PyStringFunction::ToInteger.into_py(py),).to_object(py)
+                    },
+                    StringFunction::LenBytes => {
+                        (PyStringFunction::LenBytes.into_py(py),).to_object(py)
+                    },
+                    StringFunction::LenChars => {
+                        (PyStringFunction::LenChars.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Lowercase => {
+                        (PyStringFunction::Lowercase.into_py(py),).to_object(py)
+                    },
+                    StringFunction::JsonDecode {
+                        dtype: _,
+                        infer_schema_len,
+                    } => (PyStringFunction::JsonDecode.into_py(py), infer_schema_len).to_object(py),
+                    StringFunction::JsonPathMatch => {
+                        (PyStringFunction::JsonPathMatch.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Replace { n, literal } => {
+                        (PyStringFunction::Replace.into_py(py), n, literal).to_object(py)
+                    },
+                    StringFunction::Reverse => {
+                        (PyStringFunction::Reverse.into_py(py),).to_object(py)
+                    },
+                    StringFunction::PadStart { length, fill_char } => {
+                        (PyStringFunction::PadStart.into_py(py), length, fill_char).to_object(py)
+                    },
+                    StringFunction::PadEnd { length, fill_char } => {
+                        (PyStringFunction::PadEnd.into_py(py), length, fill_char).to_object(py)
+                    },
+                    StringFunction::Slice => (PyStringFunction::Slice.into_py(py),).to_object(py),
+                    StringFunction::Head => (PyStringFunction::Head.into_py(py),).to_object(py),
+                    StringFunction::Tail => (PyStringFunction::Tail.into_py(py),).to_object(py),
+                    StringFunction::HexEncode => {
+                        (PyStringFunction::HexEncode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::HexDecode(_) => {
+                        (PyStringFunction::HexDecode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Base64Encode => {
+                        (PyStringFunction::Base64Encode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Base64Decode(_) => {
+                        (PyStringFunction::Base64Decode.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StartsWith => {
+                        (PyStringFunction::StartsWith.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripChars => {
+                        (PyStringFunction::StripChars.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripCharsStart => {
+                        (PyStringFunction::StripCharsStart.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripCharsEnd => {
+                        (PyStringFunction::StripCharsEnd.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripPrefix => {
+                        (PyStringFunction::StripPrefix.into_py(py),).to_object(py)
+                    },
+                    StringFunction::StripSuffix => {
+                        (PyStringFunction::StripSuffix.into_py(py),).to_object(py)
+                    },
+                    StringFunction::SplitExact { n, inclusive } => {
+                        (PyStringFunction::SplitExact.into_py(py), n, inclusive).to_object(py)
+                    },
+                    StringFunction::SplitN(_) => {
+                        (PyStringFunction::SplitN.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Strptime(_, _) => {
+                        (PyStringFunction::Strptime.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Split(_) => {
+                        (PyStringFunction::Split.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ToDecimal(_) => {
+                        (PyStringFunction::ToDecimal.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Titlecase => {
+                        (PyStringFunction::Titlecase.into_py(py),).to_object(py)
+                    },
+                    StringFunction::Uppercase => {
+                        (PyStringFunction::Uppercase.into_py(py),).to_object(py)
+                    },
+                    StringFunction::ZFill => (PyStringFunction::ZFill.into_py(py),).to_object(py),
+                    StringFunction::ContainsMany {
+                        ascii_case_insensitive,
+                    } => (
+                        PyStringFunction::ContainsMany.into_py(py),
+                        ascii_case_insensitive,
+                    )
+                        .to_object(py),
+                    StringFunction::ReplaceMany {
+                        ascii_case_insensitive,
+                    } => (
+                        PyStringFunction::ReplaceMany.into_py(py),
+                        ascii_case_insensitive,
+                    )
+                        .to_object(py),
                 },
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
@@ -580,9 +801,37 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("temporal expr"))
                 },
                 FunctionExpr::Boolean(boolfun) => match boolfun {
-                    BooleanFunction::IsNull => ("is_null",).to_object(py),
-                    BooleanFunction::IsNotNull => ("is_not_null",).to_object(py),
-                    _ => return Err(PyNotImplementedError::new_err("boolean expr")),
+                    BooleanFunction::Any { ignore_nulls } => {
+                        (PyBooleanFunction::Any, *ignore_nulls).into_py(py)
+                    },
+                    BooleanFunction::All { ignore_nulls } => {
+                        (PyBooleanFunction::All, *ignore_nulls).into_py(py)
+                    },
+                    BooleanFunction::IsNull => (PyBooleanFunction::IsNull,).into_py(py),
+                    BooleanFunction::IsNotNull => (PyBooleanFunction::IsNotNull,).into_py(py),
+                    BooleanFunction::IsFinite => (PyBooleanFunction::IsFinite,).into_py(py),
+                    BooleanFunction::IsInfinite => (PyBooleanFunction::IsInfinite,).into_py(py),
+                    BooleanFunction::IsNan => (PyBooleanFunction::IsNan,).into_py(py),
+                    BooleanFunction::IsNotNan => (PyBooleanFunction::IsNotNan,).into_py(py),
+                    BooleanFunction::IsFirstDistinct => {
+                        (PyBooleanFunction::IsFirstDistinct,).into_py(py)
+                    },
+                    BooleanFunction::IsLastDistinct => {
+                        (PyBooleanFunction::IsLastDistinct,).into_py(py)
+                    },
+                    BooleanFunction::IsUnique => (PyBooleanFunction::IsUnique,).into_py(py),
+                    BooleanFunction::IsDuplicated => (PyBooleanFunction::IsDuplicated,).into_py(py),
+                    BooleanFunction::IsBetween { closed } => {
+                        (PyBooleanFunction::IsBetween, Wrap(*closed)).into_py(py)
+                    },
+                    BooleanFunction::IsIn => (PyBooleanFunction::IsIn,).into_py(py),
+                    BooleanFunction::AllHorizontal => {
+                        (PyBooleanFunction::AllHorizontal,).into_py(py)
+                    },
+                    BooleanFunction::AnyHorizontal => {
+                        (PyBooleanFunction::AnyHorizontal,).into_py(py)
+                    },
+                    BooleanFunction::Not => (PyBooleanFunction::Not,).into_py(py),
                 },
                 FunctionExpr::Abs => ("abs",).to_object(py),
                 FunctionExpr::Hist { .. } => return Err(PyNotImplementedError::new_err("hist")),
@@ -628,47 +877,49 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     RollingFunction::Min(_) => {
                         return Err(PyNotImplementedError::new_err("rolling min"))
                     },
-                    RollingFunction::MinBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling min by"))
-                    },
                     RollingFunction::Max(_) => {
                         return Err(PyNotImplementedError::new_err("rolling max"))
-                    },
-                    RollingFunction::MaxBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling max by"))
                     },
                     RollingFunction::Mean(_) => {
                         return Err(PyNotImplementedError::new_err("rolling mean"))
                     },
-                    RollingFunction::MeanBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling mean by"))
-                    },
                     RollingFunction::Sum(_) => {
                         return Err(PyNotImplementedError::new_err("rolling sum"))
-                    },
-                    RollingFunction::SumBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling sum by"))
                     },
                     RollingFunction::Quantile(_) => {
                         return Err(PyNotImplementedError::new_err("rolling quantile"))
                     },
-                    RollingFunction::QuantileBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling quantile by"))
-                    },
                     RollingFunction::Var(_) => {
                         return Err(PyNotImplementedError::new_err("rolling var"))
-                    },
-                    RollingFunction::VarBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling var by"))
                     },
                     RollingFunction::Std(_) => {
                         return Err(PyNotImplementedError::new_err("rolling std"))
                     },
-                    RollingFunction::StdBy(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling std by"))
-                    },
                     RollingFunction::Skew(_, _) => {
                         return Err(PyNotImplementedError::new_err("rolling skew"))
+                    },
+                },
+                FunctionExpr::RollingExprBy(rolling) => match rolling {
+                    RollingFunctionBy::MinBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling min by"))
+                    },
+                    RollingFunctionBy::MaxBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling max by"))
+                    },
+                    RollingFunctionBy::MeanBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling mean by"))
+                    },
+                    RollingFunctionBy::SumBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling sum by"))
+                    },
+                    RollingFunctionBy::QuantileBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling quantile by"))
+                    },
+                    RollingFunctionBy::VarBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling var by"))
+                    },
+                    RollingFunctionBy::StdBy(_) => {
+                        return Err(PyNotImplementedError::new_err("rolling std by"))
                     },
                 },
                 FunctionExpr::ShiftAndFill => {
@@ -706,6 +957,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ValueCounts {
                     sort: _,
                     parallel: _,
+                    name: _,
                 } => return Err(PyNotImplementedError::new_err("value counts")),
                 FunctionExpr::UniqueCounts => {
                     return Err(PyNotImplementedError::new_err("unique counts"))
@@ -723,6 +975,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 FunctionExpr::Interpolate(_) => {
                     return Err(PyNotImplementedError::new_err("interpolate"))
+                },
+                FunctionExpr::InterpolateBy => {
+                    return Err(PyNotImplementedError::new_err("interpolate_by"))
                 },
                 FunctionExpr::Entropy {
                     base: _,
@@ -826,10 +1081,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::TopKBy { sort_options: _ } => {
                     return Err(PyNotImplementedError::new_err("top_k_by"))
                 },
-                FunctionExpr::EwmMeanBy {
-                    half_life: _,
-                    check_sorted: _,
-                } => return Err(PyNotImplementedError::new_err("ewm_mean_by")),
+                FunctionExpr::EwmMeanBy { half_life: _ } => {
+                    return Err(PyNotImplementedError::new_err("ewm_mean_by"))
+                },
             },
             options: py.None(),
         }

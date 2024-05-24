@@ -41,4 +41,4 @@ pub mod ord;
 pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
-pub use io::open_file;
+pub use io::*;

@@ -31,18 +31,10 @@ impl ArrayChunked {
 
     /// Get the inner values as `Series`
     pub fn get_inner(&self) -> Series {
-        let ca = self.rechunk();
-        let field = self.inner_dtype().to_arrow_field("item", true);
-        let arr = ca.downcast_iter().next().unwrap();
-        unsafe {
-            Series::_try_from_arrow_unchecked_with_md(
-                self.name(),
-                vec![(arr.values()).clone()],
-                &field.data_type,
-                Some(&field.metadata),
-            )
-            .unwrap()
-        }
+        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
+
+        // SAFETY: Data type of arrays matches because they are chunks from the same array.
+        unsafe { Series::from_chunks_and_dtype_unchecked(self.name(), chunks, &self.inner_dtype()) }
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].

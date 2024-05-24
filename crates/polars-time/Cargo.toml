@@ -16,12 +16,13 @@ polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
 atoi = { workspace = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }
 once_cell = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 smartstring = { workspace = true }
 
 [dev-dependencies]
@@ -32,7 +33,8 @@ dtype-date = ["polars-core/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "temporal"]
-rolling_window = ["polars-core/rolling_window", "dtype-duration"]
+rolling_window = ["polars-core/rolling_window"]
+rolling_window_by = ["polars-core/rolling_window_by", "dtype-duration"]
 fmt = ["polars-core/fmt"]
 serde = ["dep:serde", "smartstring/serde"]
 temporal = ["polars-core/temporal"]

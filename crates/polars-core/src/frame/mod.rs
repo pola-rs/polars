@@ -432,15 +432,6 @@ impl DataFrame {
         Ok(DataFrame { columns })
     }
 
-    /// Aggregate all chunks to contiguous memory.
-    #[must_use]
-    pub fn agg_chunks(&self) -> Self {
-        // Don't parallelize this. Memory overhead
-        let f = |s: &Series| s.rechunk();
-        let cols = self.columns.iter().map(f).collect();
-        unsafe { DataFrame::new_no_checks(cols) }
-    }
-
     /// Shrink the capacity of this DataFrame to fit its length.
     pub fn shrink_to_fit(&mut self) {
         // Don't parallelize this. Memory overhead
@@ -738,7 +729,7 @@ impl DataFrame {
         self.shape().0
     }
 
-    /// Check if the [`DataFrame`] is empty.
+    /// Returns `true` if the [`DataFrame`] contains no rows.
     ///
     /// # Example
     ///
@@ -753,7 +744,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.columns.is_empty()
+        self.height() == 0
     }
 
     /// Add columns horizontally.
@@ -788,7 +779,7 @@ impl DataFrame {
         // this DataFrame is already modified when an error occurs.
         for col in columns {
             polars_ensure!(
-                col.len() == self.height() || self.height() == 0,
+                col.len() == self.height() || self.is_empty(),
                 ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
                 col.len(), self.height(),
             );
@@ -1155,7 +1146,7 @@ impl DataFrame {
                 series = series.new_from_index(0, height);
             }
 
-            if series.len() == height || df.is_empty() {
+            if series.len() == height || df.get_columns().is_empty() {
                 df.add_column_by_search(series)?;
                 Ok(df)
             }
@@ -1228,7 +1219,7 @@ impl DataFrame {
             series = series.new_from_index(0, height);
         }
 
-        if series.len() == height || self.is_empty() {
+        if series.len() == height || self.columns.is_empty() {
             self.add_column_by_schema(series, schema)?;
             Ok(self)
         }
@@ -1804,7 +1795,7 @@ impl DataFrame {
             });
         };
 
-        if self.height() == 0 {
+        if self.is_empty() {
             let mut out = self.clone();
             set_sorted(&mut out);
 
@@ -2257,6 +2248,9 @@ impl DataFrame {
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         if offset == 0 && length == self.height() {
             return self.clone();
+        }
+        if length == 0 {
+            return self.clear();
         }
         let col = self
             .columns

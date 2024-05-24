@@ -4,8 +4,6 @@ pub use std::sync::Arc;
 pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
-#[cfg(feature = "ewma")]
-pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableChunkId, NullableIdxSize};
@@ -31,7 +29,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub(crate) use crate::chunked_array::ChunkIdIter;
+pub(crate) use crate::chunked_array::ChunkLenIter;
 pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::datatypes::string_cache::StringCacheHolder;

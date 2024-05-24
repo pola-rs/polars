@@ -41,13 +41,13 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
+    _is_generator,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
     parse_percentiles,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
-from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -77,7 +77,6 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import import_optional, subprocess
-from polars.io.csv._utils import _check_arg_is_1byte
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
@@ -772,6 +771,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
         └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
         """
+        from polars.convert import from_dict
+
         if not self.columns:
             msg = "cannot describe a LazyFrame that has no columns"
             raise TypeError(msg)
@@ -888,6 +889,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
         tree_format: bool = False,
     ) -> str:
@@ -917,6 +919,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
         tree_format
@@ -944,6 +948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 slice_pushdown,
                 comm_subplan_elim,
                 comm_subexpr_elim,
+                cluster_with_columns,
                 streaming,
                 _eager=False,
             )
@@ -970,6 +975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> str | None:
         """
@@ -1004,6 +1010,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1028,6 +1036,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1512,6 +1521,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1544,6 +1554,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1592,6 +1604,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1601,6 +1614,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1657,6 +1671,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: Literal[True],
@@ -1674,6 +1689,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: Literal[False] = False,
@@ -1690,6 +1706,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: bool = False,
@@ -1718,6 +1735,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         no_optimization
             Turn off (certain) optimizations.
         streaming
@@ -1791,6 +1810,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1804,6 +1824,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager,
         )
@@ -1828,6 +1849,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = True,
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
@@ -1844,6 +1866,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = True,
     ) -> Awaitable[DataFrame]: ...
 
@@ -1859,6 +1882,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
@@ -1895,6 +1919,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Process the query in batches to handle larger-than-memory data.
             If set to `False` (default), the entire query is processed in a single
@@ -1959,6 +1985,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1972,6 +1999,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -2260,6 +2288,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
         """
+        from polars.io.csv._utils import _check_arg_is_1byte
+
         _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
@@ -2376,6 +2406,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
+            cluster_with_columns=False,
             streaming=True,
             _eager=False,
         )
@@ -2392,6 +2423,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2417,6 +2449,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -2464,6 +2498,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         lf = self._ldf.optimization_toggle(
             type_coercion,
@@ -2473,6 +2508,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -2796,7 +2832,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 return self.clear()  # type: ignore[return-value]
             elif p is True:
                 continue  # no-op; matches all rows
-            elif is_bool_sequence(p, include_series=True):
+            if _is_generator(p):
+                p = tuple(p)
+            if is_bool_sequence(p, include_series=True):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
             elif (
                 (is_seq := is_sequence(p))
@@ -3829,7 +3867,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
+        how : {'inner', 'left', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
             * *inner*
@@ -3837,7 +3875,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
-            * *outer*
+            * *full*
                  Returns all rows when there is a match in either left or right table
             * *cross*
                  Returns the Cartesian product of rows from both tables
@@ -3912,7 +3950,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6.0 ┆ a   ┆ x     │
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
-        >>> lf.join(other_lf, on="ham", how="outer").collect()
+        >>> lf.join(other_lf, on="ham", how="full").collect()
         shape: (4, 5)
         ┌──────┬──────┬──────┬───────┬───────────┐
         │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
@@ -3959,6 +3997,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
+        if how == "outer":
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer'` should be replaced with `how='full'`.",
+                version="0.20.29",
+            )
+
         if how == "cross":
             return self._from_pyldf(
                 self._ldf.join(
@@ -3987,6 +4032,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if how == "outer_coalesce":
             coalesce = True
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
+                version="0.20.29",
+            )
 
         return self._from_pyldf(
             self._ldf.join(
@@ -5912,7 +5962,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
+        how: Literal["left", "inner", "full"] = "left",
         *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
@@ -5932,11 +5982,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Column names that will be joined on. If set to `None` (default),
             the implicit row index of each frame is used as a join key.
-        how : {'left', 'inner', 'outer'}
+        how : {'left', 'inner', 'full'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
-            * 'outer' will update existing rows where the key matches while also
+            * 'full' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
         left_on
            Join column(s) of the left DataFrame.
@@ -6008,10 +6058,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ -99 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values with the non-null values in `new_df`, using a full
+        outer join strategy that defines explicit join columns in each frame:
 
-        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="outer").collect()
+        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="full").collect()
         shape: (5, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -6025,11 +6075,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66 │
         └─────┴─────┘
 
-        Update `df` values including null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values including null values in `new_df`, using a full
+        outer join strategy that defines explicit join columns in each frame:
 
         >>> lf.update(
-        ...     new_lf, left_on="A", right_on="C", how="outer", include_nulls=True
+        ...     new_lf, left_on="A", right_on="C", how="full", include_nulls=True
         ... ).collect()
         shape: (5, 2)
         ┌─────┬──────┐
@@ -6044,11 +6094,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66  │
         └─────┴──────┘
         """
-        if how not in ("left", "inner", "outer"):
-            msg = f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+        if how in ("outer", "outer_coalesce"):
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer'` should be replaced with `how='full'`.",
+                version="0.20.29",
+            )
+
+        if how not in ("left", "inner", "full"):
+            msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
             raise ValueError(msg)
-        if how == "outer":
-            how = "outer_coalesce"  # type: ignore[assignment]
 
         row_index_used = False
         if on is None:
@@ -6088,7 +6143,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise ValueError(msg)
 
         # no need to join if *only* join columns are in other (inner/left update only)
-        if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]
+        if how != "full" and len(other.columns) == len(right_on):
             if row_index_used:
                 return self.drop(row_index_name)
             return self
@@ -6115,6 +6170,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 right_on=right_on,
                 how=how,
                 suffix=tmp_name,
+                coalesce=True,
             )
             .with_columns(
                 (

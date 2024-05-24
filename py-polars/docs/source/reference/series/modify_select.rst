@@ -31,6 +31,7 @@ Manipulation/selection
     Series.gather_every
     Series.head
     Series.interpolate
+    Series.interpolate_by
     Series.item
     Series.limit
     Series.new_from_index

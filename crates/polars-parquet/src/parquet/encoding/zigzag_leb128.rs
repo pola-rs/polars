@@ -1,9 +1,8 @@
 use super::uleb128;
-use crate::parquet::error::Error;
 
-pub fn decode(values: &[u8]) -> Result<(i64, usize), Error> {
-    let (u, consumed) = uleb128::decode(values)?;
-    Ok(((u >> 1) as i64 ^ -((u & 1) as i64), consumed))
+pub fn decode(values: &[u8]) -> (i64, usize) {
+    let (u, consumed) = uleb128::decode(values);
+    ((u >> 1) as i64 ^ -((u & 1) as i64), consumed)
 }
 
 pub fn encode(value: i64) -> ([u8; 10], usize) {
@@ -33,7 +32,7 @@ mod tests {
             (9, -5),
         ];
         for (data, expected) in cases {
-            let (result, _) = decode(&[data]).unwrap();
+            let (result, _) = decode(&[data]);
             assert_eq!(result, expected)
         }
     }
@@ -63,7 +62,7 @@ mod tests {
     fn test_roundtrip() {
         let value = -1001212312;
         let (data, size) = encode(value);
-        let (result, _) = decode(&data[..size]).unwrap();
+        let (result, _) = decode(&data[..size]);
         assert_eq!(value, result);
     }
 }

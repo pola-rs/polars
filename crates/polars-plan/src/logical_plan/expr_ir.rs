@@ -12,6 +12,7 @@ pub enum OutputName {
     None,
     LiteralLhs(ColumnName),
     ColumnLhs(ColumnName),
+    /// Rename the output as `ColumnName`
     Alias(ColumnName),
 }
 
@@ -108,6 +109,15 @@ impl ExprIR {
     #[inline]
     pub fn node(&self) -> Node {
         self.node
+    }
+
+    /// Create a `ExprIR` structure that implements display
+    pub fn display<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> ExprIRDisplay<'a> {
+        ExprIRDisplay {
+            node: self.node(),
+            output_name: self.output_name_inner(),
+            expr_arena,
+        }
     }
 
     pub(crate) fn set_node(&mut self, node: Node) {

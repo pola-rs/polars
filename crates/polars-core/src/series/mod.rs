@@ -147,7 +147,7 @@ impl Hash for Wrap<Series> {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
         let mut h = vec![];
         self.0.vec_hash(rs, &mut h).unwrap();
-        let h = UInt64Chunked::from_vec("", h).sum();
+        let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
         h.hash(state)
     }
 }
@@ -391,8 +391,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
-        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
+        let sum = self.sum_reduce()?;
+        let sum = sum.value().extract().unwrap();
+        Ok(sum)
     }
 
     /// Returns the minimum value in the array, according to the natural order.
@@ -401,8 +402,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let min = self.min_as_series()?.cast(&DataType::Float64)?;
-        Ok(min.f64().unwrap().get(0).and_then(T::from))
+        let min = self.min_reduce()?;
+        let min = min.value().extract::<T>();
+        Ok(min)
     }
 
     /// Returns the maximum value in the array, according to the natural order.
@@ -411,8 +413,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let max = self.max_as_series()?.cast(&DataType::Float64)?;
-        Ok(max.f64().unwrap().get(0).and_then(T::from))
+        let max = self.max_reduce()?;
+        let max = max.value().extract::<T>();
+        Ok(max)
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -628,11 +631,11 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> PolarsResult<Series> {
+    pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
-            _ => self._sum_as_series(),
+            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
+            _ => self.0.sum_reduce(),
         }
     }
 
@@ -640,7 +643,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn product(&self) -> PolarsResult<Series> {
+    pub fn product(&self) -> PolarsResult<Scalar> {
         #[cfg(feature = "product")]
         {
             use DataType::*;
@@ -650,10 +653,10 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => Ok(self.i64().unwrap().prod_as_series()),
-                UInt64 => Ok(self.u64().unwrap().prod_as_series()),
-                Float32 => Ok(self.f32().unwrap().prod_as_series()),
-                Float64 => Ok(self.f64().unwrap().prod_as_series()),
+                Int64 => Ok(self.i64().unwrap().prod_reduce()),
+                UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                Float32 => Ok(self.f32().unwrap().prod_reduce()),
+                Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },
@@ -797,33 +800,22 @@ impl Series {
         self.slice(-(len as i64), len)
     }
 
-    pub fn mean_as_series(&self) -> Series {
+    pub fn mean_reduce(&self) -> Scalar {
         match self.dtype() {
             DataType::Float32 => {
-                let val = &[self.mean().map(|m| m as f32)];
-                Series::new(self.name(), val)
+                let val = self.mean().map(|m| m as f32);
+                Scalar::new(self.dtype().clone(), val.into())
             },
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
-                let val = &[self.mean()];
-                Series::new(self.name(), val)
+                let val = self.mean();
+                Scalar::new(DataType::Float64, val.into())
             },
-            #[cfg(feature = "dtype-datetime")]
-            dt @ DataType::Datetime(_, _) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
+            dt if dt.is_temporal() => {
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
             },
-            #[cfg(feature = "dtype-duration")]
-            dt @ DataType::Duration(_) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
-            },
-            #[cfg(feature = "dtype-time")]
-            dt @ DataType::Time => Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                .cast(dt)
-                .unwrap(),
-            _ => return Series::full_null(self.name(), 1, self.dtype()),
+            dt => Scalar::new(dt.clone(), AnyValue::Null),
         }
     }
 

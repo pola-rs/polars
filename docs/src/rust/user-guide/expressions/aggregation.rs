@@ -33,10 +33,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data: Vec<u8> = Client::new().get(url).send()?.text()?.bytes().collect();
 
-    let dataset = CsvReader::new(Cursor::new(data))
-        .has_header(true)
-        .with_dtypes(Some(Arc::new(schema)))
-        .with_try_parse_dates(true)
+    let dataset = CsvReadOptions::default()
+        .with_has_header(true)
+        .with_schema(Some(Arc::new(schema)))
+        .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
+        .into_reader_with_file_handle(Cursor::new(data))
         .finish()?;
 
     println!("{}", &dataset);

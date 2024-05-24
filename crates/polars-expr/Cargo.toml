@@ -1,0 +1,75 @@
+[package]
+name = "polars-expr"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Physical expression implementation of the Polars project."
+
+[dependencies]
+ahash = { workspace = true }
+arrow = { workspace = true }
+bitflags = { workspace = true }
+once_cell = { workspace = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-io = { workspace = true, features = ["lazy"] }
+polars-json = { workspace = true, optional = true }
+polars-ops = { workspace = true, features = ["chunked_ids"] }
+polars-plan = { workspace = true }
+polars-time = { workspace = true, optional = true }
+polars-utils = { workspace = true }
+rayon = { workspace = true }
+smartstring = { workspace = true }
+
+[features]
+nightly = ["polars-core/nightly", "polars-plan/nightly"]
+streaming = ["polars-plan/streaming", "polars-ops/chunked_ids"]
+parquet = ["polars-io/parquet", "polars-plan/parquet"]
+temporal = [
+  "dtype-datetime",
+  "dtype-date",
+  "dtype-time",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-duration",
+  "polars-plan/temporal",
+]
+
+dtype-full = [
+  "dtype-array",
+  "dtype-categorical",
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-decimal",
+  "dtype-duration",
+  "dtype-i16",
+  "dtype-i8",
+  "dtype-struct",
+  "dtype-time",
+  "dtype-u16",
+  "dtype-u8",
+]
+dtype-array = ["polars-plan/dtype-array", "polars-ops/dtype-array"]
+dtype-categorical = ["polars-plan/dtype-categorical"]
+dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
+dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
+dtype-decimal = ["polars-plan/dtype-decimal"]
+dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
+dtype-i16 = ["polars-plan/dtype-i16"]
+dtype-i8 = ["polars-plan/dtype-i8"]
+dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
+dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
+dtype-u16 = ["polars-plan/dtype-u16"]
+dtype-u8 = ["polars-plan/dtype-u8"]
+
+# operations
+approx_unique = ["polars-plan/approx_unique"]
+is_in = ["polars-plan/is_in", "polars-ops/is_in"]
+
+round_series = ["polars-plan/round_series", "polars-ops/round_series"]
+is_between = ["polars-plan/is_between"]
+dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
+propagate_nans = ["polars-plan/propagate_nans"]
+panic_on_schema = ["polars-plan/panic_on_schema"]

@@ -30,6 +30,7 @@ def test_df_describe(lazy: bool) -> None:
 
     frame: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
     result = frame.describe()
+    print(result)
 
     expected = pl.DataFrame(
         {

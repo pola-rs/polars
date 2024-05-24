@@ -1444,10 +1444,10 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(5)
-    assert len(batches) == 5  # type: ignore[arg-type]
+    batches = reader.next_batches(10)
+    assert batches is not None
+    assert len(batches) == 5
 
-    batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
@@ -2060,6 +2060,22 @@ def test_csv_escape_cf_15349() -> None:
     df.write_csv(f)
     f.seek(0)
     assert f.read() == b'test\nnormal\n"with\rcr"\n'
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("streaming", [True, False])
+def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.csv"
+
+    df = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int64).to_frame()
+    df.write_csv(path)
+
+    skip = 2
+    expect = df.slice(skip)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
 
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])

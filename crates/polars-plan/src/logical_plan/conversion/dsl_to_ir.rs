@@ -1,6 +1,7 @@
+use expr_expansion::{is_regex_projection, rewrite_projections};
+
 use super::stack_opt::ConversionOpt;
 use super::*;
-use crate::logical_plan::expr_expansion::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::projection_expr::ProjectionExprs;
 
 fn expand_expressions(
@@ -128,7 +129,7 @@ pub fn to_alp_impl(
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
                 *schema = schema
-                    .new_inserting_at_index(0, row_index.name.as_str().into(), IDX_DTYPE)
+                    .new_inserting_at_index(0, row_index.name.as_ref().into(), IDX_DTYPE)
                     .unwrap();
             }
 
@@ -323,6 +324,23 @@ pub fn to_alp_impl(
                     )
                 }
             }
+
+            let mut joined_on = PlHashSet::new();
+            for (l, r) in left_on.iter().zip(right_on.iter()) {
+                polars_ensure!(joined_on.insert((l, r)), InvalidOperation: "joins on same keys twice; already joined on {} and {}", l, r)
+            }
+            drop(joined_on);
+            options.args.validation.is_valid_join(&options.args.how)?;
+
+            polars_ensure!(
+                left_on.len() == right_on.len(),
+                ComputeError:
+                    format!(
+                        "the number of columns given as join key (left: {}, right:{}) should be equal",
+                        left_on.len(),
+                        right_on.len()
+                    )
+            );
 
             let input_left = to_alp_impl(owned(input_left), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(join left)))?;
@@ -560,6 +578,7 @@ fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsRe
         | Expr::RenameAlias { .. }
         | Expr::Columns(_)
         | Expr::DtypeColumn(_)
+        | Expr::IndexColumn(_)
         | Expr::Nth(_) => true,
         _ => false,
     }) {
@@ -578,7 +597,7 @@ fn expand_filter(predicate: Expr, input: Node, lp_arena: &Arena<IR>) -> PolarsRe
             _ => {
                 let mut expanded = String::new();
                 for e in rewritten.iter().take(5) {
-                    expanded.push_str(&format!("\t{e},\n"))
+                    expanded.push_str(&format!("\t{e:?},\n"))
                 }
                 // pop latest comma
                 expanded.pop();

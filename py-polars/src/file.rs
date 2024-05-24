@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
+use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
 use polars_error::polars_warn;
@@ -218,17 +219,23 @@ pub fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
 pub fn get_mmap_bytes_reader<'a>(
     py_f: &'a Bound<'a, PyAny>,
 ) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
+    get_mmap_bytes_reader_and_path(py_f).map(|t| t.0)
+}
+
+pub fn get_mmap_bytes_reader_and_path<'a>(
+    py_f: &'a Bound<'a, PyAny>,
+) -> PyResult<(Box<dyn MmapBytesReader + 'a>, Option<PathBuf>)> {
     // bytes object
     if let Ok(bytes) = py_f.downcast::<PyBytes>() {
-        Ok(Box::new(Cursor::new(bytes.as_bytes())))
+        Ok((Box::new(Cursor::new(bytes.as_bytes())), None))
     }
     // string so read file
     else if let Ok(pstring) = py_f.downcast::<PyString>() {
         let s = pstring.to_cow()?;
         let p = std::path::Path::new(&*s);
-        let p = resolve_homedir(p);
-        let f = polars_utils::open_file(p).map_err(PyPolarsErr::from)?;
-        Ok(Box::new(f))
+        let p_resolved = resolve_homedir(p);
+        let f = polars_utils::open_file(p_resolved).map_err(PyPolarsErr::from)?;
+        Ok((Box::new(f), Some(p.to_path_buf())))
     }
     // hopefully a normal python file: with open(...) as f:.
     else {
@@ -242,6 +249,6 @@ pub fn get_mmap_bytes_reader<'a>(
         let f = Python::with_gil(|py| {
             PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
         })?;
-        Ok(Box::new(f))
+        Ok((Box::new(f), None))
     }
 }

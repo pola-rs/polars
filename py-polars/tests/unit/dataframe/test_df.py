@@ -24,7 +24,6 @@ from polars.testing import (
     assert_frame_not_equal,
     assert_series_equal,
 )
-from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -61,13 +60,12 @@ def test_init_empty() -> None:
 def test_special_char_colname_init() -> None:
     from string import punctuation
 
-    with pl.StringCache():
-        cols = [(c.name, c.dtype) for c in columns(punctuation)]
-        df = pl.DataFrame(schema=cols)
+    cols = [(c, pl.Int8) for c in punctuation]
+    df = pl.DataFrame(schema=cols)
 
-        assert len(cols) == len(df.columns)
-        assert len(df.rows()) == 0
-        assert df.is_empty()
+    assert len(cols) == len(df.columns)
+    assert len(df.rows()) == 0
+    assert df.is_empty()
 
 
 def test_comparisons() -> None:
@@ -588,10 +586,10 @@ def test_multiple_columns_drop() -> None:
 
 def test_concat() -> None:
     df1 = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
-    df2 = pl.concat([df1, df1])
+    df2 = pl.concat([df1, df1], rechunk=True)
 
     assert df2.shape == (6, 3)
-    assert df2.n_chunks() == 1  # the default is to rechunk
+    assert df2.n_chunks() == 1
     assert df2.rows() == df1.rows() + df1.rows()
     assert pl.concat([df1, df1], rechunk=False).n_chunks() == 2
 
@@ -2296,7 +2294,7 @@ def test_join_suffixes() -> None:
     df_a = pl.DataFrame({"A": [1], "B": [1]})
     df_b = pl.DataFrame({"A": [1], "B": [1]})
 
-    join_strategies: list[JoinStrategy] = ["left", "inner", "outer", "cross"]
+    join_strategies: list[JoinStrategy] = ["left", "inner", "full", "cross"]
     for how in join_strategies:
         # no need for an assert, we error if wrong
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
