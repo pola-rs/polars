@@ -25,8 +25,6 @@ pub enum Array {
     Struct(Vec<Array>, Vec<bool>),
 }
 
-use std::sync::Arc;
-
 use polars_parquet::parquet::schema::types::{PhysicalType, PrimitiveType};
 use polars_parquet::parquet::statistics::*;
 
@@ -112,57 +110,64 @@ pub fn alltypes_plain(column: &str) -> Array {
     }
 }
 
-pub fn alltypes_statistics(column: &str) -> Arc<dyn Statistics> {
+pub fn alltypes_statistics(column: &str) -> Statistics {
     match column {
-        "id" => Arc::new(PrimitiveStatistics::<i32> {
+        "id" => PrimitiveStatistics::<i32> {
             primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int32),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0),
             max_value: Some(7),
-        }),
-        "id-short-array" => Arc::new(PrimitiveStatistics::<i32> {
+        }
+        .into(),
+        "id-short-array" => PrimitiveStatistics::<i32> {
             primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int32),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(4),
             max_value: Some(4),
-        }),
-        "bool_col" => Arc::new(BooleanStatistics {
+        }
+        .into(),
+        "bool_col" => BooleanStatistics {
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(false),
             max_value: Some(true),
-        }),
-        "tinyint_col" | "smallint_col" | "int_col" => Arc::new(PrimitiveStatistics::<i32> {
+        }
+        .into(),
+        "tinyint_col" | "smallint_col" | "int_col" => PrimitiveStatistics::<i32> {
             primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int32),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0),
             max_value: Some(1),
-        }),
-        "bigint_col" => Arc::new(PrimitiveStatistics::<i64> {
+        }
+        .into(),
+        "bigint_col" => PrimitiveStatistics::<i64> {
             primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Int64),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0),
             max_value: Some(10),
-        }),
-        "float_col" => Arc::new(PrimitiveStatistics::<f32> {
+        }
+        .into(),
+        "float_col" => PrimitiveStatistics::<f32> {
             primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Float),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0.0),
             max_value: Some(1.1),
-        }),
-        "double_col" => Arc::new(PrimitiveStatistics::<f64> {
+        }
+        .into(),
+        "double_col" => PrimitiveStatistics::<f64> {
             primitive_type: PrimitiveType::from_physical("col".to_string(), PhysicalType::Double),
             null_count: Some(0),
             distinct_count: None,
             min_value: Some(0.0),
             max_value: Some(10.1),
-        }),
-        "date_string_col" => Arc::new(BinaryStatistics {
+        }
+        .into(),
+        "date_string_col" => BinaryStatistics {
             primitive_type: PrimitiveType::from_physical(
                 "col".to_string(),
                 PhysicalType::ByteArray,
@@ -171,8 +176,9 @@ pub fn alltypes_statistics(column: &str) -> Arc<dyn Statistics> {
             distinct_count: None,
             min_value: Some(vec![48, 49, 47, 48, 49, 47, 48, 57]),
             max_value: Some(vec![48, 52, 47, 48, 49, 47, 48, 57]),
-        }),
-        "string_col" => Arc::new(BinaryStatistics {
+        }
+        .into(),
+        "string_col" => BinaryStatistics {
             primitive_type: PrimitiveType::from_physical(
                 "col".to_string(),
                 PhysicalType::ByteArray,
@@ -181,7 +187,8 @@ pub fn alltypes_statistics(column: &str) -> Arc<dyn Statistics> {
             distinct_count: None,
             min_value: Some(vec![48]),
             max_value: Some(vec![49]),
-        }),
+        }
+        .into(),
         "timestamp_col" => {
             todo!()
         },

@@ -4,7 +4,6 @@ mod primitive;
 mod sidecar;
 
 use std::io::{Cursor, Read, Seek};
-use std::sync::Arc;
 
 use polars::io::parquet::read::ParquetReader;
 use polars::io::parquet::write::ParquetWriter;
@@ -44,7 +43,7 @@ pub fn array_to_page(
     }
 }
 
-fn read_column<R: Read + Seek>(reader: &mut R) -> Result<(Array, Option<Arc<dyn Statistics>>)> {
+fn read_column<R: Read + Seek>(reader: &mut R) -> Result<(Array, Option<Statistics>)> {
     let (a, statistics) = super::read::read_column(reader, 0, "col")?;
     Ok((a, statistics))
 }
@@ -55,7 +54,7 @@ async fn read_column_async<
     R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
 >(
     reader: &mut R,
-) -> Result<(Array, Option<Arc<dyn Statistics>>)> {
+) -> Result<(Array, Option<Statistics>)> {
     let (a, statistics) = super::read::read_column_async(reader, 0, "col").await?;
     Ok((a, statistics))
 }
@@ -108,10 +107,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> Result<()> {
     let (result, statistics) = read_column(&mut Cursor::new(data))?;
     assert_eq!(array, result);
     let stats = alltypes_statistics(column);
-    assert_eq!(
-        statistics.as_ref().map(|x| x.as_ref()),
-        Some(stats).as_ref().map(|x| x.as_ref())
-    );
+    assert_eq!(statistics.as_ref(), Some(stats).as_ref(),);
     Ok(())
 }
 
@@ -286,10 +282,7 @@ async fn test_column_async(column: &str, compression: CompressionOptions) -> Res
     let (result, statistics) = read_column_async(&mut futures::io::Cursor::new(data)).await?;
     assert_eq!(array, result);
     let stats = alltypes_statistics(column);
-    assert_eq!(
-        statistics.as_ref().map(|x| x.as_ref()),
-        Some(stats).as_ref().map(|x| x.as_ref())
-    );
+    assert_eq!(statistics.as_ref(), Some(stats).as_ref());
     Ok(())
 }
 

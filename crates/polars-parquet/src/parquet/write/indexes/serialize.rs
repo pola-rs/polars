@@ -1,7 +1,6 @@
 use parquet_format_safe::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
 
 use crate::parquet::error::{Error, Result};
-use crate::parquet::statistics::serialize_statistics;
 use crate::parquet::write::page::{is_data_page, PageWriteSpec};
 
 pub fn serialize_column_index(pages: &[PageWriteSpec]) -> Result<ColumnIndex> {
@@ -15,7 +14,7 @@ pub fn serialize_column_index(pages: &[PageWriteSpec]) -> Result<ColumnIndex> {
         .filter(|x| is_data_page(x))
         .try_for_each(|spec| {
             if let Some(stats) = &spec.statistics {
-                let stats = serialize_statistics(stats.as_ref());
+                let stats = stats.serialize();
 
                 let null_count = stats
                     .null_count

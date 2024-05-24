@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{get_length, Encoding};
 use crate::parquet::error::{Error, Result};
 use crate::parquet::indexes::Interval;
 use crate::parquet::metadata::Descriptor;
 pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};
-use crate::parquet::statistics::{deserialize_statistics, Statistics};
+use crate::parquet::statistics::Statistics;
 pub use crate::parquet::thrift_format::{
     DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
 };
@@ -99,16 +97,16 @@ impl CompressedDataPage {
     }
 
     /// Decodes the raw statistics into a statistics
-    pub fn statistics(&self) -> Option<Result<Arc<dyn Statistics>>> {
+    pub fn statistics(&self) -> Option<Result<Statistics>> {
         match &self.header {
             DataPageHeader::V1(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
             DataPageHeader::V2(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
         }
     }
 
@@ -218,16 +216,16 @@ impl DataPage {
     }
 
     /// Decodes the raw statistics into a statistics
-    pub fn statistics(&self) -> Option<Result<Arc<dyn Statistics>>> {
+    pub fn statistics(&self) -> Option<Result<Statistics>> {
         match &self.header {
             DataPageHeader::V1(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
             DataPageHeader::V2(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
         }
     }
 }
