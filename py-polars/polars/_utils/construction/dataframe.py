@@ -114,7 +114,7 @@ def dict_to_pydf(
                     zip(
                         column_names,
                         pool.map(
-                            lambda t: pl.Series(t[0], t[1])
+                            lambda t: pl.Series(t[0], t[1], nan_to_null=nan_to_null)
                             if isinstance(t[1], np.ndarray)
                             else t[1],
                             list(data.items()),
