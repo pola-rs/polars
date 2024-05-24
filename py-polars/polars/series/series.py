@@ -3678,7 +3678,7 @@ class Series:
         Series: 'set' [u32]
         [
                 0
-                4
+                3
                 5
         ]
         >>> s.search_sorted([1, 4, 5], "left")
