@@ -81,6 +81,11 @@ impl Schema {
         Self { inner: map }
     }
 
+    /// Reserve `additional` memory spaces in the schema.
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
+    }
+
     /// The number of fields in the schema
     #[inline]
     pub fn len(&self) -> usize {
@@ -347,6 +352,21 @@ impl Schema {
     ///   index
     pub fn merge(&mut self, other: Self) {
         self.inner.extend(other.inner)
+    }
+
+    /// Merge borrowed `other` into `self`
+    ///
+    /// Merging logic:
+    /// - Fields that occur in `self` but not `other` are unmodified
+    /// - Fields that occur in `other` but not `self` are appended, in order, to the end of `self`
+    /// - Fields that occur in both `self` and `other` are updated with the dtype from `other`, but keep their original
+    ///   index
+    pub fn merge_from_ref(&mut self, other: &Self) {
+        self.inner.extend(
+            other
+                .iter()
+                .map(|(column, datatype)| (column.clone(), datatype.clone())),
+        )
     }
 
     /// Convert self to `ArrowSchema` by cloning the fields
