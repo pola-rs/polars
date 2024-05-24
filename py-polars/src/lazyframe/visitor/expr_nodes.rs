@@ -933,7 +933,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Kurtosis(_, _) => {
                     return Err(PyNotImplementedError::new_err("kurtosis"))
                 },
-                FunctionExpr::Reshape(_) => return Err(PyNotImplementedError::new_err("reshape")),
+                FunctionExpr::Reshape(_, _) => {
+                    return Err(PyNotImplementedError::new_err("reshape"))
+                },
                 FunctionExpr::RepeatBy => return Err(PyNotImplementedError::new_err("repeat by")),
                 FunctionExpr::ArgUnique => ("argunique",).to_object(py),
                 FunctionExpr::Rank {

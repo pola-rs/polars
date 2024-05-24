@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+#[cfg(feature = "dtype-array")]
 use std::collections::VecDeque;
 
 use arrow::array::*;
@@ -250,17 +251,6 @@ mod test {
             assert_eq!(out.explode()?.len(), 4);
         }
 
-        Ok(())
-    }
-
-    #[test]
-    #[cfg(feature = "dtype-array")]
-    fn test_reshape_array() -> PolarsResult<()> {
-        let s = Series::new("a", &[1, 2, 3, 4, 5, 6]);
-
-        let out = s.reshape_array(&[3, -1])?;
-
-        dbg!(&out, out.len());
         Ok(())
     }
 }

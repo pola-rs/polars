@@ -246,6 +246,7 @@ impl FunctionExpr {
                 } else {
                     match nested_type {
                         NestedType::List => DataType::List(Box::new(dtype)),
+                        #[cfg(feature = "dtype-array")]
                         NestedType::Array => {
                             let mut prev_dtype = dtype.leaf_dtype().clone();
 

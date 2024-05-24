@@ -275,3 +275,14 @@ def test_create_nested_array() -> None:
         dtype=pl.Array(pl.Array(pl.Int64, 2), 2),
     )
     assert s2.to_list() == data
+
+
+def test_array_ndarray_reshape() -> None:
+    shape = (8, 4, 2, 1)
+    s = pl.Series(range(64)).reshape(shape, nested_type=pl.Array)
+    n = s.to_numpy()
+    assert n.shape == shape
+    assert (n[0] == s[0].to_numpy()).all()
+    n = n[0]
+    s = s[0]
+    assert (n[0] == s[0].to_numpy()).all()

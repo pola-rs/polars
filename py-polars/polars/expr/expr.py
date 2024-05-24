@@ -52,6 +52,7 @@ from polars._utils.various import (
 )
 from polars.datatypes import (
     Int64,
+    List,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -83,6 +84,7 @@ if TYPE_CHECKING:
     from polars._utils.various import (
         NoDefault,
     )
+    from polars.datatypes import Array
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -10344,7 +10346,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.radians())
 
-    def reshape(self, dimensions: tuple[int, ...]) -> Self:
+    def reshape(
+        self, dimensions: tuple[int, ...], nested_type: type[Array] | type[List] = List
+    ) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
 
@@ -10353,6 +10357,9 @@ class Expr:
         dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
+        nested_type
+            The nested data type to create. List only supports 2 dimension,
+            whereas Array supports an arbitrary number of dimensions.
 
         Returns
         -------
@@ -10360,7 +10367,8 @@ class Expr:
             If a single dimension is given, results in an expression of the original
             data type.
             If a multiple dimensions are given, results in an expression of data type
-            :class:`List` with shape (rows, cols).
+            :class:`List` with shape (rows, cols)
+            or :class:`Array` with shape `dimensions`.
 
         Examples
         --------
@@ -10381,7 +10389,8 @@ class Expr:
         --------
         Expr.list.explode : Explode a list column.
         """
-        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
+        is_list = nested_type == List
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions, is_list))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
