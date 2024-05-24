@@ -299,7 +299,7 @@ where
         .collect_trusted();
 
     // Compute bitmask.
-    let num_start_nulls = ca.first_non_null().unwrap_or(0);
+    let num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
     let mut bm = MutableBitmap::with_capacity(ca.len());
     bm.extend_constant(num_start_nulls, false);
     bm.extend_constant(ca.len() - num_start_nulls, true);
@@ -330,8 +330,10 @@ where
         .collect_reversed();
 
     // Compute bitmask.
-    let last_idx = ca.len().saturating_sub(1);
-    let num_end_nulls = last_idx - ca.last_non_null().unwrap_or(last_idx);
+    let num_end_nulls = ca
+        .last_non_null()
+        .map(|i| ca.len() - 1 - i)
+        .unwrap_or(ca.len());
     let mut bm = MutableBitmap::with_capacity(ca.len());
     bm.extend_constant(ca.len() - num_end_nulls, true);
     bm.extend_constant(num_end_nulls, false);
