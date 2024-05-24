@@ -444,3 +444,43 @@ def test_explode_nullable_list() -> None:
         }
     )
     assert_frame_equal(explode_expr, expected_df)
+
+
+def test_explode_after_concat_list() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [[0], [0]],
+            "bar": [[0], [0]],
+            "spam": [[0], [0]],
+        }
+    )
+
+    df_row_1 = df[1]
+
+    # Exploding the DataFrame works
+    assert_frame_equal(
+        df_row_1.explode(pl.all()),
+        pl.DataFrame(
+            {
+                "foo": [0, 0],
+                "bar": [0, 0],
+                "spam": [0, 0],
+            }
+        )[0],
+    )
+
+    # Concat of the second and third column
+    df_row_1 = df_row_1.select(
+        pl.col("foo"), pl.concat_list(pl.col("bar"), pl.col("spam")).alias("bar_spam")
+    )
+
+    # TODO: This should work, but throws a shape error
+    assert_frame_equal(
+        df_row_1.explode(pl.all()),
+        pl.DataFrame(
+            {
+                "foo": [0, 0],
+                "bar_spam": [[0, 0, 0, 0]],
+            }
+        )[0],
+    )
