@@ -3485,6 +3485,10 @@ class DataFrame:
         """
         Write the data in a Polars DataFrame to a database.
 
+        .. versionadded:: 0.20.26
+            Support for instantiated connection objects in addition to URI strings, and
+            a new `engine_options` parameter.
+
         Parameters
         ----------
         table_name

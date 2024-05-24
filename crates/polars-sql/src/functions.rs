@@ -1235,16 +1235,14 @@ impl SQLFunctionVisitor<'_> {
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let args = extract_args(self.func);
         match (self.func.distinct, args.as_slice()) {
-            // count()
-            (false, []) => Ok(len()),
+            // count(*), count()
+            (false, [FunctionArgExpr::Wildcard] | []) => Ok(len()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.count())
             },
-            // count(*)
-            (false, [FunctionArgExpr::Wildcard]) => Ok(len()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
