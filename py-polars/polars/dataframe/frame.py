@@ -36,7 +36,6 @@ from polars._utils.construction import (
     dataframe_to_pydf,
     dict_to_pydf,
     iterable_to_pydf,
-    numpy_to_idxs,
     numpy_to_pydf,
     pandas_to_pydf,
     sequence_to_pydf,
@@ -51,6 +50,10 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
+)
+from polars._utils.getitem import (
+    _convert_np_ndarray_to_indices,
+    _convert_series_to_indices,
 )
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -1007,7 +1010,7 @@ class DataFrame:
     # `str` overlaps with `Sequence[str]`
     # We can ignore this but we must keep this overload ordering
     @overload
-    def __getitem__(  # type: ignore[overload-overlap]
+    def __getitem__(
         self, item: tuple[SingleIndexSelector, SingleColSelector]
     ) -> Any: ...
 
@@ -1115,20 +1118,16 @@ class DataFrame:
             # df[:, "a"]
             if isinstance(col_selection, str):
                 series = self.get_column(col_selection)
-                return series[row_selection]
+                return series[row_selection]  # type: ignore[index]
 
             # df[:, 1]
             if isinstance(col_selection, int):
                 series = self.to_series(col_selection)
-                return series[row_selection]
+                return series[row_selection]  # type: ignore[index]
 
             if isinstance(col_selection, list):
                 # df[:, [1, 2]]
                 if is_int_sequence(col_selection):
-                    for i in col_selection:
-                        if (i >= 0 and i >= self.width) or (i < 0 and i < -self.width):
-                            msg = f"column index {col_selection!r} is out of bounds"
-                            raise IndexError(msg)
                     series_list = [self.to_series(i) for i in col_selection]
                     df = self.__class__(series_list)
                     return df[row_selection]
@@ -1165,7 +1164,9 @@ class DataFrame:
             # df[np.array([1, 2, 3])]
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
-                return self._gather_with_series(numpy_to_idxs(item, self.shape[0]))
+                return self._gather_with_series(
+                    _convert_np_ndarray_to_indices(item, self.shape[0])
+                )
             # Select multiple columns by name
             # df[np.array(["foo", "bar"])]
             if isinstance(item[0], str):
@@ -1188,7 +1189,9 @@ class DataFrame:
             if dtype == String:
                 return self._from_pydf(self._df.select(item))
             elif dtype.is_integer():
-                return self._gather_with_series(item._pos_idxs(self.shape[0]))
+                return self._gather_with_series(
+                    _convert_series_to_indices(item, self.shape[0])
+                )
 
         # Other inputs are not supported
         msg = (
@@ -1347,20 +1350,17 @@ class DataFrame:
                     f" frame has shape {self.shape!r}"
                 )
                 raise ValueError(msg)
-            return self.to_series().get_index(0)
+            return self._df.to_series(0).get_index(0)
 
         elif row is None or column is None:
             msg = "cannot call `.item()` with only one of `row` or `column`"
             raise ValueError(msg)
 
         s = (
-            self.to_series(column)
+            self._df.to_series(column)
             if isinstance(column, int)
-            else self.get_column(column)
+            else self._df.get_column(column)
         )
-        if s is None:
-            msg = f"column index {column!r} is out of bounds"
-            raise IndexError(msg)
         return s.get_index_signed(row)
 
     def to_arrow(self) -> pa.Table:

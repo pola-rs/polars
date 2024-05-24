@@ -1,0 +1,298 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
+
+import polars._reexport as pl
+import polars.functions as F
+from polars._utils.various import range_to_slice
+from polars.datatypes.classes import (
+    Boolean,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    String,
+    UInt32,
+    UInt64,
+)
+from polars.dependencies import _check_for_numpy
+from polars.dependencies import numpy as np
+from polars.meta.index_type import get_index_type
+from polars.slice import PolarsSlice
+
+if TYPE_CHECKING:
+    from polars import DataFrame, Series
+    from polars.type_aliases import (
+        MultiColSelector,
+        MultiIndexSelector,
+        SingleColSelector,
+        SingleIndexSelector,
+    )
+
+
+# `str` overlaps with `Sequence[str]`
+# We can ignore this but we must keep this overload ordering
+@overload
+def _select_columns(df: DataFrame, key: SingleColSelector) -> Series: ...  # type: ignore[overload-overlap]
+
+
+@overload
+def _select_columns(df: DataFrame, key: MultiColSelector) -> DataFrame: ...
+
+
+def _select_columns(
+    df: DataFrame, key: SingleColSelector | MultiColSelector
+) -> DataFrame | Series:
+    """Select one or more columns from the DataFrame."""
+    if isinstance(key, int):
+        return df.to_series(key)
+
+    elif isinstance(key, str):
+        return df.get_column(key)
+
+    if isinstance(key, slice):
+        start = key.start
+        stop = key.stop
+        if isinstance(start, str):
+            start = df.get_column_index(start)
+        if isinstance(stop, str):
+            stop = df.get_column_index(stop) + 1
+        int_slice = slice(start, stop, key.step)
+        rng = range(df.width)[int_slice]
+        return _select_columns_by_index(df, rng)
+
+    elif isinstance(key, range):
+        return _select_columns_by_index(df, key)
+
+    elif isinstance(key, Sequence):
+        if not key:
+            return df.__class__()
+        elif isinstance(key[0], bool):
+            return _select_columns_by_mask(df, key)  # type: ignore[arg-type]
+        else:
+            return _select_columns_by_iterable(df, key)
+
+    elif isinstance(key, pl.Series):
+        if key.is_empty():
+            return df.__class__()
+        dtype = key.dtype
+        if dtype == String:
+            return _select_columns_by_name(df, key)
+        elif dtype.is_integer():
+            return _select_columns_by_index(df, key)
+        elif dtype == Boolean:
+            return _select_columns_by_mask(df, key)
+        else:
+            msg = f"cannot select columns using Series of type {dtype}"
+            raise TypeError(msg)
+
+    elif _check_for_numpy(key) and isinstance(key, np.ndarray):
+        if key.ndim != 1:
+            msg = "multi-dimensional NumPy arrays not supported as index"
+            raise TypeError(msg)
+
+        if len(key) == 0:
+            return df.__class__()
+
+        dtype_kind = key.dtype.kind
+        if dtype_kind in ("i", "u"):
+            return _select_columns_by_index(df, key)
+        elif dtype_kind == "b":
+            return _select_columns_by_mask(df, key)
+        elif isinstance(key[0], str):
+            return _select_columns_by_name(df, key)
+        else:
+            msg = f"cannot select columns using NumPy ndarray of type {key.dtype}"
+            raise TypeError(msg)
+
+    else:
+        msg = f"cannot select columns with key {key!r} of type {type(key).__name__!r}"
+        raise TypeError(msg)
+
+
+def _select_single_column(df: DataFrame, key: SingleColSelector) -> Series:
+    if isinstance(key, int):
+        return df.to_series(key)
+    elif isinstance(key, str):
+        return df.get_column(key)
+    else:
+        msg = f"expected int or str, got {key!r}"
+        raise TypeError(msg)
+
+
+def _select_columns_by_index(df: DataFrame, key: Iterable[int]) -> DataFrame:
+    series = [df.to_series(i) for i in key]
+    return df.__class__(series)
+
+
+def _select_columns_by_name(df: DataFrame, key: Iterable[str]) -> DataFrame:
+    return df._from_pydf(df._df.select(key))
+
+
+def _select_columns_by_iterable(df: DataFrame, key: Iterable[int | str]) -> DataFrame:
+    series = [_select_single_column(df, k) for k in key]
+    return df.__class__(series)
+
+
+def _select_columns_by_mask(
+    df: DataFrame, key: Sequence[bool] | Series | np.ndarray[Any, Any]
+) -> DataFrame:
+    if len(key) != df.width:
+        msg = (
+            f"expected {df.width} values when selecting columns by"
+            f" boolean mask, got {len(key)}"
+        )
+        raise ValueError(msg)
+
+    indices = (i for i, val in enumerate(key) if val)
+    return _select_columns_by_index(df, indices)
+
+
+@overload
+def _select_rows(df: DataFrame, key: SingleIndexSelector) -> Series: ...
+
+
+@overload
+def _select_rows(df: DataFrame, key: MultiIndexSelector) -> DataFrame: ...
+
+
+def _select_rows(
+    df: DataFrame, key: SingleIndexSelector | MultiIndexSelector
+) -> DataFrame | Series:
+    """Select one or more rows from the DataFrame."""
+    if isinstance(key, int):
+        return df.slice(key, 1)
+
+    if isinstance(key, slice):
+        return _select_rows_by_slice(df, key)
+
+    elif isinstance(key, range):
+        key = range_to_slice(key)
+        return _select_rows_by_slice(df, key)
+
+    elif isinstance(key, Sequence):
+        s = pl.Series(key)
+        indices = _convert_series_to_indices(s, df.height)
+        return _select_rows_by_index(df, indices)
+
+    elif isinstance(key, pl.Series):
+        indices = _convert_series_to_indices(key, df.height)
+        return _select_rows_by_index(df, indices)
+
+    elif _check_for_numpy(key) and isinstance(key, np.ndarray):
+        indices = _convert_np_ndarray_to_indices(key, df.height)
+        return _select_rows_by_index(df, indices)
+
+    else:
+        msg = f"cannot select rows with key {key!r} of type {type(key).__name__!r}"
+        raise TypeError(msg)
+
+
+def _select_rows_by_slice(df: DataFrame, key: slice) -> DataFrame:
+    return PolarsSlice(df).apply(key)  # type: ignore[return-value]
+
+
+def _select_rows_by_index(df: DataFrame, key: Series) -> DataFrame:
+    return df._from_pydf(df._df.gather_with_series(key))
+
+
+def _convert_series_to_indices(s: Series, size: int) -> Series:
+    # Unsigned or signed Series (ordered from fastest to slowest).
+    #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
+    #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
+    #     or pl.UInt64 (polars_u64_idx).
+    #   - Signed Series indexes are converted pl.UInt32 (polars) or
+    #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+    #     to absolute indexes.
+
+    # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
+    idx_type = get_index_type()
+
+    if s.dtype == idx_type:
+        return s
+
+    if not s.dtype.is_integer():
+        msg = "unsupported idxs datatype"
+        raise NotImplementedError(msg)
+
+    if s.len() == 0:
+        return pl.Series(s.name, [], dtype=idx_type)
+
+    if idx_type == UInt32:
+        if s.dtype in {Int64, UInt64}:
+            if s.max() >= 2**32:  # type: ignore[operator]
+                msg = "index positions should be smaller than 2^32"
+                raise ValueError(msg)
+        if s.dtype == Int64:
+            if s.min() < -(2**32):  # type: ignore[operator]
+                msg = "index positions should be bigger than -2^32 + 1"
+                raise ValueError(msg)
+
+    if s.dtype.is_signed_integer():
+        if s.min() < 0:  # type: ignore[operator]
+            if idx_type == UInt32:
+                idxs = s.cast(Int32) if s.dtype in {Int8, Int16} else s
+            else:
+                idxs = s.cast(Int64) if s.dtype in {Int8, Int16, Int32} else s
+
+            # Update negative indexes to absolute indexes.
+            return (
+                idxs.to_frame()
+                .select(
+                    F.when(F.col(idxs.name) < 0)
+                    .then(size + F.col(idxs.name))
+                    .otherwise(F.col(idxs.name))
+                    .cast(idx_type)
+                )
+                .to_series(0)
+            )
+
+    return s.cast(idx_type)
+
+
+def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Series:
+    # Unsigned or signed Numpy array (ordered from fastest to slowest).
+    #   - np.uint32 (polars) or np.uint64 (polars_u64_idx) numpy array
+    #     indexes.
+    #   - Other unsigned numpy array indexes are converted to pl.UInt32
+    #     (polars) or pl.UInt64 (polars_u64_idx).
+    #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
+    #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+    #     to absolute indexes.
+    if arr.ndim != 1:
+        msg = "only 1D numpy array is supported as index"
+        raise ValueError(msg)
+
+    idx_type = get_index_type()
+
+    if len(arr) == 0:
+        return pl.Series("", [], dtype=idx_type)
+
+    # Numpy array with signed or unsigned integers.
+    if arr.dtype.kind not in ("i", "u"):
+        msg = "unsupported idxs datatype"
+        raise NotImplementedError(msg)
+
+    if idx_type == UInt32:
+        if arr.dtype in {np.int64, np.uint64} and arr.max() >= 2**32:
+            msg = "index positions should be smaller than 2^32"
+            raise ValueError(msg)
+        if arr.dtype == np.int64 and arr.min() < -(2**32):
+            msg = "index positions should be bigger than -2^32 + 1"
+            raise ValueError(msg)
+
+    if arr.dtype.kind == "i" and arr.min() < 0:
+        if idx_type == UInt32:
+            if arr.dtype in (np.int8, np.int16):
+                arr = arr.astype(np.int32)
+        else:
+            if arr.dtype in (np.int8, np.int16, np.int32):
+                arr = arr.astype(np.int64)
+
+        # Update negative indexes to absolute indexes.
+        arr = np.where(arr < 0, size + arr, arr)
+
+    # numpy conversion is much faster
+    arr = arr.astype(np.uint32) if idx_type == UInt32 else arr.astype(np.uint64)
+
+    return pl.Series("", arr, dtype=idx_type)

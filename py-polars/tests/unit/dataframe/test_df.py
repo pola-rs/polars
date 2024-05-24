@@ -168,8 +168,9 @@ def test_selection() -> None:
     assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
     assert (df["c"] == df["a"].cast(str)).sum() == 0
-    assert df[:, "a":"b"].rows() == [(1, 1.0), (2, 2.0), (3, 3.0)]  # type: ignore[misc]
-    assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore[misc]
+    assert df[:, "a":"b"].rows() == [(1, 1.0), (2, 2.0), (3, 3.0)]  # type: ignore[index, misc]
+    assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore[index, misc]
+    # assert df[:, []].shape == (0, 0)
     expect = pl.DataFrame({"c": ["b"]})
     assert_frame_equal(df[1, [2]], expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
@@ -423,7 +424,9 @@ def test_to_series_bad_inputs() -> None:
     with pytest.raises(IndexError, match="index -100 is out of bounds"):
         df.to_series(-100)
 
-    with pytest.raises(TypeError, match="should be an int"):
+    with pytest.raises(
+        TypeError, match="'str' object cannot be interpreted as an integer"
+    ):
         df.to_series("x")  # type: ignore[arg-type]
 
 
@@ -2146,7 +2149,7 @@ def test_getitem() -> None:
     with pytest.raises(TypeError):
         df[np.array([True, False, True])]
     with pytest.raises(TypeError):
-        df[[True, False, True], [False, True]]  # type: ignore[index]
+        df[[True, False, True], [False, True]]
     with pytest.raises(TypeError):
         df[pl.Series([True, False, True]), "b"]
 

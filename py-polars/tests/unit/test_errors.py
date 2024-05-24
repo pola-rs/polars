@@ -534,7 +534,7 @@ def test_invalid_getitem_key_err() -> None:
     df = pl.DataFrame({"x": [1.0], "y": [1.0]})
 
     with pytest.raises(KeyError, match=r"('x', 'y')"):
-        df["x", "y"]  # type: ignore[index]
+        df["x", "y"]
 
 
 def test_invalid_group_by_arg() -> None:
