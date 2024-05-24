@@ -1051,3 +1051,17 @@ def test_from_numpy_different_resolution_invalid() -> None:
         pl.Series(
             np.array(["2020-01-01"], dtype="datetime64[s]"), dtype=pl.Datetime("us")
         )
+
+
+def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "polars._utils.construction.dataframe._MIN_NUMPY_SIZE_FOR_MULTITHREADING", 2
+    )
+    df = pd.DataFrame(
+        {"a": [np.nan, 1.0, 2], "b": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}
+    )
+    result = pl.from_pandas(df, nan_to_null=True)
+    expected = pl.DataFrame(
+        {"a": [None, 1.0, 2], "b": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}
+    )
+    assert_frame_equal(result, expected)

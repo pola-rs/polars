@@ -69,6 +69,8 @@ if TYPE_CHECKING:
         SchemaDict,
     )
 
+_MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
+
 
 def dict_to_pydf(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
@@ -97,7 +99,7 @@ def dict_to_pydf(
             int(
                 _check_for_numpy(val)
                 and isinstance(val, np.ndarray)
-                and len(val) > 1000
+                and len(val) > _MIN_NUMPY_SIZE_FOR_MULTITHREADING
             )
             for val in data.values()
         )
