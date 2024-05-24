@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
+
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
@@ -736,9 +737,14 @@ class Array(NestedType):
     inner: PolarsDataType | None = None
     size: int
     # outer shape
-    shape: None | tuple[int] = None
+    shape: None | tuple[int, ...] = None
 
-    def __init__(self, inner: PolarsDataType | PythonDataType, shape: int | tuple[int] = None, width: int = None):
+    def __init__(
+        self,
+        inner: PolarsDataType | PythonDataType,
+        shape: int | tuple[int, ...] | None = None,
+        width: int | None = None,
+    ):
         if width is not None:
             shape = width
         elif isinstance(shape, tuple):
@@ -747,6 +753,10 @@ class Array(NestedType):
                 for dim in shape[1:]:
                     inner = Array(inner, dim)
             shape = shape[0]
+
+        if shape is None:
+            msg = "either 'shape' or 'width' must be set"
+            raise ValueError(msg)
 
         self.inner = polars.datatypes.py_type_to_dtype(inner)
         self.size = shape
@@ -780,7 +790,7 @@ class Array(NestedType):
         if self.shape:
             # get leaf type
             dtype = self.inner
-            while dtype == Array:
+            while isinstance(dtype, Array):
                 dtype = dtype.inner
 
             return f"{class_name}({dtype!r}, shape={self.shape})"
