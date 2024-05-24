@@ -157,7 +157,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let mut has_seen_unpushable = false;
         let mut needs_simple_projection = false;
 
-        input_schema_inner.reserve(pushable.set_bits());
+        input_schema_inner.reserve(pushable_set_bits);
+        input_exprs.exprs_mut().reserve(pushable_set_bits);
         *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
             .into_iter()
             .zip(pushable.iter())
