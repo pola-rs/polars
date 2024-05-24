@@ -266,9 +266,9 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let df = self.df.take(idx).map_err(PyPolarsErr::from)?;
+    pub fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+        let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
+        let df = self.df.take(indices).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

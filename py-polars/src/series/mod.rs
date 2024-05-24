@@ -309,10 +309,10 @@ impl PySeries {
             .into())
     }
 
-    fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
-        Ok(take.into())
+    fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+        let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
+        let s = self.series.take(indices).map_err(PyPolarsErr::from)?;
+        Ok(s.into())
     }
 
     fn null_count(&self) -> PyResult<usize> {

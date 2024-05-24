@@ -1286,8 +1286,8 @@ class Series:
 
         return self.cast(idx_type)
 
-    def _take_with_series(self, s: Series) -> Series:
-        return self._from_pyseries(self._s.take_with_series(s._s))
+    def _gather_with_series(self, s: Series) -> Series:
+        return self._from_pyseries(self._s.gather_with_series(s._s))
 
     @overload
     def __getitem__(self, item: int) -> Any: ...
@@ -1303,10 +1303,10 @@ class Series:
         item: int | Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Any:
         if isinstance(item, Series) and item.dtype.is_integer():
-            return self._take_with_series(item._pos_idxs(self.len()))
+            return self._gather_with_series(item._pos_idxs(self.len()))
 
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
-            return self._take_with_series(numpy_to_idxs(item, self.len()))
+            return self._gather_with_series(numpy_to_idxs(item, self.len()))
 
         # Integer
         elif isinstance(item, int):
@@ -1328,7 +1328,7 @@ class Series:
             if idx_series.has_nulls():
                 msg = "cannot use `__getitem__` with index values containing nulls"
                 raise ValueError(msg)
-            return self._take_with_series(idx_series)
+            return self._gather_with_series(idx_series)
 
         msg = (
             f"cannot use `__getitem__` on Series of dtype {self.dtype!r}"
