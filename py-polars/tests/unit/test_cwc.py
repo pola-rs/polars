@@ -1,6 +1,5 @@
 # Tests for the optimization pass cluster WITH_COLUMNS
 
-
 import polars as pl
 
 
@@ -152,7 +151,7 @@ def test_cwc_with_internal_aliases() -> None:
     )
 
 
-def test_issue_16436() -> None:
+def test_read_of_pushed_column_16436() -> None:
     df = pl.DataFrame(
         {
             "x": [1.12, 2.21, 4.2, 3.21],
@@ -169,3 +168,29 @@ def test_issue_16436() -> None:
         .fill_nan(0)
         .collect()
     )
+
+
+def test_multiple_simple_projections_16435() -> None:
+    df = pl.DataFrame({"a": [1]}).lazy()
+
+    df = (
+        df.with_columns(b=pl.col("a"))
+        .with_columns(c=pl.col("b"))
+        .with_columns(l2a=pl.lit(2))
+        .with_columns(l2b=pl.col("l2a"))
+        .with_columns(m=pl.lit(3))
+    )
+
+    df.collect()
+
+
+def test_reverse_order() -> None:
+    df = pl.LazyFrame({"a": [1], "b": [2]})
+
+    df = (
+        df.with_columns(a=pl.col("a"), b=pl.col("b"), c=pl.col("a") * pl.col("b"))
+        .with_columns(x=pl.col("a"), y=pl.col("b"))
+        .with_columns(b=pl.col("a"), a=pl.col("b"))
+    )
+
+    df.collect()

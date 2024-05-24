@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
+use polars_core::schema::Schema;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::arena::{Arena, Node};
 
@@ -148,8 +149,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             continue;
         }
 
-        let mut new_current_schema = current_schema.as_ref().clone();
-        let mut new_input_schema = input_schema.as_ref().clone();
+        let input_schema_inner = Arc::make_mut(input_schema);
 
         // @NOTE: We don't have to insert a SimpleProjection or redo the `current_schema` if
         // `pushable` contains only 0..N for some N. We use these two variables to keep track
@@ -157,21 +157,20 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let mut has_seen_unpushable = false;
         let mut needs_simple_projection = false;
 
-        let mut already_removed = 0;
+        input_schema_inner.reserve(pushable.set_bits());
         *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
             .into_iter()
             .zip(pushable.iter())
-            .enumerate()
-            .filter_map(|(i, (expr, do_pushdown))| {
+            .filter_map(|(expr, do_pushdown)| {
                 if do_pushdown {
                     needs_simple_projection = has_seen_unpushable;
 
+                    let column = expr.output_name_arc().as_ref();
+                    // @NOTE: we cannot just use the index here, as there might be renames that sit
+                    // earlier in the schema
+                    let datatype = current_schema.get(column).unwrap();
+                    input_schema_inner.with_column(column.into(), datatype.clone());
                     input_exprs.exprs_mut().push(expr);
-                    let (column, datatype) = new_current_schema
-                        .shift_remove_index(i - already_removed)
-                        .unwrap();
-                    new_input_schema.with_column(column, datatype);
-                    already_removed += 1;
 
                     None
                 } else {
@@ -188,8 +187,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // @NOTE: Here we add a simple projection to make sure that the output still
         // has the right schema.
         if needs_simple_projection {
-            new_current_schema.merge(new_input_schema.clone());
-            *input_schema = Arc::new(new_input_schema);
+            // @NOTE: This may seem stupid, but this way we prioritize the input columns and then
+            // the existing columns which is exactly what we want.
+            let mut new_current_schema = Schema::with_capacity(current_schema.len());
+            new_current_schema.merge_from_ref(input_schema.as_ref());
+            new_current_schema.merge_from_ref(current_schema.as_ref());
+
+            debug_assert_eq!(new_current_schema.len(), current_schema.len());
+
             let proj_schema = std::mem::replace(current_schema, Arc::new(new_current_schema));
 
             let moved_current = lp_arena.add(IR::Invalid);
@@ -199,8 +204,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             };
             let current = lp_arena.replace(current, projection);
             lp_arena.replace(moved_current, current);
-        } else {
-            *input_schema = Arc::new(new_input_schema);
         }
     }
 }
