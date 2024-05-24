@@ -484,3 +484,22 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     expected = df.filter(pl.col("a") <= 2)
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk()
+def test_unsupported_dtypes(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [None]}, schema={"a": pl.Null})
+    with pytest.raises(TypeError, match="unsupported data type"):
+        df.write_delta(tmp_path / "null")
+
+    df = pl.DataFrame({"a": [123]}, schema={"a": pl.Time})
+    with pytest.raises(TypeError, match="unsupported data type"):
+        df.write_delta(tmp_path / "time")
+
+
+@pytest.mark.write_disk()
+def test_categorical_becomes_string(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
+    df.write_delta(tmp_path)
+    df2 = pl.read_delta(str(tmp_path))
+    assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))

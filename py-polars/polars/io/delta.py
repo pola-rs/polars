@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from polars.convert import from_arrow
-from polars.datatypes import Categorical, Null, Time
+from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
@@ -337,7 +337,10 @@ def _check_if_delta_available() -> None:
 
 def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     schema_dtypes = unpack_dtypes(*dtypes)
-    unsupported_types = {Time, Categorical, Null}
+    unsupported_types = {Time, Null}
+    # Note that this overlap check does NOT work correctly for Categorical, so
+    # if Categorical is added back to unsupported_types a different check will
+    # need to be used.
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
