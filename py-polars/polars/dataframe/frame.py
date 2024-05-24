@@ -1007,15 +1007,6 @@ class DataFrame:
     def __reversed__(self) -> Iterator[Series]:
         return reversed(self.get_columns())
 
-    def _pos_idx(self, idx: int, dim: int) -> int:
-        if idx >= 0:
-            return idx
-        else:
-            return self.shape[dim] + idx
-
-    def _take_with_series(self, s: Series) -> DataFrame:
-        return self._from_pydf(self._df.take_with_series(s._s))
-
     @overload
     def __getitem__(self, item: str) -> Series: ...
 
@@ -1050,8 +1041,9 @@ class DataFrame:
             | tuple[int, int | str]
         ),
     ) -> DataFrame | Series:
-        """Get item. Does quite a lot. Read the comments."""
-        # fail on ['col1', 'col2', ..., 'coln']
+        """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
+        # Fail when multiple column names are passed as separate inputs
+        # df["foo", "bar"]
         if (
             isinstance(item, tuple)
             and len(item) > 1  # type: ignore[redundant-expr]
@@ -1059,8 +1051,7 @@ class DataFrame:
         ):
             raise KeyError(item)
 
-        # select rows and columns at once
-        # every 2d selection, i.e. tuple is row column order, just like numpy
+        # Handle two-dimensional inputs (row, column) - follow NumPy API
         if isinstance(item, tuple) and len(item) == 2:
             row_selection, col_selection = item
 
@@ -1150,24 +1141,27 @@ class DataFrame:
             df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
 
-        # select single column
+        # Select a single column by name
         # df["foo"]
         if isinstance(item, str):
             return self.get_column(item)
 
+        # Select a single row by index
         # df[idx]
         if isinstance(item, int):
-            return self.slice(self._pos_idx(item, dim=0), 1)
+            return self.slice(item, 1)
 
+        # Select multiple rows by index (range)
         # df[range(n)]
         if isinstance(item, range):
             return self[range_to_slice(item)]
 
+        # Select multiple rows by index (slice)
         # df[:]
         if isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        # select rows by numpy mask or index
+        # Select rows by NumPy mask or index
         # df[np.array([1, 2, 3])]
         # df[np.array([True, False, True])]
         if _check_for_numpy(item) and isinstance(item, np.ndarray):
@@ -1180,13 +1174,18 @@ class DataFrame:
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
 
+        # Select multiple columns by name
+        # df[["foo", "bar", "ham"]]
         if is_str_sequence(item, allow_str=False):
-            # select multiple columns
-            # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
-        elif is_int_sequence(item):
-            item = pl.Series("", item)  # fall through to next if isinstance
 
+        # Select multiple rows by index
+        # df[[1, 2, 3]]
+        elif is_int_sequence(item):
+            item = pl.Series("", item)  # fall through to Series case
+
+        # Select multiple rows by index/columns by name
+        # df[series]
         if isinstance(item, pl.Series):
             dtype = item.dtype
             if dtype == String:
@@ -1194,12 +1193,15 @@ class DataFrame:
             elif dtype.is_integer():
                 return self._take_with_series(item._pos_idxs(self.shape[0]))
 
-        # if no data has been returned, the operation is not supported
+        # Other inputs are not supported
         msg = (
             f"cannot use `__getitem__` on DataFrame with item {item!r}"
             f" of type {type(item).__name__!r}"
         )
         raise TypeError(msg)
+
+    def _take_with_series(self, s: Series) -> DataFrame:
+        return self._from_pydf(self._df.take_with_series(s._s))
 
     def __setitem__(
         self,
