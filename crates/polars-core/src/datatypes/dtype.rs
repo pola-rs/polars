@@ -682,7 +682,7 @@ impl Display for DataType {
 
                 let dims = self.get_shape().unwrap();
                 let shape = if dims.len() == 1 {
-                   format!("{}", dims[0])
+                    format!("{}", dims[0])
                 } else {
                     format_tuple!(dims)
                 };

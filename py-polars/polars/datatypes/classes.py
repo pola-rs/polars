@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
-
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
@@ -735,11 +734,22 @@ class Array(NestedType):
     """
 
     inner: PolarsDataType | None = None
-    width: int
+    size: int
+    # outer shape
+    shape: None | tuple[int] = None
 
-    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
+    def __init__(self, inner: PolarsDataType | PythonDataType, shape: int | tuple[int] = None, width: int = None):
+        if width is not None:
+            shape = width
+        elif isinstance(shape, tuple):
+            if len(shape) > 1:
+                self.shape = shape
+                for dim in shape[1:]:
+                    inner = Array(inner, dim)
+            shape = shape[0]
+
         self.inner = polars.datatypes.py_type_to_dtype(inner)
-        self.width = width
+        self.size = shape
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -752,7 +762,7 @@ class Array(NestedType):
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
         if isinstance(other, Array):
-            if self.width != other.width:
+            if self.size != other.size:
                 return False
             elif self.inner is None or other.inner is None:
                 return True
@@ -762,11 +772,19 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner, self.width))
+        return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, width={self.width})"
+
+        if self.shape:
+            # get leaf type
+            dtype = self.inner
+            while dtype == Array:
+                dtype = dtype.inner
+
+            return f"{class_name}({dtype!r}, shape={self.shape})"
+        return f"{class_name}({self.inner!r}, size={self.size})"
 
 
 class Field:
