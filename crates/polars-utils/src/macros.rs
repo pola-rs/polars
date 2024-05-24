@@ -16,28 +16,3 @@ macro_rules! unreachable_unchecked_release {
         }
     };
 }
-
-#[macro_export]
-macro_rules! format_list {
-    ($e:expr) => {{
-        use std::fmt::Write;
-        let mut out = String::new();
-        out.push('[');
-        let mut iter = $e.into_iter();
-        let mut next = iter.next();
-
-        loop {
-            if let Some(val) = next {
-                write!(out, "{val}").unwrap();
-            };
-            next = iter.next();
-            if next.is_some() {
-                out.push_str(", ")
-            } else {
-                break;
-            }
-        }
-        out.push_str("]\n");
-        out
-    };};
-}

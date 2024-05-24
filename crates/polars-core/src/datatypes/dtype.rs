@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+#[cfg(feature = "dtype-array")]
+use polars_utils::format_tuple;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -201,6 +204,15 @@ impl DataType {
             DataType::Array(inner, _) => Some(inner),
             _ => None,
         }
+    }
+
+    /// Get the absolute inner data type of a nested type.
+    pub fn leaf_dtype(&self) -> &DataType {
+        let mut prev = self;
+        while let Some(dtype) = prev.inner_dtype() {
+            prev = dtype
+        }
+        prev
     }
 
     /// Convert to the physical data type
@@ -666,15 +678,10 @@ impl Display for DataType {
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => {
-                let tp = self.inner_dtype().unwrap();
+                let tp = self.leaf_dtype();
 
-                write!(f, "array[{tp}, shape: (")?;
                 let dims = self.get_shape().unwrap();
-                let n = dims.len() - 1;
-                for v in dims.iter().take(n) {
-                    write!(f, "{v}, ")?
-                }
-                return write!(f, "{})", dims[n]);
+                return write!(f, "array[{tp}, shape: {}]", format_tuple!(dims));
             },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
