@@ -55,11 +55,11 @@ There are a number of reasons functionality may be marked as unstable:
 
 - We are unsure about the exact API. The name, function signature, or implementation are likely to change in the future.
 - The functionality is not tested extensively yet. Bugs may pop up when used in real-world scenarios.
-- The functionality does not integrate well with the full Polars API. You may find it works in one context but not in another.
+- The functionality does not yet integrate well with the full Polars API. You may find it works in one context but not in another.
 
 Releasing functionality as unstable allows us to gather important feedback from users that use Polars in real-world scenarios.
-This helps us fine-tune things before giving it the final stamp of approval.
-Users are only interested in solid, well-tested functionality can avoid this part of the API.
+This helps us fine-tune things before giving it our final stamp of approval.
+Users that are only interested in solid, well-tested functionality can avoid this part of the API.
 
 Functionality marked as unstable may change at any point without it being considered a breaking change.
 
