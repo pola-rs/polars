@@ -681,7 +681,12 @@ impl Display for DataType {
                 let tp = self.leaf_dtype();
 
                 let dims = self.get_shape().unwrap();
-                return write!(f, "array[{tp}, shape: {}]", format_tuple!(dims));
+                let shape = if dims.len() == 1 {
+                   format!("{}", dims[0])
+                } else {
+                    format_tuple!(dims)
+                };
+                return write!(f, "array[{tp}, {}]", shape);
             },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
