@@ -623,14 +623,34 @@ pub(crate) struct ColumnsDisplay<'a>(pub(crate) &'a Schema);
 impl fmt::Display for ColumnsDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.0.len();
-        let mut iter_names = self.0.iter_names();
+        let mut iter_names = self.0.iter_names().enumerate();
 
-        if let Some(fst) = iter_names.next() {
+        const MAX_LEN: usize = 32;
+        const ADD_PER_ITEM: usize = 4;
+
+        let mut current_len = 0;
+
+        if let Some((_, fst)) = iter_names.next() {
             write!(f, "\"{fst}\"")?;
 
-            if len > 0 {
-                write!(f, ", ... {len} other columns")?;
+            current_len += fst.len() + ADD_PER_ITEM;
+        }
+
+        for (i, col) in iter_names {
+            current_len += col.len() + ADD_PER_ITEM;
+
+            if current_len > MAX_LEN {
+                write!(f, ", ... {} other ", len - i)?;
+                if len - i == 1 {
+                    f.write_str("column")?;
+                } else {
+                    f.write_str("columns")?;
+                }
+
+                break;
             }
+
+            write!(f, ", \"{col}\"")?;
         }
 
         Ok(())
