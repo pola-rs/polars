@@ -48,7 +48,7 @@ class ExprStructNameSpace:
         ...         "ccc": [True, None],
         ...         "ddd": [[1, 2], [3]],
         ...     }
-        ... ).select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+        ... ).select(pl.struct("aaa", "bbb", "ccc", "ddd").alias("struct_col"))
         >>> df
         shape: (2, 1)
         ┌──────────────────────┐
@@ -168,7 +168,7 @@ class ExprStructNameSpace:
         ...         "ccc": [True, None],
         ...         "ddd": [[1, 2], [3]],
         ...     }
-        ... ).select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+        ... ).select(pl.struct("aaa", "bbb", "ccc", "ddd").alias("struct_col"))
         >>> df
         shape: (2, 1)
         ┌──────────────────────┐
@@ -266,9 +266,9 @@ class ExprStructNameSpace:
         └───────────┴──────────┘
         >>> df = df.with_columns(
         ...     pl.col("coords").struct.with_fields(
-        ...         pl.col("coords").struct.field("x").sqrt(),
-        ...         y_mul=pl.col("coords").struct.field("y") * pl.col("multiply"),
-        ...     ),
+        ...         pl.field("x").sqrt(),
+        ...         y_mul=pl.field("y") * pl.col("multiply"),
+        ...     )
         ... )
         >>> df
         shape: (3, 2)
@@ -303,6 +303,9 @@ class ExprStructNameSpace:
             Additional fields to add, specified as keyword arguments.
             The columns will be renamed to the keyword used.
 
+        See Also
+        --------
+        field
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
