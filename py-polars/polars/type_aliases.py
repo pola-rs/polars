@@ -255,21 +255,26 @@ ConnectionOrCursor: TypeAlias = Union[
 ]
 
 
-# these aliases are used to annotate DataFrame.__getitem__()
-# MultiRowSelector indexes into the vertical axis and
-# MultiColSelector indexes into the horizontal axis
-# NOTE: wrapping these as strings is necessary for Python <3.10
-SingleRowSelector: TypeAlias = int
-MultiRowSelector: TypeAlias = Union[
-    slice, range, Sequence[int], "Series", "np.ndarray[Any, Any]"
-]
-SingleColSelector: TypeAlias = int | str
-MultiColSelector: TypeAlias = Union[
+# Annotations for `__getitem__` methods
+SingleIndexSelector: TypeAlias = int
+MultiIndexSelector: TypeAlias = Union[
     slice,
     range,
     Sequence[int],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+SingleNameSelector: TypeAlias = str
+MultiNameSelector: TypeAlias = Union[
+    slice,
     Sequence[str],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+BooleanMask: TypeAlias = Union[
     Sequence[bool],
     "Series",
     "np.ndarray[Any, Any]",
 ]
+SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
+MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]

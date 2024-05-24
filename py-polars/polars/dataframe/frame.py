@@ -153,21 +153,20 @@ if TYPE_CHECKING:
         JoinValidation,
         Label,
         MultiColSelector,
-        MultiRowSelector,
+        MultiIndexSelector,
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
         PivotAgg,
         PolarsDataType,
-        PythonLiteral,
         RollingInterpolationMethod,
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
         SelectorType,
         SingleColSelector,
-        SingleRowSelector,
+        SingleIndexSelector,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -1005,48 +1004,49 @@ class DataFrame:
     def __reversed__(self) -> Iterator[Series]:
         return reversed(self.get_columns())
 
+    # `str` overlaps with `Sequence[str]`
+    # We can ignore this but we must keep this overload ordering
     @overload
-    def __getitem__(self, item: str) -> Series: ...
+    def __getitem__(  # type: ignore[overload-overlap]
+        self, item: tuple[SingleIndexSelector, SingleColSelector]
+    ) -> Any: ...
+
+    @overload
+    def __getitem__(  # type: ignore[overload-overlap]
+        self, item: str | tuple[MultiIndexSelector, SingleColSelector]
+    ) -> Series: ...
 
     @overload
     def __getitem__(
         self,
         item: (
-            int
-            | tuple[SingleRowSelector, MultiColSelector]
-            | tuple[MultiRowSelector, MultiColSelector]
+            SingleIndexSelector
+            | MultiIndexSelector
+            | MultiColSelector
+            | tuple[SingleIndexSelector, MultiColSelector]
+            | tuple[MultiIndexSelector, MultiColSelector]
         ),
     ) -> DataFrame: ...
 
-    @overload
-    def __getitem__(
-        self, item: tuple[SingleRowSelector, SingleColSelector]
-    ) -> PythonLiteral: ...
-
-    @overload
-    def __getitem__(
-        self, item: tuple[MultiRowSelector, SingleColSelector]
-    ) -> Series: ...
-
     def __getitem__(
         self,
         item: (
-            SingleRowSelector
+            SingleIndexSelector
             | SingleColSelector
             | MultiColSelector
-            | MultiRowSelector
-            | tuple[SingleRowSelector, SingleColSelector]
-            | tuple[SingleRowSelector, MultiColSelector]
-            | tuple[MultiRowSelector, SingleColSelector]
-            | tuple[MultiRowSelector, MultiColSelector]
+            | MultiIndexSelector
+            | tuple[SingleIndexSelector, SingleColSelector]
+            | tuple[SingleIndexSelector, MultiColSelector]
+            | tuple[MultiIndexSelector, SingleColSelector]
+            | tuple[MultiIndexSelector, MultiColSelector]
         ),
-    ) -> DataFrame | Series | PythonLiteral:
+    ) -> DataFrame | Series | Any:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
         # Fail when multiple column names are passed as separate inputs
         # df["foo", "bar"]
         if (
             isinstance(item, tuple)
-            and len(item) > 1  # type: ignore[redundant-expr]
+            and len(item) > 1
             and all(isinstance(x, str) for x in item)
         ):
             raise KeyError(item)
@@ -1146,17 +1146,17 @@ class DataFrame:
         if isinstance(item, str):
             return self.get_column(item)
 
-        # Select a single row by index
+        # Select a single row
         # df[idx]
         if isinstance(item, int):
             return self.slice(item, 1)
 
-        # Select multiple rows by index (range)
+        # Select multiple rows (range)
         # df[range(n)]
         if isinstance(item, range):
             return self[range_to_slice(item)]
 
-        # Select multiple rows by index (slice)
+        # Select multiple rows (slice)
         # df[:]
         if isinstance(item, slice):
             return PolarsSlice(self).apply(item)
@@ -8170,6 +8170,8 @@ class DataFrame:
                     f" Pass `by` as a list to silence this warning, e.g. `partition_by([{by!r}], as_dict=True)`.",
                     version="0.20.4",
                 )
+
+            names: list[Any]
             if include_key:
                 if key_as_single_value:
                     names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]

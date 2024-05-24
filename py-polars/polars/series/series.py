@@ -138,6 +138,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         IntoExpr,
         IntoExprColumn,
+        MultiIndexSelector,
         NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
@@ -148,6 +149,7 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
         SeriesBuffers,
+        SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
     )
@@ -1290,18 +1292,15 @@ class Series:
         return self._from_pyseries(self._s.gather_with_series(s._s))
 
     @overload
-    def __getitem__(self, item: int) -> Any: ...
+    def __getitem__(self, item: SingleIndexSelector) -> Any: ...
 
     @overload
-    def __getitem__(
-        self,
-        item: Series | range | slice | np.ndarray[Any, Any] | list[int],
-    ) -> Series: ...
+    def __getitem__(self, item: MultiIndexSelector) -> Series: ...
 
     def __getitem__(
         self,
-        item: int | Series | range | slice | np.ndarray[Any, Any] | list[int],
-    ) -> Any:
+        item: SingleIndexSelector | MultiIndexSelector,
+    ) -> Any | Series:
         if isinstance(item, Series) and item.dtype.is_integer():
             return self._gather_with_series(item._pos_idxs(self.len()))
 
