@@ -3668,7 +3668,7 @@ class Series:
         --------
         >>> s = pl.Series("set", [1, 2, 3, 4, 4, 5, 6, 7])
         >>> s.search_sorted(4)
-        4
+        3
         >>> s.search_sorted(4, "left")
         3
         >>> s.search_sorted(4, "right")
