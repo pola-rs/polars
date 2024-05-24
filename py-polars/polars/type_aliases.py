@@ -249,5 +249,17 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-AlchemyConnection = Union["Connection", "Engine", "Session"]
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, AlchemyConnection]
+AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+ConnectionOrCursor: TypeAlias = Union[
+    BasicConnection, BasicCursor, Cursor, AlchemyConnection
+]
+
+
+# these aliases are used to annotate DataFrame.__getitem__()
+# MultiRowSelector indexes into the vertical axis and
+# MultiColSelector indexes into the horizontal axis
+# NOTE: wrapping these as strings is necessary for Python <3.10
+MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
+MultiColSelector: TypeAlias = Union[
+    slice, range, "list[int]", "list[str]", "list[bool]", "Series"
+]

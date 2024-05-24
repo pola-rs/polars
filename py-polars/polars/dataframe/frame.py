@@ -24,7 +24,6 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
-    Union,
     cast,
     get_args,
     overload,
@@ -104,7 +103,11 @@ from polars.exceptions import (
 from polars.functions import col, lit
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
-from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
+from polars.type_aliases import (
+    DbWriteMode,
+    JaxExportType,
+    TorchExportType,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -149,6 +152,8 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MultiColSelector,
+        MultiRowSelector,
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
@@ -167,24 +172,14 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec, TypeAlias
+        from typing import Concatenate, ParamSpec
     else:
-        from typing_extensions import Concatenate, ParamSpec, TypeAlias
+        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
-
-    # these aliases are used to annotate DataFrame.__getitem__()
-    # MultiRowSelector indexes into the vertical axis and
-    # MultiColSelector indexes into the horizontal axis
-    # NOTE: wrapping these as strings is necessary for Python <3.10
-
-    MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
-    MultiColSelector: TypeAlias = Union[
-        slice, range, "list[int]", "list[str]", "list[bool]", "Series"
-    ]
 
     T = TypeVar("T")
     P = ParamSpec("P")
