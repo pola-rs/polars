@@ -160,11 +160,14 @@ if TYPE_CHECKING:
         ParquetCompression,
         PivotAgg,
         PolarsDataType,
+        PythonLiteral,
         RollingInterpolationMethod,
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
         SelectorType,
+        SingleColSelector,
+        SingleRowSelector,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -1010,32 +1013,34 @@ class DataFrame:
         self,
         item: (
             int
-            | np.ndarray[Any, Any]
-            | MultiColSelector
-            | tuple[int, MultiColSelector]
+            | tuple[SingleRowSelector, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
         ),
-    ) -> Self: ...
+    ) -> DataFrame: ...
 
     @overload
-    def __getitem__(self, item: tuple[int, int | str]) -> Any: ...
+    def __getitem__(
+        self, item: tuple[SingleRowSelector, SingleColSelector]
+    ) -> PythonLiteral: ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series: ...
+    def __getitem__(
+        self, item: tuple[MultiRowSelector, SingleColSelector]
+    ) -> Series: ...
 
     def __getitem__(
         self,
         item: (
-            str
-            | int
-            | np.ndarray[Any, Any]
+            SingleRowSelector
+            | SingleColSelector
             | MultiColSelector
-            | tuple[int, MultiColSelector]
+            | MultiRowSelector
+            | tuple[SingleRowSelector, SingleColSelector]
+            | tuple[SingleRowSelector, MultiColSelector]
+            | tuple[MultiRowSelector, SingleColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
-            | tuple[MultiRowSelector, int | str]
-            | tuple[int, int | str]
         ),
-    ) -> DataFrame | Series:
+    ) -> DataFrame | Series | PythonLiteral:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
         # Fail when multiple column names are passed as separate inputs
         # df["foo", "bar"]
@@ -1156,16 +1161,18 @@ class DataFrame:
         if isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        # Select rows by NumPy mask or index
-        # df[np.array([1, 2, 3])]
-        # df[np.array([True, False, True])]
+        # Select multiple columns or rows using a NumPy array
         if _check_for_numpy(item) and isinstance(item, np.ndarray):
             if item.ndim != 1:
                 msg = "multi-dimensional NumPy arrays not supported as index"
                 raise TypeError(msg)
+            # Select multiple rows by index
+            # df[np.array([1, 2, 3])]
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
                 return self._gather_with_series(numpy_to_idxs(item, self.shape[0]))
+            # Select multiple columns by name
+            # df[np.array(["foo", "bar"])]
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
 

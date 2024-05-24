@@ -259,7 +259,17 @@ ConnectionOrCursor: TypeAlias = Union[
 # MultiRowSelector indexes into the vertical axis and
 # MultiColSelector indexes into the horizontal axis
 # NOTE: wrapping these as strings is necessary for Python <3.10
-MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
+SingleRowSelector: TypeAlias = int
+MultiRowSelector: TypeAlias = Union[
+    slice, range, Sequence[int], "Series", "np.ndarray[Any, Any]"
+]
+SingleColSelector: TypeAlias = int | str
 MultiColSelector: TypeAlias = Union[
-    slice, range, "list[int]", "list[str]", "list[bool]", "Series"
+    slice,
+    range,
+    Sequence[int],
+    Sequence[str],
+    Sequence[bool],
+    "Series",
+    "np.ndarray[Any, Any]",
 ]
