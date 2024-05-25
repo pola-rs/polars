@@ -30,6 +30,50 @@ if TYPE_CHECKING:
     )
 
 
+def df_getitem(df: DataFrame, key) -> Series | DataFrame | Any:
+    # Two inputs
+    if isinstance(key, tuple) and len(key) == 2:
+        row_key, col_key = key
+        selection = _select_columns(df, col_key)
+
+        if selection.is_empty():
+            return selection
+        elif isinstance(selection, pl.Series):
+            return selection[row_key]
+        else:
+            return _select_rows(selection, row_key)
+
+    # Single input
+    elif is_index_key(key):
+        # TODO: Deprecate - this path should be removed.
+        return _select_rows(df, key)
+    else:
+        return _select_columns(df, key)
+
+
+def is_index_key(
+    key: SingleIndexSelector
+    | MultiIndexSelector
+    | SingleColSelector
+    | MultiColSelector,
+) -> bool:
+    return (
+        isinstance(key, (int, range))
+        or (
+            isinstance(key, slice)
+            and not isinstance(key.start, str)
+            and not isinstance(key.stop, str)
+        )
+        or (isinstance(key, Sequence) and len(key) > 1 and isinstance(key[0], int))
+        or (isinstance(key, pl.Series) and key.dtype.is_integer())
+        or (
+            _check_for_numpy(key)
+            and isinstance(key, np.ndarray)
+            and key.dtype.kind in ("i", "u")
+        )
+    )
+
+
 # `str` overlaps with `Sequence[str]`
 # We can ignore this but we must keep this overload ordering
 @overload
@@ -171,7 +215,12 @@ def _select_rows(
         return _select_rows_by_slice(df, key)
 
     elif isinstance(key, Sequence):
-        s = pl.Series(key)
+        if not key:
+            return df.clear()
+        if isinstance(key[0], bool):
+            msg = "boolean masks not supported. Use `filter` instead."
+            raise TypeError(msg)
+        s = pl.Series("", key, dtype=Int64)
         indices = _convert_series_to_indices(s, df.height)
         return _select_rows_by_index(df, indices)
 
@@ -193,7 +242,7 @@ def _select_rows_by_slice(df: DataFrame, key: slice) -> DataFrame:
 
 
 def _select_rows_by_index(df: DataFrame, key: Series) -> DataFrame:
-    return df._from_pydf(df._df.gather_with_series(key))
+    return df._from_pydf(df._df.gather_with_series(key._s))
 
 
 def _convert_series_to_indices(s: Series, size: int) -> Series:
@@ -261,7 +310,7 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
     #     to absolute indexes.
     if arr.ndim != 1:
         msg = "only 1D numpy array is supported as index"
-        raise ValueError(msg)
+        raise TypeError(msg)
 
     idx_type = get_index_type()
 

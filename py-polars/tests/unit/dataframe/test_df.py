@@ -2099,7 +2099,7 @@ def test_getitem() -> None:
 
     with pytest.raises(
         TypeError,
-        match="multi-dimensional NumPy arrays not supported",
+        match="only 1D numpy array is supported as index",
     ):
         df[np.array([[0], [1]])]
 
@@ -2145,13 +2145,13 @@ def test_getitem() -> None:
             ),
         )
 
-    # Boolean masks not supported
-    with pytest.raises(TypeError):
-        df[np.array([True, False, True])]
+    # Boolean masks for rows not supported
     with pytest.raises(TypeError):
         df[[True, False, True], [False, True]]
     with pytest.raises(TypeError):
         df[pl.Series([True, False, True]), "b"]
+
+    assert_frame_equal(df[np.array([True, False])], df[:, :1])
 
     # wrong length boolean mask for column selection
     with pytest.raises(

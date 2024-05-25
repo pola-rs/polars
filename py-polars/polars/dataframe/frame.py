@@ -54,6 +54,7 @@ from polars._utils.deprecation import (
 from polars._utils.getitem import (
     _convert_np_ndarray_to_indices,
     _convert_series_to_indices,
+    df_getitem,
 )
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -1045,6 +1046,8 @@ class DataFrame:
         ),
     ) -> DataFrame | Series | Any:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
+        return df_getitem(self, item)
+
         # Fail when multiple column names are passed as separate inputs
         # df["foo", "bar"]
         if (
