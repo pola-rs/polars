@@ -507,7 +507,7 @@ impl<'a> FieldsMapper<'a> {
         match dt {
             Boolean => first.coerce(IDX_DTYPE),
             UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
-            _ => {},
+            _ => first.coerce(dt),
         }
         Ok(first)
     }

@@ -500,6 +500,12 @@ def test_absence_off_null_prop_8224() -> None:
             {"x": pl.UInt32},
             {"x": pl.UInt32},
         ),
+        (
+            {"a": [[1, 2]]},
+            pl.col("a").list.sum(),
+            {"a": pl.Int64},
+            {"a": pl.List(pl.Int64)},
+        ),
     ],
 )
 def test_schemas(

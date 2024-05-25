@@ -571,7 +571,7 @@ impl<'a> Display for ExprIRDisplay<'a> {
                 let predicate = self.with_root(predicate);
                 let truthy = self.with_root(truthy);
                 let falsy = self.with_root(falsy);
-                write!(f, ".when({predicate}).then({truthy}).otherwise({falsy})",)
+                write!(f, "when({predicate}).then({truthy}).otherwise({falsy})",)
             },
             Function {
                 input, function, ..
