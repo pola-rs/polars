@@ -301,5 +301,6 @@ def test_recursive_array_dtype() -> None:
 def test_ndarray_construction() -> None:
     a = np.arange(16).reshape((2, 4, -1))
     s = pl.Series(a)
+    print(s.dtype)
     assert s.dtype == pl.Array(pl.Int64, (4, 2))
     assert (s.to_numpy() == a).all()
