@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
 
 use super::column_descriptor::ColumnDescriptor;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{Error, Result};
 use crate::parquet::schema::types::PhysicalType;
-use crate::parquet::statistics::{deserialize_statistics, Statistics};
+use crate::parquet::statistics::Statistics;
 
 #[cfg(feature = "serde_types")]
 mod serde_types {
@@ -113,11 +111,10 @@ impl ColumnChunkMetaData {
     }
 
     /// Decodes the raw statistics into [`Statistics`].
-    pub fn statistics(&self) -> Option<Result<Arc<dyn Statistics>>> {
-        self.metadata()
-            .statistics
-            .as_ref()
-            .map(|x| deserialize_statistics(x, self.column_descr.descriptor.primitive_type.clone()))
+    pub fn statistics(&self) -> Option<Result<Statistics>> {
+        self.metadata().statistics.as_ref().map(|x| {
+            Statistics::deserialize(x, self.column_descr.descriptor.primitive_type.clone())
+        })
     }
 
     /// Total number of values in this column chunk. Note that this is not necessarily the number

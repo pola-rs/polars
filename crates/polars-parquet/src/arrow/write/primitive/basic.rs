@@ -9,7 +9,7 @@ use crate::parquet::encoding::delta_bitpacked::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{serialize_statistics, PrimitiveStatistics};
+use crate::parquet::statistics::PrimitiveStatistics;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::Page;
 
@@ -137,10 +137,7 @@ where
     let buffer = encode(array, is_optional, buffer);
 
     let statistics = if options.write_statistics {
-        Some(serialize_statistics(&build_statistics(
-            array,
-            type_.clone(),
-        )))
+        Some(build_statistics(array, type_.clone()).serialize())
     } else {
         None
     };

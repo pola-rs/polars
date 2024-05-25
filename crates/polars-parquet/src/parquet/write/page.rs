@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
@@ -47,7 +46,7 @@ pub struct PageWriteSpec {
     pub offset: u64,
     pub bytes_written: u64,
     pub compression: Compression,
-    pub statistics: Option<Arc<dyn Statistics>>,
+    pub statistics: Option<Statistics>,
 }
 
 pub fn write_page<W: Write>(

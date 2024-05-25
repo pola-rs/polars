@@ -19,7 +19,7 @@ use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{serialize_statistics, ParquetStatistics};
+use crate::parquet::statistics::ParquetStatistics;
 use crate::write::DynIter;
 
 pub(crate) fn encode_as_dictionary_optional(
@@ -193,8 +193,7 @@ macro_rules! dyn_prim {
         let stats: Option<ParquetStatistics> = if $options.write_statistics {
             let mut stats = primitive_build_statistics::<$from, $to>(values, $type_.clone());
             stats.null_count = Some($array.null_count() as i64);
-            let stats = serialize_statistics(&stats);
-            Some(stats)
+            Some(stats.serialize())
         } else {
             None
         };
@@ -299,7 +298,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         fixed_binary_encode_plain(array, false, &mut buffer);
                         let stats = if options.write_statistics {
                             let stats = fixed_binary_build_statistics(array, type_.clone());
-                            Some(serialize_statistics(&stats))
+                            Some(stats.serialize())
                         } else {
                             None
                         };

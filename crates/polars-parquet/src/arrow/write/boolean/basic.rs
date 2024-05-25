@@ -7,9 +7,7 @@ use crate::parquet::encoding::hybrid_rle::bitpacked_encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{
-    serialize_statistics, BooleanStatistics, ParquetStatistics, Statistics,
-};
+use crate::parquet::statistics::{BooleanStatistics, ParquetStatistics};
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
     // encode values using bitpacking
@@ -82,11 +80,11 @@ pub fn array_to_page(
 }
 
 pub(super) fn build_statistics(array: &BooleanArray) -> ParquetStatistics {
-    let statistics = &BooleanStatistics {
+    BooleanStatistics {
         null_count: Some(array.null_count() as i64),
         distinct_count: None,
         max_value: array.iter().flatten().max(),
         min_value: array.iter().flatten().min(),
-    } as &dyn Statistics;
-    serialize_statistics(statistics)
+    }
+    .serialize()
 }
