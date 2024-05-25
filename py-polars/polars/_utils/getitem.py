@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
+from polars._utils.constants import U32_MAX
 from polars._utils.various import range_to_slice
 from polars.datatypes.classes import (
     Boolean,
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
         SingleIndexSelector,
     )
 
+__all__ = ["df_getitem", "series_getitem"]
+
 
 def df_getitem(df: DataFrame, key) -> Series | DataFrame | Any:
     # Two inputs
@@ -39,13 +42,13 @@ def df_getitem(df: DataFrame, key) -> Series | DataFrame | Any:
         if selection.is_empty():
             return selection
         elif isinstance(selection, pl.Series):
-            return selection[row_key]
+            return series_getitem(selection, row_key)
         else:
             return _select_rows(selection, row_key)
 
-    # Single input
     elif is_index_key(key):
         # TODO: Deprecate - this path should be removed.
+        # https://github.com/pola-rs/polars/issues/4924
         return _select_rows(df, key)
     else:
         return _select_columns(df, key)
@@ -111,10 +114,18 @@ def _select_columns(
     elif isinstance(key, Sequence):
         if not key:
             return df.__class__()
-        elif isinstance(key[0], bool):
+        first = key[0]
+        if isinstance(first, bool):
             return _select_columns_by_mask(df, key)  # type: ignore[arg-type]
+        elif isinstance(first, int):
+            return _select_columns_by_index(df, key)  # type: ignore[arg-type]
+        elif isinstance(first, str):
+            return _select_columns_by_name(df, key)  # type: ignore[arg-type]
         else:
-            return _select_columns_by_iterable(df, key)
+            msg = (
+                f"cannot select columns using Sequence of type {type(first).__name__!r}"
+            )
+            raise TypeError(msg)
 
     elif isinstance(key, pl.Series):
         if key.is_empty():
@@ -149,19 +160,8 @@ def _select_columns(
             msg = f"cannot select columns using NumPy ndarray of type {key.dtype}"
             raise TypeError(msg)
 
-    else:
-        msg = f"cannot select columns with key {key!r} of type {type(key).__name__!r}"
-        raise TypeError(msg)
-
-
-def _select_single_column(df: DataFrame, key: SingleColSelector) -> Series:
-    if isinstance(key, int):
-        return df.to_series(key)
-    elif isinstance(key, str):
-        return df.get_column(key)
-    else:
-        msg = f"expected int or str, got {key!r}"
-        raise TypeError(msg)
+    msg = f"cannot select columns with key {key!r} of type {type(key).__name__!r}"
+    raise TypeError(msg)
 
 
 def _select_columns_by_index(df: DataFrame, key: Iterable[int]) -> DataFrame:
@@ -171,11 +171,6 @@ def _select_columns_by_index(df: DataFrame, key: Iterable[int]) -> DataFrame:
 
 def _select_columns_by_name(df: DataFrame, key: Iterable[str]) -> DataFrame:
     return df._from_pydf(df._df.select(key))
-
-
-def _select_columns_by_iterable(df: DataFrame, key: Iterable[int | str]) -> DataFrame:
-    series = [_select_single_column(df, k) for k in key]
-    return df.__class__(series)
 
 
 def _select_columns_by_mask(
@@ -245,6 +240,64 @@ def _select_rows_by_index(df: DataFrame, key: Series) -> DataFrame:
     return df._from_pydf(df._df.gather_with_series(key._s))
 
 
+@overload
+def series_getitem(s: Series, key: SingleIndexSelector) -> Any: ...
+
+
+@overload
+def series_getitem(s: Series, key: MultiIndexSelector) -> Series: ...
+
+
+def series_getitem(
+    s: Series, key: SingleIndexSelector | MultiIndexSelector
+) -> Any | Series:
+    """Select one or more elements from the Series."""
+    if isinstance(key, int):
+        return s._s.get_index_signed(key)
+
+    if isinstance(key, slice):
+        return _select_elements_by_slice(s, key)
+
+    elif isinstance(key, range):
+        key = range_to_slice(key)
+        return _select_elements_by_slice(s, key)
+
+    elif isinstance(key, Sequence):
+        if not key:
+            return s.clear()
+        if isinstance(key[0], bool):
+            msg = "boolean masks not supported. Use `filter` instead."
+            raise TypeError(msg)
+        indices = pl.Series("", key, dtype=Int64)
+        indices = _convert_series_to_indices(indices, s.len())
+        return _select_elements_by_index(s, indices)
+
+    elif isinstance(key, pl.Series):
+        indices = _convert_series_to_indices(key, s.len())
+        return _select_elements_by_index(s, indices)
+
+    elif _check_for_numpy(key) and isinstance(key, np.ndarray):
+        indices = _convert_np_ndarray_to_indices(key, s.len())
+        return _select_elements_by_index(s, indices)
+
+    msg = (
+        f"cannot use `__getitem__` on Series of dtype {s.dtype!r}"
+        f" with argument {key!r} of type {type(key).__name__!r}"
+    )
+    raise TypeError(msg)
+
+
+def _select_elements_by_slice(s: Series, key: slice) -> Series:
+    return PolarsSlice(s).apply(key)  # type: ignore[return-value]
+
+
+def _select_elements_by_index(s: Series, key: Series) -> DataFrame:
+    return s._from_pyseries(s._s.gather_with_series(key._s))
+
+
+### OLD UTILS
+
+
 def _convert_series_to_indices(s: Series, size: int) -> Series:
     # Unsigned or signed Series (ordered from fastest to slowest).
     #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
@@ -261,21 +314,19 @@ def _convert_series_to_indices(s: Series, size: int) -> Series:
         return s
 
     if not s.dtype.is_integer():
-        msg = "unsupported idxs datatype"
-        raise NotImplementedError(msg)
+        msg = f"cannot treat Series of type {s.dtype} as indices"
+        raise TypeError(msg)
 
     if s.len() == 0:
         return pl.Series(s.name, [], dtype=idx_type)
 
     if idx_type == UInt32:
-        if s.dtype in {Int64, UInt64}:
-            if s.max() >= 2**32:  # type: ignore[operator]
-                msg = "index positions should be smaller than 2^32"
-                raise ValueError(msg)
-        if s.dtype == Int64:
-            if s.min() < -(2**32):  # type: ignore[operator]
-                msg = "index positions should be bigger than -2^32 + 1"
-                raise ValueError(msg)
+        if s.dtype in {Int64, UInt64} and s.max() >= U32_MAX:  # type: ignore[operator]
+            msg = "index positions should be smaller than 2^32"
+            raise ValueError(msg)
+        if s.dtype == Int64 and s.min() < -U32_MAX:  # type: ignore[operator]
+            msg = "index positions should be greater than or equal to -2^32"
+            raise ValueError(msg)
 
     if s.dtype.is_signed_integer():
         if s.min() < 0:  # type: ignore[operator]
@@ -319,15 +370,15 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
 
     # Numpy array with signed or unsigned integers.
     if arr.dtype.kind not in ("i", "u"):
-        msg = "unsupported idxs datatype"
-        raise NotImplementedError(msg)
+        msg = f"cannot treat NumPy ndarray of type {arr.dtype} as indices"
+        raise TypeError(msg)
 
     if idx_type == UInt32:
-        if arr.dtype in {np.int64, np.uint64} and arr.max() >= 2**32:
+        if arr.dtype in {np.int64, np.uint64} and arr.max() >= U32_MAX:
             msg = "index positions should be smaller than 2^32"
             raise ValueError(msg)
-        if arr.dtype == np.int64 and arr.min() < -(2**32):
-            msg = "index positions should be bigger than -2^32 + 1"
+        if arr.dtype == np.int64 and arr.min() < -U32_MAX:
+            msg = "index positions should be greater than or equal to -2^32"
             raise ValueError(msg)
 
     if arr.dtype.kind == "i" and arr.min() < 0:

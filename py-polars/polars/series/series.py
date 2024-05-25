@@ -46,17 +46,13 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.getitem import (
-    _convert_np_ndarray_to_indices,
-    _convert_series_to_indices,
-)
+from polars._utils.getitem import series_getitem
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
     no_default,
     parse_version,
-    range_to_slice,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
@@ -112,7 +108,6 @@ from polars.series.list import ListNameSpace
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
-from polars.slice import PolarsSlice
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -1237,54 +1232,15 @@ class Series:
         return self._from_pyseries(self._s.gather_with_series(s._s))
 
     @overload
-    def __getitem__(self, item: SingleIndexSelector) -> Any: ...
+    def __getitem__(self, key: SingleIndexSelector) -> Any: ...
 
     @overload
-    def __getitem__(self, item: MultiIndexSelector) -> Series: ...
+    def __getitem__(self, key: MultiIndexSelector) -> Series: ...
 
     def __getitem__(
-        self,
-        item: SingleIndexSelector | MultiIndexSelector,
+        self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
-        if isinstance(item, Series) and item.dtype.is_integer():
-            return self._gather_with_series(
-                _convert_series_to_indices(item, self.len())
-            )
-
-        elif _check_for_numpy(item) and isinstance(item, np.ndarray):
-            return self._gather_with_series(
-                _convert_np_ndarray_to_indices(item, self.len())
-            )
-
-        # Integer
-        elif isinstance(item, int):
-            return self._s.get_index_signed(item)
-
-        # Slice
-        elif isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        # Range
-        elif isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # Sequence of integers (also triggers on empty sequence)
-        elif isinstance(item, Sequence) and (
-            not item or (isinstance(item[0], int) and not isinstance(item[0], bool))  # type: ignore[redundant-expr]
-        ):
-            idx_series = _convert_series_to_indices(
-                Series("", item, dtype=Int64), self.len()
-            )
-            if idx_series.has_nulls():
-                msg = "cannot use `__getitem__` with index values containing nulls"
-                raise ValueError(msg)
-            return self._gather_with_series(idx_series)
-
-        msg = (
-            f"cannot use `__getitem__` on Series of dtype {self.dtype!r}"
-            f" with argument {item!r} of type {type(item).__name__!r}"
-        )
-        raise TypeError(msg)
+        return series_getitem(self, key)
 
     def __setitem__(
         self,

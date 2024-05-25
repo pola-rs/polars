@@ -534,8 +534,7 @@ def test_invalid_getitem_key_err() -> None:
     df = pl.DataFrame({"x": [1.0], "y": [1.0]})
 
     with pytest.raises(
-        TypeError,
-        match="cannot use `__getitem__` on Series of dtype Float64 with argument 'x' of type 'str'",
+        TypeError, match="cannot treat Series of type String as indices"
     ):
         df["x", "y"]
 
