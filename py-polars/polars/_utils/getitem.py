@@ -33,7 +33,46 @@ if TYPE_CHECKING:
 __all__ = ["df_getitem", "series_getitem"]
 
 
-def df_getitem(df: DataFrame, key) -> Series | DataFrame | Any:
+# `str` overlaps with `Sequence[str]`
+# We can ignore this but we must keep this overload ordering
+@overload
+def df_getitem(
+    df: DataFrame, key: tuple[SingleIndexSelector, SingleColSelector]
+) -> Any: ...
+
+
+@overload
+def df_getitem(  # type: ignore[overload-overlap]
+    df: DataFrame, key: str | tuple[MultiIndexSelector, SingleColSelector]
+) -> Series: ...
+
+
+@overload
+def df_getitem(
+    df: DataFrame,
+    key: (
+        SingleIndexSelector
+        | MultiIndexSelector
+        | MultiColSelector
+        | tuple[SingleIndexSelector, MultiColSelector]
+        | tuple[MultiIndexSelector, MultiColSelector]
+    ),
+) -> DataFrame: ...
+
+
+def df_getitem(
+    df: DataFrame,
+    key: (
+        SingleIndexSelector
+        | SingleColSelector
+        | MultiColSelector
+        | MultiIndexSelector
+        | tuple[SingleIndexSelector, SingleColSelector]
+        | tuple[SingleIndexSelector, MultiColSelector]
+        | tuple[MultiIndexSelector, SingleColSelector]
+        | tuple[MultiIndexSelector, MultiColSelector]
+    ),
+) -> DataFrame | Series | Any:
     # Two inputs
     if isinstance(key, tuple) and len(key) == 2:
         row_key, col_key = key
@@ -42,14 +81,14 @@ def df_getitem(df: DataFrame, key) -> Series | DataFrame | Any:
         if selection.is_empty():
             return selection
         elif isinstance(selection, pl.Series):
-            return series_getitem(selection, row_key)
+            return series_getitem(selection, row_key)  # type: ignore[arg-type]
         else:
-            return _select_rows(selection, row_key)
+            return _select_rows(selection, row_key)  # type: ignore[arg-type]
 
     elif is_index_key(key):
         # TODO: Deprecate - this path should be removed.
         # https://github.com/pola-rs/polars/issues/4924
-        return _select_rows(df, key)
+        return _select_rows(df, key)  # type: ignore[arg-type]
     else:
         return _select_columns(df, key)
 
@@ -288,7 +327,7 @@ def _select_elements_by_slice(s: Series, key: slice) -> Series:
     return PolarsSlice(s).apply(key)  # type: ignore[return-value]
 
 
-def _select_elements_by_index(s: Series, key: Series) -> DataFrame:
+def _select_elements_by_index(s: Series, key: Series) -> Series:
     return s._from_pyseries(s._s.gather_with_series(key._s))
 
 

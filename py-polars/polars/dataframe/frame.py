@@ -1004,18 +1004,18 @@ class DataFrame:
     # We can ignore this but we must keep this overload ordering
     @overload
     def __getitem__(
-        self, item: tuple[SingleIndexSelector, SingleColSelector]
+        self, key: tuple[SingleIndexSelector, SingleColSelector]
     ) -> Any: ...
 
     @overload
     def __getitem__(  # type: ignore[overload-overlap]
-        self, item: str | tuple[MultiIndexSelector, SingleColSelector]
+        self, key: str | tuple[MultiIndexSelector, SingleColSelector]
     ) -> Series: ...
 
     @overload
     def __getitem__(
         self,
-        item: (
+        key: (
             SingleIndexSelector
             | MultiIndexSelector
             | MultiColSelector
@@ -1026,7 +1026,7 @@ class DataFrame:
 
     def __getitem__(
         self,
-        item: (
+        key: (
             SingleIndexSelector
             | SingleColSelector
             | MultiColSelector
@@ -1038,7 +1038,7 @@ class DataFrame:
         ),
     ) -> DataFrame | Series | Any:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
-        return df_getitem(self, item)
+        return df_getitem(self, key)
 
     def __setitem__(
         self,
