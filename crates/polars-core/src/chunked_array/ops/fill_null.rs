@@ -1,6 +1,8 @@
+use arrow::bitmap::MutableBitmap;
 use arrow::legacy::kernels::set::set_at_nulls;
 use arrow::legacy::trusted_len::FromIteratorReversed;
 use arrow::legacy::utils::FromTrustedLenIterator;
+use bytemuck::Zeroable;
 use num_traits::{Bounded, NumCast, One, Zero};
 
 use crate::prelude::*;
@@ -280,6 +282,70 @@ macro_rules! impl_fill_backward_limit {
     }};
 }
 
+fn fill_forward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
+    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>>,
+    T::ZeroablePhysical<'a>: LocalCopy,
+{
+    // Compute values.
+    let values: Vec<T::ZeroablePhysical<'a>> = ca
+        .into_iter()
+        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
+            *prev = v.map(|v| v.into()).unwrap_or(prev.cheap_clone());
+            Some(prev.cheap_clone())
+        })
+        .collect_trusted();
+
+    // Compute bitmask.
+    let num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
+    let mut bm = MutableBitmap::with_capacity(ca.len());
+    bm.extend_constant(num_start_nulls, false);
+    bm.extend_constant(ca.len() - num_start_nulls, true);
+    ChunkedArray::from_chunk_iter_like(
+        ca,
+        [
+            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(true))
+                .with_validity_typed(Some(bm.into())),
+        ],
+    )
+}
+
+fn fill_backward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
+    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>> + DoubleEndedIterator,
+    T::ZeroablePhysical<'a>: LocalCopy,
+{
+    // Compute values.
+    let values: Vec<T::ZeroablePhysical<'a>> = ca
+        .into_iter()
+        .rev()
+        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
+            *prev = v.map(|v| v.into()).unwrap_or(prev.cheap_clone());
+            Some(prev.cheap_clone())
+        })
+        .collect_reversed();
+
+    // Compute bitmask.
+    let num_end_nulls = ca
+        .last_non_null()
+        .map(|i| ca.len() - 1 - i)
+        .unwrap_or(ca.len());
+    let mut bm = MutableBitmap::with_capacity(ca.len());
+    bm.extend_constant(ca.len() - num_end_nulls, true);
+    bm.extend_constant(num_end_nulls, false);
+    ChunkedArray::from_chunk_iter_like(
+        ca,
+        [
+            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(true))
+                .with_validity_typed(Some(bm.into())),
+        ],
+    )
+}
+
 fn fill_null_numeric<T>(
     ca: &ChunkedArray<T>,
     strategy: FillNullStrategy,
@@ -293,9 +359,9 @@ where
         return Ok(ca.clone());
     }
     let mut out = match strategy {
-        FillNullStrategy::Forward(None) => fill_forward(ca),
+        FillNullStrategy::Forward(None) => fill_forward_numeric(ca),
         FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
-        FillNullStrategy::Backward(None) => fill_backward(ca),
+        FillNullStrategy::Backward(None) => fill_backward_numeric(ca),
         FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
         FillNullStrategy::Min => {
             ca.fill_null_with_values(ChunkAgg::min(ca).ok_or_else(err_fill_null)?)?
