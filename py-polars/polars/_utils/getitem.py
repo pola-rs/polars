@@ -30,7 +30,10 @@ if TYPE_CHECKING:
         SingleIndexSelector,
     )
 
-__all__ = ["get_df_item_by_key", "get_series_item_by_key"]
+__all__ = [
+    "get_df_item_by_key",
+    "get_series_item_by_key",
+]
 
 
 @overload
@@ -155,6 +158,7 @@ def is_index_key(
     | SingleColSelector
     | MultiColSelector,
 ) -> bool:
+    """Returns whether the key is an index selector."""
     return (
         isinstance(key, (int, range))
         or (
@@ -332,7 +336,7 @@ def _select_rows_by_index(df: DataFrame, key: Series) -> DataFrame:
     return df._from_pydf(df._df.gather_with_series(key._s))
 
 
-### OLD UTILS
+# UTILS
 
 
 def _convert_series_to_indices(s: Series, size: int) -> Series:

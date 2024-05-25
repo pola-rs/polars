@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
 import hypothesis.strategies as st
+import numpy as np
+import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.testing import assert_frame_equal
 from polars.testing.parametric import column, dataframes
 
 
@@ -63,3 +68,18 @@ def test_frame_slice(df: pl.DataFrame) -> None:
         assert (
             sliced_py_data == sliced_df_data
         ), f"slice [{start}:{stop}:{step}] failed on df w/len={len(df)}"
+
+
+@pytest.mark.parametrize(
+    "mask",
+    [
+        [True, False, True],
+        pl.Series([True, False, True]),
+        np.array([True, False, True]),
+    ],
+)
+def test_df_getitem_column_boolean_mask(mask: Any) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+    result = df[:, mask]
+    expected = df.select("a", "c")
+    assert_frame_equal(result, expected)
