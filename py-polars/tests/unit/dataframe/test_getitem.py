@@ -83,3 +83,16 @@ def test_df_getitem_column_boolean_mask(mask: Any) -> None:
     result = df[:, mask]
     expected = df.select("a", "c")
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("selection", "match"),
+    [
+        (["a", 2], "'int' object cannot be converted to 'PyString'"),
+        ([1, "c"], "'str' object cannot be interpreted as an integer"),
+    ],
+)
+def test_df_getitem_column_mixed_inputs(selection: list[Any], match: str) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+    with pytest.raises(TypeError, match=match):
+        df[:, selection]
