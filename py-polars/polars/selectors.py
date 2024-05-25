@@ -87,6 +87,9 @@ def expand_selector(
     """
     Expand selector to column names, with respect to a specific frame or target schema.
 
+    .. versionchanged:: 0.20.30
+        The `strict` parameter was added.
+
     Parameters
     ----------
     target

@@ -113,6 +113,8 @@ class ExprMetaNameSpace:
         This can include bare columns, column matches by regex or dtype, selectors
         and exclude ops, and (optionally) column/expression aliasing.
 
+        .. versionadded:: 0.20.30
+
         Parameters
         ----------
         allow_aliasing
@@ -125,17 +127,19 @@ class ExprMetaNameSpace:
         >>> e = pl.col("foo")
         >>> e.meta.is_column_selection()
         True
+        >>> e = pl.col("foo").alias("bar")
+        >>> e.meta.is_column_selection()
+        False
+        >>> e.meta.is_column_selection(allow_aliasing=True)
+        True
         >>> e = pl.col("foo") * pl.col("bar")
         >>> e.meta.is_column_selection()
         False
-        >>> e = cs.starts_with("foo").exclude("foo!")
+        >>> e = cs.starts_with("foo")
         >>> e.meta.is_column_selection()
         True
-        >>> e = cs.starts_with("foo").exclude("foo!").name.suffix("_bar")
+        >>> e = cs.starts_with("foo").exclude("foo!")
         >>> e.meta.is_column_selection()
-        False
-        >>> e = cs.starts_with("foo").exclude("foo!").name.suffix("_bar")
-        >>> e.meta.is_column_selection(allow_aliasing=True)
         True
         """
         return self._pyexpr.meta_is_column_selection(allow_aliasing)
