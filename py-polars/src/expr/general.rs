@@ -293,14 +293,15 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: Self, nulls_last: bool, multithreaded: bool) -> Self {
+    fn top_k(&self, k: Self, nulls_last: bool, maintain_order: bool, multithreaded: bool) -> Self {
         self.inner
             .clone()
             .top_k(
                 k.inner,
                 SortOptions::default()
                     .with_nulls_last(nulls_last)
-                    .with_maintain_order(multithreaded),
+                    .with_maintain_order(maintain_order)
+                    .with_multithreaded(multithreaded),
             )
             .into()
     }
@@ -324,22 +325,29 @@ impl PyExpr {
                 SortMultipleOptions {
                     descending,
                     nulls_last,
-                    multithreaded,
                     maintain_order,
+                    multithreaded,
                 },
             )
             .into()
     }
 
     #[cfg(feature = "top_k")]
-    fn bottom_k(&self, k: Self, nulls_last: bool, multithreaded: bool) -> Self {
+    fn bottom_k(
+        &self,
+        k: Self,
+        nulls_last: bool,
+        maintain_order: bool,
+        multithreaded: bool,
+    ) -> Self {
         self.inner
             .clone()
             .bottom_k(
                 k.inner,
                 SortOptions::default()
                     .with_nulls_last(nulls_last)
-                    .with_maintain_order(multithreaded),
+                    .with_maintain_order(maintain_order)
+                    .with_multithreaded(multithreaded),
             )
             .into()
     }
@@ -363,8 +371,8 @@ impl PyExpr {
                 SortMultipleOptions {
                     descending,
                     nulls_last,
-                    multithreaded,
                     maintain_order,
+                    multithreaded,
                 },
             )
             .into()
