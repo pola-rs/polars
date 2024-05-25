@@ -599,7 +599,7 @@ class Enum(DataType):
             self.categories = pl.Series(name="category", dtype=String)
             return
 
-        if categories.null_count() > 0:
+        if categories.has_nulls():
             msg = "Enum categories must not contain null values"
             raise TypeError(msg)
 

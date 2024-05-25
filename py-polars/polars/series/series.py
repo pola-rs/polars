@@ -1215,7 +1215,7 @@ class Series:
 
     def __contains__(self, item: Any) -> bool:
         if item is None:
-            return self.null_count() > 0
+            return self.has_nulls()
         return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
@@ -1325,7 +1325,7 @@ class Series:
             not item or (isinstance(item[0], int) and not isinstance(item[0], bool))  # type: ignore[redundant-expr]
         ):
             idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
-            if idx_series.null_count() > 0:
+            if idx_series.has_nulls():
                 msg = "cannot use `__getitem__` with index values containing nulls"
                 raise ValueError(msg)
             return self._take_with_series(idx_series)
@@ -1398,7 +1398,7 @@ class Series:
         # Cast String types to fixed-length string to support string ufuncs
         # TODO: Use variable-length strings instead when NumPy 2.0.0 comes out:
         # https://numpy.org/devdocs/reference/routines.dtypes.html#numpy.dtypes.StringDType
-        if dtype is None and self.null_count() == 0 and self.dtype == String:
+        if dtype is None and not self.has_nulls() and self.dtype == String:
             dtype = np.dtype("U")
 
         if copy is None:
@@ -1479,7 +1479,7 @@ class Series:
             if is_generalized_ufunc:
                 # Generalized ufuncs will operate on the whole array, so
                 # missing data can corrupt the results.
-                if self.null_count() > 0:
+                if self.has_nulls():
                     msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     raise ComputeError(msg)
                 # If the input and output are the same size, e.g. "(n)->(n)" we

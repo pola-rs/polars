@@ -473,6 +473,7 @@ def test_view() -> None:
 
 def test_view_nulls() -> None:
     s = pl.Series("b", [1, 2, None])
+    assert s.has_nulls()
     with pytest.deprecated_call(), pytest.raises(AssertionError):
         s.view()
 

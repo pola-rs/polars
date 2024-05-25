@@ -59,7 +59,7 @@ def test_series_size_range(s: pl.Series) -> None:
 
 @given(s=series(allow_null=False))
 def test_series_allow_null_false(s: pl.Series) -> None:
-    assert s.null_count() == 0
+    assert s.has_nulls() is False
     assert s.dtype != pl.Null
 
 
@@ -71,7 +71,7 @@ def test_series_allow_null_allowed_dtypes(s: pl.Series) -> None:
 @given(s=series(allowed_dtypes=[pl.List(pl.Int8)], allow_null=False))
 def test_series_allow_null_nested(s: pl.Series) -> None:
     for v in s:
-        assert v.null_count() == 0
+        assert v.has_nulls() is False
 
 
 @given(df=dataframes())
@@ -123,7 +123,7 @@ def test_dataframes_allow_null_column(df: pl.DataFrame) -> None:
     )
 )
 def test_dataframes_allow_null_override(df: pl.DataFrame) -> None:
-    assert df.get_column("col0").null_count() == 0
+    assert df.get_column("col0").has_nulls() is False
     assert 0 <= df.get_column("colx").null_count() <= df.height
 
 

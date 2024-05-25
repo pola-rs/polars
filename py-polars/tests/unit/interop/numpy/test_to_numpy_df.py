@@ -66,10 +66,12 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
 
     # check string conversion; if no nulls can optimise as a fixed-width dtype
     df = pl.DataFrame({"s": ["x", "y", None]})
+    assert df["s"].has_nulls()
     assert_array_equal(
         df.to_numpy(structured=True),
         np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
     )
+    assert not df["s"].has_nulls()
     assert_array_equal(
         df[:2].to_numpy(structured=True),
         np.array([("x",), ("y",)], dtype=[("s", "<U1")]),

@@ -1657,7 +1657,7 @@ class DataFrame:
                 else:
                     arr = s.to_numpy(use_pyarrow=use_pyarrow)
 
-                if s.dtype == String and s.null_count() == 0:
+                if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)
                 struct_dtype.append((s.name, arr.dtype))
