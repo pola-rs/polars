@@ -82,7 +82,7 @@ def test_is_column() -> None:
 
 
 @pytest.mark.parametrize(
-    ("expr", "expected"),
+    ("expr", "is_column_selection"),
     [
         # columns
         (pl.col("foo"), True),
@@ -105,12 +105,11 @@ def test_is_column() -> None:
 )
 def test_is_column_selection(
     expr: pl.Expr,
-    expected: bool,
+    is_column_selection: bool,
 ) -> None:
-    if expected:
+    if is_column_selection:
         assert expr.meta.is_column_selection()
         assert expr.meta.is_column_selection(allow_aliasing=True)
-
         expr = (
             expr.name.suffix("!")
             if expr.meta.has_multiple_outputs()
