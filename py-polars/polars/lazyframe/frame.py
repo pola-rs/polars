@@ -99,6 +99,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnNameOrSelector,
         CsvQuoteStyle,
+        ExplainFormat,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
@@ -881,6 +882,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def explain(
         self,
         *,
+        format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
@@ -891,7 +893,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         streaming: bool = False,
-        tree_format: bool = False,
+        tree_format: bool | None = None,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -900,6 +902,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
+        format : {'plain', 'tree'}
+            The format to use for displaying the logical plan.
         optimized
             Return an optimized query plan. Defaults to `True`.
             If this is set to `True` the subsequent
@@ -924,7 +928,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
         tree_format
-            Format the output as a tree
+            Format the output as a tree.
+
+            .. deprecated:: 0.20.30
+                Use `format="tree"` instead.
 
         Examples
         --------
@@ -939,6 +946,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).explain()  # doctest: +SKIP
         """
+        if tree_format is not None:
+            issue_deprecation_warning(
+                "The `tree_format` parameter for `LazyFrame.explain` is deprecated"
+                " Use the `format` parameter instead.",
+                version="0.20.30",
+            )
+            if tree_format:
+                format = "tree"
+
         if optimized:
             ldf = self._ldf.optimization_toggle(
                 type_coercion,
@@ -952,13 +968,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 streaming,
                 _eager=False,
             )
-            if tree_format:
+            if format == "tree":
                 return ldf.describe_optimized_plan_tree()
-            return ldf.describe_optimized_plan()
+            else:
+                return ldf.describe_optimized_plan()
 
-        if tree_format:
+        if format == "tree":
             return self._ldf.describe_plan_tree()
-        return self._ldf.describe_plan()
+        else:
+            return self._ldf.describe_plan()
 
     def show_graph(
         self,
