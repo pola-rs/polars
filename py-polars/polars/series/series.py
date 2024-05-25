@@ -3761,9 +3761,15 @@ class Series:
         """
         return self._s.null_count()
 
+    @deprecate_function(
+        "Use `.null_count() == 0` instead to check for null values.", version="0.20.30"
+    )
     def has_validity(self) -> bool:
         """
         Return True if the Series has a validity bitmask.
+
+        .. deprecated:: 0.20.30
+            Use :meth:`null_count` instead, e.g. `s.null_count() == 0`.
 
         If there is no mask, it means that there are no `null` values.
 
