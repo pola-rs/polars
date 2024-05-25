@@ -46,7 +46,7 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.getitem import getitem_series
+from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -1238,7 +1238,7 @@ class Series:
         self, key: SingleIndexSelector | MultiIndexSelector
     ) -> Any | Series:
         """Get part of the Series as a new Series or scalar."""
-        return getitem_series(self, key)
+        return get_series_item_by_key(self, key)
 
     def __setitem__(
         self,

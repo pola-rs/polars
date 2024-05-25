@@ -51,7 +51,7 @@ from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
-from polars._utils.getitem import getitem_df
+from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -99,11 +99,7 @@ from polars.exceptions import (
 )
 from polars.functions import col, lit
 from polars.selectors import _expand_selector_dicts, _expand_selectors
-from polars.type_aliases import (
-    DbWriteMode,
-    JaxExportType,
-    TorchExportType,
-)
+from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -1038,7 +1034,7 @@ class DataFrame:
         ),
     ) -> DataFrame | Series | Any:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
-        return getitem_df(self, key)
+        return get_df_item_by_key(self, key)
 
     def __setitem__(
         self,
@@ -7997,7 +7993,6 @@ class DataFrame:
                     version="0.20.4",
                 )
 
-            names: list[Any]
             if include_key:
                 if key_as_single_value:
                     names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]

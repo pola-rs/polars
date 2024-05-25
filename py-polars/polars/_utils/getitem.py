@@ -30,18 +30,18 @@ if TYPE_CHECKING:
         SingleIndexSelector,
     )
 
-__all__ = ["getitem_df", "getitem_series"]
+__all__ = ["get_df_item_by_key", "get_series_item_by_key"]
 
 
 @overload
-def getitem_series(s: Series, key: SingleIndexSelector) -> Any: ...
+def get_series_item_by_key(s: Series, key: SingleIndexSelector) -> Any: ...
 
 
 @overload
-def getitem_series(s: Series, key: MultiIndexSelector) -> Series: ...
+def get_series_item_by_key(s: Series, key: MultiIndexSelector) -> Series: ...
 
 
-def getitem_series(
+def get_series_item_by_key(
     s: Series, key: SingleIndexSelector | MultiIndexSelector
 ) -> Any | Series:
     """Select one or more elements from the Series."""
@@ -91,19 +91,19 @@ def _select_elements_by_index(s: Series, key: Series) -> Series:
 # `str` overlaps with `Sequence[str]`
 # We can ignore this but we must keep this overload ordering
 @overload
-def getitem_df(
+def get_df_item_by_key(
     df: DataFrame, key: tuple[SingleIndexSelector, SingleColSelector]
 ) -> Any: ...
 
 
 @overload
-def getitem_df(  # type: ignore[overload-overlap]
+def get_df_item_by_key(  # type: ignore[overload-overlap]
     df: DataFrame, key: str | tuple[MultiIndexSelector, SingleColSelector]
 ) -> Series: ...
 
 
 @overload
-def getitem_df(
+def get_df_item_by_key(
     df: DataFrame,
     key: (
         SingleIndexSelector
@@ -115,7 +115,7 @@ def getitem_df(
 ) -> DataFrame: ...
 
 
-def getitem_df(
+def get_df_item_by_key(
     df: DataFrame,
     key: (
         SingleIndexSelector
@@ -137,7 +137,7 @@ def getitem_df(
         if selection.is_empty():
             return selection
         elif isinstance(selection, pl.Series):
-            return getitem_series(selection, row_key)  # type: ignore[arg-type]
+            return get_series_item_by_key(selection, row_key)  # type: ignore[arg-type]
         else:
             return _select_rows(selection, row_key)  # type: ignore[arg-type]
 
@@ -399,7 +399,7 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
     #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
     #     to absolute indexes.
     if arr.ndim != 1:
-        msg = "only 1D numpy array is supported as index"
+        msg = "only 1D numpy arrays can be treated as indices"
         raise TypeError(msg)
 
     idx_type = get_index_type()

@@ -170,7 +170,7 @@ def test_selection() -> None:
     assert (df["c"] == df["a"].cast(str)).sum() == 0
     assert df[:, "a":"b"].rows() == [(1, 1.0), (2, 2.0), (3, 3.0)]  # type: ignore[index, misc]
     assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore[index, misc]
-    # assert df[:, []].shape == (0, 0)
+    assert df[:, []].shape == (0, 0)
     expect = pl.DataFrame({"c": ["b"]})
     assert_frame_equal(df[1, [2]], expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
@@ -2098,8 +2098,7 @@ def test_getitem() -> None:
         _ = df[np.array([1.0])]
 
     with pytest.raises(
-        TypeError,
-        match="only 1D numpy array is supported as index",
+        TypeError, match="only 1D numpy arrays can be treated as indices"
     ):
         df[np.array([[0], [1]])]
 
