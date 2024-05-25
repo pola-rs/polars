@@ -51,7 +51,7 @@ from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
-from polars._utils.getitem import df_getitem
+from polars._utils.getitem import getitem_df
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -1038,7 +1038,7 @@ class DataFrame:
         ),
     ) -> DataFrame | Series | Any:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
-        return df_getitem(self, key)
+        return getitem_df(self, key)
 
     def __setitem__(
         self,

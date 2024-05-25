@@ -30,25 +30,80 @@ if TYPE_CHECKING:
         SingleIndexSelector,
     )
 
-__all__ = ["df_getitem", "series_getitem"]
+__all__ = ["getitem_df", "getitem_series"]
+
+
+@overload
+def getitem_series(s: Series, key: SingleIndexSelector) -> Any: ...
+
+
+@overload
+def getitem_series(s: Series, key: MultiIndexSelector) -> Series: ...
+
+
+def getitem_series(
+    s: Series, key: SingleIndexSelector | MultiIndexSelector
+) -> Any | Series:
+    """Select one or more elements from the Series."""
+    if isinstance(key, int):
+        return s._s.get_index_signed(key)
+
+    elif isinstance(key, slice):
+        return _select_elements_by_slice(s, key)
+
+    elif isinstance(key, range):
+        key = range_to_slice(key)
+        return _select_elements_by_slice(s, key)
+
+    elif isinstance(key, Sequence):
+        if not key:
+            return s.clear()
+        if isinstance(key[0], bool):
+            msg = "boolean masks not supported. Use `filter` instead."
+            raise TypeError(msg)
+        indices = pl.Series("", key, dtype=Int64)
+        indices = _convert_series_to_indices(indices, s.len())
+        return _select_elements_by_index(s, indices)
+
+    elif isinstance(key, pl.Series):
+        indices = _convert_series_to_indices(key, s.len())
+        return _select_elements_by_index(s, indices)
+
+    elif _check_for_numpy(key) and isinstance(key, np.ndarray):
+        indices = _convert_np_ndarray_to_indices(key, s.len())
+        return _select_elements_by_index(s, indices)
+
+    msg = (
+        f"cannot use `__getitem__` on Series of dtype {s.dtype!r}"
+        f" with argument {key!r} of type {type(key).__name__!r}"
+    )
+    raise TypeError(msg)
+
+
+def _select_elements_by_slice(s: Series, key: slice) -> Series:
+    return PolarsSlice(s).apply(key)  # type: ignore[return-value]
+
+
+def _select_elements_by_index(s: Series, key: Series) -> Series:
+    return s._from_pyseries(s._s.gather_with_series(key._s))
 
 
 # `str` overlaps with `Sequence[str]`
 # We can ignore this but we must keep this overload ordering
 @overload
-def df_getitem(
+def getitem_df(
     df: DataFrame, key: tuple[SingleIndexSelector, SingleColSelector]
 ) -> Any: ...
 
 
 @overload
-def df_getitem(  # type: ignore[overload-overlap]
+def getitem_df(  # type: ignore[overload-overlap]
     df: DataFrame, key: str | tuple[MultiIndexSelector, SingleColSelector]
 ) -> Series: ...
 
 
 @overload
-def df_getitem(
+def getitem_df(
     df: DataFrame,
     key: (
         SingleIndexSelector
@@ -60,7 +115,7 @@ def df_getitem(
 ) -> DataFrame: ...
 
 
-def df_getitem(
+def getitem_df(
     df: DataFrame,
     key: (
         SingleIndexSelector
@@ -73,6 +128,7 @@ def df_getitem(
         | tuple[MultiIndexSelector, MultiColSelector]
     ),
 ) -> DataFrame | Series | Any:
+    """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
     # Two inputs
     if isinstance(key, tuple) and len(key) == 2:
         row_key, col_key = key
@@ -81,7 +137,7 @@ def df_getitem(
         if selection.is_empty():
             return selection
         elif isinstance(selection, pl.Series):
-            return series_getitem(selection, row_key)  # type: ignore[arg-type]
+            return getitem_series(selection, row_key)  # type: ignore[arg-type]
         else:
             return _select_rows(selection, row_key)  # type: ignore[arg-type]
 
@@ -276,65 +332,11 @@ def _select_rows_by_index(df: DataFrame, key: Series) -> DataFrame:
     return df._from_pydf(df._df.gather_with_series(key._s))
 
 
-@overload
-def series_getitem(s: Series, key: SingleIndexSelector) -> Any: ...
-
-
-@overload
-def series_getitem(s: Series, key: MultiIndexSelector) -> Series: ...
-
-
-def series_getitem(
-    s: Series, key: SingleIndexSelector | MultiIndexSelector
-) -> Any | Series:
-    """Select one or more elements from the Series."""
-    if isinstance(key, int):
-        return s._s.get_index_signed(key)
-
-    if isinstance(key, slice):
-        return _select_elements_by_slice(s, key)
-
-    elif isinstance(key, range):
-        key = range_to_slice(key)
-        return _select_elements_by_slice(s, key)
-
-    elif isinstance(key, Sequence):
-        if not key:
-            return s.clear()
-        if isinstance(key[0], bool):
-            msg = "boolean masks not supported. Use `filter` instead."
-            raise TypeError(msg)
-        indices = pl.Series("", key, dtype=Int64)
-        indices = _convert_series_to_indices(indices, s.len())
-        return _select_elements_by_index(s, indices)
-
-    elif isinstance(key, pl.Series):
-        indices = _convert_series_to_indices(key, s.len())
-        return _select_elements_by_index(s, indices)
-
-    elif _check_for_numpy(key) and isinstance(key, np.ndarray):
-        indices = _convert_np_ndarray_to_indices(key, s.len())
-        return _select_elements_by_index(s, indices)
-
-    msg = (
-        f"cannot use `__getitem__` on Series of dtype {s.dtype!r}"
-        f" with argument {key!r} of type {type(key).__name__!r}"
-    )
-    raise TypeError(msg)
-
-
-def _select_elements_by_slice(s: Series, key: slice) -> Series:
-    return PolarsSlice(s).apply(key)  # type: ignore[return-value]
-
-
-def _select_elements_by_index(s: Series, key: Series) -> Series:
-    return s._from_pyseries(s._s.gather_with_series(key._s))
-
-
 ### OLD UTILS
 
 
 def _convert_series_to_indices(s: Series, size: int) -> Series:
+    """Convert a Series to indices, taking into account negative values."""
     # Unsigned or signed Series (ordered from fastest to slowest).
     #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
     #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
@@ -387,6 +389,7 @@ def _convert_series_to_indices(s: Series, size: int) -> Series:
 
 
 def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Series:
+    """Convert a NumPy ndarray to indices, taking into account negative values."""
     # Unsigned or signed Numpy array (ordered from fastest to slowest).
     #   - np.uint32 (polars) or np.uint64 (polars_u64_idx) numpy array
     #     indexes.
