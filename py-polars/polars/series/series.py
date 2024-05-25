@@ -1325,7 +1325,7 @@ class Series:
             not item or (isinstance(item[0], int) and not isinstance(item[0], bool))  # type: ignore[redundant-expr]
         ):
             idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
-            if idx_series.has_validity():
+            if idx_series.null_count() > 0:
                 msg = "cannot use `__getitem__` with index values containing nulls"
                 raise ValueError(msg)
             return self._take_with_series(idx_series)
@@ -3762,14 +3762,14 @@ class Series:
         return self._s.null_count()
 
     @deprecate_function(
-        "Use `.null_count() == 0` instead to check for null values.", version="0.20.30"
+        "Use `.null_count() > 0` instead to check for null values.", version="0.20.30"
     )
     def has_validity(self) -> bool:
         """
         Return True if the Series has a validity bitmask.
 
         .. deprecated:: 0.20.30
-            Use :meth:`null_count` instead, e.g. `s.null_count() == 0`.
+            Use :meth:`null_count` instead, e.g. `s.null_count() > 0`.
 
         If there is no mask, it means that there are no `null` values.
 
