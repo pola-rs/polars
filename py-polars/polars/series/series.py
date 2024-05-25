@@ -3761,15 +3761,30 @@ class Series:
         """
         return self._s.null_count()
 
+    def has_nulls(self) -> bool:
+        """
+        Check whether the Series contains one or more null values.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, None])
+        >>> s.has_nulls()
+        True
+        >>> s[:2].has_nulls()
+        False
+        """
+        return self.null_count() > 0
+
     @deprecate_function(
-        "Use `.null_count() > 0` instead to check for null values.", version="0.20.30"
+        "Use `has_nulls` instead to check for the presence of null values.",
+        version="0.20.30",
     )
     def has_validity(self) -> bool:
         """
         Return True if the Series has a validity bitmask.
 
         .. deprecated:: 0.20.30
-            Use :meth:`null_count` instead, e.g. `s.null_count() > 0`.
+            Use :meth:`has_nulls` instead.
 
         If there is no mask, it means that there are no `null` values.
 
@@ -3780,7 +3795,7 @@ class Series:
         bitmask does not mean that there are null values, as every value of the
         bitmask could be `false`.
 
-        To confirm that a column has `null` values use :func:`null_count`.
+        To confirm that a column has `null` values use :meth:`has_nulls`.
         """
         return self._s.has_validity()
 
