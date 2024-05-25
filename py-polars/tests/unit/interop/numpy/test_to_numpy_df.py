@@ -46,7 +46,10 @@ def test_df_to_numpy_zero_copy(s: pl.Series) -> None:
 
 @pytest.mark.parametrize(
     ("order", "f_contiguous", "c_contiguous"),
-    [("fortran", True, False), ("c", False, True)],
+    [
+        ("fortran", True, False),
+        ("c", False, True),
+    ],
 )
 def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
@@ -71,7 +74,7 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
         df.to_numpy(structured=True),
         np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
     )
-    assert not df["s"].has_nulls()
+    assert not df["s"][:2].has_nulls()
     assert_array_equal(
         df[:2].to_numpy(structured=True),
         np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
