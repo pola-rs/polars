@@ -81,29 +81,45 @@ def test_is_column() -> None:
     assert not e.meta.is_column()
 
 
-def test_is_column_selection() -> None:
-    e = pl.col("foo")
-    assert e.meta.is_column_selection()
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        # columns
+        (pl.col("foo"), True),
+        (pl.col("foo", "bar"), True),
+        (pl.col(pl.NUMERIC_DTYPES), True),
+        # column expressions
+        (pl.col("foo") + 100, False),
+        (pl.col("foo").floordiv(10), False),
+        (pl.col("foo") * pl.col("bar"), False),
+        # selectors / expressions
+        (cs.numeric() * 100, False),
+        (cs.temporal() - cs.time(), True),
+        (cs.numeric().exclude("value"), True),
+        ((cs.temporal() - cs.time()).exclude("dt"), True),
+        # top-level selection funcs
+        (pl.nth(2), True),
+        (pl.first(), True),
+        (pl.last(), True),
+    ],
+)
+def test_is_column_selection(
+    expr: pl.Expr,
+    expected: bool,
+) -> None:
+    if expected:
+        assert expr.meta.is_column_selection()
+        assert expr.meta.is_column_selection(allow_aliasing=True)
 
-    e = pl.col("foo").alias("bar")
-    assert not e.meta.is_column_selection()
-    assert e.meta.is_column_selection(allow_aliasing=True)
-
-    e = pl.col(pl.String)
-    assert e.meta.is_column_selection()
-
-    e = pl.col(pl.String).name.prefix("str_")
-    assert e.meta.is_column_selection(allow_aliasing=True)
-
-    e = cs.numeric().exclude("value")
-    assert e.meta.is_column_selection()
-    assert not (e + 100).meta.is_column_selection()
-
-    e = cs.numeric() - cs.integer()
-    assert e.meta.is_column_selection()
-
-    e = pl.nth(2)
-    assert e.meta.is_column_selection()
+        expr = (
+            expr.name.suffix("!")
+            if expr.meta.has_multiple_outputs()
+            else expr.alias("!")
+        )
+        assert not expr.meta.is_column_selection()
+        assert expr.meta.is_column_selection(allow_aliasing=True)
+    else:
+        assert not expr.meta.is_column_selection()
 
 
 def test_meta_is_regex_projection() -> None:
