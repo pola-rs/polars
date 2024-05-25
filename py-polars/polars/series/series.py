@@ -7076,6 +7076,8 @@ class Series:
                 [7, 8, 9]
         ]
         """
+        is_list = nested_type == List
+        return self._from_pyseries(self._s.reshape(dimensions, is_list))
 
     def shuffle(self, seed: int | None = None) -> Series:
         """
