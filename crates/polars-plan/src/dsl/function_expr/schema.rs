@@ -336,10 +336,12 @@ impl FunctionExpr {
         }
     }
 
-    pub(crate) fn output_name(&self) -> Option<&ColumnName> {
+    pub(crate) fn output_name(&self) -> Option<OutputName> {
         match self {
             #[cfg(feature = "dtype-struct")]
-            FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => Some(name),
+            FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+                Some(OutputName::Field(name.clone()))
+            },
             _ => None,
         }
     }

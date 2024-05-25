@@ -316,7 +316,7 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
             if state.output_name.is_none() {
                 // Handles special case functions like `struct.field`.
                 if let Some(name) = function.output_name() {
-                    state.output_name = OutputName::ColumnLhs(name.clone())
+                    state.output_name = name
                 } else {
                     set_function_output_name(&e, state, || Cow::Owned(format!("{}", &function)));
                 }

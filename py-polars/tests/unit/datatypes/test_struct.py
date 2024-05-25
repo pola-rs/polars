@@ -898,3 +898,15 @@ def test_struct_field() -> None:
             {"name": "ALICE", "age": 65, "car": "Volvo"},
         ]
     }
+
+
+def test_struct_field_recognized_as_renaming_expr_16480() -> None:
+    q = pl.LazyFrame(
+        {
+            "foo": "bar",
+            "my_struct": [{"x": 1, "y": 2}],
+        }
+    ).select(pl.col("my_struct").struct.field("x"))
+
+    q = q.select("x")
+    assert q.collect().to_dict(as_series=False) == {"x": [1]}

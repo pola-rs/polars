@@ -611,6 +611,8 @@ impl<'a> Display for ExprIRDisplay<'a> {
             OutputName::None => {},
             OutputName::LiteralLhs(_) => {},
             OutputName::ColumnLhs(_) => {},
+            #[cfg(feature = "dtype-struct")]
+            OutputName::Field(_) => {},
             OutputName::Alias(name) => write!(f, r#".alias("{name}")"#)?,
         }
 
