@@ -170,7 +170,7 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
+        match=r"cannot select columns with key {'some'} of type 'set'",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
@@ -533,7 +533,10 @@ def test_window_size_validation() -> None:
 def test_invalid_getitem_key_err() -> None:
     df = pl.DataFrame({"x": [1.0], "y": [1.0]})
 
-    with pytest.raises(KeyError, match=r"('x', 'y')"):
+    with pytest.raises(
+        TypeError,
+        match="cannot use `__getitem__` on Series of dtype Float64 with argument 'x' of type 'str'",
+    ):
         df["x", "y"]
 
 
