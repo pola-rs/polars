@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+#[cfg(feature = "dtype-array")]
+use polars_utils::format_tuple;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -174,6 +177,25 @@ impl DataType {
         }
     }
 
+    #[cfg(feature = "dtype-array")]
+    /// Get the full shape of a multidimensional array.
+    pub fn get_shape(&self) -> Option<Vec<usize>> {
+        fn get_shape_impl(dt: &DataType, shape: &mut Vec<usize>) {
+            if let DataType::Array(inner, size) = dt {
+                shape.push(*size);
+                get_shape_impl(inner, shape);
+            }
+        }
+
+        if let DataType::Array(inner, size) = self {
+            let mut shape = vec![*size];
+            get_shape_impl(inner, &mut shape);
+            Some(shape)
+        } else {
+            None
+        }
+    }
+
     /// Get the inner data type of a nested type.
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
@@ -182,6 +204,15 @@ impl DataType {
             DataType::Array(inner, _) => Some(inner),
             _ => None,
         }
+    }
+
+    /// Get the absolute inner data type of a nested type.
+    pub fn leaf_dtype(&self) -> &DataType {
+        let mut prev = self;
+        while let Some(dtype) = prev.inner_dtype() {
+            prev = dtype
+        }
+        prev
     }
 
     /// Convert to the physical data type
@@ -646,7 +677,17 @@ impl Display for DataType {
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
-            DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
+            DataType::Array(_, _) => {
+                let tp = self.leaf_dtype();
+
+                let dims = self.get_shape().unwrap();
+                let shape = if dims.len() == 1 {
+                    format!("{}", dims[0])
+                } else {
+                    format_tuple!(dims)
+                };
+                return write!(f, "array[{tp}, {}]", shape);
+            },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s, _) => s,

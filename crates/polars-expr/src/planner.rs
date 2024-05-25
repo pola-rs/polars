@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::POOL;
+use polars_ops::prelude::*;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use rayon::prelude::*;

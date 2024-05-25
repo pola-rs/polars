@@ -1640,9 +1640,9 @@ impl Expr {
         self.map_private(FunctionExpr::LowerBound)
     }
 
-    pub fn reshape(self, dimensions: &[i64]) -> Self {
+    pub fn reshape(self, dimensions: &[i64], nested_type: NestedType) -> Self {
         let dimensions = dimensions.to_vec();
-        self.apply_private(FunctionExpr::Reshape(dimensions))
+        self.apply_private(FunctionExpr::Reshape(dimensions, nested_type))
     }
 
     #[cfg(feature = "ewma")]

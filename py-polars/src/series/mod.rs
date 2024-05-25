@@ -125,6 +125,17 @@ impl PySeries {
         })
     }
 
+    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> PyResult<Self> {
+        use polars_ops::prelude::SeriesReshape;
+        let out = if is_list {
+            self.series.reshape_list(&dims)
+        } else {
+            self.series.reshape_array(&dims)
+        }
+        .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
     /// Returns the string format of a single element of the Series.
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
         let v = format!("{}", self.series.get(index).unwrap());

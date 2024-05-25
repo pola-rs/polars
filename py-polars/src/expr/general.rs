@@ -816,8 +816,13 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
-    fn reshape(&self, dims: Vec<i64>) -> Self {
-        self.inner.clone().reshape(&dims).into()
+    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> Self {
+        let nested = if is_list {
+            NestedType::List
+        } else {
+            NestedType::Array
+        };
+        self.inner.clone().reshape(&dims, nested).into()
     }
 
     fn to_physical(&self) -> Self {

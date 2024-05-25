@@ -296,12 +296,12 @@ def _instantiate_nested_dtype(
         return List(inner_dtype)
     elif dtype == Array:
         inner_dtype = instantiate_inner(getattr(dtype, "inner", None))
-        width = getattr(
+        size = getattr(
             dtype,
-            "width",
+            "size",
             draw(st.integers(min_value=1, max_value=_DEFAULT_ARRAY_WIDTH_LIMIT)),
         )
-        return Array(inner_dtype, width)
+        return Array(inner_dtype, size)
     elif dtype == Struct:
         if isinstance(dtype, Struct):
             fields = [Field(f.name, instantiate_inner(f.dtype)) for f in dtype.fields]
@@ -388,12 +388,12 @@ def _instantiate_dtype(
         return List(inner)
     elif dtype == Array:
         inner = draw_inner(getattr(dtype, "inner", None))
-        width = getattr(
+        size = getattr(
             dtype,
-            "width",
+            "size",
             draw(st.integers(min_value=1, max_value=_DEFAULT_ARRAY_WIDTH_LIMIT)),
         )
-        return Array(inner, width)
+        return Array(inner, size)
     elif dtype == Struct:
         if isinstance(dtype, Struct):
             fields = [

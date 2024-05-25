@@ -17,7 +17,6 @@ from typing import (
 
 import polars._reexport as pl
 import polars._utils.construction as plc
-from polars import functions as F
 from polars._utils.construction.utils import (
     get_first_non_none,
     is_namedtuple,
@@ -68,7 +67,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import TimeZoneAwareConstructorWarning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PySeries
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
@@ -500,6 +499,8 @@ def numpy_to_pyseries(
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
+    # TODO: remove this branch on 1.0.
+    # This returns a List whereas we should return an Array type
     elif values.ndim == 2:
         # Optimize by ingesting 1D and reshaping in Rust
         original_shape = values.shape
@@ -510,15 +511,17 @@ def numpy_to_pyseries(
             strict=strict,
             nan_to_null=nan_to_null,
         )
-        return (
-            PyDataFrame([py_s])
-            .lazy()
-            .select([F.col(name).reshape(original_shape)._pyexpr])
-            .collect()
-            .select_at_idx(0)
-        )
+        return wrap_s(py_s).reshape(original_shape)._s
     else:
-        return PySeries.new_object(name, values, strict)
+        original_shape = values.shape
+        values = values.reshape(-1)
+        py_s = numpy_to_pyseries(
+            name,
+            values,
+            strict=strict,
+            nan_to_null=nan_to_null,
+        )
+        return wrap_s(py_s).reshape(original_shape, Array)._s
 
 
 def series_to_pyseries(

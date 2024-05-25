@@ -388,10 +388,10 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
             "Array" => {
                 let inner = ob.getattr(intern!(py, "inner")).unwrap();
-                let width = ob.getattr(intern!(py, "width")).unwrap();
+                let size = ob.getattr(intern!(py, "size")).unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
-                let width = width.extract::<usize>()?;
-                DataType::Array(Box::new(inner.0), width)
+                let size = size.extract::<usize>()?;
+                DataType::Array(Box::new(inner.0), size)
             },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;

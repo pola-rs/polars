@@ -69,8 +69,12 @@ pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::unique_counts(s)
 }
 
-pub(super) fn reshape(s: &Series, dimensions: Vec<i64>) -> PolarsResult<Series> {
-    s.reshape(&dimensions)
+pub(super) fn reshape(s: &Series, dimensions: &[i64], nested: &NestedType) -> PolarsResult<Series> {
+    match nested {
+        NestedType::List => s.reshape_list(dimensions),
+        #[cfg(feature = "dtype-array")]
+        NestedType::Array => s.reshape_array(dimensions),
+    }
 }
 
 #[cfg(feature = "repeat_by")]

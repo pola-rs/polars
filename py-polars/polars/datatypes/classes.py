@@ -735,11 +735,31 @@ class Array(NestedType):
     """
 
     inner: PolarsDataType | None = None
-    width: int
+    size: int
+    # outer shape
+    shape: None | tuple[int, ...] = None
 
-    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
+    def __init__(
+        self,
+        inner: PolarsDataType | PythonDataType,
+        shape: int | tuple[int, ...] | None = None,
+        width: int | None = None,
+    ):
+        if width is not None:
+            shape = width
+        elif isinstance(shape, tuple):
+            if len(shape) > 1:
+                self.shape = shape
+                for dim in shape[1:]:
+                    inner = Array(inner, dim)
+            shape = shape[0]
+
+        if shape is None:
+            msg = "either 'shape' or 'width' must be set"
+            raise ValueError(msg)
+
         self.inner = polars.datatypes.py_type_to_dtype(inner)
-        self.width = width
+        self.size = shape
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -752,7 +772,7 @@ class Array(NestedType):
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
         if isinstance(other, Array):
-            if self.width != other.width:
+            if self.size != other.size:
                 return False
             elif self.inner is None or other.inner is None:
                 return True
@@ -762,11 +782,19 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner, self.width))
+        return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, width={self.width})"
+
+        if self.shape:
+            # get leaf type
+            dtype = self.inner
+            while isinstance(dtype, Array):
+                dtype = dtype.inner
+
+            return f"{class_name}({dtype!r}, shape={self.shape})"
+        return f"{class_name}({self.inner!r}, size={self.size})"
 
 
 class Field:

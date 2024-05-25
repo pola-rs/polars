@@ -415,12 +415,12 @@ def data(
         strategy = lists(inner, allow_null=allow_null, **kwargs)
     elif dtype == Array:
         inner = getattr(dtype, "inner", None) or Null()
-        width = getattr(dtype, "width", _DEFAULT_ARRAY_WIDTH_LIMIT)
+        size = getattr(dtype, "size", _DEFAULT_ARRAY_WIDTH_LIMIT)
         kwargs = {k: v for k, v in kwargs.items() if k not in ("min_size", "max_size")}
         strategy = lists(
             inner,
-            min_size=width,
-            max_size=width,
+            min_size=size,
+            max_size=size,
             allow_null=allow_null,
             **kwargs,
         )

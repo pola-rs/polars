@@ -239,12 +239,24 @@ impl FunctionExpr {
             },
             #[cfg(feature = "repeat_by")]
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
-            Reshape(dims) => mapper.map_dtype(|dt| {
+            Reshape(dims, nested_type) => mapper.map_dtype(|dt| {
                 let dtype = dt.inner_dtype().unwrap_or(dt).clone();
                 if dims.len() == 1 {
                     dtype
                 } else {
-                    DataType::List(Box::new(dtype))
+                    match nested_type {
+                        NestedType::List => DataType::List(Box::new(dtype)),
+                        #[cfg(feature = "dtype-array")]
+                        NestedType::Array => {
+                            let mut prev_dtype = dtype.leaf_dtype().clone();
+
+                            // We pop the outer dimension as that is the height of the series.
+                            for dim in &dims[1..] {
+                                prev_dtype = DataType::Array(Box::new(prev_dtype), *dim as usize);
+                            }
+                            prev_dtype
+                        },
+                    }
                 }
             }),
             #[cfg(feature = "cutqcut")]

@@ -33,6 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
@@ -419,7 +420,7 @@ impl<'a> AggregationContext<'a> {
                 self.groups();
                 let rows = self.groups.len();
                 let s = s.new_from_index(0, rows);
-                s.reshape(&[rows as i64, -1]).unwrap()
+                s.reshape_list(&[rows as i64, -1]).unwrap()
             },
         }
     }
