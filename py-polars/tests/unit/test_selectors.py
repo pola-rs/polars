@@ -390,8 +390,14 @@ def test_selector_expand() -> None:
     with pytest.raises(TypeError, match="expected a selector"):
         cs.expand_selector(schema, pl.exclude("id", "count"))
 
+    with pytest.raises(TypeError, match="expected a selector"):
+        cs.expand_selector(schema, pl.col("value") // 100)
+
     expanded = cs.expand_selector(schema, pl.exclude("id", "count"), strict=False)
     assert expanded == ("desc", "value")
+
+    expanded = cs.expand_selector(schema, cs.numeric().exclude("id"), strict=False)
+    assert expanded == ("count", "value")
 
 
 def test_selector_first_last(df: pl.DataFrame) -> None:
