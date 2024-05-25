@@ -417,3 +417,55 @@ Series: '' [decimal[38,38]]
 	0.14282911023321884847623576259639164703
 ]"""
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("lf", "expected"),
+    [
+        (
+            (
+                pl.LazyFrame({"a": [1]})
+                .with_columns(b=pl.col("a"))
+                .with_columns(c=pl.col("b"), d=pl.col("a"))
+            ),
+            'simple π 4/4 ["a", "b", "c", "d"]',
+        ),
+        (
+            (
+                pl.LazyFrame({"a_very_very_long_string": [1], "a": [1]})
+                .with_columns(b=pl.col("a"))
+                .with_columns(c=pl.col("b"), d=pl.col("a"))
+            ),
+            'simple π 5/5 ["a_very_very_long_string", "a", ... 3 other columns]',
+        ),
+        (
+            (
+                pl.LazyFrame({"an_even_longer_very_very_long_string": [1], "a": [1]})
+                .with_columns(b=pl.col("a"))
+                .with_columns(c=pl.col("b"), d=pl.col("a"))
+            ),
+            'simple π 5/5 ["an_even_longer_very_very_long_string", ... 4 other columns]',
+        ),
+        (
+            (
+                pl.LazyFrame({"a": [1]})
+                .with_columns(b=pl.col("a"))
+                .with_columns(c=pl.col("b"), a_very_long_string_at_the_end=pl.col("a"))
+            ),
+            'simple π 4/4 ["a", "b", "c", ... 1 other column]',
+        ),
+        (
+            (
+                pl.LazyFrame({"a": [1]})
+                .with_columns(b=pl.col("a"))
+                .with_columns(
+                    a_very_long_string_in_the_middle=pl.col("b"), d=pl.col("a")
+                )
+            ),
+            'simple π 4/4 ["a", "b", ... 2 other columns]',
+        ),
+    ],
+)
+def test_simple_project_format(lf: pl.LazyFrame, expected: str) -> None:
+    result = lf.explain()
+    assert expected in result
