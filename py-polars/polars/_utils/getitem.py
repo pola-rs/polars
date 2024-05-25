@@ -177,10 +177,7 @@ def _select_columns_by_mask(
     df: DataFrame, key: Sequence[bool] | Series | np.ndarray[Any, Any]
 ) -> DataFrame:
     if len(key) != df.width:
-        msg = (
-            f"expected {df.width} values when selecting columns by"
-            f" boolean mask, got {len(key)}"
-        )
+        msg = f"expected {df.width} values when selecting columns by boolean mask, got {len(key)}"
         raise ValueError(msg)
 
     indices = (i for i, val in enumerate(key) if val)

@@ -51,20 +51,13 @@ from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
-from polars._utils.getitem import (
-    _convert_np_ndarray_to_indices,
-    _convert_series_to_indices,
-    df_getitem,
-)
+from polars._utils.getitem import df_getitem
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     is_bool_sequence,
-    is_int_sequence,
-    is_str_sequence,
     normalize_filepath,
     parse_version,
-    range_to_slice,
     scale_bytes,
     warn_null_comparison,
 )
@@ -106,7 +99,6 @@ from polars.exceptions import (
 )
 from polars.functions import col, lit
 from polars.selectors import _expand_selector_dicts, _expand_selectors
-from polars.slice import PolarsSlice
 from polars.type_aliases import (
     DbWriteMode,
     JaxExportType,
@@ -1047,164 +1039,6 @@ class DataFrame:
     ) -> DataFrame | Series | Any:
         """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
         return df_getitem(self, item)
-
-        # Fail when multiple column names are passed as separate inputs
-        # df["foo", "bar"]
-        if (
-            isinstance(item, tuple)
-            and len(item) > 1
-            and all(isinstance(x, str) for x in item)
-        ):
-            raise KeyError(item)
-
-        # Handle two-dimensional inputs (row, column) - follow NumPy API
-        if isinstance(item, tuple) and len(item) == 2:
-            row_selection, col_selection = item
-
-            # df[[], :]
-            if isinstance(row_selection, Sequence):
-                if len(row_selection) == 0:
-                    # handle empty list by falling through to slice
-                    row_selection = slice(0)
-
-            # df[:, unknown]
-            if isinstance(row_selection, slice):
-                # multiple slices
-                # df[:, :]
-                if isinstance(col_selection, slice):
-                    # slice can be
-                    # by index
-                    #   [1:8]
-                    # or by column name
-                    #   ["foo":"bar"]
-                    # first we make sure that the slice is by index
-                    start = col_selection.start
-                    stop = col_selection.stop
-                    if isinstance(col_selection.start, str):
-                        start = self.get_column_index(col_selection.start)
-                    if isinstance(col_selection.stop, str):
-                        stop = self.get_column_index(col_selection.stop) + 1
-
-                    col_selection = slice(start, stop, col_selection.step)
-
-                    df = self.__getitem__(self.columns[col_selection])
-                    return df[row_selection]
-
-                # df[:, [True, False]]
-                if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pl.Series)
-                    and col_selection.dtype == Boolean
-                ):
-                    if len(col_selection) != self.width:
-                        msg = (
-                            f"expected {self.width} values when selecting columns by"
-                            f" boolean mask, got {len(col_selection)}"
-                        )
-                        raise ValueError(msg)
-                    series_list = []
-                    for i, val in enumerate(col_selection):
-                        if val:
-                            series_list.append(self.to_series(i))
-
-                    df = self.__class__(series_list)
-                    return df[row_selection]
-
-            # df[2, :] (select row as df)
-            if isinstance(row_selection, int):
-                if isinstance(col_selection, (slice, list)) or (
-                    _check_for_numpy(col_selection)
-                    and isinstance(col_selection, np.ndarray)
-                ):
-                    df = self[:, col_selection]
-                    return df.slice(row_selection, 1)
-
-            # df[:, "a"]
-            if isinstance(col_selection, str):
-                series = self.get_column(col_selection)
-                return series[row_selection]  # type: ignore[index]
-
-            # df[:, 1]
-            if isinstance(col_selection, int):
-                series = self.to_series(col_selection)
-                return series[row_selection]  # type: ignore[index]
-
-            if isinstance(col_selection, list):
-                # df[:, [1, 2]]
-                if is_int_sequence(col_selection):
-                    series_list = [self.to_series(i) for i in col_selection]
-                    df = self.__class__(series_list)
-                    return df[row_selection]
-
-            df = self.__getitem__(col_selection)
-            return df.__getitem__(row_selection)
-
-        # Select a single column by name
-        # df["foo"]
-        if isinstance(item, str):
-            return self.get_column(item)
-
-        # Select a single row
-        # df[idx]
-        if isinstance(item, int):
-            return self.slice(item, 1)
-
-        # Select multiple rows (range)
-        # df[range(n)]
-        if isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # Select multiple rows (slice)
-        # df[:]
-        if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        # Select multiple columns or rows using a NumPy array
-        if _check_for_numpy(item) and isinstance(item, np.ndarray):
-            if item.ndim != 1:
-                msg = "multi-dimensional NumPy arrays not supported as index"
-                raise TypeError(msg)
-            # Select multiple rows by index
-            # df[np.array([1, 2, 3])]
-            if item.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-                return self._gather_with_series(
-                    _convert_np_ndarray_to_indices(item, self.shape[0])
-                )
-            # Select multiple columns by name
-            # df[np.array(["foo", "bar"])]
-            if isinstance(item[0], str):
-                return self._from_pydf(self._df.select(item))
-
-        # Select multiple columns by name
-        # df[["foo", "bar", "ham"]]
-        if is_str_sequence(item, allow_str=False):
-            return self._from_pydf(self._df.select(item))
-
-        # Select multiple rows by index
-        # df[[1, 2, 3]]
-        elif is_int_sequence(item):
-            item = pl.Series("", item)  # fall through to Series case
-
-        # Select multiple rows by index/columns by name
-        # df[series]
-        if isinstance(item, pl.Series):
-            dtype = item.dtype
-            if dtype == String:
-                return self._from_pydf(self._df.select(item))
-            elif dtype.is_integer():
-                return self._gather_with_series(
-                    _convert_series_to_indices(item, self.shape[0])
-                )
-
-        # Other inputs are not supported
-        msg = (
-            f"cannot use `__getitem__` on DataFrame with item {item!r}"
-            f" of type {type(item).__name__!r}"
-        )
-        raise TypeError(msg)
-
-    def _gather_with_series(self, s: Series) -> DataFrame:
-        return self._from_pydf(self._df.gather_with_series(s._s))
 
     def __setitem__(
         self,

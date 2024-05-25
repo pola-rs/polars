@@ -1228,9 +1228,6 @@ class Series:
             for offset in range(0, self.len(), buffer_size):
                 yield from self.slice(offset, buffer_size).to_list()
 
-    def _gather_with_series(self, s: Series) -> Series:
-        return self._from_pyseries(self._s.gather_with_series(s._s))
-
     @overload
     def __getitem__(self, key: SingleIndexSelector) -> Any: ...
 
