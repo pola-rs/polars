@@ -59,7 +59,7 @@ def getitem_series(
         if not key:
             return s.clear()
         if isinstance(key[0], bool):
-            msg = "boolean masks not supported. Use `filter` instead."
+            msg = "boolean masks not supported\n\nHint: Use `filter` instead."
             raise TypeError(msg)
         indices = pl.Series("", key, dtype=Int64)
         indices = _convert_series_to_indices(indices, s.len())
@@ -305,7 +305,7 @@ def _select_rows(
         if not key:
             return df.clear()
         if isinstance(key[0], bool):
-            msg = "boolean masks not supported. Use `filter` instead."
+            msg = "boolean masks not supported\n\nHint: Use `filter` instead."
             raise TypeError(msg)
         s = pl.Series("", key, dtype=Int64)
         indices = _convert_series_to_indices(s, df.height)
