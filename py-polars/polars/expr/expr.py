@@ -2096,7 +2096,14 @@ class Expr:
         └───────┴──────────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(self._pyexpr.top_k(k, nulls_last, multithreaded))
+        return self._from_pyexpr(
+            self._pyexpr.top_k(
+                k,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+                multithreaded=multithreaded,
+            )
+        )
 
     def top_k_by(
         self,
@@ -2228,7 +2235,12 @@ class Expr:
             raise ValueError(msg)
         return self._from_pyexpr(
             self._pyexpr.top_k_by(
-                k, by, descending, nulls_last, maintain_order, multithreaded
+                k,
+                by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+                multithreaded=multithreaded,
             )
         )
 
@@ -2291,7 +2303,14 @@ class Expr:
         └───────┴──────────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(self._pyexpr.bottom_k(k, nulls_last, multithreaded))
+        return self._from_pyexpr(
+            self._pyexpr.bottom_k(
+                k,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+                multithreaded=multithreaded,
+            )
+        )
 
     def bottom_k_by(
         self,
@@ -2423,7 +2442,12 @@ class Expr:
             raise ValueError(msg)
         return self._from_pyexpr(
             self._pyexpr.bottom_k_by(
-                k, by, descending, nulls_last, maintain_order, multithreaded
+                k,
+                by,
+                descending=descending,
+                nulls_last=nulls_last,
+                maintain_order=maintain_order,
+                multithreaded=multithreaded,
             )
         )
 
