@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import re
-import typing
 from datetime import date, datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -598,7 +599,6 @@ def test_cse_11958() -> None:
     }
 
 
-@typing.no_type_check
 def test_cse_14047() -> None:
     ldf = pl.LazyFrame(
         {
@@ -615,7 +615,7 @@ def test_cse_14047() -> None:
 
     def count_diff(
         price: pl.Expr, upper_bound: float = 0.1, lower_bound: float = 0.001
-    ):
+    ) -> pl.Expr:
         span_end_to_curr = (
             price.count()
             .cast(int)
@@ -630,7 +630,7 @@ def test_cse_14047() -> None:
             f"count_diff_{upper_bound}_{lower_bound}"
         )
 
-    def s_per_count(count_diff, span) -> pl.Expr:
+    def s_per_count(count_diff: pl.Expr, span: tuple[float, float]) -> pl.Expr:
         return (span[1] * 1000 - span[0] * 1000) / count_diff
 
     spans = [(0.001, 0.1), (1, 10)]

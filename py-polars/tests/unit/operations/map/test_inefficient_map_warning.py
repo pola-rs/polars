@@ -506,7 +506,7 @@ def test_omit_implicit_bool() -> None:
 
 
 def test_partial_functions_13523() -> None:
-    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+    def plus(value: int, amount: int) -> int:
         return value + amount
 
     data = {"a": [1, 2], "b": [3, 4]}

@@ -136,8 +136,8 @@ def test_grouped_ufunc() -> None:
 def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
     numba = pytest.importorskip("numba")
 
-    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")
-    def gufunc_mean(arr, result):  # type: ignore[no-untyped-def]
+    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc]
+    def gufunc_mean(arr: Any, result: Any) -> None:
         mean = arr.mean()
         for i in range(len(arr)):
             result[i] = mean + i
