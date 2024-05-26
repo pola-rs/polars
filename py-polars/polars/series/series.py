@@ -339,7 +339,7 @@ class Series:
                     self._s = (
                         # `values.dtype` has already been validated in
                         # `numpy_to_pyseries`, so `input_dtype` can't be `None`
-                        self.cast(input_dtype)  # type: ignore[arg-type]
+                        self.cast(input_dtype, strict=False)  # type: ignore[arg-type]
                         .cast(dtype)
                         .scatter(np.argwhere(np.isnat(values)).flatten(), None)
                         ._s

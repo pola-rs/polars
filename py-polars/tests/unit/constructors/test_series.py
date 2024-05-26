@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -121,4 +122,15 @@ def test_series_init_nonexistent_datetime() -> None:
 
     result = pl.Series([value], dtype=dtype, strict=False)
     expected = pl.Series([None], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/15518
+def test_series_init_np_temporal_with_nat_15518() -> None:
+    arr = np.array(["2020-01-01", "2020-01-02", "2020-01-03"], "datetime64[D]")
+    arr[1] = np.datetime64("NaT")
+
+    result = pl.Series(arr)
+
+    expected = pl.Series([date(2020, 1, 1), None, date(2020, 1, 3)])
     assert_series_equal(result, expected)
