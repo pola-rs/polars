@@ -42,36 +42,33 @@ You may use the issue to discuss possible solutions.
 
 ### Setting up your local environment
 
-Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
+The Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
-_Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
-_Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links._
+!!! note
+
+    If you are a Windows user, the steps below might not work as expected.
+    Try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
+    Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links.
+
+#### Configuring Git
 
 For contributing to Polars you need a free [GitHub account](https://github.com) and have [git](https://git-scm.com) installed on your machine.
-Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository. Then clone your forked repository using `git` and set the `upstream` remote for being able to sync your fork with the Polars repository:
+Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
 ```bash
 git clone https://github.com/<username>/polars.git
 cd polars
+```
+
+Optionally set the `upstream` remote to be able to sync your fork with the Polars repository in the future:
+
+```bash
 git remote add upstream https://github.com/pola-rs/polars.git
 git fetch upstream
 ```
 
-Check that everything is configured correctly by running
-
-```bash
-git remote -v
-```
-
-which should give the following output:
-
-```bash
-origin	https://github.com/<username>/polars.git (fetch)
-origin	https://github.com/<username>/polars.git (push)
-upstream	https://github.com/pola-rs/polars.git (fetch)
-upstream	https://github.com/pola-rs/polars.git (push)
-```
+#### Installing dependencies
 
 In order to work on Polars effectively, you will need [Rust](https://www.rust-lang.org/), [Python](https://www.python.org/), and [dprint](https://dprint.dev/).
 
@@ -101,9 +98,15 @@ make test
 This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
-- Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
+- Use [pip](https://pip.pypa.io/) and [uv](https://github.com/astral-sh/uv) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
+
+!!! note
+
+    There are a small number of specialized dependencies that are not installed by default.
+    If you are running specific tests and encounter an error message about a missing dependency,
+    try running `make requirements-all` to install _all_ known dependencies).
 
 Check if linting also works correctly by running:
 
@@ -122,17 +125,12 @@ We use the Makefile to conveniently run the following formatting and linting too
 
 If this all runs correctly, you're ready to start contributing to the Polars codebase!
 
-(Note: there are a very small number of specialized dependencies that are not installed by default.
-If you still encounter an error message about a missing dependency after having run `make requirements`,
-try running `make requirements-all` to install _all_ known dependencies).
-
-
 #### Updating the development environment
 
-Dependencies are updated regulary - at least once per month.
+Dependencies are updated regularly - at least once per month.
 If you do not keep your environment up-to-date, you may notice tests or CI checks failing, or you may not be able to build Polars at all.
 
-To keep your fork in sync with the Polars repository, run:
+To update your environment, first make sure your fork is in sync with the Polars repository:
 
 ```bash
 git checkout main
@@ -157,21 +155,7 @@ cargo clean
 
 ### Working on your issue
 
-First ensure that your local `main` branch is in sync with the remote `main` branch of Polars:
-
-```bash
-git checkout main
-git fetch upstream
-git rebase upstream/main
-```
-
-Next, create a new git branch (feature branch) from the `main` branch in your local repository with
-
-```bash
-git checkout -b my-feature-branch
-```
-
-and start coding! Always make your changes in a feature branch and use one feature branch per bug or feature.
+Create a new git branch from the `main` branch in your local repository, and start coding!
 
 The Rust code is located in the `crates` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
@@ -186,26 +170,6 @@ Two other things to keep in mind:
 
 - If you add code that should be tested, add tests.
 - If you change the public API, [update the documentation](#api-reference).
-
-#### Pushing your changes to GitHub
-
-Once you're finished with your work, make sure to add all changed files to the staging area with
-
-```bash
-git add path/to/file
-```
-
-and commit your changes by running
-
-```bash
-git commit -m "commit type and short description of your changes"
-```
-
-To push your changes from your local machine to your Polars fork on GitHub, run:
-
-```bash
-git push -u origin my-feature-branch
-```
 
 ### Pull requests
 
@@ -225,32 +189,6 @@ Once all issues are resolved, the maintainer will merge your pull request, and y
 Keep in mind that your work does not have to be perfect right away!
 If you are stuck or unsure about your solution, feel free to open a draft pull request and ask for help.
 
-#### Updating a pull request
-
-Many pull requests go through cycles of repeated reviews and updates before they get merged into the `main` branch of the Polars repository.
-
-To stay up to date with the Polars repository, it is useful to periodically sync your local feature branch with the changes in the remote `main` branch of Polars:
-
-```bash
-git checkout shiny-new-feature
-git fetch upstream
-git rebase upstream/main
-```
-
-If the changes in both branches are incompatible, merge conflicts appear which need to be resolved before you can continue.
-
-Refer to [this guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) for how to resolve merge conflicts.
-
-To continue working on your pull request, activate your virtual environment from the root of the Polars repo with:
-
-```bash
-source .venv/bin/activate
-```
-
-When you are finished with making updates to your pull request, follow the steps under "Pushing your changes to GitHub" (see above).
-
-Your changes will appear on your pull request on GitHub and automatically trigger the Continuous Integration pipeline.
-
 ## Contributing to documentation
 
 The most important components of Polars documentation are the [user guide](https://docs.pola.rs/user-guide/), the [API references](https://docs.pola.rs/api/), and the database of questions on [StackOverflow](https://stackoverflow.com/).
@@ -263,7 +201,7 @@ The user guide is maintained in the `docs/user-guide` folder. Before creating a 
 
 The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make build` in the root of the repo.
 
-Activate the virtual environment with the command `source .venv/bin/activate` and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
+Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
