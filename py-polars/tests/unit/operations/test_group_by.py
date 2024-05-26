@@ -992,6 +992,23 @@ def test_group_by_multiple_null_cols_15623() -> None:
     assert df.is_empty()
 
 
+def test_group_by_repeated_iteration() -> None:
+    df = pl.DataFrame({"a": ["A", "B", "A", "A", "C"], "b": [1, 2, 3, 4, 5]})
+    group_by = df.group_by(pl.col("a"), maintain_order=True)
+    it_1 = []
+    it_2 = []
+    # Interleaved, repeated iteration
+    for item in group_by:
+        it_2 = list(group_by)
+        it_1.append(item)
+    assert len(it_1) == len(it_2) == 3
+
+    # Check if they actually produce the same results
+    for (n1, d1), (n3, d3) in zip(it_1, group_by):
+        assert n1 == n3
+        assert_frame_equal(d1, d3)
+
+
 @pytest.mark.release()
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
