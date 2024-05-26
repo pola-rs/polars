@@ -269,8 +269,8 @@ impl PyDataFrame {
         Ok(series)
     }
 
-    pub fn select(&self, selection: Vec<PyBackedStr>) -> PyResult<Self> {
-        let df = self.df.select(selection).map_err(PyPolarsErr::from)?;
+    pub fn select(&self, columns: Vec<PyBackedStr>) -> PyResult<Self> {
+        let df = self.df.select(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
