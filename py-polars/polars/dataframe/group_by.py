@@ -10,25 +10,18 @@ from polars._utils.deprecation import (
 )
 
 if TYPE_CHECKING:
-    import sys
     from datetime import timedelta
 
     from polars import DataFrame, Series
     from polars.type_aliases import (
         ClosedInterval,
+        GroupByIterator,
         IntoExpr,
         Label,
         RollingInterpolationMethod,
         SchemaDict,
         StartBy,
     )
-
-    if sys.version_info >= (3, 11):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
-
-    GroupByIterator: TypeAlias = Iterator[tuple[object | tuple[object, ...], DataFrame]]
 
 
 class GroupBy:
