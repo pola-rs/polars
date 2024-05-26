@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterable, NoReturn, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.constants import U32_MAX
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.various import range_to_slice
 from polars.datatypes.classes import (
     Boolean,
@@ -151,9 +152,18 @@ def get_df_item_by_key(
         # https://github.com/pola-rs/polars/issues/4924
         return df.__class__()
     try:
-        return _select_rows(df, key)  # type: ignore[arg-type]
+        item = _select_rows(df, key)  # type: ignore[arg-type]
     except TypeError:
-        return _select_columns(df, key)  # type: ignore[arg-type]
+        item = _select_columns(df, key)  # type: ignore[arg-type]
+    else:
+        issue_deprecation_warning(
+            "Selecting rows using `DataFrame.__getitem__` with a single input is deprecated."
+            " This will select columns instead of rows in a future version of Polars."
+            " Add an explicit column specifier to silence this warning."
+            " For example, use `df[x, :]` instead of `df[x]`.",
+            version="0.20.30",
+        )
+    return item
 
 
 # `str` overlaps with `Sequence[str]`
