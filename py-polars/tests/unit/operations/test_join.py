@@ -966,7 +966,7 @@ def test_cross_join_slice_pushdown() -> None:
 
 
 @pytest.mark.parametrize("how", ["left", "inner"])
-def test_join_coalesce(how: Literal["left", "inner"]) -> None:
+def test_join_coalesce(how: JoinStrategy) -> None:
     a = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
     b = pl.LazyFrame(
         {
@@ -994,7 +994,7 @@ def test_join_coalesce(how: Literal["left", "inner"]) -> None:
 
 
 @pytest.mark.parametrize("how", ["left", "inner", "full", "outer"])
-def test_join_empties(how: Literal["left", "inner", "full", "outer"]) -> None:
+def test_join_empties(how: JoinStrategy) -> None:
     df1 = pl.DataFrame({"col1": [], "col2": [], "col3": []})
     df2 = pl.DataFrame({"col2": [], "col4": [], "col5": []})
 
