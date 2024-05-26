@@ -191,19 +191,27 @@ impl Series {
 
     /// Create a `Series` of the same data type with all chunks replaced.
     /// # Safety
-    /// This chunks should align with the data-type
+    /// These chunks should align with the data-type
     pub unsafe fn replace_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
         let mut new = self.clear();
-        *new.chunks_mut() = chunks;
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        *mut_new.chunks_mut() = chunks;
+        mut_new.compute_len();
         new
     }
 
     /// Create a `Series` of the same data type with all chunks replaced.
     /// # Safety
-    /// This chunks should align with the data-type
+    /// This chunk should align with the data-type
     pub unsafe fn replace_with_chunk(&self, chunk: ArrayRef) -> Self {
         let mut new = self.clear();
-        new.chunks_mut()[0] = chunk;
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        let chunks = mut_new.chunks_mut();
+        chunks.clear();
+        chunks.push(chunk);
+        mut_new.compute_len();
         new
     }
 
