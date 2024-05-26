@@ -4898,7 +4898,7 @@ class Expr:
                 for step in chunk_sizes:
                     a = b
                     b = b + step
-                    partition_df = df[a:b]
+                    partition_df = df[a:b, :]
                     partitions.append(get_lazy_promise(partition_df))
 
                 out = [df.to_series() for df in F.collect_all(partitions)]
