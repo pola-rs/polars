@@ -4202,7 +4202,7 @@ class DataFrame:
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             fn = repr if schema[col_name] == String else str
-            values = self[:max_n_values][col_name].to_list()
+            values = self[:max_n_values, col_name].to_list()
             val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
