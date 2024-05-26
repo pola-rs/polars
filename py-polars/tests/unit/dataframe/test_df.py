@@ -1997,6 +1997,7 @@ def test_add_string() -> None:
     )
     assert_frame_equal(("hello " + df), expected)
 
+
 def test_df_broadcast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}, schema_overrides={"a": pl.UInt8})
     out = df.with_columns(pl.Series("s", [[1, 2]]))

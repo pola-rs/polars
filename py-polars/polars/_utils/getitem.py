@@ -128,7 +128,7 @@ def get_df_item_by_key(
     ),
 ) -> DataFrame | Series | Any:
     """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
-    # Two inputs
+    # Two inputs, e.g. df[1, 2:5]
     if isinstance(key, tuple) and len(key) == 2:
         row_key, col_key = key
         selection = _select_columns(df, col_key)
@@ -140,17 +140,20 @@ def get_df_item_by_key(
         else:
             return _select_rows(selection, row_key)  # type: ignore[arg-type]
 
-    # TODO: Deprecate `_select_rows` path here - code below can be replaced by just
-    # the `_select_columns`  column call.
-    # https://github.com/pola-rs/polars/issues/4924
-    if isinstance(key, str):
+    # Single input, e.g. df[1]
+    elif isinstance(key, str):
+        # This case is required because empty strings are otherwise treated
+        # as an empty Sequence in `_select_rows`
         return df.get_column(key)
-    if isinstance(key, Sequence) and len(key) == 0:
+    elif isinstance(key, Sequence) and len(key) == 0:
+        # df[[]]
+        # TODO: This removes all columns, but it should remove all rows.
+        # https://github.com/pola-rs/polars/issues/4924
         return df.__class__()
     try:
         return _select_rows(df, key)  # type: ignore[arg-type]
     except TypeError:
-        return _select_columns(df, key)
+        return _select_columns(df, key)  # type: ignore[arg-type]
 
 
 # `str` overlaps with `Sequence[str]`
