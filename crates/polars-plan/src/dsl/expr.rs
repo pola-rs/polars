@@ -378,7 +378,9 @@ impl Operator {
                 | Self::Gt
                 | Self::GtEq
                 | Self::And
+                | Self::LogicalAnd
                 | Self::Or
+                | Self::LogicalOr
                 | Self::Xor
                 | Self::EqValidity
                 | Self::NotEqValidity
