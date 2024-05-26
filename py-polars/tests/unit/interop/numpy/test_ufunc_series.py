@@ -1,4 +1,4 @@
-from typing import Callable, cast
+from typing import Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -125,8 +125,8 @@ def test_numpy_string_array() -> None:
 def make_add_one() -> Callable[[pl.Series], pl.Series]:
     numba = pytest.importorskip("numba")
 
-    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")
-    def add_one(arr, result):  # type: ignore[no-untyped-def]
+    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc]
+    def add_one(arr: Any, result: Any) -> None:
         for i in range(len(arr)):
             result[i] = arr[i] + 1.0
 
@@ -164,8 +164,8 @@ def make_divide_by_sum() -> Callable[[pl.Series, pl.Series], pl.Series]:
     numba = pytest.importorskip("numba")
     float64 = numba.float64
 
-    @numba.guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")
-    def divide_by_sum(arr, arr2, result):  # type: ignore[no-untyped-def]
+    @numba.guvectorize([(float64[:], float64[:], float64[:])], "(n),(m)->(m)")  # type: ignore[misc]
+    def divide_by_sum(arr: Any, arr2: Any, result: Any) -> None:
         total = arr.sum()
         for i in range(len(arr2)):
             result[i] = arr2[i] / total
