@@ -63,7 +63,7 @@ def test_df_getitem_row_slice(df: pl.DataFrame) -> None:
     for start, stop, step, _ in py_data:
         s = slice(start, stop, step)
         sliced_py_data = py_data[s]
-        sliced_df_data = df[s].rows()
+        sliced_df_data = df[s, :].rows()
 
         assert (
             sliced_py_data == sliced_df_data
@@ -220,9 +220,10 @@ def test_df_getitem_row_range() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_df_getitem_row_range_single_input() -> None:
+def test_df_getitem_row_range_single_input_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5.0, 6.0, 7.0, 8.0]})
-    result = df[range(1, 3)]
+    with pytest.deprecated_call():
+        result = df[range(1, 3)]
     expected = pl.DataFrame({"a": [2, 3], "b": [6.0, 7.0]})
     assert_frame_equal(result, expected)
 
@@ -239,7 +240,8 @@ def test_df_getitem() -> None:
     assert_series_equal(df["a"], pl.Series("a", [1.0, 2.0, 3.0, 4.0]))
 
     # int, always refers to a row index (zero-based): index=1 => second row
-    assert_frame_equal(df[1], pl.DataFrame({"a": [2.0], "b": [4]}))
+    with pytest.deprecated_call():
+        assert_frame_equal(df[1], pl.DataFrame({"a": [2.0], "b": [4]}))
 
     # int, int.
     # The first element refers to the rows, the second element to columns
@@ -268,17 +270,19 @@ def test_df_getitem() -> None:
         df[2, [2, -3]]
 
     # slice. Below an example of taking every second row
-    assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
+    with pytest.deprecated_call():
+        assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
 
     # slice, empty slice
-    assert df[:0].columns == ["a", "b"]
-    assert len(df[:0]) == 0
+    with pytest.deprecated_call():
+        assert df[:0].columns == ["a", "b"]
+        assert len(df[:0]) == 0
 
     # make mypy happy
     empty: list[int] = []
 
     # empty list with column selector drops rows but keeps columns
-    assert_frame_equal(df[empty, :], df[:0])
+    assert_frame_equal(df[empty, :], df.clear())
 
     # empty list without column select return empty frame
     assert_frame_equal(df[empty], pl.DataFrame({}))
@@ -296,18 +300,21 @@ def test_df_getitem() -> None:
         np.uint32,
         np.uint64,
     ):
+        arr = np.array([1, 0, 3, 2, 3, 0], dtype=np_dtype)
         assert_frame_equal(
-            df[np.array([1, 0, 3, 2, 3, 0], dtype=np_dtype)],
+            df[arr, :],
             pl.DataFrame(
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
-        assert df[np.array([], dtype=np_dtype)].columns == ["a", "b"]
+
+        arr2 = np.array([], dtype=np_dtype)
+        assert df[arr2, :].columns == ["a", "b"]
 
     # numpy array: positive and negative idxs.
     for np_dtype in (np.int8, np.int16, np.int32, np.int64):
         assert_frame_equal(
-            df[np.array([-1, 0, -3, -2, 3, -4], dtype=np_dtype)],
+            df[np.array([-1, 0, -3, -2, 3, -4], dtype=np_dtype), :],
             pl.DataFrame(
                 {"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]}
             ),
@@ -330,7 +337,7 @@ def test_df_getitem() -> None:
     assert_frame_equal(df[["a", "b"]], df)
     assert_frame_equal(df.select([pl.col("a"), pl.col("b")]), df)
     assert_frame_equal(
-        df[[1, -4, -1, 2, 1]],
+        df[[1, -4, -1, 2, 1], :],
         pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 2.0], "b": [4, 3, 6, 5, 4]}),
     )
 
@@ -349,17 +356,17 @@ def test_df_getitem() -> None:
         pl.UInt64,
     ):
         assert_frame_equal(
-            df[pl.Series("", [1, 0, 3, 2, 3, 0], dtype=pl_dtype)],
+            df[pl.Series("", [1, 0, 3, 2, 3, 0], dtype=pl_dtype), :],
             pl.DataFrame(
                 {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
             ),
         )
-        assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
+        assert df[pl.Series("", [], dtype=pl_dtype), :].columns == ["a", "b"]
 
     # pl.Series: positive and negative idxs for row selection.
     for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
         assert_frame_equal(
-            df[pl.Series("", [-1, 0, -3, -2, 3, -4], dtype=pl_dtype)],
+            df[pl.Series("", [-1, 0, -3, -2, 3, -4], dtype=pl_dtype), :],
             pl.DataFrame(
                 {"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]}
             ),
@@ -379,6 +386,85 @@ def test_df_getitem() -> None:
         match=f"expected {df.width} values when selecting columns by boolean mask",
     ):
         df[:, [True, False, True]]
+
+
+def test_selection() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
+
+    assert df[:2, :1].rows() == [(1,), (2,)]
+    assert df[:2, ["a"]].rows() == [(1,), (2,)]
+
+    # column selection by string(s) in first dimension
+    assert df["a"].to_list() == [1, 2, 3]
+    assert df["b"].to_list() == [1.0, 2.0, 3.0]
+    assert df["c"].to_list() == ["a", "b", "c"]
+
+    # row selection by integers(s) in first dimension
+    with pytest.deprecated_call():
+        assert_frame_equal(df[0], pl.DataFrame({"a": [1], "b": [1.0], "c": ["a"]}))
+    with pytest.deprecated_call():
+        assert_frame_equal(df[-1], pl.DataFrame({"a": [3], "b": [3.0], "c": ["c"]}))
+
+    # row, column selection when using two dimensions
+    assert df[:, "a"].to_list() == [1, 2, 3]
+    assert df[:, 1].to_list() == [1.0, 2.0, 3.0]
+    assert df[:2, 2].to_list() == ["a", "b"]
+
+    assert_frame_equal(
+        df[[1, 2], :], pl.DataFrame({"a": [2, 3], "b": [2.0, 3.0], "c": ["b", "c"]})
+    )
+    assert_frame_equal(
+        df[[-1, -2], :], pl.DataFrame({"a": [3, 2], "b": [3.0, 2.0], "c": ["c", "b"]})
+    )
+
+    assert df[["a", "b"]].columns == ["a", "b"]
+    assert_frame_equal(
+        df[[1, 2], [1, 2]], pl.DataFrame({"b": [2.0, 3.0], "c": ["b", "c"]})
+    )
+    assert df[1, 2] == "b"
+    assert df[1, 1] == 2.0
+    assert df[2, 0] == 3
+
+    assert df[[2], ["a", "b"]].rows() == [(3, 3.0)]
+    assert df.to_series(0).name == "a"
+    assert (df["a"] == df["a"]).sum() == 3
+    assert (df["c"] == df["a"].cast(str)).sum() == 0
+    assert df[:, "a":"b"].rows() == [(1, 1.0), (2, 2.0), (3, 3.0)]  # type: ignore[index, misc]
+    assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore[index, misc]
+    assert df[:, []].shape == (0, 0)
+
+    expect = pl.DataFrame({"c": ["b"]})
+    assert_frame_equal(df[1, [2]], expect)
+
+    expect = pl.DataFrame({"b": [1.0, 3.0]})
+    assert_frame_equal(df[[0, 2], [1]], expect)
+
+    assert df[0, "c"] == "a"
+    assert df[1, "c"] == "b"
+    assert df[2, "c"] == "c"
+    assert df[0, "a"] == 1
+
+    # more slicing
+    expect = pl.DataFrame({"a": [3, 2, 1], "b": [3.0, 2.0, 1.0], "c": ["c", "b", "a"]})
+    assert_frame_equal(df[::-1, :], expect)
+    expect = pl.DataFrame({"a": [1, 2], "b": [1.0, 2.0], "c": ["a", "b"]})
+    assert_frame_equal(df[:-1, :], expect)
+
+    expect = pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
+    assert_frame_equal(df[::2, :], expect)
+
+    # only allow boolean values in column position
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [2, 3],
+            "c": [3, 4],
+        }
+    )
+
+    assert df[:, [False, True, True]].columns == ["b", "c"]
+    assert df[:, pl.Series([False, True, True])].columns == ["b", "c"]
+    assert df[:, pl.Series([False, False, False])].columns == []
 
 
 def test_df_getitem_5343() -> None:

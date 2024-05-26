@@ -160,6 +160,6 @@ def test_surrealdb_fetchall(batch_size: int | None) -> None:
         frames = list(res)  # type: ignore[call-overload]
         n_mock_rows = len(SURREAL_MOCK_DATA)
         assert len(frames) == ceil(n_mock_rows / batch_size)
-        assert_frame_equal(df_expected[:batch_size], frames[0])
+        assert_frame_equal(df_expected[:batch_size, :], frames[0])
     else:
         assert_frame_equal(df_expected, res)  # type: ignore[arg-type]

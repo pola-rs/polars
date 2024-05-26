@@ -458,7 +458,7 @@ def dataframes(  # noqa: D417
     # Apply chunking
     if allow_chunks and size > 1 and not allow_series_chunks and draw(st.booleans()):
         split_at = size // 2
-        df = df[:split_at].vstack(df[split_at:])
+        df = df[:split_at, :].vstack(df[split_at:, :])
 
     if lazy:
         return df.lazy()

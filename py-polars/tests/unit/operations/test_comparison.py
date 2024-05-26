@@ -235,7 +235,7 @@ def verify_total_ordering(
         ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
     )
 
-    assert_frame_equal(ans[:1], ans_correct)
+    assert_frame_equal(ans.head(1), ans_correct)
 
 
 def verify_total_ordering_broadcast(
@@ -286,8 +286,8 @@ def verify_total_ordering_broadcast(
         ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
     )
 
-    assert_frame_equal(ans_first[:1], ans_correct)
-    assert_frame_equal(ans_scalar[:1], ans_correct)
+    assert_frame_equal(ans_first.head(1), ans_correct)
+    assert_frame_equal(ans_scalar.head(1), ans_correct)
 
 
 INTERESTING_FLOAT_VALUES = [

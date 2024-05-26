@@ -43,7 +43,7 @@ def test_python_slicing_data_frame() -> None:
         slice(-3, None, -3),
     ):
         # confirm frame slice matches python slice
-        assert df[py_slice].rows() == df.rows()[py_slice]
+        assert df[py_slice, :].rows() == df.rows()[py_slice]
 
 
 def test_python_slicing_series() -> None:

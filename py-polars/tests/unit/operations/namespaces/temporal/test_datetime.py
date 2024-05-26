@@ -966,7 +966,7 @@ def test_offset_by_expressions() -> None:
 
     # Check single-row cases
     for i in range(len(df)):
-        df_slice = df[i : i + 1]
+        df_slice = df[i : i + 1, :]
         result = df_slice.select(
             c=pl.col("a").dt.offset_by(pl.col("b")),
             d=pl.col("a").dt.cast_time_unit("ms").dt.offset_by(pl.col("b")),
@@ -975,7 +975,7 @@ def test_offset_by_expressions() -> None:
             .dt.offset_by(pl.col("b")),
             f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
         )
-        assert_frame_equal(result, expected[i : i + 1])
+        assert_frame_equal(result, expected[i : i + 1, :])
         # single-row Series are always sorted
         assert result.flags == {
             "c": {"SORTED_ASC": True, "SORTED_DESC": False},

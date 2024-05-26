@@ -475,8 +475,8 @@ def test_list_sliced_get_5186() -> None:
         pl.col("inds").list.first().alias("first_element"),
         pl.col("inds").list.last().alias("last_element"),
     ]
-    out1 = df.select(exprs)[10:20]
-    out2 = df[10:20].select(exprs)
+    out1 = df.select(exprs)[10:20, :]
+    out2 = df[10:20, :].select(exprs)
     assert_frame_equal(out1, out2)
 
 

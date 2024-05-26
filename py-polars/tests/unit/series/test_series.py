@@ -1291,7 +1291,7 @@ def test_range() -> None:
     assert s3.dtype == pl.List(pl.List(pl.Int64))
 
     df = pl.DataFrame([s1])
-    assert_frame_equal(df[2:5], df[range(2, 5)])
+    assert_frame_equal(df[2:5, :], df[range(2, 5), :])
 
 
 def test_strict_cast() -> None:

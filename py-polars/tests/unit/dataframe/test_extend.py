@@ -52,7 +52,7 @@ def test_extend_various_dtypes() -> None:
 def test_extend_slice_offset_8745() -> None:
     df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
 
-    df = df[:-1]
+    df = df[:-1, :]
     tail = pl.DataFrame([{"age": 8}])
     result = df.extend(tail)
 

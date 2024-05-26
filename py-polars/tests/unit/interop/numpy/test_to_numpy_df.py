@@ -76,7 +76,7 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
     )
     assert not df["s"][:2].has_nulls()
     assert_array_equal(
-        df[:2].to_numpy(structured=True),
+        df[:2, :].to_numpy(structured=True),
         np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
     )
 

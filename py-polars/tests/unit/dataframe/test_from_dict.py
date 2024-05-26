@@ -125,7 +125,7 @@ def test_from_dict_with_scalars() -> None:
         },
         schema_overrides={"z": pl.UInt8},
     )
-    assert df7[999:].rows() == [(0, 1, 0, 1), (0, 1, 0, 1)]
+    assert df7[999:, :].rows() == [(0, 1, 0, 1), (0, 1, 0, 1)]
     assert df7.schema == {
         "w": pl.UInt8,
         "x": pl.UInt8,

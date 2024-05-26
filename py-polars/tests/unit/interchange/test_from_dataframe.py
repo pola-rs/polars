@@ -140,7 +140,7 @@ def test_from_dataframe_pyarrow_boolean() -> None:
 
 def test_from_dataframe_chunked() -> None:
     df = pl.Series("a", [0, 1], dtype=pl.Int8).to_frame()
-    df_chunked = pl.concat([df[:1], df[1:]], rechunk=False)
+    df_chunked = pl.concat([df[:1, :], df[1:, :]], rechunk=False)
 
     df_pa = df_chunked.to_arrow()
     result = pl.from_dataframe(df_pa)
@@ -151,7 +151,7 @@ def test_from_dataframe_chunked() -> None:
 
 def test_from_dataframe_chunked_string() -> None:
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
-    df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
+    df_chunked = pl.concat([df[:1, :], df[1:3, :], df[3:, :]], rechunk=False)
 
     df_pa = df_chunked.to_arrow()
     result = pl.from_dataframe(df_pa)
