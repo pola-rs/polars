@@ -42,18 +42,33 @@ You may use the issue to discuss possible solutions.
 
 ### Setting up your local environment
 
-Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
+The Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
-_Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
-_Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links._
+!!! note
 
+    If you are a Windows user, the steps below might not work as expected.
+    Try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
+    Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links.
+
+#### Configuring Git
+
+For contributing to Polars you need a free [GitHub account](https://github.com) and have [git](https://git-scm.com) installed on your machine.
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
 ```bash
 git clone https://github.com/<username>/polars.git
 cd polars
 ```
+
+Optionally set the `upstream` remote to be able to sync your fork with the Polars repository in the future:
+
+```bash
+git remote add upstream https://github.com/pola-rs/polars.git
+git fetch upstream
+```
+
+#### Installing dependencies
 
 In order to work on Polars effectively, you will need [Rust](https://www.rust-lang.org/), [Python](https://www.python.org/), and [dprint](https://dprint.dev/).
 
@@ -66,7 +81,7 @@ rustup toolchain install nightly --component miri
 
 Next, install Python, for example using [pyenv](https://github.com/pyenv/pyenv#installation).
 We recommend using the latest Python version (`3.12`).
-Make sure you deactivate any active virtual environments or conda environments, as the steps below will create a new virtual environment for Polars.
+Make sure you deactivate any active virtual environments (command: `deactivate`) or conda environments (command: `conda deactivate`), as the steps below will create a new [virtual environment](https://docs.python.org/3/tutorial/venv.html) for Polars.
 You will need Python even if you intend to work on the Rust code only, as we rely on the Python tests to verify all functionality.
 
 Finally, install [dprint](https://dprint.dev/install/).
@@ -83,9 +98,15 @@ make test
 This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
-- Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
+- Use [pip](https://pip.pypa.io/) and [uv](https://github.com/astral-sh/uv) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
+
+!!! note
+
+    There are a small number of specialized dependencies that are not installed by default.
+    If you are running specific tests and encounter an error message about a missing dependency,
+    try running `make requirements-all` to install _all_ known dependencies).
 
 Check if linting also works correctly by running:
 
@@ -104,17 +125,33 @@ We use the Makefile to conveniently run the following formatting and linting too
 
 If this all runs correctly, you're ready to start contributing to the Polars codebase!
 
-(Note: there are a very small number of specialized dependencies that are not installed by default.
-If you still encounter an error message about a missing dependency after having run `make requirements`,
-try running `make requirements-all` to install _all_ known dependencies).
+#### Updating the development environment
 
-### Keeping your local environment up to date
+Dependencies are updated regularly - at least once per month.
+If you do not keep your environment up-to-date, you may notice tests or CI checks failing, or you may not be able to build Polars at all.
 
-Note that dependencies are inevitably updated over time; this includes both the packages that we depend on
-in the code, and the formatting and linting tools we use. In order to simplify keeping your local environment
-current, there is the `make requirements` command. This command will update all Python dependencies and tools
-to their latest specified versions. Running this command in case of an unexpected error after updating the
-Polars codebase is often a good idea.
+To update your environment, first make sure your fork is in sync with the Polars repository:
+
+```bash
+git checkout main
+git fetch upstream
+git rebase upstream/main
+git push origin main
+```
+
+Update all Python dependencies to their latest versions by running:
+
+```bash
+make requirements
+```
+
+If the Rust toolchain version has been updated, you should update your Rust toolchain.
+Follow it up by running `cargo clean` to make sure your Cargo folder does not grow too large:
+
+```bash
+rustup update
+cargo clean
+```
 
 ### Working on your issue
 
@@ -154,7 +191,7 @@ If you are stuck or unsure about your solution, feel free to open a draft pull r
 
 ## Contributing to documentation
 
-The most important components of Polars documentation are the [user guide](https://docs.pola.rs/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
+The most important components of Polars documentation are the [user guide](https://docs.pola.rs/user-guide/), the [API references](https://docs.pola.rs/api/), and the database of questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 
