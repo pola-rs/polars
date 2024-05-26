@@ -126,13 +126,34 @@ If this all runs correctly, you're ready to start contributing to the Polars cod
 If you still encounter an error message about a missing dependency after having run `make requirements`,
 try running `make requirements-all` to install _all_ known dependencies).
 
-### Keeping your local environment up to date
 
-Note that dependencies are inevitably updated over time; this includes both the packages that we depend on
-in the code, and the formatting and linting tools we use. In order to simplify keeping your local environment
-current, there is the `make requirements` command. This command will update all Python dependencies and tools
-to their latest specified versions. Running this command in case of an unexpected error after updating the
-Polars codebase is often a good idea.
+#### Updating the development environment
+
+Dependencies are updated regulary - at least once per month.
+If you do not keep your environment up-to-date, you may notice tests or CI checks failing, or you may not be able to build Polars at all.
+
+To keep your fork in sync with the Polars repository, run:
+
+```bash
+git checkout main
+git fetch upstream
+git rebase upstream/main
+git push origin main
+```
+
+Update all Python dependencies to their latest versions by running:
+
+```bash
+make requirements
+```
+
+If the Rust toolchain version has been updated, you should update your Rust toolchain.
+Follow it up by running `cargo clean` to make sure your Cargo folder does not grow too large:
+
+```bash
+rustup update
+cargo clean
+```
 
 ### Working on your issue
 
@@ -229,32 +250,6 @@ source .venv/bin/activate
 When you are finished with making updates to your pull request, follow the steps under "Pushing your changes to GitHub" (see above).
 
 Your changes will appear on your pull request on GitHub and automatically trigger the Continuous Integration pipeline.
-
-## Updating the development environment
-
-For repeatedly contributing to Polars, the development environment needs to be updated periodically.
-
-To keep your fork in sync with the Polars repository run:
-
-```bash
-git checkout main
-git fetch upstream
-git rebase upstream/main
-git push origin main
-```
-
-For updating the project's dependencies and building and installing Python Polars run:
-
-```bash
-make requirements
-make build
-```
-
-In order to avoid running out of memory (how often depends on your machine), you should occasionally run:
-
-```bash
-cargo clean
-```
 
 ## Contributing to documentation
 
