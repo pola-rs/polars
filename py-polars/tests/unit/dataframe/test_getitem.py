@@ -50,7 +50,7 @@ from polars.testing.parametric import column, dataframes
     # │ null  ┆ 1    ┆ 2    ┆ 5865  │
     # └───────┴──────┴──────┴───────┘
 )
-def test_frame_slice(df: pl.DataFrame) -> None:
+def test_df_getitem_row_slice(df: pl.DataFrame) -> None:
     # take strategy-generated integer values from the frame as slice bounds.
     # use these bounds to slice the same frame, and then validate the result
     # against a py-native slice of the same data using the same bounds.
@@ -70,6 +70,54 @@ def test_frame_slice(df: pl.DataFrame) -> None:
         ), f"slice [{start}:{stop}:{step}] failed on df w/len={len(df)}"
 
 
+def test_df_getitem_col_single_name() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df[:, "a"]
+    expected = df.select("a").to_series()
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "expected_cols"),
+    [
+        (["a"], ["a"]),
+        (["a", "d"], ["a", "d"]),
+        (slice("b", "d"), ["b", "c", "d"]),
+        (pl.Series(["a", "b"]), ["a", "b"]),
+        (np.array(["c", "d"]), ["c", "d"]),
+    ],
+)
+def test_df_getitem_col_multiple_names(input: Any, expected_cols: list[str]) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6], "d": [7, 8]})
+    result = df[:, input]
+    expected = df.select(expected_cols)
+    assert_frame_equal(result, expected)
+
+
+def test_df_getitem_col_single_index() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df[:, 1]
+    expected = df.select("b").to_series()
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "expected_cols"),
+    [
+        ([0], ["a"]),
+        ([0, 3], ["a", "d"]),
+        (slice(1, 4), ["b", "c", "d"]),
+        (pl.Series([0, 1]), ["a", "b"]),
+        (np.array([2, 3]), ["c", "d"]),
+    ],
+)
+def test_df_getitem_col_multiple_indices(input: Any, expected_cols: list[str]) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6], "d": [7, 8]})
+    result = df[:, input]
+    expected = df.select(expected_cols)
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     "mask",
     [
@@ -78,7 +126,7 @@ def test_frame_slice(df: pl.DataFrame) -> None:
         np.array([True, False, True]),
     ],
 )
-def test_df_getitem_column_boolean_mask(mask: Any) -> None:
+def test_df_getitem_col_boolean_mask(mask: Any) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     result = df[:, mask]
     expected = df.select("a", "c")
@@ -93,32 +141,90 @@ def test_df_getitem_column_boolean_mask(mask: Any) -> None:
         (range(3, 0, -2), ["d", "b"]),
     ],
 )
-def test_df_getitem_column_range(rng: range, expected_cols: list[str]) -> None:
+def test_df_getitem_col_range(rng: range, expected_cols: list[str]) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6], "d": [7, 8]})
     result = df[:, rng]
     expected = df.select(expected_cols)
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("rng", [range(2), range(1, 4), range(3, 0, -2)])
-def test_df_getitem_row_range(rng: range) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5.0, 6.0, 7.0, 8.0]})
-    result = df[rng, :]
-    expected = df[list(rng), :]
+@pytest.mark.parametrize(
+    "input", [[], (), pl.Series(dtype=pl.Int64), np.array([], dtype=np.uint32)]
+)
+def test_df_getitem_col_empty_inputs(input: Any) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
+    result = df[:, input]
+    expected = pl.DataFrame()
     assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
-    ("selection", "match"),
+    ("input", "match"),
+    [
+        (
+            [0.0, 1.0],
+            "cannot select columns using Sequence with elements of type 'float'",
+        ),
+        (
+            pl.Series([[1, 2], [3, 4]]),
+            "cannot select columns using Series of type List\\(Int64\\)",
+        ),
+        (
+            np.array([0.0, 1.0]),
+            "cannot select columns using NumPy array of type float64",
+        ),
+        (object(), "cannot select columns using key of type 'object'"),
+    ],
+)
+def test_df_getitem_col_invalid_inputs(input: Any, match: str) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
+    with pytest.raises(TypeError, match=match):
+        df[:, input]
+
+
+@pytest.mark.parametrize(
+    ("input", "match"),
     [
         (["a", 2], "'int' object cannot be converted to 'PyString'"),
         ([1, "c"], "'str' object cannot be interpreted as an integer"),
     ],
 )
-def test_df_getitem_column_mixed_inputs(selection: list[Any], match: str) -> None:
+def test_df_getitem_col_mixed_inputs(input: list[Any], match: str) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(TypeError, match=match):
-        df[:, selection]
+        df[:, input]
+
+
+@pytest.mark.parametrize(
+    ("input", "match"),
+    [
+        ([0.0, 1.0], "'float' object cannot be interpreted as an integer"),
+        (
+            pl.Series([[1, 2], [3, 4]]),
+            "cannot treat Series of type List\\(Int64\\) as indices",
+        ),
+        (np.array([0.0, 1.0]), "cannot treat NumPy array of type float64 as indices"),
+        (object(), "cannot select rows using key of type 'object'"),
+    ],
+)
+def test_df_getitem_row_invalid_inputs(input: Any, match: str) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
+    with pytest.raises(TypeError, match=match):
+        df[input, :]
+
+
+def test_df_getitem_row_range() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5.0, 6.0, 7.0, 8.0]})
+    result = df[range(3, 0, -2), :]
+    expected = pl.DataFrame({"a": [4, 2], "b": [8.0, 6.0]})
+    assert_frame_equal(result, expected)
+
+
+def test_df_getitem_row_range_single_input() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5.0, 6.0, 7.0, 8.0]})
+    result = df[range(1, 3)]
+    expected = pl.DataFrame({"a": [2, 3], "b": [6.0, 7.0]})
+    assert_frame_equal(result, expected)
 
 
 def test_df_getitem() -> None:
@@ -160,9 +266,6 @@ def test_df_getitem() -> None:
     with pytest.raises(IndexError):
         # Column index out of bounds
         df[2, [2, -3]]
-
-    # range, refers to rows
-    assert_frame_equal(df[range(1, 3)], pl.DataFrame({"a": [2.0, 3.0], "b": [4, 5]}))
 
     # slice. Below an example of taking every second row
     assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))

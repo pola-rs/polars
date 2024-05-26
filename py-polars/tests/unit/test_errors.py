@@ -170,13 +170,13 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"cannot select columns with key {'some'} of type 'set'",
+        match=r"cannot select columns using key of type 'set': {'some'}",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
+        match=r"cannot select elements using key of type 'set': {'strange'}",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 

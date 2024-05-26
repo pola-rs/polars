@@ -75,10 +75,7 @@ def get_series_item_by_key(
         indices = _convert_np_ndarray_to_indices(key, s.len())
         return _select_elements_by_index(s, indices)
 
-    msg = (
-        f"cannot use `__getitem__` on Series of dtype {s.dtype!r}"
-        f" with argument {key!r} of type {type(key).__name__!r}"
-    )
+    msg = f"cannot select elements using key of type {type(key).__name__!r}: {key!r}"
     raise TypeError(msg)
 
 
@@ -201,9 +198,7 @@ def _select_columns(
         elif isinstance(first, str):
             return _select_columns_by_name(df, key)  # type: ignore[arg-type]
         else:
-            msg = (
-                f"cannot select columns using Sequence of type {type(first).__name__!r}"
-            )
+            msg = f"cannot select columns using Sequence with elements of type {type(first).__name__!r}"
             raise TypeError(msg)
 
     elif isinstance(key, pl.Series):
@@ -236,10 +231,10 @@ def _select_columns(
         elif isinstance(key[0], str):
             return _select_columns_by_name(df, key)
         else:
-            msg = f"cannot select columns using NumPy ndarray of type {key.dtype}"
+            msg = f"cannot select columns using NumPy array of type {key.dtype}"
             raise TypeError(msg)
 
-    msg = f"cannot select columns with key {key!r} of type {type(key).__name__!r}"
+    msg = f"cannot select columns using key of type {type(key).__name__!r}: {key!r}"
     raise TypeError(msg)
 
 
@@ -303,7 +298,7 @@ def _select_rows(
         return _select_rows_by_index(df, indices)
 
     else:
-        msg = f"cannot select rows with key {key!r} of type {type(key).__name__!r}"
+        msg = f"cannot select rows using key of type {type(key).__name__!r}: {key!r}"
         raise TypeError(msg)
 
 
@@ -398,7 +393,7 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
         if arr.dtype.kind == "b":
             _raise_on_boolean_mask()
         else:
-            msg = f"cannot treat NumPy ndarray of type {arr.dtype} as indices"
+            msg = f"cannot treat NumPy array of type {arr.dtype} as indices"
             raise TypeError(msg)
 
     if idx_type == UInt32:

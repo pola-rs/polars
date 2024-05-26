@@ -35,6 +35,21 @@ def test_series_getitem(
 
 
 @pytest.mark.parametrize(
+    ("rng", "expected_values"),
+    [
+        (range(2), [1, 2]),
+        (range(1, 4), [2, 3, 4]),
+        (range(3, 0, -2), [4, 2]),
+    ],
+)
+def test_series_getitem_range(rng: range, expected_values: list[int]) -> None:
+    s = pl.Series([1, 2, 3, 4])
+    result = s[rng]
+    expected = pl.Series(expected_values)
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
     "mask",
     [
         [True, False, True],
@@ -50,3 +65,39 @@ def test_series_getitem_boolean_mask(mask: Any) -> None:
         match="selecting rows by passing a boolean mask to `__getitem__` is not supported",
     ):
         s[mask]
+
+
+@pytest.mark.parametrize(
+    "input", [[], (), pl.Series(dtype=pl.Int64), np.array([], dtype=np.uint32)]
+)
+def test_series_getitem_empty_inputs(input: Any) -> None:
+    s = pl.Series("a", ["x", "y", "z"], dtype=pl.String)
+    result = s[input]
+    expected = pl.Series("a", dtype=pl.String)
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("indices", [[0, 2], pl.Series([0, 2]), np.array([0, 2])])
+def test_series_getitem_multiple_indices(indices: Any) -> None:
+    s = pl.Series(["x", "y", "z"])
+    result = s[indices]
+    expected = pl.Series(["x", "z"])
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "match"),
+    [
+        ([0.0, 1.0], "'float' object cannot be interpreted as an integer"),
+        (
+            pl.Series([[1, 2], [3, 4]]),
+            "cannot treat Series of type List\\(Int64\\) as indices",
+        ),
+        (np.array([0.0, 1.0]), "cannot treat NumPy array of type float64 as indices"),
+        (object(), "cannot select elements using key of type 'object'"),
+    ],
+)
+def test_df_getitem_col_invalid_inputs(input: Any, match: str) -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(TypeError, match=match):
+        s[input]
