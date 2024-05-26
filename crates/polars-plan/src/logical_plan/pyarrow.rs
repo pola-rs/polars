@@ -37,9 +37,11 @@ pub(super) fn predicate_to_pa(
                 None
             }
         },
-        AExpr::Cast {expr, data_type, strict } => {
-            predicate_to_pa(*expr, expr_arena, args)
-        },
+        AExpr::Cast {
+            expr,
+            data_type,
+            strict,
+        } => predicate_to_pa(*expr, expr_arena, args),
         AExpr::Column(name) => Some(format!("pa.compute.field('{}')", name.as_ref())),
         AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena, args),
         AExpr::Literal(LiteralValue::Series(s)) => {
