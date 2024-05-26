@@ -559,7 +559,20 @@ struct ExpansionFlags {
     has_selector: bool,
     has_exclude: bool,
     #[cfg(feature = "dtype-struct")]
+    expands_fields: bool,
+    #[cfg(feature = "dtype-struct")]
     has_struct_field_by_index: bool,
+}
+
+impl ExpansionFlags {
+    fn expands(&self) -> bool {
+        #[cfg(feature = "dtype-struct")]
+        let expands_fields = self.expands_fields;
+        #[cfg(not(feature = "dtype-struct"))]
+        let expands_fields = false;
+
+        self.multiple_columns || expands_fields
+    }
 }
 
 fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
@@ -570,6 +583,8 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
     let mut has_exclude = false;
     #[cfg(feature = "dtype-struct")]
     let mut has_struct_field_by_index = false;
+    #[cfg(feature = "dtype-struct")]
+    let mut expands_fields = false;
 
     // Do a single pass and collect all flags at once.
     // Supertypes/modification that can be done in place are also done in that pass
@@ -592,7 +607,7 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
                 function: FunctionExpr::StructExpr(StructFunction::MultipleFields(_)),
                 ..
             } => {
-                multiple_columns = true;
+                expands_fields = true;
             },
             Expr::Exclude(_, _) => has_exclude = true,
             #[cfg(feature = "dtype-struct")]
@@ -610,6 +625,8 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
         has_exclude,
         #[cfg(feature = "dtype-struct")]
         has_struct_field_by_index,
+        #[cfg(feature = "dtype-struct")]
+        expands_fields,
     })
 }
 
@@ -661,14 +678,14 @@ fn replace_and_add_to_results(
 
     // has multiple column names
     // the expanded columns are added to the result
-    if flags.multiple_columns {
+    if flags.expands() {
         if let Some(e) = expr.into_iter().find(|e| match e {
             Expr::Columns(_) | Expr::DtypeColumn(_) | Expr::IndexColumn(_) => true,
             #[cfg(feature = "dtype-struct")]
             Expr::Function {
                 function: FunctionExpr::StructExpr(StructFunction::MultipleFields(_)),
                 ..
-            } => true,
+            } => flags.expands_fields,
             _ => false,
         }) {
             match &e {
@@ -686,18 +703,40 @@ fn replace_and_add_to_results(
                     expand_indices(&expr, result, schema, indices, &exclude)?
                 },
                 #[cfg(feature = "dtype-struct")]
-                Expr::Function { function, .. }
-                    if matches!(
-                        function,
-                        FunctionExpr::StructExpr(StructFunction::MultipleFields(_))
-                    ) =>
-                {
+                Expr::Function { function, .. } => {
                     let FunctionExpr::StructExpr(StructFunction::MultipleFields(names)) = function
                     else {
                         unreachable!()
                     };
                     let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
-                    expand_struct_fields(e, &expr, result, schema, names, &exclude)?
+
+                    // has both column and field expansion
+                    // col('a', 'b').struct.field('*')
+                    if flags.multiple_columns {
+                        // First expand col('a', 'b') into an intermediate result.
+                        let mut intermediate = vec![];
+                        let mut flags = flags;
+                        flags.expands_fields = false;
+                        replace_and_add_to_results(
+                            expr.clone(),
+                            flags,
+                            &mut intermediate,
+                            schema,
+                            keys,
+                        )?;
+
+                        // Then expand the fields and add to the final result vec.
+                        flags.expands_fields = true;
+                        flags.multiple_columns = false;
+                        for e in intermediate {
+                            replace_and_add_to_results(e, flags, result, schema, keys)?;
+                        }
+                    }
+                    // has only field expansion
+                    // col('a').struct.field('*')
+                    else {
+                        expand_struct_fields(e, &expr, result, schema, names, &exclude)?
+                    }
                 },
                 _ => {},
             }
