@@ -473,7 +473,7 @@ def test_view() -> None:
 
 def test_view_nulls() -> None:
     s = pl.Series("b", [1, 2, None])
-    assert s.has_validity()
+    assert s.has_nulls()
     with pytest.deprecated_call(), pytest.raises(AssertionError):
         s.view()
 
@@ -484,7 +484,8 @@ def test_view_nulls_sliced() -> None:
     with pytest.deprecated_call():
         view = sliced.view()
     assert np.all(view == np.array([1, 2]))
-    assert not sliced.has_validity()
+    with pytest.deprecated_call():
+        assert not sliced.has_validity()
 
 
 def test_view_ub() -> None:

@@ -1215,7 +1215,7 @@ class Series:
 
     def __contains__(self, item: Any) -> bool:
         if item is None:
-            return self.null_count() > 0
+            return self.has_nulls()
         return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
@@ -1325,7 +1325,7 @@ class Series:
             not item or (isinstance(item[0], int) and not isinstance(item[0], bool))  # type: ignore[redundant-expr]
         ):
             idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
-            if idx_series.has_validity():
+            if idx_series.has_nulls():
                 msg = "cannot use `__getitem__` with index values containing nulls"
                 raise ValueError(msg)
             return self._take_with_series(idx_series)
@@ -1398,7 +1398,7 @@ class Series:
         # Cast String types to fixed-length string to support string ufuncs
         # TODO: Use variable-length strings instead when NumPy 2.0.0 comes out:
         # https://numpy.org/devdocs/reference/routines.dtypes.html#numpy.dtypes.StringDType
-        if dtype is None and self.null_count() == 0 and self.dtype == String:
+        if dtype is None and not self.has_nulls() and self.dtype == String:
             dtype = np.dtype("U")
 
         if copy is None:
@@ -1479,7 +1479,7 @@ class Series:
             if is_generalized_ufunc:
                 # Generalized ufuncs will operate on the whole array, so
                 # missing data can corrupt the results.
-                if self.null_count() > 0:
+                if self.has_nulls():
                     msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     raise ComputeError(msg)
                 # If the input and output are the same size, e.g. "(n)->(n)" we
@@ -3761,9 +3761,30 @@ class Series:
         """
         return self._s.null_count()
 
+    def has_nulls(self) -> bool:
+        """
+        Check whether the Series contains one or more null values.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, None])
+        >>> s.has_nulls()
+        True
+        >>> s[:2].has_nulls()
+        False
+        """
+        return self.null_count() > 0
+
+    @deprecate_function(
+        "Use `has_nulls` instead to check for the presence of null values.",
+        version="0.20.30",
+    )
     def has_validity(self) -> bool:
         """
         Return True if the Series has a validity bitmask.
+
+        .. deprecated:: 0.20.30
+            Use :meth:`has_nulls` instead.
 
         If there is no mask, it means that there are no `null` values.
 
@@ -3774,7 +3795,7 @@ class Series:
         bitmask does not mean that there are null values, as every value of the
         bitmask could be `false`.
 
-        To confirm that a column has `null` values use :func:`null_count`.
+        To confirm that a column has `null` values use :meth:`has_nulls`.
         """
         return self._s.has_validity()
 
