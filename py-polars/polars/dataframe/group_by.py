@@ -825,7 +825,7 @@ class RollingGroupBy:
         self.closed = closed
         self.group_by = group_by
         self.check_sorted = check_sorted
-        self._groups_ready = True
+        self._groups_ready = False
 
     def _collect_groups(self) -> None:
         """Group and collect the dataframe for iteration."""
