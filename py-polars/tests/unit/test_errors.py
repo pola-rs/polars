@@ -170,13 +170,13 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
+        match=r"cannot select columns using key of type 'set': {'some'}",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
+        match=r"cannot select elements using key of type 'set': {'strange'}",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 
@@ -533,8 +533,10 @@ def test_window_size_validation() -> None:
 def test_invalid_getitem_key_err() -> None:
     df = pl.DataFrame({"x": [1.0], "y": [1.0]})
 
-    with pytest.raises(KeyError, match=r"('x', 'y')"):
-        df["x", "y"]  # type: ignore[index]
+    with pytest.raises(
+        TypeError, match="cannot treat Series of type String as indices"
+    ):
+        df["x", "y"]
 
 
 def test_invalid_group_by_arg() -> None:

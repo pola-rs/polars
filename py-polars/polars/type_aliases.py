@@ -249,5 +249,32 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-AlchemyConnection = Union["Connection", "Engine", "Session"]
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, AlchemyConnection]
+AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+ConnectionOrCursor: TypeAlias = Union[
+    BasicConnection, BasicCursor, Cursor, AlchemyConnection
+]
+
+
+# Annotations for `__getitem__` methods
+SingleIndexSelector: TypeAlias = int
+MultiIndexSelector: TypeAlias = Union[
+    slice,
+    range,
+    Sequence[int],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+SingleNameSelector: TypeAlias = str
+MultiNameSelector: TypeAlias = Union[
+    slice,
+    Sequence[str],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+BooleanMask: TypeAlias = Union[
+    Sequence[bool],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
+MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]

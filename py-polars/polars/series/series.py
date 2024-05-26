@@ -28,7 +28,6 @@ from polars._utils.construction import (
     arrow_to_pyseries,
     dataframe_to_pyseries,
     iterable_to_pyseries,
-    numpy_to_idxs,
     numpy_to_pyseries,
     pandas_to_pyseries,
     sequence_to_pyseries,
@@ -47,13 +46,13 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
+from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
     no_default,
     parse_version,
-    range_to_slice,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
@@ -70,8 +69,6 @@ from polars.datatypes import (
     Enum,
     Float32,
     Float64,
-    Int8,
-    Int16,
     Int32,
     Int64,
     List,
@@ -103,7 +100,6 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ModuleUpgradeRequired, ShapeError
-from polars.meta import get_index_type
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -112,7 +108,6 @@ from polars.series.list import ListNameSpace
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
-from polars.slice import PolarsSlice
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -138,6 +133,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         IntoExpr,
         IntoExprColumn,
+        MultiIndexSelector,
         NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
@@ -148,6 +144,7 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
         SeriesBuffers,
+        SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
     )
@@ -1231,110 +1228,17 @@ class Series:
             for offset in range(0, self.len(), buffer_size):
                 yield from self.slice(offset, buffer_size).to_list()
 
-    def _pos_idxs(self, size: int) -> Series:
-        # Unsigned or signed Series (ordered from fastest to slowest).
-        #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
-        #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
-        #     or pl.UInt64 (polars_u64_idx).
-        #   - Signed Series indexes are converted pl.UInt32 (polars) or
-        #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
-        #     to absolute indexes.
-
-        # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
-        idx_type = get_index_type()
-
-        if self.dtype == idx_type:
-            return self
-
-        if not self.dtype.is_integer():
-            msg = "unsupported idxs datatype"
-            raise NotImplementedError(msg)
-
-        if self.len() == 0:
-            return Series(self.name, [], dtype=idx_type)
-
-        if idx_type == UInt32:
-            if self.dtype in {Int64, UInt64}:
-                if self.max() >= 2**32:  # type: ignore[operator]
-                    msg = "index positions should be smaller than 2^32"
-                    raise ValueError(msg)
-            if self.dtype == Int64:
-                if self.min() < -(2**32):  # type: ignore[operator]
-                    msg = "index positions should be bigger than -2^32 + 1"
-                    raise ValueError(msg)
-
-        if self.dtype.is_signed_integer():
-            if self.min() < 0:  # type: ignore[operator]
-                if idx_type == UInt32:
-                    idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
-                else:
-                    idxs = (
-                        self.cast(Int64) if self.dtype in {Int8, Int16, Int32} else self
-                    )
-
-                # Update negative indexes to absolute indexes.
-                return (
-                    idxs.to_frame()
-                    .select(
-                        F.when(F.col(idxs.name) < 0)
-                        .then(size + F.col(idxs.name))
-                        .otherwise(F.col(idxs.name))
-                        .cast(idx_type)
-                    )
-                    .to_series(0)
-                )
-
-        return self.cast(idx_type)
-
-    def _take_with_series(self, s: Series) -> Series:
-        return self._from_pyseries(self._s.take_with_series(s._s))
+    @overload
+    def __getitem__(self, key: SingleIndexSelector) -> Any: ...
 
     @overload
-    def __getitem__(self, item: int) -> Any: ...
-
-    @overload
-    def __getitem__(
-        self,
-        item: Series | range | slice | np.ndarray[Any, Any] | list[int],
-    ) -> Series: ...
+    def __getitem__(self, key: MultiIndexSelector) -> Series: ...
 
     def __getitem__(
-        self,
-        item: int | Series | range | slice | np.ndarray[Any, Any] | list[int],
-    ) -> Any:
-        if isinstance(item, Series) and item.dtype.is_integer():
-            return self._take_with_series(item._pos_idxs(self.len()))
-
-        elif _check_for_numpy(item) and isinstance(item, np.ndarray):
-            return self._take_with_series(numpy_to_idxs(item, self.len()))
-
-        # Integer
-        elif isinstance(item, int):
-            return self._s.get_index_signed(item)
-
-        # Slice
-        elif isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        # Range
-        elif isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # Sequence of integers (also triggers on empty sequence)
-        elif isinstance(item, Sequence) and (
-            not item or (isinstance(item[0], int) and not isinstance(item[0], bool))  # type: ignore[redundant-expr]
-        ):
-            idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
-            if idx_series.has_nulls():
-                msg = "cannot use `__getitem__` with index values containing nulls"
-                raise ValueError(msg)
-            return self._take_with_series(idx_series)
-
-        msg = (
-            f"cannot use `__getitem__` on Series of dtype {self.dtype!r}"
-            f" with argument {item!r} of type {type(item).__name__!r}"
-        )
-        raise TypeError(msg)
+        self, key: SingleIndexSelector | MultiIndexSelector
+    ) -> Any | Series:
+        """Get part of the Series as a new Series or scalar."""
+        return get_series_item_by_key(self, key)
 
     def __setitem__(
         self,

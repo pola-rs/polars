@@ -24,7 +24,6 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
-    Union,
     cast,
     get_args,
     overload,
@@ -37,7 +36,6 @@ from polars._utils.construction import (
     dataframe_to_pydf,
     dict_to_pydf,
     iterable_to_pydf,
-    numpy_to_idxs,
     numpy_to_pydf,
     pandas_to_pydf,
     sequence_to_pydf,
@@ -53,15 +51,13 @@ from polars._utils.deprecation import (
     deprecate_saturating,
     issue_deprecation_warning,
 )
+from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     is_bool_sequence,
-    is_int_sequence,
-    is_str_sequence,
     normalize_filepath,
     parse_version,
-    range_to_slice,
     scale_bytes,
     warn_null_comparison,
 )
@@ -103,7 +99,6 @@ from polars.exceptions import (
 )
 from polars.functions import col, lit
 from polars.selectors import _expand_selector_dicts, _expand_selectors
-from polars.slice import PolarsSlice
 from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -149,6 +144,8 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MultiColSelector,
+        MultiIndexSelector,
         NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
@@ -160,6 +157,8 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
         SelectorType,
+        SingleColSelector,
+        SingleIndexSelector,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -167,24 +166,14 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 10):
-        from typing import Concatenate, ParamSpec, TypeAlias
+        from typing import Concatenate, ParamSpec
     else:
-        from typing_extensions import Concatenate, ParamSpec, TypeAlias
+        from typing_extensions import Concatenate, ParamSpec
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
-
-    # these aliases are used to annotate DataFrame.__getitem__()
-    # MultiRowSelector indexes into the vertical axis and
-    # MultiColSelector indexes into the horizontal axis
-    # NOTE: wrapping these as strings is necessary for Python <3.10
-
-    MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
-    MultiColSelector: TypeAlias = Union[
-        slice, range, "list[int]", "list[str]", "list[bool]", "Series"
-    ]
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1007,199 +996,45 @@ class DataFrame:
     def __reversed__(self) -> Iterator[Series]:
         return reversed(self.get_columns())
 
-    def _pos_idx(self, idx: int, dim: int) -> int:
-        if idx >= 0:
-            return idx
-        else:
-            return self.shape[dim] + idx
-
-    def _take_with_series(self, s: Series) -> DataFrame:
-        return self._from_pydf(self._df.take_with_series(s._s))
+    # `str` overlaps with `Sequence[str]`
+    # We can ignore this but we must keep this overload ordering
+    @overload
+    def __getitem__(
+        self, key: tuple[SingleIndexSelector, SingleColSelector]
+    ) -> Any: ...
 
     @overload
-    def __getitem__(self, item: str) -> Series: ...
+    def __getitem__(  # type: ignore[overload-overlap]
+        self, key: str | tuple[MultiIndexSelector, SingleColSelector]
+    ) -> Series: ...
 
     @overload
     def __getitem__(
         self,
-        item: (
-            int
-            | np.ndarray[Any, Any]
+        key: (
+            SingleIndexSelector
+            | MultiIndexSelector
             | MultiColSelector
-            | tuple[int, MultiColSelector]
-            | tuple[MultiRowSelector, MultiColSelector]
+            | tuple[SingleIndexSelector, MultiColSelector]
+            | tuple[MultiIndexSelector, MultiColSelector]
         ),
-    ) -> Self: ...
-
-    @overload
-    def __getitem__(self, item: tuple[int, int | str]) -> Any: ...
-
-    @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series: ...
+    ) -> DataFrame: ...
 
     def __getitem__(
         self,
-        item: (
-            str
-            | int
-            | np.ndarray[Any, Any]
+        key: (
+            SingleIndexSelector
+            | SingleColSelector
             | MultiColSelector
-            | tuple[int, MultiColSelector]
-            | tuple[MultiRowSelector, MultiColSelector]
-            | tuple[MultiRowSelector, int | str]
-            | tuple[int, int | str]
+            | MultiIndexSelector
+            | tuple[SingleIndexSelector, SingleColSelector]
+            | tuple[SingleIndexSelector, MultiColSelector]
+            | tuple[MultiIndexSelector, SingleColSelector]
+            | tuple[MultiIndexSelector, MultiColSelector]
         ),
-    ) -> DataFrame | Series:
-        """Get item. Does quite a lot. Read the comments."""
-        # fail on ['col1', 'col2', ..., 'coln']
-        if (
-            isinstance(item, tuple)
-            and len(item) > 1  # type: ignore[redundant-expr]
-            and all(isinstance(x, str) for x in item)
-        ):
-            raise KeyError(item)
-
-        # select rows and columns at once
-        # every 2d selection, i.e. tuple is row column order, just like numpy
-        if isinstance(item, tuple) and len(item) == 2:
-            row_selection, col_selection = item
-
-            # df[[], :]
-            if isinstance(row_selection, Sequence):
-                if len(row_selection) == 0:
-                    # handle empty list by falling through to slice
-                    row_selection = slice(0)
-
-            # df[:, unknown]
-            if isinstance(row_selection, slice):
-                # multiple slices
-                # df[:, :]
-                if isinstance(col_selection, slice):
-                    # slice can be
-                    # by index
-                    #   [1:8]
-                    # or by column name
-                    #   ["foo":"bar"]
-                    # first we make sure that the slice is by index
-                    start = col_selection.start
-                    stop = col_selection.stop
-                    if isinstance(col_selection.start, str):
-                        start = self.get_column_index(col_selection.start)
-                    if isinstance(col_selection.stop, str):
-                        stop = self.get_column_index(col_selection.stop) + 1
-
-                    col_selection = slice(start, stop, col_selection.step)
-
-                    df = self.__getitem__(self.columns[col_selection])
-                    return df[row_selection]
-
-                # df[:, [True, False]]
-                if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pl.Series)
-                    and col_selection.dtype == Boolean
-                ):
-                    if len(col_selection) != self.width:
-                        msg = (
-                            f"expected {self.width} values when selecting columns by"
-                            f" boolean mask, got {len(col_selection)}"
-                        )
-                        raise ValueError(msg)
-                    series_list = []
-                    for i, val in enumerate(col_selection):
-                        if val:
-                            series_list.append(self.to_series(i))
-
-                    df = self.__class__(series_list)
-                    return df[row_selection]
-
-            # df[2, :] (select row as df)
-            if isinstance(row_selection, int):
-                if isinstance(col_selection, (slice, list)) or (
-                    _check_for_numpy(col_selection)
-                    and isinstance(col_selection, np.ndarray)
-                ):
-                    df = self[:, col_selection]
-                    return df.slice(row_selection, 1)
-
-            # df[:, "a"]
-            if isinstance(col_selection, str):
-                series = self.get_column(col_selection)
-                return series[row_selection]
-
-            # df[:, 1]
-            if isinstance(col_selection, int):
-                if (col_selection >= 0 and col_selection >= self.width) or (
-                    col_selection < 0 and col_selection < -self.width
-                ):
-                    msg = f"column index {col_selection!r} is out of bounds"
-                    raise IndexError(msg)
-                series = self.to_series(col_selection)
-                return series[row_selection]
-
-            if isinstance(col_selection, list):
-                # df[:, [1, 2]]
-                if is_int_sequence(col_selection):
-                    for i in col_selection:
-                        if (i >= 0 and i >= self.width) or (i < 0 and i < -self.width):
-                            msg = f"column index {col_selection!r} is out of bounds"
-                            raise IndexError(msg)
-                    series_list = [self.to_series(i) for i in col_selection]
-                    df = self.__class__(series_list)
-                    return df[row_selection]
-
-            df = self.__getitem__(col_selection)
-            return df.__getitem__(row_selection)
-
-        # select single column
-        # df["foo"]
-        if isinstance(item, str):
-            return self.get_column(item)
-
-        # df[idx]
-        if isinstance(item, int):
-            return self.slice(self._pos_idx(item, dim=0), 1)
-
-        # df[range(n)]
-        if isinstance(item, range):
-            return self[range_to_slice(item)]
-
-        # df[:]
-        if isinstance(item, slice):
-            return PolarsSlice(self).apply(item)
-
-        # select rows by numpy mask or index
-        # df[np.array([1, 2, 3])]
-        # df[np.array([True, False, True])]
-        if _check_for_numpy(item) and isinstance(item, np.ndarray):
-            if item.ndim != 1:
-                msg = "multi-dimensional NumPy arrays not supported as index"
-                raise TypeError(msg)
-            if item.dtype.kind in ("i", "u"):
-                # Numpy array with signed or unsigned integers.
-                return self._take_with_series(numpy_to_idxs(item, self.shape[0]))
-            if isinstance(item[0], str):
-                return self._from_pydf(self._df.select(item))
-
-        if is_str_sequence(item, allow_str=False):
-            # select multiple columns
-            # df[["foo", "bar"]]
-            return self._from_pydf(self._df.select(item))
-        elif is_int_sequence(item):
-            item = pl.Series("", item)  # fall through to next if isinstance
-
-        if isinstance(item, pl.Series):
-            dtype = item.dtype
-            if dtype == String:
-                return self._from_pydf(self._df.select(item))
-            elif dtype.is_integer():
-                return self._take_with_series(item._pos_idxs(self.shape[0]))
-
-        # if no data has been returned, the operation is not supported
-        msg = (
-            f"cannot use `__getitem__` on DataFrame with item {item!r}"
-            f" of type {type(item).__name__!r}"
-        )
-        raise TypeError(msg)
+    ) -> DataFrame | Series | Any:
+        """Get part of the DataFrame as a new DataFrame, Series, or scalar."""
+        return get_df_item_by_key(self, key)
 
     def __setitem__(
         self,
@@ -1348,20 +1183,17 @@ class DataFrame:
                     f" frame has shape {self.shape!r}"
                 )
                 raise ValueError(msg)
-            return self._df.select_at_idx(0).get_index(0)
+            return self._df.to_series(0).get_index(0)
 
         elif row is None or column is None:
             msg = "cannot call `.item()` with only one of `row` or `column`"
             raise ValueError(msg)
 
         s = (
-            self._df.select_at_idx(column)
+            self._df.to_series(column)
             if isinstance(column, int)
             else self._df.get_column(column)
         )
-        if s is None:
-            msg = f"column index {column!r} is out of bounds"
-            raise IndexError(msg)
         return s.get_index_signed(row)
 
     def to_arrow(self) -> pa.Table:
@@ -2283,13 +2115,7 @@ class DataFrame:
                 8
         ]
         """
-        if not isinstance(index, int):
-            msg = f"index value {index!r} should be an int, but is {type(index).__name__!r}"
-            raise TypeError(msg)
-
-        if index < 0:
-            index = len(self.columns) + index
-        return wrap_s(self._df.select_at_idx(index))
+        return wrap_s(self._df.to_series(index))
 
     def to_init_repr(self, n: int = 1000) -> str:
         """
@@ -8166,6 +7992,7 @@ class DataFrame:
                     f" Pass `by` as a list to silence this warning, e.g. `partition_by([{by!r}], as_dict=True)`.",
                     version="0.20.4",
                 )
+
             if include_key:
                 if key_as_single_value:
                     names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]
