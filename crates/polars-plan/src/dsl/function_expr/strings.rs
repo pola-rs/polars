@@ -39,7 +39,6 @@ pub enum StringFunction {
     },
     CountMatches(bool),
     EndsWith,
-    Explode,
     Extract(usize),
     ExtractAll,
     #[cfg(feature = "extract_groups")]
@@ -137,7 +136,6 @@ impl StringFunction {
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-            Explode => mapper.with_same_dtype(),
             Extract(_) => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
@@ -208,7 +206,6 @@ impl Display for StringFunction {
             ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
-            Explode => "explode",
             ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
@@ -365,7 +362,6 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Base64Encode => map!(strings::base64_encode),
             #[cfg(feature = "binary_encoding")]
             Base64Decode(strict) => map!(strings::base64_decode, strict),
-            Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
             #[cfg(feature = "extract_jsonpath")]
@@ -970,11 +966,6 @@ pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "binary_encoding")]
 pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
     s.str()?.base64_decode(strict).map(|ca| ca.into_series())
-}
-
-pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    ca.explode()
 }
 
 #[cfg(feature = "dtype-decimal")]

@@ -116,7 +116,6 @@ pub enum PyStringFunction {
     Contains,
     CountMatches,
     EndsWith,
-    Explode,
     Extract,
     ExtractAll,
     ExtractGroups,
@@ -674,9 +673,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     },
                     StringFunction::EndsWith => {
                         (PyStringFunction::EndsWith.into_py(py),).to_object(py)
-                    },
-                    StringFunction::Explode => {
-                        (PyStringFunction::Explode.into_py(py),).to_object(py)
                     },
                     StringFunction::Extract(_) => {
                         (PyStringFunction::Extract.into_py(py),).to_object(py)

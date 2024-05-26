@@ -2393,7 +2393,8 @@ class ExprStringNameSpace:
         │ r   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.str_explode())
+        split = self.split("")
+        return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
     def to_integer(
         self, *, base: int | IntoExprColumn = 10, strict: bool = True

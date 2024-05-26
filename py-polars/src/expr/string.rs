@@ -110,10 +110,6 @@ impl PyExpr {
         self.inner.clone().str().tail(n.inner).into()
     }
 
-    fn str_explode(&self) -> Self {
-        self.inner.clone().str().explode().into()
-    }
-
     fn str_to_uppercase(&self) -> Self {
         self.inner.clone().str().to_uppercase().into()
     }
