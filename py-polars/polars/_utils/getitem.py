@@ -176,14 +176,16 @@ def _select_columns(
     elif isinstance(key, str):
         return df.get_column(key)
 
-    if isinstance(key, slice):
-        start = key.start
-        stop = key.stop
+    elif isinstance(key, slice):
+        start, stop, step = key.start, key.stop, key.step
+        # Fast path for common case: df[x, :]
+        if start is None and stop is None and step is None:
+            return df
         if isinstance(start, str):
             start = df.get_column_index(start)
         if isinstance(stop, str):
             stop = df.get_column_index(stop) + 1
-        int_slice = slice(start, stop, key.step)
+        int_slice = slice(start, stop, step)
         rng = range(df.width)[int_slice]
         return _select_columns_by_index(df, rng)
 
