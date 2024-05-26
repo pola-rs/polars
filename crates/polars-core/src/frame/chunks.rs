@@ -30,11 +30,11 @@ impl DataFrame {
                 .get_columns()
                 .iter()
                 .map(|s| {
-                    Series::from_chunks_and_dtype_unchecked(
-                        s.name(),
-                        vec![s.chunks()[i].clone()],
-                        s.dtype(),
-                    )
+                    if s.n_chunks() == 1 {
+                        s.clone()
+                    } else {
+                        s.replace_with_chunk(s.chunks()[i].clone())
+                    }
                 })
                 .collect::<Vec<_>>();
 

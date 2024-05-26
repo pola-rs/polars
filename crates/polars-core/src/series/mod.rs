@@ -189,6 +189,32 @@ impl Series {
         ca.chunks_mut()
     }
 
+    /// Create a `Series` of the same data type with all chunks replaced.
+    /// # Safety
+    /// These chunks should align with the data-type
+    pub unsafe fn replace_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let mut new = self.clear();
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        *mut_new.chunks_mut() = chunks;
+        mut_new.compute_len();
+        new
+    }
+
+    /// Create a `Series` of the same data type with all chunks replaced.
+    /// # Safety
+    /// This chunk should align with the data-type
+    pub unsafe fn replace_with_chunk(&self, chunk: ArrayRef) -> Self {
+        let mut new = self.clear();
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        let chunks = mut_new.chunks_mut();
+        chunks.clear();
+        chunks.push(chunk);
+        mut_new.compute_len();
+        new
+    }
+
     pub fn is_sorted_flag(&self) -> IsSorted {
         if self.len() <= 1 {
             return IsSorted::Ascending;

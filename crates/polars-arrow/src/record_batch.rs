@@ -34,7 +34,7 @@ impl<A: AsRef<dyn Array>> RecordBatchT<A> {
                 .any(|array| array.len() != len)
             {
                 polars_bail!(ComputeError:
-                    "Chunk require all its arrays to have an equal number of rows".to_string(),
+                    "RecordBatch requires all its arrays to have an equal number of rows".to_string(),
                 );
             }
         }
