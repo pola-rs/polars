@@ -29,13 +29,7 @@ impl DataFrame {
             let columns = self
                 .get_columns()
                 .iter()
-                .map(|s| {
-                    Series::from_chunks_and_dtype_unchecked(
-                        s.name(),
-                        vec![s.chunks()[i].clone()],
-                        s.dtype(),
-                    )
-                })
+                .map(|s| s.replace_with_chunk(s.chunks()[i].clone()))
                 .collect::<Vec<_>>();
 
             DataFrame::new_no_checks(columns)
