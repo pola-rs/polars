@@ -910,3 +910,16 @@ def test_struct_field_recognized_as_renaming_expr_16480() -> None:
 
     q = q.select("x")
     assert q.collect().to_dict(as_series=False) == {"x": [1]}
+
+
+def test_struct_filter_chunked_16498() -> None:
+    with pl.StringCache():
+        N = 5
+        df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
+
+        df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
+
+        df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
+        df = df.select(pl.struct(pl.all()).alias("s"))
+        df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
+        assert df.shape == (5, 1)
