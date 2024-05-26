@@ -150,3 +150,14 @@ def test_struct_field_expansion_16410() -> None:
         "x": [2.0],
         "y": [4],
     }
+
+
+def test_field_and_column_expansion() -> None:
+    df = pl.DataFrame({"a": [{"x": 1, "y": 2}], "b": [{"i": 3, "j": 4}]})
+
+    assert df.select(pl.col("a", "b").struct.field("*")).to_dict(as_series=False) == {
+        "x": [1],
+        "y": [2],
+        "i": [3],
+        "j": [4],
+    }
