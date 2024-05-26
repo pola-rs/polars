@@ -81,9 +81,14 @@ def is_selector(obj: Any) -> bool:
 def expand_selector(
     target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
     selector: SelectorType | Expr,
+    *,
+    strict: bool = True,
 ) -> tuple[str, ...]:
     """
-    Expand a selector to column names with respect to a specific frame or schema target.
+    Expand selector to column names, with respect to a specific frame or target schema.
+
+    .. versionchanged:: 0.20.30
+        The `strict` parameter was added.
 
     Parameters
     ----------
@@ -91,6 +96,10 @@ def expand_selector(
         A polars DataFrame, LazyFrame or schema.
     selector
         An arbitrary polars selector (or compound selector).
+    strict
+        Setting False will additionally allow for a broader range of column selection
+        expressions (such as bare columns or use of `.exclude()`) to be expanded, not
+        just the dedicated selectors.
 
     Examples
     --------
@@ -118,21 +127,32 @@ def expand_selector(
     Expand selector with respect to a standalone schema:
 
     >>> schema = {
-    ...     "colx": pl.Float32,
-    ...     "coly": pl.Float64,
-    ...     "colz": pl.Date,
+    ...     "id": pl.Int64,
+    ...     "desc": pl.String,
+    ...     "count": pl.UInt32,
+    ...     "value": pl.Float64,
     ... }
-    >>> cs.expand_selector(schema, cs.float())
-    ('colx', 'coly')
-    """
-    if not is_selector(selector):
-        msg = f"expected a selector; found {selector!r} instead."
-        raise TypeError(msg)
+    >>> cs.expand_selector(schema, cs.string() | cs.float())
+    ('desc', 'value')
 
+    Allow for non-strict selection expressions (such as those
+    including use of an `.exclude()` constraint) to be expanded:
+
+    >>> cs.expand_selector(schema, cs.numeric().exclude("id"), strict=False)
+    ('count', 'value')
+    """
     if isinstance(target, Mapping):
         from polars.dataframe import DataFrame
 
         target = DataFrame(schema=target)
+
+    if not (
+        is_selector(selector)
+        if strict
+        else selector.meta.is_column_selection(allow_aliasing=False)
+    ):
+        msg = f"expected a selector; found {selector!r} instead."
+        raise TypeError(msg)
 
     return tuple(target.select(selector).columns)
 

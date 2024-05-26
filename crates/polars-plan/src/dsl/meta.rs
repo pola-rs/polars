@@ -68,6 +68,26 @@ impl MetaNameSpace {
         }
     }
 
+    /// Indicate if this expression only selects columns; the presence of any
+    /// transform operations will cause the check to return `false`, though
+    /// aliasing of the selected columns is optionally allowed.
+    pub fn is_column_selection(&self, allow_aliasing: bool) -> bool {
+        self.0.into_iter().all(|e| match e {
+            Expr::Column(_)
+            | Expr::Columns(_)
+            | Expr::DtypeColumn(_)
+            | Expr::Exclude(_, _)
+            | Expr::Nth(_)
+            | Expr::IndexColumn(_)
+            | Expr::Selector(_)
+            | Expr::Wildcard => true,
+            Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } if allow_aliasing => {
+                true
+            },
+            _ => false,
+        })
+    }
+
     /// Indicate if this expression expands to multiple expressions with regex expansion.
     pub fn is_regex_projection(&self) -> bool {
         self.0.into_iter().any(|e| match e {

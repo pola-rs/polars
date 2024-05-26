@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -65,7 +66,7 @@ def test_undo_aliases() -> None:
 
 
 def test_meta_has_multiple_outputs() -> None:
-    e = pl.col(["a", "b"]).alias("bar")
+    e = pl.col(["a", "b"]).name.suffix("_foo")
     assert e.meta.has_multiple_outputs()
 
 
@@ -80,8 +81,48 @@ def test_is_column() -> None:
     assert not e.meta.is_column()
 
 
+@pytest.mark.parametrize(
+    ("expr", "is_column_selection"),
+    [
+        # columns
+        (pl.col("foo"), True),
+        (pl.col("foo", "bar"), True),
+        (pl.col(pl.NUMERIC_DTYPES), True),
+        # column expressions
+        (pl.col("foo") + 100, False),
+        (pl.col("foo").floordiv(10), False),
+        (pl.col("foo") * pl.col("bar"), False),
+        # selectors / expressions
+        (cs.numeric() * 100, False),
+        (cs.temporal() - cs.time(), True),
+        (cs.numeric().exclude("value"), True),
+        ((cs.temporal() - cs.time()).exclude("dt"), True),
+        # top-level selection funcs
+        (pl.nth(2), True),
+        (pl.first(), True),
+        (pl.last(), True),
+    ],
+)
+def test_is_column_selection(
+    expr: pl.Expr,
+    is_column_selection: bool,
+) -> None:
+    if is_column_selection:
+        assert expr.meta.is_column_selection()
+        assert expr.meta.is_column_selection(allow_aliasing=True)
+        expr = (
+            expr.name.suffix("!")
+            if expr.meta.has_multiple_outputs()
+            else expr.alias("!")
+        )
+        assert not expr.meta.is_column_selection()
+        assert expr.meta.is_column_selection(allow_aliasing=True)
+    else:
+        assert not expr.meta.is_column_selection()
+
+
 def test_meta_is_regex_projection() -> None:
-    e = pl.col("^.*$").alias("bar")
+    e = pl.col("^.*$").name.suffix("_foo")
     assert e.meta.is_regex_projection()
     assert e.meta.has_multiple_outputs()
 

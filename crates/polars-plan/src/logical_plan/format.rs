@@ -164,7 +164,7 @@ impl fmt::Debug for Expr {
             Columns(names) => write!(f, "cols({names:?})"),
             DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
             IndexColumn(idxs) => write!(f, "index_columns({idxs:?})"),
-            Selector(_) => write!(f, "SELECTOR"),
+            Selector(_) => write!(f, "selector"),
             #[cfg(feature = "dtype-struct")]
             Field(names) => write!(f, ".field({names:?})"),
         }
