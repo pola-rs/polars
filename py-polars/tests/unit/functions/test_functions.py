@@ -447,7 +447,7 @@ def test_lazy_functions() -> None:
         pl.first("a").name.suffix("_first"),
         pl.first("b", "c").name.suffix("_first"),
         pl.last("c", "b", "a").name.suffix("_last"),
-        pl.nth(1, "c", "a").name.suffix("_nth1"),
+        pl.nth(1, columns=["c", "a"]).name.suffix("_nth1"),
     )
     expected: dict[str, list[Any]] = {
         "b_var": [1.0],

@@ -658,7 +658,7 @@ def last(*columns: str) -> Expr:
     return F.col(*columns).last()
 
 
-def nth(n: int | Sequence[int], *columns: str) -> Expr:
+def nth(*indices: int | Sequence[int], columns: Sequence[str] | None = None) -> Expr:
     """
     Get the nth column(s) or value(s).
 
@@ -668,9 +668,9 @@ def nth(n: int | Sequence[int], *columns: str) -> Expr:
 
     Parameters
     ----------
-    n
-        One or more indices representing the columns/values to retrieve.
-    *columns
+    indices
+        One or more indices representing the columns to retrieve.
+    columns
         One or more column names. If omitted (the default), returns an
         expression that takes the nth column of the context; otherwise,
         takes the nth value of the given column(s).
@@ -699,7 +699,7 @@ def nth(n: int | Sequence[int], *columns: str) -> Expr:
     │ 2   │
     └─────┘
 
-    >>> df.select(pl.nth([2, 0]))
+    >>> df.select(pl.nth(2, 0))
     shape: (3, 2)
     ┌─────┬─────┐
     │ c   ┆ a   │
@@ -713,7 +713,7 @@ def nth(n: int | Sequence[int], *columns: str) -> Expr:
 
     Return the "nth" value(s) for the given columns:
 
-    >>> df.select(pl.nth(-2, "b", "c"))
+    >>> df.select(pl.nth(-2, columns=["b", "c"]))
     shape: (1, 2)
     ┌─────┬─────┐
     │ b   ┆ c   │
@@ -723,7 +723,7 @@ def nth(n: int | Sequence[int], *columns: str) -> Expr:
     │ 5   ┆ bar │
     └─────┴─────┘
 
-    >>> df.select(pl.nth([0, 2], "c", "a"))
+    >>> df.select(pl.nth(0, 2, columns=["c", "a"]))
     shape: (2, 2)
     ┌─────┬─────┐
     │ c   ┆ a   │
@@ -734,12 +734,14 @@ def nth(n: int | Sequence[int], *columns: str) -> Expr:
     │ baz ┆ 3   │
     └─────┴─────┘
     """
-    indices = [n] if isinstance(n, int) else n
-    if not columns:
+    if len(indices) == 1 and isinstance(indices[0], Sequence):
+        indices = indices[0]  # type: ignore[assignment]
+
+    if columns is None:
         return wrap_expr(plr.index_cols(indices))
 
-    cols = F.col(*columns)
-    return cols.get(indices[0]) if len(indices) == 1 else cols.gather(indices)
+    cols = F.col(columns)
+    return cols.get(indices[0]) if len(indices) == 1 else cols.gather(indices)  # type: ignore[arg-type]
 
 
 def head(column: str, n: int = 10) -> Expr:
