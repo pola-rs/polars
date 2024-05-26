@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Iterable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -62,8 +62,7 @@ def get_series_item_by_key(
         if not key:
             return s.clear()
         if isinstance(key[0], bool):
-            msg = "boolean masks not supported\n\nHint: Use `filter` instead."
-            raise TypeError(msg)
+            _raise_on_boolean_mask()
         indices = pl.Series("", key, dtype=Int64)
         indices = _convert_series_to_indices(indices, s.len())
         return _select_elements_by_index(s, indices)
@@ -144,36 +143,17 @@ def get_df_item_by_key(
         else:
             return _select_rows(selection, row_key)  # type: ignore[arg-type]
 
-    elif is_index_key(key):
-        # TODO: Deprecate - this path should be removed.
-        # https://github.com/pola-rs/polars/issues/4924
+    # TODO: Deprecate `_select_rows` path here - code below can be replaced by just
+    # the `_select_columns`  column call.
+    # https://github.com/pola-rs/polars/issues/4924
+    if isinstance(key, str):
+        return df.get_column(key)
+    if isinstance(key, Sequence) and len(key) == 0:
+        return df.__class__()
+    try:
         return _select_rows(df, key)  # type: ignore[arg-type]
-    else:
+    except TypeError:
         return _select_columns(df, key)
-
-
-def is_index_key(
-    key: SingleIndexSelector
-    | MultiIndexSelector
-    | SingleColSelector
-    | MultiColSelector,
-) -> bool:
-    """Returns whether the key is an index selector."""
-    return (
-        isinstance(key, (int, range))
-        or (
-            isinstance(key, slice)
-            and not isinstance(key.start, str)
-            and not isinstance(key.stop, str)
-        )
-        or (isinstance(key, Sequence) and len(key) > 1 and isinstance(key[0], int))
-        or (isinstance(key, pl.Series) and key.dtype.is_integer())
-        or (
-            _check_for_numpy(key)
-            and isinstance(key, np.ndarray)
-            and key.dtype.kind in ("i", "u")
-        )
-    )
 
 
 # `str` overlaps with `Sequence[str]`
@@ -309,8 +289,7 @@ def _select_rows(
         if not key:
             return df.clear()
         if isinstance(key[0], bool):
-            msg = "boolean masks not supported\n\nHint: Use `filter` instead."
-            raise TypeError(msg)
+            _raise_on_boolean_mask()
         s = pl.Series("", key, dtype=Int64)
         indices = _convert_series_to_indices(s, df.height)
         return _select_rows_by_index(df, indices)
@@ -356,8 +335,11 @@ def _convert_series_to_indices(s: Series, size: int) -> Series:
         return s
 
     if not s.dtype.is_integer():
-        msg = f"cannot treat Series of type {s.dtype} as indices"
-        raise TypeError(msg)
+        if s.dtype == Boolean:
+            _raise_on_boolean_mask()
+        else:
+            msg = f"cannot treat Series of type {s.dtype} as indices"
+            raise TypeError(msg)
 
     if s.len() == 0:
         return pl.Series(s.name, [], dtype=idx_type)
@@ -403,7 +385,7 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
     #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
     #     to absolute indexes.
     if arr.ndim != 1:
-        msg = "only 1D numpy arrays can be treated as indices"
+        msg = "only 1D NumPy arrays can be treated as indices"
         raise TypeError(msg)
 
     idx_type = get_index_type()
@@ -413,8 +395,11 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
 
     # Numpy array with signed or unsigned integers.
     if arr.dtype.kind not in ("i", "u"):
-        msg = f"cannot treat NumPy ndarray of type {arr.dtype} as indices"
-        raise TypeError(msg)
+        if arr.dtype.kind == "b":
+            _raise_on_boolean_mask()
+        else:
+            msg = f"cannot treat NumPy ndarray of type {arr.dtype} as indices"
+            raise TypeError(msg)
 
     if idx_type == UInt32:
         if arr.dtype in {np.int64, np.uint64} and arr.max() >= U32_MAX:
@@ -439,3 +424,11 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
     arr = arr.astype(np.uint32) if idx_type == UInt32 else arr.astype(np.uint64)
 
     return pl.Series("", arr, dtype=idx_type)
+
+
+def _raise_on_boolean_mask() -> NoReturn:
+    msg = (
+        "selecting rows by passing a boolean mask to `__getitem__` is not supported"
+        "\n\nHint: Use the `filter` method instead."
+    )
+    raise TypeError(msg)
