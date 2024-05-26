@@ -24,15 +24,11 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 11):
-        from typing import Generator, TypeAlias
+        from typing import TypeAlias
     else:
-        from typing import Generator
-
         from typing_extensions import TypeAlias
 
-    GroupByIterator: TypeAlias = Generator[
-        tuple[object | tuple[object, ...], DataFrame], None, None
-    ]
+    GroupByIterator: TypeAlias = Iterator[tuple[object | tuple[object, ...], DataFrame]]
 
 
 class GroupBy:

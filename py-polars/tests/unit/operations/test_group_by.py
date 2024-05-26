@@ -1009,6 +1009,13 @@ def test_group_by_repeated_iteration() -> None:
         assert_frame_equal(d1, d3)
 
 
+def test_group_by_not_iterator() -> None:
+    df = pl.DataFrame({"a": ["A", "B", "A", "A", "C"], "b": [1, 2, 3, 4, 5]})
+    group_by = df.group_by(pl.col("a"), maintain_order=True)
+    with pytest.raises(TypeError):
+        next(group_by)  # type: ignore[call-overload]
+
+
 @pytest.mark.release()
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
