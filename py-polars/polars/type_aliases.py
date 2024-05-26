@@ -279,4 +279,6 @@ BooleanMask: TypeAlias = Union[
 ]
 SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
-GroupByIterator: TypeAlias = Iterator[Tuple[object | Tuple[object, ...], "DataFrame"]]
+GroupByIterator: TypeAlias = Iterator[
+    Tuple[Union[object, Tuple[object, ...]], "DataFrame"]
+]
