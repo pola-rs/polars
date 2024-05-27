@@ -155,7 +155,7 @@ def get_df_item_by_key(
     try:
         return _select_rows(df, key)  # type: ignore[arg-type]
     except TypeError:
-        return _select_columns(df, key)  # type: ignore[arg-type]
+        return _select_columns(df, key)
 
 
 # `str` overlaps with `Sequence[str]`
