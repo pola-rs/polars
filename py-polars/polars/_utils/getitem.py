@@ -145,20 +145,17 @@ def get_df_item_by_key(
         else:
             return _select_rows(selection, row_key)
 
-    # Single input, e.g. df[1]
-    elif isinstance(key, str):
+    # Single string input, e.g. df["a"]
+    if isinstance(key, str):
         # This case is required because empty strings are otherwise treated
         # as an empty Sequence in `_select_rows`
         return df.get_column(key)
-    elif isinstance(key, Sequence) and len(key) == 0:
-        # df[[]]
-        # TODO: This removes all columns, but it should remove all rows.
-        # https://github.com/pola-rs/polars/issues/4924
-        return df.__class__()
+
+    # Single input - df[1] - or multiple inputs - df["a", "b", "c"]
     try:
         return _select_rows(df, key)  # type: ignore[arg-type]
     except TypeError:
-        return _select_columns(df, key)  # type: ignore[arg-type]
+        return _select_columns(df, key)
 
 
 # `str` overlaps with `Sequence[str]`

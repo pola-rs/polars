@@ -234,6 +234,13 @@ def test_df_getitem_row_range_single_input() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_df_getitem_row_empty_list_single_input() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [5.0, 6.0]})
+    result = df[[]]
+    expected = df.clear()
+    assert_frame_equal(result, expected)
+
+
 def test_df_getitem() -> None:
     """Test all the methods to use [] on a dataframe."""
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
@@ -286,9 +293,6 @@ def test_df_getitem() -> None:
 
     # empty list with column selector drops rows but keeps columns
     assert_frame_equal(df[empty, :], df[:0])
-
-    # empty list without column select return empty frame
-    assert_frame_equal(df[empty], pl.DataFrame({}))
 
     # numpy array: assumed to be row indices if integers, or columns if strings
 
