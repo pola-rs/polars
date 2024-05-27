@@ -994,7 +994,7 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
             all_indices.append(idx)
 
     return _selector_proxy_(
-        F.nth(all_indices), name="by_index", parameters={"*indices": indices}
+        F.nth(*all_indices), name="by_index", parameters={"*indices": indices}
     )
 
 

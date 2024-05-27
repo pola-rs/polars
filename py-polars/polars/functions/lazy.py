@@ -658,22 +658,14 @@ def last(*columns: str) -> Expr:
     return F.col(*columns).last()
 
 
-def nth(*indices: int | Sequence[int], columns: Sequence[str] | None = None) -> Expr:
+def nth(*indices: int | Sequence[int]) -> Expr:
     """
-    Get the nth column(s) or value(s).
-
-    This function has different behavior depending on the presence of `columns`
-    values. If none given (the default), returns an expression that takes the nth
-    column of the context; otherwise, takes the nth value of the given column(s).
+    Get the nth column(s) of the context.
 
     Parameters
     ----------
     indices
         One or more indices representing the columns to retrieve.
-    columns
-        One or more column names. If omitted (the default), returns an
-        expression that takes the nth column of the context; otherwise,
-        takes the nth value of the given column(s).
 
     Examples
     --------
@@ -684,9 +676,6 @@ def nth(*indices: int | Sequence[int], columns: Sequence[str] | None = None) -> 
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
-
-    Return the "nth" column(s):
-
     >>> df.select(pl.nth(1))
     shape: (3, 1)
     ┌─────┐
@@ -698,7 +687,6 @@ def nth(*indices: int | Sequence[int], columns: Sequence[str] | None = None) -> 
     │ 5   │
     │ 2   │
     └─────┘
-
     >>> df.select(pl.nth(2, 0))
     shape: (3, 2)
     ┌─────┬─────┐
@@ -710,41 +698,11 @@ def nth(*indices: int | Sequence[int], columns: Sequence[str] | None = None) -> 
     │ bar ┆ 8   │
     │ baz ┆ 3   │
     └─────┴─────┘
-
-    Return the "nth" value(s) for the given columns:
-
-    >>> df.select(pl.nth(-2, columns=["b", "c"]))
-    shape: (1, 2)
-    ┌─────┬─────┐
-    │ b   ┆ c   │
-    │ --- ┆ --- │
-    │ i64 ┆ str │
-    ╞═════╪═════╡
-    │ 5   ┆ bar │
-    └─────┴─────┘
-
-    >>> df.select(pl.nth(0, 2, columns=["c", "a"]))
-    shape: (2, 2)
-    ┌─────┬─────┐
-    │ c   ┆ a   │
-    │ --- ┆ --- │
-    │ str ┆ i64 │
-    ╞═════╪═════╡
-    │ foo ┆ 1   │
-    │ baz ┆ 3   │
-    └─────┴─────┘
     """
     if len(indices) == 1 and isinstance(indices[0], Sequence):
         indices = indices[0]  # type: ignore[assignment]
 
-    if columns is None:
-        return wrap_expr(plr.index_cols(indices))
-
-    cols = F.col(columns)
-    if len(indices) == 1:
-        return cols.get(indices[0])  # type: ignore[arg-type]
-    else:
-        return cols.gather(indices)  # type: ignore[arg-type]
+    return wrap_expr(plr.index_cols(indices))
 
 
 def head(column: str, n: int = 10) -> Expr:
