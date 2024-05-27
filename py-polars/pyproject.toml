@@ -235,7 +235,9 @@ filterwarnings = [
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
   "ignore:the 'pyxlsb' engine is deprecated.*:DeprecationWarning",
-  "ignore:Use of `how='outer(_coalesce)?'` should be replaced with `how='full'.*:DeprecationWarning",
+  # TODO: Remove when behavior is updated
+  # https://github.com/pola-rs/polars/issues/13441
+  "ignore:.*default coalesce behavior of left join.*:DeprecationWarning",
 ]
 xfail_strict = true
 
