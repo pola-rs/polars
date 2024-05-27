@@ -131,11 +131,13 @@ def test_list_empty_group_by_result_3521() -> None:
 
     # Calculate n_unique after dropping nulls
     # This will panic on polars version 0.13.38 and 0.13.39
-    assert (
+    result = (
         left.join(right, on="join_column", how="left")
         .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(as_series=False) == {"group_by_column": [1], "n_unique_column": [[]]}
+    )
+    expected = {"group_by_column": [1], "n_unique_column": [[]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_fill_null() -> None:
