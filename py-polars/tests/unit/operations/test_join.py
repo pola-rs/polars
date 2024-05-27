@@ -1007,3 +1007,10 @@ def test_join_raise_on_redundant_keys() -> None:
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
     with pytest.raises(pl.InvalidOperationError, match="already joined on"):
         left.join(right, on=["a", "a"], how="full", coalesce=True)
+
+
+def test_left_join_coalesce_default_deprecation_message() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
+    with pytest.deprecated_call():
+        left.join(right, on="a", how="left")
