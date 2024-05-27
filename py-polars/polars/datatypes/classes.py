@@ -434,23 +434,12 @@ class Datetime(TemporalType):
     epoch.
     """
 
-    time_unit: TimeUnit | None = None
-    time_zone: str | None = None
+    time_unit: TimeUnit
+    time_zone: str | None
 
     def __init__(
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
-        if time_unit is None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "Passing `time_unit=None` to the Datetime constructor is deprecated."
-                " Either avoid passing a time unit to use the default value ('us'),"
-                " or pass a valid time unit instead ('ms', 'us', 'ns').",
-                version="0.20.11",
-            )
-            time_unit = "us"
-
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
