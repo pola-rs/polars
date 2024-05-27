@@ -360,11 +360,6 @@ impl PyRollingGroupOptions {
         };
         Ok(result.into_py(py))
     }
-
-    #[getter]
-    fn check_sorted(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self.inner.check_sorted.into_py(py))
-    }
 }
 
 #[pyclass(name = "GroupbyOptions")]

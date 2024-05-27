@@ -3168,7 +3168,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3243,6 +3243,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
+            .. deprecated:: 0.20.31
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
+
         Returns
         -------
         LazyGroupBy
@@ -3303,9 +3307,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        lgb = self._ldf.rolling(
-            index_column, period, offset, closed, pyexprs_by, check_sorted
-        )
+        lgb = self._ldf.rolling(index_column, period, offset, closed, pyexprs_by)
         return LazyGroupBy(lgb)
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -3322,7 +3324,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3406,6 +3408,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             verify data is sorted. This is expensive. If you are sure the
             data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
+
+            .. deprecated:: 0.20.31
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
 
         Returns
         -------
@@ -3671,7 +3677,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             closed,
             pyexprs_by,
             start_by,
-            check_sorted,
         )
         return LazyGroupBy(lgb)
 
@@ -6266,7 +6271,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
@@ -6327,7 +6332,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
@@ -6392,7 +6397,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).

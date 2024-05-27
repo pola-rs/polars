@@ -5472,7 +5472,7 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -5546,6 +5546,10 @@ class DataFrame:
             verify data is sorted. This is expensive. If you are sure the
             data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
+
+            .. deprecated:: 0.20.31
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
 
         Returns
         -------
@@ -5622,7 +5626,7 @@ class DataFrame:
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -5706,6 +5710,10 @@ class DataFrame:
             verify data is sorted. This is expensive. If you are sure the
             data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
+
+            .. deprecated:: 0.20.31
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
 
         Returns
         -------
@@ -10733,7 +10741,7 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
@@ -10787,7 +10795,7 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
@@ -10845,7 +10853,7 @@ class DataFrame:
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).

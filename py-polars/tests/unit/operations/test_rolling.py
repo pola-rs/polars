@@ -229,7 +229,7 @@ def test_rolling_dynamic_sortedness_check() -> None:
     # no `group_by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match="argument in operation 'rolling' is not explicitly sorted",
+        match="argument in operation 'rolling' is not sorted",
     ):
         df.rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
 
@@ -261,14 +261,15 @@ def test_rolling_empty_groups_9973() -> None:
         }
     )
 
-    out = data.rolling(
-        index_column="date",
-        group_by="id",
-        period="2d",
-        offset="1d",
-        closed="left",
-        check_sorted=True,
-    ).agg(pl.col("value"))
+    with pytest.deprecated_call(match="`check_sorted` is now deprecated"):
+        out = data.rolling(
+            index_column="date",
+            group_by="id",
+            period="2d",
+            offset="1d",
+            closed="left",
+            check_sorted=True,
+        ).agg(pl.col("value"))
 
     assert_frame_equal(out, expected)
 
@@ -300,14 +301,12 @@ def test_rolling_check_sorted_15225() -> None:
             "c": [1, 1, 2],
         }
     )
-    result = df.rolling("b", period="2d", check_sorted=False).agg(pl.sum("a"))
+    result = df.rolling("b", period="2d").agg(pl.sum("a"))
     expected = pl.DataFrame(
         {"b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)], "a": [1, 3, 5]}
     )
     assert_frame_equal(result, expected)
-    result = df.rolling("b", period="2d", group_by="c", check_sorted=False).agg(
-        pl.sum("a")
-    )
+    result = df.rolling("b", period="2d", group_by="c").agg(pl.sum("a"))
     expected = pl.DataFrame(
         {
             "c": [1, 1, 2],
@@ -316,8 +315,6 @@ def test_rolling_check_sorted_15225() -> None:
         }
     )
     assert_frame_equal(result, expected)
-    with pytest.raises(pl.InvalidOperationError, match="not explicitly sorted"):
-        result = df.rolling("b", period="2d").agg(pl.sum("a"))
 
 
 def test_multiple_rolling_in_single_expression() -> None:

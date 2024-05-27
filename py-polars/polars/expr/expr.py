@@ -3771,7 +3771,7 @@ class Expr:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> Self:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3875,7 +3875,7 @@ class Expr:
         offset = parse_as_duration_string(offset)
 
         return self._from_pyexpr(
-            self._pyexpr.rolling(index_column, period, offset, closed, check_sorted)
+            self._pyexpr.rolling(index_column, period, offset, closed)
         )
 
     def is_unique(self) -> Self:

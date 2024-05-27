@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::series::unstable::UnstableSeries;
-use crate::series::IsSorted;
 
 /// A utility that allocates an [`UnstableSeries`]. The applied function can then use that
 /// series container to save heap allocations and swap arrow arrays.
@@ -12,15 +11,6 @@ where
     let mut us = UnstableSeries::new(&mut container);
 
     f(&mut us)
-}
-
-pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
-    polars_ensure!(!matches!(s.is_sorted_flag(), IsSorted::Not), InvalidOperation: "argument in operation '{}' is not explicitly sorted
-
-- If your data is ALREADY sorted, set the sorted flag with: '.set_sorted()'.
-- If your data is NOT sorted, sort the 'expr/series/column' first.
-    ", operation);
-    Ok(())
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
