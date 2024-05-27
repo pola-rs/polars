@@ -741,7 +741,10 @@ def nth(*indices: int | Sequence[int], columns: Sequence[str] | None = None) -> 
         return wrap_expr(plr.index_cols(indices))
 
     cols = F.col(columns)
-    return cols.get(indices[0]) if len(indices) == 1 else cols.gather(indices)  # type: ignore[arg-type]
+    if len(indices) == 1:
+        return cols.get(indices[0])  # type: ignore[arg-type]
+    else:
+        return cols.gather(indices)  # type: ignore[arg-type]
 
 
 def head(column: str, n: int = 10) -> Expr:
