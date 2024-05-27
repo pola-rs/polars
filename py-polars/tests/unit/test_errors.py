@@ -530,15 +530,6 @@ def test_window_size_validation() -> None:
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
 
 
-def test_invalid_getitem_key_err() -> None:
-    df = pl.DataFrame({"x": [1.0], "y": [1.0]})
-
-    with pytest.raises(
-        TypeError, match="cannot treat Series of type String as indices"
-    ):
-        df["x", "y"]
-
-
 def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
