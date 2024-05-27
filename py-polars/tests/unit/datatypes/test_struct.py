@@ -923,3 +923,7 @@ def test_struct_filter_chunked_16498() -> None:
         df = df.select(pl.struct(pl.all()).alias("s"))
         df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
         assert df.shape == (5, 1)
+
+
+def test_struct_field_dynint_nullable_16243() -> None:
+    pl.select(pl.lit(None).fill_null(pl.struct(42)))

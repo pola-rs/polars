@@ -337,40 +337,71 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        match dtype {
-            DataType::Unknown(kind) => {
-                return match kind {
-                    // Best leave as is.
-                    UnknownKind::Any => Ok(self.clone()),
-                    UnknownKind::Int(v) => {
-                        if self.dtype().is_integer() {
-                            Ok(self.clone())
-                        } else {
-                            self.cast(&materialize_dyn_int(*v).dtype())
-                        }
-                    },
-                    UnknownKind::Float => {
-                        if self.dtype().is_float() {
-                            Ok(self.clone())
-                        } else {
-                            self.cast(&DataType::Float64)
-                        }
-                    },
-                    UnknownKind::Str => {
-                        if self.dtype().is_string() | self.dtype().is_categorical() {
-                            Ok(self.clone())
-                        } else {
-                            self.cast(&DataType::String)
-                        }
-                    },
-                };
+        use DataType as D;
+
+        let do_clone = match dtype {
+            D::Unknown(UnknownKind::Any) => true,
+            D::Unknown(UnknownKind::Int(_)) if self.dtype().is_integer() => true,
+            D::Unknown(UnknownKind::Float) if self.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Str)
+                if self.dtype().is_string() | self.dtype().is_categorical() =>
+            {
+                true
             },
-            // Best leave as is.
-            dt if dt.is_primitive() && dt == self.dtype() => {
-                return Ok(self.clone());
-            },
-            _ => {},
+            dt if dt.is_primitive() && dt == self.dtype() => true,
+            _ => false,
+        };
+
+        if do_clone {
+            return Ok(self.clone());
         }
+
+        pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
+            match dtype {
+                D::Unknown(UnknownKind::Int(v)) => Some(materialize_dyn_int(*v).dtype()),
+                D::Unknown(UnknownKind::Float) => Some(DataType::Float64),
+                D::Unknown(UnknownKind::Str) => Some(DataType::String),
+                // Best leave as is.
+                D::List(inner) => cast_dtype(inner.as_ref()).map(Box::new).map(D::List),
+                #[cfg(feature = "dtype-struct")]
+                D::Struct(fields) => {
+                    // @NOTE: We only allocate if we really need to.
+
+                    let mut field_iter = fields.iter().enumerate();
+                    let mut new_fields = loop {
+                        let (i, field) = field_iter.next()?;
+
+                        if let Some(dtype) = cast_dtype(&field.dtype) {
+                            let mut new_fields = Vec::with_capacity(fields.len());
+                            new_fields.extend(fields.iter().take(i).cloned());
+                            new_fields.push(Field {
+                                name: field.name.clone(),
+                                dtype,
+                            });
+                            break new_fields;
+                        }
+                    };
+
+                    new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
+                        let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
+                        Field {
+                            name: field.name.clone(),
+                            dtype,
+                        }
+                    }));
+
+                    Some(D::Struct(new_fields))
+                },
+                _ => None,
+            }
+        }
+
+        let casted = cast_dtype(dtype);
+        let dtype = match casted {
+            None => dtype,
+            Some(ref dtype) => dtype,
+        };
+
         let ret = self.0.cast(dtype);
         let len = self.len();
         if self.null_count() == len {
