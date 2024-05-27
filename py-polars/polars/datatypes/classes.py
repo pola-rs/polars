@@ -501,7 +501,7 @@ class Duration(TemporalType):
     negative time offsets.
     """
 
-    time_unit: TimeUnit | None = None
+    time_unit: TimeUnit
 
     def __init__(self, time_unit: TimeUnit = "us"):
         if time_unit not in ("ms", "us", "ns"):
