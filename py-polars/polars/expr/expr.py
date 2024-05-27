@@ -6245,7 +6245,7 @@ class Expr:
         ... )  # Interpolate from this to the new grid
         >>> df_new_grid = pl.DataFrame({"grid_points": range(1, 11)})
         >>> df_new_grid.join(
-        ...     df_original_grid, on="grid_points", how="left"
+        ...     df_original_grid, on="grid_points", how="left", coalesce=True
         ... ).with_columns(pl.col("values").interpolate())
         shape: (10, 2)
         ┌─────────────┬────────┐
