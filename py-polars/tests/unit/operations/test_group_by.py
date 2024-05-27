@@ -1009,9 +1009,69 @@ def test_group_by_repeated_iteration() -> None:
         assert_frame_equal(d1, d3)
 
 
+def test_dynamic_group_by_repeated_iteration() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]}).set_sorted("a")
+    group_by = df.group_by_dynamic("a", every="1i", period="2i")
+    it_1 = []
+    it_2 = []
+    for item in group_by:
+        it_2 = list(group_by)
+        it_1.append(item)
+    assert len(it_1) == len(it_2) == 3
+
+    # Check if they actually produce the same results
+    for (n1, d1), (n3, d3) in zip(it_1, group_by):
+        assert n1 == n3
+        assert_frame_equal(d1, d3)
+
+
+def test_rolling_group_by_repeated_iteration() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.datetime_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
+            ),
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+    group_by = df.rolling("date", period="2d")
+    it_1 = []
+    it_2 = []
+    for item in group_by:
+        it_2 = list(group_by)
+        it_1.append(item)
+    assert len(it_1) == len(it_2) == 5
+
+    # Check if they actually produce the same results
+    for (n1, d1), (n3, d3) in zip(it_1, group_by):
+        assert n1 == n3
+        assert_frame_equal(d1, d3)
+
+
 def test_group_by_not_iterator() -> None:
     df = pl.DataFrame({"a": ["A", "B", "A", "A", "C"], "b": [1, 2, 3, 4, 5]})
     group_by = df.group_by(pl.col("a"), maintain_order=True)
+    with pytest.raises(TypeError):
+        next(group_by)  # type: ignore[call-overload]
+
+
+def test_dynamic_group_by_not_iterator() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]}).set_sorted("a")
+    group_by = df.group_by_dynamic("a", every="1i", period="2i")
+    with pytest.raises(TypeError):
+        next(group_by)  # type: ignore[call-overload]
+
+
+def test_rolling_group_by_not_iterator() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.datetime_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
+            ),
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+    group_by = df.rolling("date", period="2d")
     with pytest.raises(TypeError):
         next(group_by)  # type: ignore[call-overload]
 
