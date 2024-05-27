@@ -12,7 +12,7 @@ from polars._utils.deprecation import (
 if TYPE_CHECKING:
     from datetime import timedelta
 
-    from polars import DataFrame, Series
+    from polars import DataFrame
     from polars.type_aliases import (
         ClosedInterval,
         GroupByIterator,
@@ -115,7 +115,10 @@ class GroupBy:
             group_names_iter = group_names.iter_rows()
         group_indices = groups_df.select(temp_col).to_series()
 
-        return _group_by_iterator(self.df, group_names_iter, group_indices)
+        return (
+            (name, self.df[group_indices[index], :])
+            for index, name in enumerate(group_names_iter)
+        )
 
     def agg(
         self,
@@ -824,7 +827,10 @@ class RollingGroupBy:
 
         group_indices = groups_df.select(temp_col).to_series()
 
-        return _group_by_iterator(self.df, group_names_iter, group_indices)
+        return (
+            (name, self.df[group_indices[index], :])
+            for index, name in enumerate(group_names_iter)
+        )
 
     def agg(
         self,
@@ -996,7 +1002,10 @@ class DynamicGroupBy:
             group_names_iter = group_names.iter_rows()
         group_indices = groups_df.select(temp_col).to_series()
 
-        return _group_by_iterator(self.df, group_names_iter, group_indices)
+        return (
+            (name, self.df[group_indices[index], :])
+            for index, name in enumerate(group_names_iter)
+        )
 
     def agg(
         self,
@@ -1104,13 +1113,3 @@ class DynamicGroupBy:
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
         return self.map_groups(function, schema)
-
-
-def _group_by_iterator(
-    df: DataFrame,
-    group_names: Iterator[object] | Iterator[tuple[object, ...]],
-    group_indices: Series,
-) -> GroupByIterator:
-    """A utility generator to yield the group by results."""
-    for index, name in enumerate(group_names):
-        yield name, df[group_indices[index], :]
