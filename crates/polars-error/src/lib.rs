@@ -265,6 +265,11 @@ macro_rules! polars_err {
             InvalidOperation: "{} operation not supported for dtype `{}`", $op, $arg
         )
     };
+    (op = $op:expr, $arg:expr, hint = $hint:literal) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation not supported for dtype `{}`\n\nHint: {}", $op, $arg, $hint
+        )
+    };
     (op = $op:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
             InvalidOperation: "{} operation not supported for dtypes `{}` and `{}`", $op, $lhs, $rhs

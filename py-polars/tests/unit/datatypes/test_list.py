@@ -831,3 +831,13 @@ def test_take_list_15719() -> None:
     )
 
     assert_frame_equal(df, expected)
+
+
+def test_list_str_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series(["foo", "bar"]).sum()
+
+
+def test_list_list_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([[1], [2]]).sum()

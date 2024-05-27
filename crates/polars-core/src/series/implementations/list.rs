@@ -71,6 +71,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.shrink_to_fit()
     }
 
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(
+            op = "`sum`",
+            self.dtype(),
+            hint = "you may mean to call `concat_list`"
+        );
+    }
+
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
     }
