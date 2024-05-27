@@ -131,14 +131,19 @@ def get_df_item_by_key(
     # Two inputs, e.g. df[1, 2:5]
     if isinstance(key, tuple) and len(key) == 2:
         row_key, col_key = key
+
+        # Support df[True, False] and df["a", "b"] as these are not ambiguous
+        if isinstance(row_key, (bool, str)):
+            return _select_columns(df, key)  # type: ignore[arg-type]
+
         selection = _select_columns(df, col_key)
 
         if selection.is_empty():
             return selection
         elif isinstance(selection, pl.Series):
-            return get_series_item_by_key(selection, row_key)  # type: ignore[arg-type]
+            return get_series_item_by_key(selection, row_key)
         else:
-            return _select_rows(selection, row_key)  # type: ignore[arg-type]
+            return _select_rows(selection, row_key)
 
     # Single input, e.g. df[1]
     elif isinstance(key, str):
