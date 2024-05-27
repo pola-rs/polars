@@ -669,7 +669,7 @@ class List(NestedType):
     └───────────────┴─────────────┘
     """
 
-    inner: PolarsDataType | None = None
+    inner: PolarsDataType
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         self.inner = polars.datatypes.py_type_to_dtype(inner)
@@ -685,10 +685,7 @@ class List(NestedType):
         if type(other) is DataTypeClass and issubclass(other, List):
             return True
         elif isinstance(other, List):
-            if self.inner is None or other.inner is None:
-                return True
-            else:
-                return self.inner == other.inner
+            return self.inner == other.inner
         else:
             return False
 
