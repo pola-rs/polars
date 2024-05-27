@@ -371,12 +371,15 @@ impl Series {
             },
             _ => {},
         }
-        let ret = self.0.cast(dtype);
+        #[cfg(feature = "dtype-categorical")]
+        if let DataType::Enum(None, _) = dtype {
+            polars_bail!(ComputeError: "can not cast / initialize Enum without categories present")
+        }
         let len = self.len();
         if self.null_count() == len {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
-        ret
+        self.0.cast(dtype)
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.
