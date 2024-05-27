@@ -34,7 +34,7 @@ def test_date() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
-    df = pl.DataFrame(
+    df = pl.DataFrame(  # noqa: F841
         {
             "dtm": [
                 datetime(2099, 12, 31, 23, 59, 59),
@@ -46,8 +46,8 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
         schema={"dtm": pl.Datetime(time_unit)},
     )
 
-    res = df.sql("SELECT dtm::time as tm from df")["tm"].to_list()
-    assert res == [
+    res = pl.sql("SELECT dtm::time AS tm from df").collect()
+    assert res["tm"].to_list() == [
         time(23, 59, 59),
         time(12, 30, 30),
         time(1, 1, 1),

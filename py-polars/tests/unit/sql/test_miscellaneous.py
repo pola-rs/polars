@@ -24,16 +24,16 @@ def test_any_all() -> None:
     res = df.sql(
         """
         SELECT
-        x >= ALL(df.y) as 'All Geq',
-        x > ALL(df.y) as 'All G',
-        x < ALL(df.y) as 'All L',
-        x <= ALL(df.y) as 'All Leq',
-        x >= ANY(df.y) as 'Any Geq',
-        x > ANY(df.y) as 'Any G',
-        x < ANY(df.y) as 'Any L',
-        x <= ANY(df.y) as 'Any Leq',
-        x == ANY(df.y) as 'Any eq',
-        x != ANY(df.y) as 'Any Neq',
+          x >= ALL(df.y) AS "All Geq",
+          x  > ALL(df.y) AS "All G",
+          x  < ALL(df.y) AS "All L",
+          x <= ALL(df.y) AS "All Leq",
+          x >= ANY(df.y) AS "Any Geq",
+          x  > ANY(df.y) AS "Any G",
+          x  < ANY(df.y) AS "Any L",
+          x <= ANY(df.y) AS "Any Leq",
+          x == ANY(df.y) AS "Any eq",
+          x != ANY(df.y) AS "Any Neq",
         FROM df
         """,
     )

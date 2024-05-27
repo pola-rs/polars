@@ -215,7 +215,7 @@ from polars.meta import (
     threadpool_size,
 )
 from polars.series import Series
-from polars.sql import SQLContext
+from polars.sql import SQLContext, sql
 from polars.string_cache import (
     StringCache,
     disable_string_cache,
@@ -430,6 +430,7 @@ __all__ = [
     "from_repr",
     # polars.sql
     "SQLContext",
+    "sql",
     # polars.utils
     "build_info",
     "get_index_type",
