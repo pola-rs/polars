@@ -448,9 +448,6 @@ impl StringChunked {
 }
 
 impl ChunkAggSeries for StringChunked {
-    fn sum_reduce(&self) -> Scalar {
-        Scalar::new(DataType::String, AnyValue::Null)
-    }
     fn max_reduce(&self) -> Scalar {
         let av: AnyValue = self.max_str().into();
         Scalar::new(DataType::String, av.into_static().unwrap())

@@ -495,11 +495,11 @@ def test_lazy_functions() -> None:
         [
             pl.struct(pl.max("^a|b$")).alias("x"),
             pl.struct(pl.min("^.*[bc]$")).alias("y"),
-            pl.struct(pl.sum("^[^b]$")).alias("z"),
+            pl.struct(pl.sum("^[^a]$")).alias("z"),
         ]
     )
     assert out.rows() == [
-        ({"a": "foo", "b": 3}, {"b": 1, "c": -1.0}, {"a": None, "c": 5.0})
+        ({"a": "foo", "b": 3}, {"b": 1, "c": -1.0}, {"b": 6, "c": 5.0})
     ]
 
 

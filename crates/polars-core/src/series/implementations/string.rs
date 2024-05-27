@@ -236,7 +236,11 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     }
 
     fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        Ok(ChunkAggSeries::sum_reduce(&self.0))
+        Err(polars_err!(
+            op = "`sum`",
+            DataType::String,
+            hint = "you may mean to call `str.concat` or `list.join`"
+        ))
     }
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::max_reduce(&self.0))
