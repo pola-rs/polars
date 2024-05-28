@@ -206,7 +206,13 @@ impl GatherExpr {
                                 self.oob_err()?;
                             }
 
-                            groups.first().iter().map(|f| *f + idx).collect_trusted()
+                            groups
+                                .iter()
+                                .map(|(_, group)| {
+                                    // SAFETY: we just bound checked.
+                                    unsafe { *group.get_unchecked_release(idx as usize) }
+                                })
+                                .collect_trusted()
                         },
                         GroupsProxy::Slice { groups, .. } => {
                             if groups.iter().any(|g| idx >= g[1]) {

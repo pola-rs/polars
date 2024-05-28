@@ -6,6 +6,7 @@ mod cast;
 mod column;
 mod count;
 mod filter;
+mod gather;
 mod group_iter;
 mod literal;
 #[cfg(feature = "dynamic_group_by")]
@@ -13,7 +14,6 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
-mod take;
 mod ternary;
 mod window;
 
@@ -30,6 +30,7 @@ pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use filter::*;
+pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
@@ -40,7 +41,6 @@ pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
-pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
 
