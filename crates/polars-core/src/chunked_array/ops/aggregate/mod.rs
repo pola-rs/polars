@@ -96,10 +96,6 @@ where
 
         let md = self.effective_metadata();
 
-        if let Some(min) = md.get_min_value() {
-            return Some(*min);
-        }
-
         match md.is_sorted() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
@@ -123,10 +119,6 @@ where
         // There is at least one non-null value.
 
         let md = self.effective_metadata();
-
-        if let Some(max) = md.get_max_value() {
-            return Some(*max);
-        }
 
         match md.is_sorted() {
             IsSorted::Ascending => {
@@ -162,51 +154,44 @@ where
 
         let md = self.effective_metadata();
 
-        let (min, max) = match (md.get_min_value(), md.get_max_value()) {
-            (Some(min), Some(max)) => (*min, *max),
-            (Some(min), None) => (*min, self.max()?),
-            (None, Some(max)) => (self.min()?, *max),
-            (None, None) => match md.is_sorted() {
-                IsSorted::Ascending => {
-                    let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
-                    let max = {
-                        let idx = if T::get_dtype().is_float() {
-                            float_arg_max_sorted_ascending(self)
-                        } else {
-                            self.last_non_null().unwrap()
-                        };
-
-                        unsafe { self.get_unchecked(idx) }
-                    };
-                    min.zip(max)
-                },
-                IsSorted::Descending => {
-                    let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
-                    let max = {
-                        let idx = if T::get_dtype().is_float() {
-                            float_arg_max_sorted_descending(self)
-                        } else {
-                            self.first_non_null().unwrap()
-                        };
-
-                        unsafe { self.get_unchecked(idx) }
+        match md.is_sorted() {
+            IsSorted::Ascending => {
+                let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_ascending(self)
+                    } else {
+                        self.last_non_null().unwrap()
                     };
 
-                    min.zip(max)
-                },
-                IsSorted::Not => self
-                    .downcast_iter()
-                    .filter_map(MinMaxKernel::min_max_ignore_nan_kernel)
-                    .reduce(|(min1, max1), (min2, max2)| {
-                        (
-                            MinMax::min_ignore_nan(min1, min2),
-                            MinMax::max_ignore_nan(max1, max2),
-                        )
-                    }),
-            }?,
-        };
+                    unsafe { self.get_unchecked(idx) }
+                };
+                min.zip(max)
+            },
+            IsSorted::Descending => {
+                let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
+                let max = {
+                    let idx = if T::get_dtype().is_float() {
+                        float_arg_max_sorted_descending(self)
+                    } else {
+                        self.first_non_null().unwrap()
+                    };
 
-        Some((min, max))
+                    unsafe { self.get_unchecked(idx) }
+                };
+
+                min.zip(max)
+            },
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(MinMaxKernel::min_max_ignore_nan_kernel)
+                .reduce(|(min1, max1), (min2, max2)| {
+                    (
+                        MinMax::min_ignore_nan(min1, min2),
+                        MinMax::max_ignore_nan(max1, max2),
+                    )
+                }),
+        }
     }
 
     fn mean(&self) -> Option<f64> {
