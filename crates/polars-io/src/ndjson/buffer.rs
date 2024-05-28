@@ -44,6 +44,24 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
+            #[cfg(feature = "dtype-i8")]
+            Int8(buf) => {
+                let n = deserialize_number::<i8>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i16")]
+            Int16(buf) => {
+                let n = deserialize_number::<i16>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
             Int32(buf) => {
                 let n = deserialize_number::<i32>(value);
                 match n {
@@ -60,8 +78,18 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
-            UInt64(buf) => {
-                let n = deserialize_number::<u64>(value);
+            #[cfg(feature = "dtype-u8")]
+            UInt8(buf) => {
+                let n = deserialize_number::<u8>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u16")]
+            UInt16(buf) => {
+                let n = deserialize_number::<u16>(value);
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -70,6 +98,14 @@ impl Buffer<'_> {
             },
             UInt32(buf) => {
                 let n = deserialize_number::<u32>(value);
+                match n {
+                    Some(v) => buf.append_value(v),
+                    None => buf.append_null(),
+                }
+                Ok(())
+            },
+            UInt64(buf) => {
+                let n = deserialize_number::<u64>(value);
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -92,7 +128,6 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
-
             String(buf) => {
                 match value {
                     Value::String(v) => buf.append_value(v),

@@ -419,3 +419,46 @@ def test_json_enum(pretty: bool) -> None:
     buf.seek(0)
     df_in = pl.read_json(buf)
     assert df_in.schema["e"] == dtype
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype"),
+    [
+        (-(2**7), pl.Int8),
+        ((2**7) - 1, pl.Int8),
+        (None, pl.Int8),
+        (0, pl.UInt8),
+        ((2**8) - 1, pl.UInt8),
+        (None, pl.UInt8),
+        (-(2**15), pl.Int16),
+        ((2**15) - 1, pl.Int16),
+        (None, pl.Int16),
+        (0, pl.UInt16),
+        ((2**16) - 1, pl.UInt16),
+        (None, pl.UInt16),
+        (-(2**31), pl.Int32),
+        ((2**31) - 1, pl.Int32),
+        (None, pl.Int32),
+        (0, pl.UInt32),
+        ((2**32) - 1, pl.UInt32),
+        (None, pl.UInt32),
+        (-(2**63), pl.Int64),
+        ((2**63) - 1, pl.Int64),
+        (None, pl.Int64),
+        (0, pl.UInt64),
+        ((2**64) - 1, pl.UInt64),
+        (None, pl.UInt64),
+        (True, pl.Boolean),
+        (False, pl.Boolean),
+        (None, pl.Boolean),
+    ],
+)
+def test_write_read_ndjson_types(data: Any, dtype: pl.DataType) -> None:
+    schema = {"foo": dtype}
+    df = pl.DataFrame({"foo": data}, schema=schema)
+    buf = io.StringIO()
+    df.write_ndjson(buf)
+    buf.seek(0)
+    deserialized_df = pl.read_ndjson(buf, schema=schema)
+    assert deserialized_df.dtypes == df.dtypes
+    assert deserialized_df.to_dict(as_series=False) == df.to_dict(as_series=False)
