@@ -107,6 +107,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyOperator>().unwrap();
     m.add_class::<PyStringFunction>().unwrap();
     m.add_class::<PyBooleanFunction>().unwrap();
+    m.add_class::<PyTemporalFunction>().unwrap();
     // Options
     m.add_class::<PyWindowMapping>().unwrap();
     m.add_class::<PyRollingGroupOptions>().unwrap();
