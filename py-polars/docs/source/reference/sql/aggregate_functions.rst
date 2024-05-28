@@ -1,32 +1,36 @@
-Aggregate functions
+Aggregate Functions
 =========================
 
 .. list-table::
-   
-   * - :ref:`Avg <avg>`
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Function
+     - Description
+   * - :ref:`AVG <avg>`
      - Returns the average (mean) of all the elements in the grouping.
-   * - :ref:`Count <count>`
+   * - :ref:`COUNT <count>`
      - Returns the amount of elements in the grouping.
-   * - :ref:`First <first>`
+   * - :ref:`FIRST <first>`
      - Returns the first element of the grouping.
-   * - :ref:`Last <last>`
+   * - :ref:`LAST <last>`
      - Returns the last element of the grouping.
-   * - :ref:`Max <max>`
+   * - :ref:`MAX <max>`
      - Returns the greatest (maximum) of all the elements in the grouping.
-   * - :ref:`Median <median>`
+   * - :ref:`MEDIAN <median>`
      - Returns the median element from the grouping.
-   * - :ref:`Min <min>`
+   * - :ref:`MIN <min>`
      - Returns the smallest (minimum) of all the elements in the grouping.
-   * - :ref:`StdDev <stddev>`
+   * - :ref:`STDDEV <stddev>`
      - Returns the standard deviation of all the elements in the grouping.
-   * - :ref:`Sum <sum>`
+   * - :ref:`SUM <sum>`
      - Returns the sum of all the elements in the grouping.
-   * - :ref:`Variance <variance>`
+   * - :ref:`VARIANCE <variance>`
      - Returns the variance of all the elements in the grouping.
 
 .. _avg:
 
-Avg
+AVG
 -----------
 Returns the average (mean) of all the elements in the grouping.
 
@@ -38,7 +42,7 @@ Returns the average (mean) of all the elements in the grouping.
 
 .. _count:
 
-Count
+COUNT
 -----------
 Returns the amount of elements in the grouping.
 
@@ -53,7 +57,7 @@ Returns the amount of elements in the grouping.
 
 .. _first:
 
-First
+FIRST
 -----------
 Returns the first element of the grouping.
 
@@ -65,7 +69,7 @@ Returns the first element of the grouping.
 
 .. _last:
 
-Last
+LAST
 -----------
 Returns the last element of the grouping.
 
@@ -77,7 +81,7 @@ Returns the last element of the grouping.
 
 .. _max:
 
-Max
+MAX
 -----------
 Returns the greatest (maximum) of all the elements in the grouping.
 
@@ -89,7 +93,7 @@ Returns the greatest (maximum) of all the elements in the grouping.
 
 .. _median:
 
-Median
+MEDIAN
 -----------
 Returns the median element from the grouping.
 
@@ -101,7 +105,7 @@ Returns the median element from the grouping.
 
 .. _min:
 
-Min
+MIN
 -----------
 Returns the smallest (minimum) of all the elements in the grouping.
 
@@ -113,7 +117,7 @@ Returns the smallest (minimum) of all the elements in the grouping.
 
 .. _stddev:
 
-StdDev
+STDDEV
 -----------
 Returns the standard deviation of all the elements in the grouping.
 
@@ -125,7 +129,7 @@ Returns the standard deviation of all the elements in the grouping.
 
 .. _sum:
 
-Sum
+SUM
 -----------
 Returns the sum of all the elements in the grouping.
 
@@ -137,7 +141,7 @@ Returns the sum of all the elements in the grouping.
 
 .. _variance:
 
-Variance
+VARIANCE
 -----------
 Returns the variance of all the elements in the grouping.
 
@@ -146,3 +150,4 @@ Returns the variance of all the elements in the grouping.
 .. code-block:: sql
 
     SELECT VARIANCE(column_1) FROM df;
+

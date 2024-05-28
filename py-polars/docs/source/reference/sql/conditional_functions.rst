@@ -2,23 +2,27 @@ Conditional functions
 ==========================
 
 .. list-table::
+   :header-rows: 1
+   :widths: 20 60
 
-   * - :ref:`Coalesce <coalesce>`
+   * - Function
+     - Description
+   * - :ref:`COALESCE <coalesce>`
      - Returns the first non-null value in the provided values/columns.
-   * - :ref:`Greatest <greatest>`
+   * - :ref:`GREATEST <greatest>`
      - Returns the greatest value in the list of expressions.
-   * - :ref:`If <if>`
+   * - :ref:`IF <if>`
      - Returns expr1 if the boolean condition provided as the first parameter evaluates to true, and expr2 otherwise.
-   * - :ref:`IfNull <ifnull>`
+   * - :ref:`IFNULL <ifnull>`
      - If an expression value is NULL, return an alternative value.
-   * - :ref:`Least <least>`
+   * - :ref:`LEAST <least>`
      - Returns the smallest value in the list of expressions.
-   * - :ref:`NullIf <nullif>`
+   * - :ref:`NULLIF <nullif>`
      - Returns NULL if two expressions are equal, otherwise returns the first.
 
 .. _coalesce:
 
-Coalesce
+COALESCE
 -----------
 Returns the first non-null value in the provided values/columns.
 
@@ -30,7 +34,7 @@ Returns the first non-null value in the provided values/columns.
 
 .. _greatest:
 
-Greatest
+GREATEST
 -----------
 Returns the greatest value in the list of expressions.
 
@@ -42,7 +46,7 @@ Returns the greatest value in the list of expressions.
 
 .. _if:
 
-If
+IF
 -----------
 Returns expr1 if the boolean condition provided as the first parameter evaluates to true, and expr2 otherwise.
 
@@ -54,7 +58,7 @@ Returns expr1 if the boolean condition provided as the first parameter evaluates
 
 .. _ifnull:
 
-IfNull
+IFNULL
 -----------
 If an expression value is NULL, return an alternative value.
 
@@ -66,7 +70,7 @@ If an expression value is NULL, return an alternative value.
 
 .. _least:
 
-Least
+LEAST
 -----------
 Returns the smallest value in the list of expressions.
 
@@ -78,7 +82,7 @@ Returns the smallest value in the list of expressions.
 
 .. _nullif:
 
-NullIf
+NULLIF
 -----------
 Returns NULL if two expressions are equal, otherwise returns the first.
 

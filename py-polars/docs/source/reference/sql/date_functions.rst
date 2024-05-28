@@ -1,17 +1,21 @@
 Date functions
-===================
+================
 
 .. list-table::
-	
-   * - :ref:`Date <date>`
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Function
+     - Description
+   * - :ref:`DATE <date>`
      - Converts a formatted string date to an actual Date type.
-   * - :ref:`DatePart <date_part>`
+   * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
 .. _date:
 
-Date
------------
+DATE
+---------
 Converts a formatted string date to an actual Date type; ISO-8601 format is assumed unless a strftime-compatible formatting string is provided as the second parameter.
 
 **Example:**
@@ -24,8 +28,8 @@ Converts a formatted string date to an actual Date type; ISO-8601 format is assu
 
 .. _date_part:
 
-DatePart
------------
+DATE_PART
+---------
 Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
 **Example:**
@@ -34,3 +38,4 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
     SELECT DATE_PART('year', column_1) FROM df;
     SELECT DATE_PART('day', column_1) FROM df;
+

@@ -8,10 +8,10 @@ This page gives an overview of all public SQL functions.
    :maxdepth: 2
 
    sqlcontext
-   math_functions
-   trig_functions
-   date_functions
-   string_functions
-   conditional_functions
    aggregate_functions
    array_functions
+   conditional_functions
+   date_functions
+   math_functions
+   string_functions
+   trig_functions

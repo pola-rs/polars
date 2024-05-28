@@ -2,49 +2,51 @@ String functions
 =====================
 
 .. list-table::
+   :header-rows: 1
+   :widths: 20 60
 
-   * - :ref:`BitLength <bit_length>`
+   * - :ref:`BIT_LENGTH <bit_length>`
      - Returns the length of the input string in bits.
-   * - :ref:`Concat <concat>`
+   * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
-   * - :ref:`ConcatWS <concat_ws>`
+   * - :ref:`CONCATWS <concat_ws>`
      - Returns all input expressions concatenated together (and interleaved with a separator) as a string.
-   * - :ref:`EndsWith <ends_with>`
+   * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
-   * - :ref:`InitCap <initcap>`
+   * - :ref:`INITCAP <initcap>`
      - Returns the value with the first letter capitalized.
-   * - :ref:`Left <left>`
+   * - :ref:`LEFT <left>`
      - Returns the first (leftmost) `n` characters.
-   * - :ref:`Length <length>`
+   * - :ref:`LENGTH <length>`
      - Returns the character length of the string.
-   * - :ref:`Lower <lower>`
+   * - :ref:`LOWER <lower>`
      - Returns a lowercased column.
-   * - :ref:`LTrim <ltrim>`
+   * - :ref:`LTRIM <ltrim>`
      - Strips whitespaces from the left.
-   * - :ref:`OctetLength <octet_length>`
+   * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
-   * - :ref:`RegexpLike <regexp_like>`
+   * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
-   * - :ref:`Replace <replace>`
+   * - :ref:`REPLACE <replace>`
      - Replaces a given substring with another string.
-   * - :ref:`Reverse <reverse>`
+   * - :ref:`REVERSE <reverse>`
      - Returns the reversed string.
-   * - :ref:`Right <right>`
+   * - :ref:`RIGHT <right>`
      - Returns the last (rightmost) `n` characters.
-   * - :ref:`RTrim <rtrim>`
+   * - :ref:`RTRIM <rtrim>`
      - Strips whitespaces from the right.
-   * - :ref:`StartsWith <starts_with>`
+   * - :ref:`STARTS_WITH <starts_with>`
      - Returns True if the value starts with the second argument.
-   * - :ref:`StrPos <strpos>`
+   * - :ref:`STRPOST <strpos>`
      - Returns the index of the given substring in the target string.
-   * - :ref:`Substring <substring>`
+   * - :ref:`SUBSTRING <substring>`
      - Returns a portion of the data (first character = 0) in the range [start, start + length].
-   * - :ref:`Upper <upper>`
+   * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
 .. _bit_length:
 
-BitLength
+BIT_LENGTH
 -----------
 Returns the length of the input string in bits.
 
@@ -56,7 +58,7 @@ Returns the length of the input string in bits.
 
 .. _concat:
 
-Concat
+CONCAT
 -----------
 Returns all input expressions concatenated together as a string.
 
@@ -68,7 +70,7 @@ Returns all input expressions concatenated together as a string.
 
 .. _concat_ws:
 
-ConcatWS
+CONCAT_WS
 -----------
 Returns all input expressions concatenated together (and interleaved with a separator) as a string.
 
@@ -77,10 +79,9 @@ Returns all input expressions concatenated together (and interleaved with a sepa
 .. code-block:: sql
 
     SELECT CONCAT_WS(':', column_1, column_2, column_3) FROM df;
-
 .. _ends_with:
 
-EndsWith
+ENDS_WITH
 -----------
 Returns True if the value ends with the second argument.
 
@@ -93,7 +94,7 @@ Returns True if the value ends with the second argument.
 
 .. _initcap:
 
-InitCap
+INITCAP
 -----------
 Returns the value with the first letter capitalized.
 
@@ -105,7 +106,7 @@ Returns the value with the first letter capitalized.
 
 .. _left:
 
-Left
+LEFT
 -----------
 Returns the first (leftmost) `n` characters.
 
@@ -117,7 +118,7 @@ Returns the first (leftmost) `n` characters.
 
 .. _length:
 
-Length
+LENGTH
 -----------
 Returns the character length of the string.
 
@@ -129,7 +130,7 @@ Returns the character length of the string.
 
 .. _lower:
 
-Lower
+LOWER
 -----------
 Returns a lowercased column.
 
@@ -141,7 +142,7 @@ Returns a lowercased column.
 
 .. _ltrim:
 
-LTrim
+LTRIM
 -----------
 Strips whitespaces from the left.
 
@@ -153,8 +154,8 @@ Strips whitespaces from the left.
 
 .. _octet_length:
 
-OctetLength
------------
+OCTET_LENGTH
+--------------
 Returns the length of a given string in bytes.
 
 **Example:**
@@ -165,8 +166,8 @@ Returns the length of a given string in bytes.
 
 .. _regexp_like:
 
-RegexpLike
------------
+REGEXP_LIKE
+-------------
 Returns True if `pattern` matches the value (optional: `flags`).
 
 **Example:**
@@ -177,7 +178,7 @@ Returns True if `pattern` matches the value (optional: `flags`).
 
 .. _replace:
 
-Replace
+REPLACE
 -----------
 Replaces a given substring with another string.
 
@@ -189,7 +190,7 @@ Replaces a given substring with another string.
 
 .. _reverse:
 
-Reverse
+REVERSE
 -----------
 Returns the reversed string.
 
@@ -201,7 +202,7 @@ Returns the reversed string.
 
 .. _right:
 
-Right
+RIGHT
 -----------
 Returns the last (rightmost) `n` characters.
 
@@ -213,7 +214,7 @@ Returns the last (rightmost) `n` characters.
 
 .. _rtrim:
 
-RTrim
+RTRIM
 -----------
 Strips whitespaces from the right.
 
@@ -225,8 +226,8 @@ Strips whitespaces from the right.
 
 .. _starts_with:
 
-StartsWith
------------
+STARTS_WITH
+------------
 Returns True if the value starts with the second argument.
 
 **Example:**
@@ -238,7 +239,7 @@ Returns True if the value starts with the second argument.
 
 .. _strpos:
 
-StrPos
+STRPOS
 -----------
 Returns the index of the given substring in the target string.
 
@@ -250,7 +251,7 @@ Returns the index of the given substring in the target string.
 
 .. _substring:
 
-Substring
+SUBSTRING
 -----------
 Returns a portion of the data (first character = 0) in the range [start, start + length].
 
@@ -262,7 +263,7 @@ Returns a portion of the data (first character = 0) in the range [start, start +
 
 .. _upper:
 
-Upper
+UPPER
 -----------
 Returns an uppercased column.
 

@@ -2,43 +2,47 @@ Math functions
 ===================
 
 .. list-table::
+   :header-rows: 1
+   :widths: 20 60
 
-   * - :ref:`Abs <abs>`
+   * - Function
+     - Description
+   * - :ref:`ABS <abs>`
      - Returns the absolute value of the input column.
-   * - :ref:`Ceil <ceil>`
+   * - :ref:`CEIL <ceil>`
      - Returns the nearest integer closest from zero.
-   * - :ref:`Exp <exp>`
+   * - :ref:`EXP <exp>`
      - Computes the exponential of the given value.
-   * - :ref:`Floor <floor_function>`
+   * - :ref:`FLOOR <floor_function>`
      - Returns the nearest integer away from zero.
-   * - :ref:`Pi <pi>`
-     - Returns a (very good) approximation of 𝜋.
-   * - :ref:`Ln <ln>`
+   * - :ref:`PI <pi>`
+     - Returns a (very good) approximation of 𝜋. 
+   * - :ref:`LN <ln>`
      - Computes the natural logarithm of the given value.
-   * - :ref:`Log2 <log2>`
+   * - :ref:`LOG2 <log2>`
      - Computes the logarithm of the given value in base 2.
-   * - :ref:`Log10 <log10>`
+   * - :ref:`LOG10 <log10>`
      - Computes the logarithm of the given value in base 10.
-   * - :ref:`Log <log>`
+   * - :ref:`LOG <log>`
      - Computes the `base` logarithm of the given value.
-   * - :ref:`Log1p <log1p>`
+   * - :ref:`LOG1P <log1p>`
      - Computes the natural logarithm of "given value plus one".
-   * - :ref:`Pow <pow>`
+   * - :ref:`POW <pow>`
      - Returns the value to the power of the given exponent.
-   * - :ref:`Mod <mod>`
+   * - :ref:`MOD <mod>`
      - Returns the remainder of a numeric expression divided by another numeric expression.
-   * - :ref:`Sqrt <sqrt>`
+   * - :ref:`SQRT <sqrt>`
      - Returns the square root (√) of a number.
-   * - :ref:`Cbrt <cbrt>`
+   * - :ref:`CBRT <cbrt>`
      - Returns the cube root (∛) of a number.
-   * - :ref:`Round <round>`
+   * - :ref:`ROUND <round>`
      - Round a number to `x` decimals (default: 0) away from zero.
-   * - :ref:`Sign <sign>`
+   * - :ref:`SIGN <sign>`
      - Returns the sign of the argument as -1, 0, or +1.
    
 .. _abs:
 
-Abs
+ABS
 -----------
 Returns the absolute value of the input column.
 
@@ -50,7 +54,7 @@ Returns the absolute value of the input column.
 
 .. _ceil:
 
-Ceil 
+CEIL 
 --------------
 Returns the nearest integer closest from zero.
 
@@ -62,7 +66,7 @@ Returns the nearest integer closest from zero.
 
 .. _exp:
 
-Exp 
+EXP 
 ------------
 Computes the exponential of the given value.
 
@@ -74,7 +78,7 @@ Computes the exponential of the given value.
 
 .. _floor_function:
 
-Floor 
+FLOOR 
 --------------
 Returns the nearest integer away from zero.
 
@@ -86,7 +90,7 @@ Returns the nearest integer away from zero.
 
 .. _pi:
 
-Pi 
+PI 
 -----------
 Returns a (very good) approximation of 𝜋.
 
@@ -98,7 +102,7 @@ Returns a (very good) approximation of 𝜋.
 
 .. _ln:
 
-Ln 
+LN
 -----------
 Computes the natural logarithm of the given value.
 
@@ -110,7 +114,7 @@ Computes the natural logarithm of the given value.
 
 .. _log2:
 
-Log2 
+LOG2 
 -------------
 Computes the logarithm of the given value in base 2.
 
@@ -122,7 +126,7 @@ Computes the logarithm of the given value in base 2.
 
 .. _log10:
 
-Log10 Function
+LOG10
 --------------
 Computes the logarithm of the given value in base 10.
 
@@ -134,7 +138,7 @@ Computes the logarithm of the given value in base 10.
 
 .. _log:
 
-Log 
+LOG
 ------------
 Computes the `base` logarithm of the given value.
 
@@ -146,7 +150,7 @@ Computes the `base` logarithm of the given value.
 
 .. _log1p:
 
-Log1p 
+LOG1P
 --------------
 Computes the natural logarithm of "given value plus one".
 
@@ -158,7 +162,7 @@ Computes the natural logarithm of "given value plus one".
 
 .. _pow:
 
-Pow
+POW
 -----------
 Returns the value to the power of the given exponent.
 
@@ -170,7 +174,7 @@ Returns the value to the power of the given exponent.
 
 .. _mod:
 
-Mod
+MOD
 -----------
 Returns the remainder of a numeric expression divided by another numeric expression.
 
@@ -182,7 +186,7 @@ Returns the remainder of a numeric expression divided by another numeric express
 
 .. _sqrt:
 
-Sqrt
+SQRT
 -----------
 Returns the square root (√) of a number.
 
@@ -194,7 +198,7 @@ Returns the square root (√) of a number.
 
 .. _cbrt:
 
-Cbrt
+CBRT
 -----------
 Returns the cube root (∛) of a number.
 
@@ -206,7 +210,7 @@ Returns the cube root (∛) of a number.
 
 .. _round:
 
-Round
+ROUND
 -----------
 Round a number to `x` decimals (default: 0) away from zero.
 
@@ -218,7 +222,7 @@ Round a number to `x` decimals (default: 0) away from zero.
 
 .. _sign:
 
-Sign
+SIGN
 -----------
 Returns the sign of the argument as -1, 0, or +1.
 
