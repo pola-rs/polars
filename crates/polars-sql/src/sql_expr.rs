@@ -4,6 +4,7 @@ use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
+use polars_ops::series::SeriesReshape;
 use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
 use rand::distributions::Alphanumeric;
