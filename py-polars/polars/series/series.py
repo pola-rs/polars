@@ -4080,7 +4080,6 @@ class Series:
         See Also
         --------
         Series.list.explode : Explode a list column.
-        Series.str.explode : Explode a string column.
 
         Examples
         --------

@@ -4952,7 +4952,6 @@ class Expr:
         See Also
         --------
         Expr.list.explode : Explode a list column.
-        Expr.str.explode : Explode a string column.
 
         Examples
         --------

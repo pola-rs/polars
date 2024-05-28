@@ -547,11 +547,6 @@ impl StringNameSpace {
         )
     }
 
-    pub fn explode(self) -> Expr {
-        self.0
-            .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
-    }
-
     #[cfg(feature = "extract_jsonpath")]
     pub fn json_decode(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
         self.0
