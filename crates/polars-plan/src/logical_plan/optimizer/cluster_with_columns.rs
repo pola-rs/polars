@@ -36,8 +36,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
     // We define these here to reuse the allocations across the loops
     let mut column_map = ColumnMap::with_capacity(8);
     let mut input_genset = MutableBitmap::with_capacity(16);
-    let mut current_livesets: Vec<MutableBitmap> = Vec::with_capacity(16);
+    let mut current_expr_livesets: Vec<MutableBitmap> = Vec::with_capacity(16);
+    let mut current_liveset = MutableBitmap::with_capacity(16);
     let mut pushable = MutableBitmap::with_capacity(16);
+    let mut potential_pushable = Vec::with_capacity(4);
 
     while let Some(current) = ir_stack.pop() {
         let current_ir = lp_arena.get(current);
@@ -73,8 +75,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // Reuse the allocations of the previous loop
         column_map.clear();
         input_genset.clear();
-        current_livesets.clear();
+        current_expr_livesets.clear();
+        current_liveset.clear();
         pushable.clear();
+        potential_pushable.clear();
 
         // @NOTE
         // We can pushdown any column that utilizes no live columns that are generated in the
@@ -95,7 +99,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 column_map_set(&mut liveset, column_map, live.clone());
             }
 
-            current_livesets.push(liveset);
+            current_expr_livesets.push(liveset);
         }
 
         // Force that column_map is not further mutated from this point on
@@ -103,15 +107,101 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         column_map_finalize_bitset(&mut input_genset, column_map);
 
-        // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
-        // down.
-        for expr_liveset in &mut current_livesets {
+        current_liveset.extend_constant(column_map.len(), false);
+        for expr_liveset in &mut current_expr_livesets {
+            use std::ops::BitOrAssign;
             column_map_finalize_bitset(expr_liveset, column_map);
+            (&mut current_liveset).bitor_assign(expr_liveset as &_);
+        }
 
-            let has_intersection = input_genset.intersects_with(expr_liveset);
-            let is_pushable = !has_intersection;
+        // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
+        // down or pruned.
+        *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
+            .into_iter()
+            .zip(current_expr_livesets.iter_mut())
+            .filter_map(|(mut expr, liveset)| {
+                let does_input_assign_column_that_expr_used = input_genset.intersects_with(liveset);
 
-            pushable.push(is_pushable);
+                if does_input_assign_column_that_expr_used {
+                    pushable.push(false);
+                    return Some(expr);
+                }
+
+                let column_name = expr.output_name_arc();
+                let is_pushable = if let Some(idx) = column_map.get(column_name) {
+                    let does_input_alias_also_expr = input_genset.get(*idx);
+                    let is_alias_live_in_current = current_liveset.get(*idx);
+
+                    if does_input_alias_also_expr && !is_alias_live_in_current {
+                        let column_name = column_name.as_ref();
+
+                        // @NOTE: Pruning of re-assigned columns
+                        //
+                        // We checked if this expression output is also assigned by the input and
+                        // that that assignment is not used in the current WITH_COLUMNS.
+                        // Consequently, we are free to prune the input's assignment to the output.
+                        //
+                        // We immediately prune here to simplify the later code.
+                        //
+                        // @NOTE: Expressions in a `WITH_COLUMNS` cannot alias to the same column.
+                        // Otherwise, this would be faulty and would panic.
+                        let input_expr = input_exprs
+                            .exprs_mut()
+                            .iter_mut()
+                            .find(|input_expr| column_name == input_expr.output_name())
+                            .expect("No assigning expression for generated column");
+
+                        // @NOTE
+                        // Since we are reassigning a column and we are pushing to the input, we do
+                        // not need to change the schema of the current or input nodes.
+                        std::mem::swap(&mut expr, input_expr);
+                        return None;
+                    }
+
+                    // We cannot have multiple assignments to the same column in one WITH_COLUMNS
+                    // and we need to make sure that we are not changing the column value that
+                    // neighbouring expressions are seeing.
+
+                    // @NOTE: In this case it might be possible to push this down if all the
+                    // expressions that use the output are also being pushed down.
+                    if !does_input_alias_also_expr && is_alias_live_in_current {
+                        potential_pushable.push(pushable.len());
+                        pushable.push(false);
+                        return Some(expr);
+                    }
+
+                    !does_input_alias_also_expr && !is_alias_live_in_current
+                } else {
+                    true
+                };
+
+                pushable.push(is_pushable);
+                Some(expr)
+            })
+            .collect();
+
+        debug_assert_eq!(pushable.len(), current_exprs.len());
+
+        // Here we do a last check for expressions to push down.
+        // This will pushdown the expressions that "has an output column that is mentioned by
+        // neighbour columns, but all those neighbours were being pushed down".
+        for candidate in potential_pushable.iter().copied() {
+            let column_name = current_exprs.as_exprs()[candidate].output_name_arc();
+            let column_idx = column_map.get(column_name).unwrap();
+
+            current_liveset.clear();
+            current_liveset.extend_constant(column_map.len(), false);
+            for (i, expr_liveset) in current_expr_livesets.iter().enumerate() {
+                if pushable.get(i) || i == candidate {
+                    continue;
+                }
+                use std::ops::BitOrAssign;
+                (&mut current_liveset).bitor_assign(expr_liveset as &_);
+            }
+
+            if !current_liveset.get(*column_idx) {
+                pushable.set(candidate, true);
+            }
         }
 
         let pushable_set_bits = pushable.set_bits();
