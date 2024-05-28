@@ -41,8 +41,8 @@ pub(crate) mod private {
     use ahash::RandomState;
 
     use super::*;
+    use crate::chunked_array::metadata::MetadataFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
-    use crate::chunked_array::Settings;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
@@ -74,9 +74,9 @@ pub(crate) mod private {
 
         fn compute_len(&mut self);
 
-        fn _get_flags(&self) -> Settings;
+        fn _get_flags(&self) -> MetadataFlags;
 
-        fn _set_flags(&mut self, flags: Settings);
+        fn _set_flags(&mut self, flags: MetadataFlags);
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(explode_by_offsets, self)

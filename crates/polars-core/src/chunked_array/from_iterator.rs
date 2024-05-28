@@ -1,7 +1,5 @@
 //! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
-#[cfg(feature = "object")]
-use std::marker::PhantomData;
 
 #[cfg(feature = "object")]
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -278,15 +276,9 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             offset: 0,
             len,
         });
-        let mut out = ChunkedArray {
-            field: Arc::new(Field::new("", get_object_type::<T>())),
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        out.compute_len();
-        out
+        ChunkedArray::new_with_compute_len(
+            Arc::new(Field::new("", get_object_type::<T>())),
+            vec![arr],
+        )
     }
 }

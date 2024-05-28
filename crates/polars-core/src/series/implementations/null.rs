@@ -57,7 +57,7 @@ impl PrivateSeries for NullChunked {
     }
 
     #[allow(unused)]
-    fn _set_flags(&mut self, flags: Settings) {}
+    fn _set_flags(&mut self, flags: MetadataFlags) {}
 
     fn _dtype(&self) -> &DataType {
         &DataType::Null
@@ -115,8 +115,8 @@ impl PrivateSeries for NullChunked {
         AggList::agg_list(self, groups)
     }
 
-    fn _get_flags(&self) -> Settings {
-        Settings::empty()
+    fn _get_flags(&self) -> MetadataFlags {
+        MetadataFlags::empty()
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {

@@ -140,7 +140,7 @@ mod inner_mod {
                             *ptr = arr_window;
                         }
                         // reset flags as we reuse this container
-                        series_container.clear_settings();
+                        series_container.clear_flags();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
                         let s = if size == options.window_size {
@@ -194,7 +194,7 @@ mod inner_mod {
                             *ptr = arr_window;
                         }
                         // reset flags as we reuse this container
-                        series_container.clear_settings();
+                        series_container.clear_flags();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
                         let s = f(&series_container);

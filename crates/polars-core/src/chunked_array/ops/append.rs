@@ -171,8 +171,10 @@ impl ArrayChunked {
         self.field = Arc::new(Field::new(self.name(), dtype));
 
         let len = self.len();
+
         self.length += other.length;
         self.null_count += other.null_count;
+
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         Ok(())

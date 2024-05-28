@@ -1,12 +1,9 @@
 //! The typed heart of every Series column.
 use std::iter::Map;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
@@ -19,6 +16,7 @@ pub mod collect;
 pub mod comparison;
 pub mod float;
 pub mod iterator;
+pub mod metadata;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
 
@@ -51,8 +49,8 @@ use std::slice::Iter;
 
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
-use bitflags::bitflags;
 
+use self::metadata::{Metadata, MetadataFlags};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null};
 
@@ -138,57 +136,78 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
-    phantom: PhantomData<T>,
-    pub(crate) bit_settings: Settings,
+    pub(crate) md: Option<Arc<Metadata<T>>>,
+
     length: IdxSize,
     null_count: IdxSize,
 }
 
-bitflags! {
-    #[derive(Default, Debug, Clone, Copy,PartialEq)]
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
-    pub struct Settings: u8 {
-        const SORTED_ASC = 0x01;
-        const SORTED_DSC = 0x02;
-        const FAST_EXPLODE_LIST = 0x04;
-    }
-}
-
-impl Settings {
-    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        match sorted {
-            IsSorted::Not => {
-                self.remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
-            },
-            IsSorted::Ascending => {
-                self.remove(Settings::SORTED_DSC);
-                self.insert(Settings::SORTED_ASC)
-            },
-            IsSorted::Descending => {
-                self.remove(Settings::SORTED_ASC);
-                self.insert(Settings::SORTED_DSC)
-            },
-        }
-    }
-
-    pub fn get_sorted_flag(&self) -> IsSorted {
-        if self.contains(Settings::SORTED_ASC) {
-            IsSorted::Ascending
-        } else if self.contains(Settings::SORTED_DSC) {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
-    }
-}
-
 impl<T: PolarsDataType> ChunkedArray<T> {
+    /// Create a new [`ChunkedArray`] and compute its `length` and `null_count`.
+    ///
+    /// If you want to explicitly the `length` and `null_count`, look at
+    /// [`ChunkedArray::new_with_dims`]
+    pub fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
+        let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
+        chunked_arr.compute_len();
+        chunked_arr
+    }
+
+    /// Create a new [`ChunkedArray`] and explicitly set its `length` and `null_count`.
+    ///
+    /// If you want to compute the `length` and `null_count`, look at
+    /// [`ChunkedArray::new_with_compute_len`]
+    pub fn new_with_dims(
+        field: Arc<Field>,
+        chunks: Vec<ArrayRef>,
+        length: IdxSize,
+        null_count: IdxSize,
+    ) -> Self {
+        Self {
+            field,
+            chunks,
+            md: None,
+
+            length,
+            null_count,
+        }
+    }
+
+    /// Get a reference to the used [`Metadata`]
+    ///
+    /// This results a reference to an empty [`Metadata`] if its unset for this [`ChunkedArray`].
+    pub fn effective_metadata(&self) -> &Metadata<T> {
+        self.md.as_ref().map_or(&Metadata::DEFAULT, AsRef::as_ref)
+    }
+
+    /// Get a reference to the [`ChunkedArray`]'s [`Metadata`]
+    pub fn metadata(&self) -> Option<&Metadata<T>> {
+        self.md.as_ref().map(AsRef::as_ref)
+    }
+
+    /// Get a reference to [`Arc`] that contains the [`ChunkedArray`]'s [`Metadata`]
+    pub fn metadata_arc(&self) -> Option<&Arc<Metadata<T>>> {
+        self.md.as_ref()
+    }
+
+    /// Get a [`Arc`] that contains the [`ChunkedArray`]'s [`Metadata`]
+    pub fn metadata_owned_arc(&self) -> Arc<Metadata<T>> {
+        self.md
+            .as_ref()
+            .map_or_else(|| Arc::new(Metadata::DEFAULT), Clone::clone)
+    }
+
+    /// Get a mutable reference to the [`Arc`] that contains the [`ChunkedArray`]'s [`Metadata`]
+    pub fn metadata_mut(&mut self) -> &mut Arc<Metadata<T>> {
+        self.md.get_or_insert_with(Default::default)
+    }
+
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
-        self.bit_settings.contains(Settings::SORTED_ASC)
+        self.effective_metadata().is_sorted_ascending()
     }
 
     pub(crate) fn is_sorted_descending_flag(&self) -> bool {
-        self.bit_settings.contains(Settings::SORTED_DSC)
+        self.effective_metadata().is_sorted_descending()
     }
 
     /// Whether `self` is sorted in any direction.
@@ -197,31 +216,33 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn unset_fast_explode_list(&mut self) {
-        self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(false)
     }
 
-    pub fn get_flags(&self) -> Settings {
-        self.bit_settings
+    pub fn get_flags(&self) -> MetadataFlags {
+        self.effective_metadata().get_flags()
     }
 
     /// Set flags for the [`ChunkedArray`]
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
-        self.bit_settings = flags;
+    pub(crate) fn set_flags(&mut self, flags: MetadataFlags) {
+        // @TODO: This should probably just not be here
+        let md = Arc::make_mut(self.metadata_mut());
+        md.set_flags(flags);
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        self.bit_settings.get_sorted_flag()
+        self.effective_metadata().is_sorted()
     }
 
     /// Set the 'sorted' bit meta info.
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        self.bit_settings.set_sorted_flag(sorted)
+        Arc::make_mut(self.metadata_mut()).set_sorted_flag(sorted)
     }
 
     /// Set the 'sorted' bit meta info.
     pub fn with_sorted_flag(&self, sorted: IsSorted) -> Self {
         let mut out = self.clone();
-        out.bit_settings.set_sorted_flag(sorted);
+        out.set_sorted_flag(sorted);
         out
     }
 
@@ -398,7 +419,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Self::from_chunks_and_metadata(
             chunks,
             self.field.clone(),
-            self.bit_settings,
+            self.metadata_owned_arc(),
             keep_sorted,
             keep_fast_explode,
         )
@@ -690,8 +711,7 @@ impl<T: PolarsDataType> Clone for ChunkedArray<T> {
         ChunkedArray {
             field: self.field.clone(),
             chunks: self.chunks.clone(),
-            phantom: PhantomData,
-            bit_settings: self.bit_settings,
+            md: self.md.clone(),
             length: self.length,
             null_count: self.null_count,
         }
@@ -755,8 +775,7 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
         ChunkedArray {
             field: Arc::new(Field::new("default", DataType::Null)),
             chunks: Default::default(),
-            phantom: PhantomData,
-            bit_settings: Default::default(),
+            md: None,
             length: 0,
             null_count: 0,
         }

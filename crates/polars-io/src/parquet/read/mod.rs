@@ -21,6 +21,7 @@ mod options;
 mod predicates;
 mod read_impl;
 mod reader;
+mod to_metadata;
 mod utils;
 
 pub use options::{ParallelStrategy, ParquetOptions};

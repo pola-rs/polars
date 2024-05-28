@@ -24,9 +24,9 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         self.0.ref_field().data_type()
     }
     #[allow(unused)]
-    fn _set_flags(&mut self, flags: Settings) {}
-    fn _get_flags(&self) -> Settings {
-        Settings::empty()
+    fn _set_flags(&mut self, flags: MetadataFlags) {}
+    fn _get_flags(&self) -> MetadataFlags {
+        MetadataFlags::empty()
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0

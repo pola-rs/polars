@@ -26,7 +26,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
-use crate::chunked_array::Settings;
+use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{
@@ -220,9 +220,9 @@ impl Series {
             return IsSorted::Ascending;
         }
         let flags = self.get_flags();
-        if flags.contains(Settings::SORTED_DSC) {
+        if flags.contains(MetadataFlags::SORTED_DSC) {
             IsSorted::Descending
-        } else if flags.contains(Settings::SORTED_ASC) {
+        } else if flags.contains(MetadataFlags::SORTED_ASC) {
             IsSorted::Ascending
         } else {
             IsSorted::Not
@@ -235,15 +235,15 @@ impl Series {
         self.set_flags(flags);
     }
 
-    pub(crate) fn clear_settings(&mut self) {
-        self.set_flags(Settings::empty());
+    pub(crate) fn clear_flags(&mut self) {
+        self.set_flags(MetadataFlags::empty());
     }
     #[allow(dead_code)]
-    pub fn get_flags(&self) -> Settings {
+    pub fn get_flags(&self) -> MetadataFlags {
         self.0._get_flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
+    pub(crate) fn set_flags(&mut self, flags: MetadataFlags) {
         self._get_inner_mut()._set_flags(flags)
     }
 
@@ -262,6 +262,24 @@ impl Series {
     pub fn with_name(mut self, name: &str) -> Series {
         self.rename(name);
         self
+    }
+
+    /// Try to set the [`Metadata`] for the underlying [`ChunkedArray`]
+    ///
+    /// This does not guarantee that the [`Metadata`] is always set. It returns whether it was
+    /// successful.
+    pub fn try_set_metadata<T: PolarsDataType + 'static>(&mut self, metadata: Metadata<T>) -> bool {
+        let inner = self._get_inner_mut();
+
+        // @NOTE: These types are not the same if they are logical for example. For now, we just
+        // say: do not set the metadata when you get into this situation. This can be a @TODO for
+        // later.
+        if &T::get_dtype() != inner.dtype() {
+            return false;
+        }
+
+        inner.as_mut().md = Some(Arc::new(metadata));
+        true
     }
 
     pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {

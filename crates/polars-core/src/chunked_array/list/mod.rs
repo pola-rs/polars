@@ -1,7 +1,6 @@
 //! Special list utility methods
 pub(super) mod iterator;
 
-use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl ListChunked {
@@ -19,14 +18,14 @@ impl ListChunked {
         field.coerce(DataType::List(Box::new(dtype)));
     }
     pub fn set_fast_explode(&mut self) {
-        self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(true);
     }
     pub(crate) fn unset_fast_explode(&mut self) {
-        self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(false);
     }
 
     pub fn _can_fast_explode(&self) -> bool {
-        self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
+        self.effective_metadata().get_fast_explode_list()
     }
 
     /// Set the logical type of the [`ListChunked`].
