@@ -74,7 +74,7 @@ impl IntoLazy for LazyFrame {
 pub struct LazyFrame {
     pub logical_plan: DslPlan,
     pub(crate) opt_state: OptState,
-    cached_arena: Arc<Mutex<Option<CachedArena>>>,
+    pub(crate) cached_arena: Arc<Mutex<Option<CachedArena>>>,
 }
 
 impl From<DslPlan> for LazyFrame {
@@ -90,12 +90,24 @@ impl From<DslPlan> for LazyFrame {
     }
 }
 
-struct CachedArena {
+pub(crate) struct CachedArena {
     lp_arena: Arena<IR>,
     expr_arena: Arena<AExpr>,
 }
 
 impl LazyFrame {
+    pub(crate) fn from_inner(
+        logical_plan: DslPlan,
+        opt_state: OptState,
+        cached_arena: Arc<Mutex<Option<CachedArena>>>,
+    ) -> Self {
+        Self {
+            logical_plan,
+            opt_state,
+            cached_arena,
+        }
+    }
+
     /// Get a handle to the schema — a map from column names to data types — of the current
     /// `LazyFrame` computation.
     ///
