@@ -146,9 +146,14 @@ impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
         let mut h = vec![];
-        self.0.vec_hash(rs, &mut h).unwrap();
-        let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
-        h.hash(state)
+        if self.0.vec_hash(rs, &mut h).is_ok() {
+            let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
+            h.hash(state)
+        } else {
+            self.len().hash(state);
+            self.null_count().hash(state);
+            self.dtype().hash(state);
+        }
     }
 }
 

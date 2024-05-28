@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
+use polars_utils::hashing::hash_to_partition;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -453,9 +454,12 @@ impl Hash for LiteralValue {
                 let len = s.len();
                 len.hash(state);
                 s.null_count().hash(state);
-                // Hash 5 first values. Still a poor hash, but it removes the pathological clashes.
-                for i in 0..std::cmp::min(5, len) {
-                    s.get(i).unwrap().hash(state);
+                const RANDOM: u64 = 0x2c194fa5df32a367;
+                let mut rng = (len as u64) ^ RANDOM;
+                for _ in 0..5 {
+                    let idx = hash_to_partition(rng, len);
+                    s.get(idx).unwrap().hash(state);
+                    rng = rng.rotate_right(17).wrapping_add(RANDOM);
                 }
             },
             LiteralValue::Range {
