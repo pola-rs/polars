@@ -144,17 +144,3 @@ def test_json_deserialize_empty_list_10458() -> None:
     serialized_schema = pl.DataFrame(schema=schema).serialize()
     df = pl.DataFrame.deserialize(io.StringIO(serialized_schema))
     assert df.schema == schema
-
-
-def test_df_write_json_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.deprecated_call():
-        result = df.write_json()
-    assert result == df.serialize()
-
-
-def test_df_write_json_pretty_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.deprecated_call():
-        result = df.write_json(pretty=True)
-    assert isinstance(result, str)

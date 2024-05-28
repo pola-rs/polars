@@ -2263,30 +2263,12 @@ class DataFrame:
             return None
 
     @overload
-    def write_json(
-        self,
-        file: None = ...,
-        *,
-        row_oriented: bool = ...,
-        pretty: bool | None = ...,
-    ) -> str: ...
+    def write_json(self, file: None = ...) -> str: ...
 
     @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path,
-        *,
-        row_oriented: bool = ...,
-        pretty: bool | None = ...,
-    ) -> None: ...
+    def write_json(self, file: IOBase | str | Path) -> None: ...
 
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        *,
-        row_oriented: bool = False,
-        pretty: bool | None = None,
-    ) -> str | None:
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """
         Serialize to JSON representation.
 
@@ -2295,17 +2277,6 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        row_oriented
-            Write to row oriented json. This is slower, but more common.
-
-        pretty
-            Pretty serialize json.
-
-            .. deprecated:: 0.20.31
-                The `pretty` functionality for `write_json` will be removed in the next
-                breaking release. Use :meth:`serialize` to serialize the DataFrame in
-                the regular JSON format.
-
 
         See Also
         --------
@@ -2319,43 +2290,28 @@ class DataFrame:
         ...         "bar": [6, 7, 8],
         ...     }
         ... )
-        >>> df.write_json(row_oriented=True)
+        >>> df.write_json()
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
         """
-        if pretty is not None:
-            issue_deprecation_warning(
-                "The `pretty` functionality for `write_json` will be removed in the next breaking release."
-                " Use `DataFrame.serialize` to serialize the DataFrame in the regular JSON format.",
-                version="0.20.31",
-            )
-        else:
-            pretty = False
 
-        if not row_oriented:
-            issue_deprecation_warning(
-                "`DataFrame.write_json` will only write row-oriented JSON in the next breaking release."
-                " Use `DataFrame.serialize` instead.",
-                version="0.20.31",
-            )
-
-        def write_json_to_string(*, pretty: bool, row_oriented: bool) -> str:
+        def write_json_to_string() -> str:
             with BytesIO() as buf:
-                self._df.write_json_old(buf, pretty=pretty, row_oriented=row_oriented)
+                self._df.write_json(buf)
                 json_bytes = buf.getvalue()
             return json_bytes.decode("utf8")
 
         if file is None:
-            return write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            return write_json_to_string()
         elif isinstance(file, StringIO):
-            json_str = write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            json_str = write_json_to_string()
             file.write(json_str)
             return None
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
-            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json(file)
             return None
         else:
-            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json(file)
             return None
 
     @overload

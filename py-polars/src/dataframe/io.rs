@@ -491,27 +491,6 @@ impl PyDataFrame {
             .map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
     }
 
-    /// This method can be removed entirely in the next breaking release.
-    #[cfg(feature = "json")]
-    pub fn write_json_old(
-        &mut self,
-        py_f: PyObject,
-        pretty: bool,
-        row_oriented: bool,
-    ) -> PyResult<()> {
-        match (pretty, row_oriented) {
-            (_, true) => self.write_json(py_f),
-            (false, _) => self.serialize(py_f),
-            (true, _) => {
-                let file = BufWriter::new(get_file_like(py_f, true)?);
-
-                serde_json::to_writer_pretty(file, &self.df)
-                    .map_err(|e| polars_err!(ComputeError: "{e}"))
-                    .map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
-            },
-        }
-    }
-
     #[cfg(feature = "json")]
     pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
