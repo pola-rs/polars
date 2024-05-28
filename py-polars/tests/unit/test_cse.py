@@ -768,3 +768,9 @@ def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
     }
     captured = capfd.readouterr().err
     assert "3 CSE" in captured
+
+
+def test_nested_cache_no_panic_16553() -> None:
+    assert pl.LazyFrame().select(a=[[[1]]]).collect(comm_subexpr_elim=True).to_dict(
+        as_series=False
+    ) == {"a": [[[[1]]]]}
