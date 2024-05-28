@@ -265,20 +265,21 @@ fn test_compound_join_different_column_names() {
     .unwrap();
 
     let mut ctx = SQLContext::new();
-    ctx.register("df1", df1.lazy());
-    ctx.register("df2", df2.lazy());
+    ctx.register("lf1", df1.lazy());
+    ctx.register("lf2", df2.lazy());
 
     let sql = r#"
-        SELECT df1.a, df2.b, df2.c
-        FROM df1 INNER JOIN df2
-          ON df1.a = df2.b AND df1.a = df2.c
+        SELECT lf1.a, lf2.b, lf2.c
+        FROM lf1 INNER JOIN lf2
+          -- note: uses "lf1.a" for *both* constraint arms
+          ON lf1.a = lf2.b AND lf1.a = lf2.c
         ORDER BY a
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {
-        "a" => [2, 3],
-        "b" => [2, 3],
-        "c" => [8, 9],
+        "a" => [3, 5],
+        "b" => [3, 5],
+        "c" => [3, 5],
     }
     .unwrap();
 
