@@ -100,7 +100,7 @@ def test_streaming_group_by_types() -> None:
             "str_sum": [None],
             "bool_first": [True],
             "bool_last": [False],
-            "bool_mean": [None],
+            "bool_mean": [0.5],
             "bool_sum": [1],
             "date_sum": [date(2074, 1, 1)],
             "date_mean": [date(2022, 1, 1)],
@@ -396,7 +396,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert """--- STREAMING""" in res.explain(streaming=True)
+    assert "STREAMING" in res.explain(streaming=True)
 
 
 def test_group_by_min_max_string_type() -> None:
@@ -480,3 +480,38 @@ def test_streaming_groupby_binary_15116() -> None:
         "str": [b"A", b"BB", b"CCCC", b"DDDDDDDD", b"EEEEEEEEEEEEEEEE"],
         "count": [3, 2, 2, 2, 1],
     }
+
+
+def test_streaming_group_by_convert_15380(partition_limit: int) -> None:
+    assert (
+        pl.DataFrame({"a": [1] * partition_limit}).group_by(b="a").len()["len"].item()
+        == partition_limit
+    )
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize("n_rows_limit_offset", [-1, +3])
+def test_streaming_group_by_boolean_mean_15610(
+    n_rows_limit_offset: int, streaming: bool, partition_limit: int
+) -> None:
+    n_rows = partition_limit + n_rows_limit_offset
+
+    # Also test non-streaming because it sometimes dispatched to streaming agg.
+    expect = pl.DataFrame({"a": [False, True], "c": [0.0, 0.5]})
+
+    n_repeats = n_rows // 3
+    assert n_repeats > 0
+
+    out = (
+        pl.select(
+            a=pl.repeat([True, False, True], n_repeats).explode(),
+            b=pl.repeat([True, False, False], n_repeats).explode(),
+        )
+        .lazy()
+        .group_by("a")
+        .agg(c=pl.mean("b"))
+        .sort("a")
+        .collect(streaming=streaming)
+    )
+
+    assert_frame_equal(out, expect)

@@ -7,14 +7,16 @@ use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
+    NANOSECONDS,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use polars_core::datatypes::DataType;
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
     PolarsResult,
 };
-use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
+use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +34,7 @@ pub struct Duration {
     months: i64,
     // the number of weeks for the duration
     weeks: i64,
-    // the number of nanoseconds for the duration
+    // the number of days for the duration
     days: i64,
     // the number of nanoseconds for the duration
     nsecs: i64,
@@ -72,8 +74,8 @@ impl Display for Duration {
             write!(f, "{}d", self.days)?
         }
         if self.nsecs > 0 {
-            let secs = self.nsecs / 1_000_000;
-            if secs * 1_000_000 == self.nsecs {
+            let secs = self.nsecs / NANOSECONDS;
+            if secs * NANOSECONDS == self.nsecs {
                 write!(f, "{}s", secs)?
             } else {
                 let us = self.nsecs / 1_000;
@@ -363,8 +365,14 @@ impl Duration {
         self.nsecs == 0
     }
 
-    pub fn is_constant_duration(&self) -> bool {
-        self.months == 0 && self.weeks == 0 && self.days == 0
+    pub fn is_constant_duration(&self, time_zone: Option<&str>) -> bool {
+        if time_zone.is_none() || time_zone == Some("UTC") {
+            self.months == 0
+        } else {
+            // For non-native, non-UTC time zones, 1 calendar day is not
+            // necessarily 24 hours due to daylight savings time.
+            self.months == 0 && self.weeks == 0 && self.days == 0
+        }
     }
 
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
@@ -372,7 +380,12 @@ impl Duration {
         self.nsecs
     }
 
-    /// Estimated duration of the window duration. Not a very good one if months != 0.
+    /// Returns whether duration is negative.
+    pub fn negative(&self) -> bool {
+        self.negative
+    }
+
+    /// Estimated duration of the window duration. Not a very good one if not a constant duration.
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
         self.months * 28 * 24 * 3600 * NANOSECONDS
@@ -936,6 +949,42 @@ fn new_datetime(
     Some(NaiveDateTime::new(date, time))
 }
 
+pub fn ensure_is_constant_duration(
+    duration: Duration,
+    time_zone: Option<&str>,
+    variable_name: &str,
+) -> PolarsResult<()> {
+    polars_ensure!(duration.is_constant_duration(time_zone), 
+        InvalidOperation: "expected `{}` to be a constant duration \
+            (i.e. one independent of differing month durations or of daylight savings time), got {}.\n\
+            \n\
+            You may want to try:\n\
+            - using `'730h'` instead of `'1mo'`\n\
+            - using `'24h'` instead of `'1d'` if your series is time-zone-aware", variable_name, duration);
+    Ok(())
+}
+
+pub fn ensure_duration_matches_data_type(
+    duration: Duration,
+    data_type: &DataType,
+    variable_name: &str,
+) -> PolarsResult<()> {
+    match data_type {
+        DataType::Int64 | DataType::UInt64 | DataType::Int32 | DataType::UInt32 => {
+            polars_ensure!(duration.parsed_int || duration.is_zero(), 
+                InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
+        },
+        DataType::Datetime(_, _) | DataType::Date | DataType::Duration(_) | DataType::Time => {
+            polars_ensure!(!duration.parsed_int, 
+                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "unsupported data type: {} for `{}`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", data_type, variable_name)
+        },
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -979,5 +1028,18 @@ mod test {
             seven_days_negative.add_ns(t, None).unwrap(),
             one_week_negative.add_ns(t, None).unwrap()
         );
+    }
+
+    #[test]
+    fn test_display() {
+        let duration = Duration::parse("1h");
+        let expected = "3600s";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse("1h5ns");
+        let expected = "3600000000005ns";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse("1h5000ns");
+        let expected = "3600000005us";
+        assert_eq!(format!("{duration}"), expected);
     }
 }

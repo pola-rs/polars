@@ -26,10 +26,12 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
-use crate::chunked_array::Settings;
+use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, handle_casting_failures, split_ca, split_series, Wrap};
+use crate::utils::{
+    _split_offsets, handle_casting_failures, materialize_dyn_int, split_ca, split_series, Wrap,
+};
 use crate::POOL;
 
 /// # Series
@@ -145,7 +147,7 @@ impl Hash for Wrap<Series> {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
         let mut h = vec![];
         self.0.vec_hash(rs, &mut h).unwrap();
-        let h = UInt64Chunked::from_vec("", h).sum();
+        let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
         h.hash(state)
     }
 }
@@ -157,17 +159,17 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
-        // Only the inner of objects know their type, so use this hack.
-        #[cfg(feature = "object")]
-        if matches!(self.dtype(), DataType::Object(_, _)) {
-            return if self.is_empty() {
-                self.clone()
-            } else {
-                let av = self.get(0).unwrap();
-                Series::new(self.name(), [av]).slice(0, 0)
-            };
+        if self.is_empty() {
+            self.clone()
+        } else {
+            match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_, _) => self
+                    .take(&ChunkedArray::<IdxType>::new_vec("", vec![]))
+                    .unwrap(),
+                dt => Series::new_empty(self.name(), dt),
+            }
         }
-        Series::new_empty(self.name(), self.dtype())
     }
 
     #[doc(hidden)]
@@ -187,14 +189,40 @@ impl Series {
         ca.chunks_mut()
     }
 
+    /// Create a `Series` of the same data type with all chunks replaced.
+    /// # Safety
+    /// These chunks should align with the data-type
+    pub unsafe fn replace_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let mut new = self.clear();
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        *mut_new.chunks_mut() = chunks;
+        mut_new.compute_len();
+        new
+    }
+
+    /// Create a `Series` of the same data type with all chunks replaced.
+    /// # Safety
+    /// This chunk should align with the data-type
+    pub unsafe fn replace_with_chunk(&self, chunk: ArrayRef) -> Self {
+        let mut new = self.clear();
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        let chunks = mut_new.chunks_mut();
+        chunks.clear();
+        chunks.push(chunk);
+        mut_new.compute_len();
+        new
+    }
+
     pub fn is_sorted_flag(&self) -> IsSorted {
         if self.len() <= 1 {
             return IsSorted::Ascending;
         }
         let flags = self.get_flags();
-        if flags.contains(Settings::SORTED_DSC) {
+        if flags.contains(MetadataFlags::SORTED_DSC) {
             IsSorted::Descending
-        } else if flags.contains(Settings::SORTED_ASC) {
+        } else if flags.contains(MetadataFlags::SORTED_ASC) {
             IsSorted::Ascending
         } else {
             IsSorted::Not
@@ -207,15 +235,15 @@ impl Series {
         self.set_flags(flags);
     }
 
-    pub(crate) fn clear_settings(&mut self) {
-        self.set_flags(Settings::empty());
+    pub(crate) fn clear_flags(&mut self) {
+        self.set_flags(MetadataFlags::empty());
     }
     #[allow(dead_code)]
-    pub fn get_flags(&self) -> Settings {
+    pub fn get_flags(&self) -> MetadataFlags {
         self.0._get_flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
+    pub(crate) fn set_flags(&mut self, flags: MetadataFlags) {
         self._get_inner_mut()._set_flags(flags)
     }
 
@@ -236,6 +264,24 @@ impl Series {
         self
     }
 
+    /// Try to set the [`Metadata`] for the underlying [`ChunkedArray`]
+    ///
+    /// This does not guarantee that the [`Metadata`] is always set. It returns whether it was
+    /// successful.
+    pub fn try_set_metadata<T: PolarsDataType + 'static>(&mut self, metadata: Metadata<T>) -> bool {
+        let inner = self._get_inner_mut();
+
+        // @NOTE: These types are not the same if they are logical for example. For now, we just
+        // say: do not set the metadata when you get into this situation. This can be a @TODO for
+        // later.
+        if &T::get_dtype() != inner.dtype() {
+            return false;
+        }
+
+        inner.as_mut().md = Some(Arc::new(metadata));
+        true
+    }
+
     pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
         Self::try_from((name, array))
     }
@@ -254,8 +300,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
-
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
             self._get_inner_mut().append(&other)?;
@@ -274,8 +319,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
-
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
             self._get_inner_mut().extend(&other)?;
@@ -285,12 +329,23 @@ impl Series {
         Ok(self)
     }
 
-    pub fn sort(&self, descending: bool, nulls_last: bool) -> Self {
-        self.sort_with(SortOptions {
-            descending,
-            nulls_last,
-            ..Default::default()
-        })
+    /// Sort the series with specific options.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// # fn main() -> PolarsResult<()> {
+    /// let s = Series::new("foo", [2, 1, 3]);
+    /// let sorted = s.sort(SortOptions::default())?;
+    /// assert_eq!(sorted, Series::new("foo", [1, 2, 3]));
+    /// # Ok(())
+    /// }
+    /// ```
+    ///
+    /// See [`SortOptions`] for more options.
+    pub fn sort(&self, sort_options: SortOptions) -> PolarsResult<Self> {
+        self.sort_with(sort_options)
     }
 
     /// Only implemented for numeric types
@@ -300,10 +355,71 @@ impl Series {
 
     /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        // Best leave as is.
-        if !dtype.is_known() || (dtype.is_primitive() && dtype == self.dtype()) {
+        use DataType as D;
+
+        let do_clone = match dtype {
+            D::Unknown(UnknownKind::Any) => true,
+            D::Unknown(UnknownKind::Int(_)) if self.dtype().is_integer() => true,
+            D::Unknown(UnknownKind::Float) if self.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Str)
+                if self.dtype().is_string() | self.dtype().is_categorical() =>
+            {
+                true
+            },
+            dt if dt.is_primitive() && dt == self.dtype() => true,
+            _ => false,
+        };
+
+        if do_clone {
             return Ok(self.clone());
         }
+
+        pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
+            match dtype {
+                D::Unknown(UnknownKind::Int(v)) => Some(materialize_dyn_int(*v).dtype()),
+                D::Unknown(UnknownKind::Float) => Some(DataType::Float64),
+                D::Unknown(UnknownKind::Str) => Some(DataType::String),
+                // Best leave as is.
+                D::List(inner) => cast_dtype(inner.as_ref()).map(Box::new).map(D::List),
+                #[cfg(feature = "dtype-struct")]
+                D::Struct(fields) => {
+                    // @NOTE: We only allocate if we really need to.
+
+                    let mut field_iter = fields.iter().enumerate();
+                    let mut new_fields = loop {
+                        let (i, field) = field_iter.next()?;
+
+                        if let Some(dtype) = cast_dtype(&field.dtype) {
+                            let mut new_fields = Vec::with_capacity(fields.len());
+                            new_fields.extend(fields.iter().take(i).cloned());
+                            new_fields.push(Field {
+                                name: field.name.clone(),
+                                dtype,
+                            });
+                            break new_fields;
+                        }
+                    };
+
+                    new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
+                        let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
+                        Field {
+                            name: field.name.clone(),
+                            dtype,
+                        }
+                    }));
+
+                    Some(D::Struct(new_fields))
+                },
+                _ => None,
+            }
+        }
+
+        let casted = cast_dtype(dtype);
+        let dtype = match casted {
+            None => dtype,
+            Some(ref dtype) => dtype,
+        };
+
         let ret = self.0.cast(dtype);
         let len = self.len();
         if self.null_count() == len {
@@ -350,8 +466,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
-        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
+        let sum = self.sum_reduce()?;
+        let sum = sum.value().extract().unwrap();
+        Ok(sum)
     }
 
     /// Returns the minimum value in the array, according to the natural order.
@@ -360,8 +477,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let min = self.min_as_series()?.cast(&DataType::Float64)?;
-        Ok(min.f64().unwrap().get(0).and_then(T::from))
+        let min = self.min_reduce()?;
+        let min = min.value().extract::<T>();
+        Ok(min)
     }
 
     /// Returns the maximum value in the array, according to the natural order.
@@ -370,8 +488,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let max = self.max_as_series()?.cast(&DataType::Float64)?;
-        Ok(max.f64().unwrap().get(0).and_then(T::from))
+        let max = self.max_reduce()?;
+        let max = max.value().extract::<T>();
+        Ok(max)
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -587,11 +706,11 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> PolarsResult<Series> {
+    pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
-            _ => self._sum_as_series(),
+            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
+            _ => self.0.sum_reduce(),
         }
     }
 
@@ -599,7 +718,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn product(&self) -> PolarsResult<Series> {
+    pub fn product(&self) -> PolarsResult<Scalar> {
         #[cfg(feature = "product")]
         {
             use DataType::*;
@@ -609,10 +728,10 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => Ok(self.i64().unwrap().prod_as_series()),
-                UInt64 => Ok(self.u64().unwrap().prod_as_series()),
-                Float32 => Ok(self.f32().unwrap().prod_as_series()),
-                Float64 => Ok(self.f64().unwrap().prod_as_series()),
+                Int64 => Ok(self.i64().unwrap().prod_reduce()),
+                UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                Float32 => Ok(self.f32().unwrap().prod_reduce()),
+                Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },
@@ -756,29 +875,22 @@ impl Series {
         self.slice(-(len as i64), len)
     }
 
-    pub fn mean_as_series(&self) -> Series {
+    pub fn mean_reduce(&self) -> Scalar {
         match self.dtype() {
             DataType::Float32 => {
-                let val = &[self.mean().map(|m| m as f32)];
-                Series::new(self.name(), val)
+                let val = self.mean().map(|m| m as f32);
+                Scalar::new(self.dtype().clone(), val.into())
             },
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
-                let val = &[self.mean()];
-                Series::new(self.name(), val)
+                let val = self.mean();
+                Scalar::new(DataType::Float64, val.into())
             },
-            #[cfg(feature = "dtype-datetime")]
-            dt @ DataType::Datetime(_, _) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
+            dt if dt.is_temporal() => {
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
             },
-            #[cfg(feature = "dtype-duration")]
-            dt @ DataType::Duration(_) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
-            },
-            _ => return Series::full_null(self.name(), 1, self.dtype()),
+            dt => Scalar::new(dt.clone(), AnyValue::Null),
         }
     }
 

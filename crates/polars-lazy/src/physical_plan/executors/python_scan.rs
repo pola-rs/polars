@@ -13,14 +13,14 @@ impl Executor for PythonScanExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run PythonScanExec")
+                eprintln!("run PythonScanExec")
             }
         }
         let with_columns = self.options.with_columns.take();
         let pyarrow_predicate = self.options.predicate.take();
         let n_rows = self.options.n_rows.take();
         Python::with_gil(|py| {
-            let pl = PyModule::import(py, "polars").unwrap();
+            let pl = PyModule::import_bound(py, "polars").unwrap();
             let utils = pl.getattr("_utils").unwrap();
             let callable = utils.getattr("_execute_from_rust").unwrap();
 

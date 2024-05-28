@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-import re
 from datetime import timezone
 from functools import reduce
 from operator import or_
-from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Collection,
+    Literal,
+    Mapping,
+    NoReturn,
+    Sequence,
+    overload,
+)
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.parse_expr_input import _parse_inputs_as_iterable
-from polars._utils.various import is_column
+from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -67,14 +75,20 @@ def is_selector(obj: Any) -> bool:
     True
     """
     # note: don't want to expose the "_selector_proxy_" object
-    return isinstance(obj, _selector_proxy_)
+    return isinstance(obj, _selector_proxy_) and hasattr(obj, "_attrs")
 
 
 def expand_selector(
-    target: DataFrame | LazyFrame | Mapping[str, PolarsDataType], selector: SelectorType
+    target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
+    selector: SelectorType | Expr,
+    *,
+    strict: bool = True,
 ) -> tuple[str, ...]:
     """
-    Expand a selector to column names with respect to a specific frame or schema target.
+    Expand selector to column names, with respect to a specific frame or target schema.
+
+    .. versionchanged:: 0.20.30
+        The `strict` parameter was added.
 
     Parameters
     ----------
@@ -82,6 +96,10 @@ def expand_selector(
         A polars DataFrame, LazyFrame or schema.
     selector
         An arbitrary polars selector (or compound selector).
+    strict
+        Setting False will additionally allow for a broader range of column selection
+        expressions (such as bare columns or use of `.exclude()`) to be expanded, not
+        just the dedicated selectors.
 
     Examples
     --------
@@ -109,17 +127,32 @@ def expand_selector(
     Expand selector with respect to a standalone schema:
 
     >>> schema = {
-    ...     "colx": pl.Float32,
-    ...     "coly": pl.Float64,
-    ...     "colz": pl.Date,
+    ...     "id": pl.Int64,
+    ...     "desc": pl.String,
+    ...     "count": pl.UInt32,
+    ...     "value": pl.Float64,
     ... }
-    >>> cs.expand_selector(schema, cs.float())
-    ('colx', 'coly')
+    >>> cs.expand_selector(schema, cs.string() | cs.float())
+    ('desc', 'value')
+
+    Allow for non-strict selection expressions (such as those
+    including use of an `.exclude()` constraint) to be expanded:
+
+    >>> cs.expand_selector(schema, cs.numeric().exclude("id"), strict=False)
+    ('count', 'value')
     """
     if isinstance(target, Mapping):
         from polars.dataframe import DataFrame
 
         target = DataFrame(schema=target)
+
+    if not (
+        is_selector(selector)
+        if strict
+        else selector.meta.is_column_selection(allow_aliasing=False)
+    ):
+        msg = f"expected a selector; found {selector!r} instead."
+        raise TypeError(msg)
 
     return tuple(target.select(selector).columns)
 
@@ -223,7 +256,7 @@ def _combine_as_selector(
     if names:
         selected.append(by_name(*names))
     if dtypes:
-        selected.append(by_dtype(*dtypes))  # type: ignore[arg-type]
+        selected.append(by_dtype(*dtypes))
     if regexes:
         selected.append(
             matches(
@@ -263,18 +296,16 @@ class _selector_proxy_(Expr):
 
     def __invert__(self) -> Self:
         """Invert the selector."""
-        if hasattr(self, "_attrs"):
+        if is_selector(self):
             inverted = all() - self
-            inverted._repr_override = f"~{self!r}"  # type: ignore[attr-defined]
+            inverted._repr_override = f"~{self!r}"
         else:
             inverted = ~self.as_expr()
         return inverted  # type: ignore[return-value]
 
     def __repr__(self) -> str:
         if not hasattr(self, "_attrs"):
-            return re.sub(
-                r"<[\w.]+_selector_proxy_[\w ]+>", "<selector>", super().__repr__()
-            )
+            return repr(self.as_expr())
         elif hasattr(self, "_repr_override"):
             return self._repr_override
         else:
@@ -282,18 +313,22 @@ class _selector_proxy_(Expr):
             set_ops = {"and": "&", "or": "|", "sub": "-"}
             if selector_name in set_ops:
                 op = set_ops[selector_name]
-                return "(%s)" % f" {op} ".join(repr(p) for p in params.values())
+                return "({})".format(f" {op} ".join(repr(p) for p in params.values()))
             else:
-                str_params = ",".join(
+                str_params = ", ".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
                     for k, v in (params or {}).items()
-                )
+                ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
-    def __sub__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+    @overload  # type: ignore[override]
+    def __sub__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __sub__(self, other: Any) -> SelectorType | Expr: ...
+
+    def __sub__(self, other: Any) -> Expr:
+        if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_sub(other),
                 parameters={"self": self, "other": other},
@@ -302,10 +337,25 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__sub__(other)
 
-    def __and__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    def __rsub__(self, other: Any) -> NoReturn:
+        msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
+        raise TypeError(msg)
+
+    @overload  # type: ignore[override]
+    def __and__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __and__(self, other: Any) -> Expr: ...
+
+    def __and__(self, other: Any) -> SelectorType | Expr:
         if is_column(other):
-            other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+            colname = other.meta.output_name()
+            if self._attrs["name"] == "by_name" and (
+                params := self._attrs["params"]
+            ).get("require_all", True):
+                return by_name(*params["*names"], colname)
+            other = by_name(colname)
+        if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_and(other),
                 parameters={"self": self, "other": other},
@@ -314,10 +364,16 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__and__(other)
 
-    def __or__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __or__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __or__(self, other: Any) -> Expr: ...
+
+    def __or__(self, other: Any) -> SelectorType | Expr:
         if is_column(other):
             other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
+        if is_selector(other):
             return _selector_proxy_(
                 self.meta._as_selector().meta._selector_add(other),
                 parameters={"self": self, "other": other},
@@ -326,30 +382,67 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    def __rand__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
-        # order of operation doesn't matter
+    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
         if is_column(other):
-            other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
-            return self.__and__(other)
-        else:
-            return self.as_expr().__rand__(other)
+            colname = other.meta.output_name()
+            if self._attrs["name"] == "by_name" and (
+                params := self._attrs["params"]
+            ).get("require_all", True):
+                return by_name(colname, *params["*names"])
+            other = by_name(colname)
+        return self.as_expr().__rand__(other)
 
-    def __ror__(self, other: Any) -> SelectorType | Expr:  # type: ignore[override]
-        # order of operation doesn't matter
+    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
         if is_column(other):
             other = by_name(other.meta.output_name())
-        if isinstance(other, _selector_proxy_) and hasattr(other, "_attrs"):
-            return self.__or__(other)
-        else:
-            return self.as_expr().__ror__(other)
+        return self.as_expr().__ror__(other)
 
     def as_expr(self) -> Expr:
         """
-        Materialize the `selector` into a normal expression.
+        Materialize the `selector` as a normal expression.
 
         This ensures that the operators `|`, `&`, `~` and `-`
         are applied on the data and not on the selector sets.
+
+        Examples
+        --------
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "colx": ["aa", "bb", "cc"],
+        ...         "coly": [True, False, True],
+        ...         "colz": [1, 2, 3],
+        ...     }
+        ... )
+
+        Inverting the boolean selector will choose the non-boolean columns:
+
+        >>> df.select(~cs.boolean())
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ colx ┆ colz │
+        │ ---  ┆ ---  │
+        │ str  ┆ i64  │
+        ╞══════╪══════╡
+        │ aa   ┆ 1    │
+        │ bb   ┆ 2    │
+        │ cc   ┆ 3    │
+        └──────┴──────┘
+
+        To invert the *values* in the selected boolean columns, we need to
+        materialize the selector as a standard expression instead:
+
+        >>> df.select(~cs.boolean().as_expr())
+        shape: (3, 1)
+        ┌───────┐
+        │ coly  │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ true  │
+        │ false │
+        └───────┘
         """
         return Expr._from_pyexpr(self._pyexpr)
 
@@ -357,7 +450,7 @@ class _selector_proxy_(Expr):
 def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re.escape(string)}" if escape else string
+        rx = f"{re_escape(string)}" if escape else string
     else:
         strings: list[str] = []
         for st in string:
@@ -365,7 +458,7 @@ def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
                 strings.extend(st)
             else:
                 strings.append(st)
-        rx = "|".join((re.escape(x) if escape else x) for x in strings)
+        rx = "|".join((re_escape(x) if escape else x) for x in strings)
     return f"({rx})"
 
 
@@ -417,6 +510,217 @@ def all() -> SelectorType:
     └────────────┘
     """
     return _selector_proxy_(F.all(), name="all")
+
+
+def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> SelectorType:  # noqa: FBT001
+    r"""
+    Select all columns with alphabetic names (eg: only letters).
+
+    Parameters
+    ----------
+    ascii_only
+        Indicate whether to consider only ASCII alphabetic characters, or the full
+        Unicode range of valid letters (accented, idiographic, etc).
+    ignore_spaces
+        Indicate whether to ignore the presence of spaces in column names; if so,
+        only the other (non-space) characters are considered.
+
+    Notes
+    -----
+    Matching column names cannot contain *any* non-alphabetic characters. Note
+    that the definition of "alphabetic" consists of all valid Unicode alphabetic
+    characters (`\p{Alphabetic}`) by default; this can be changed by setting
+    `ascii_only=True`.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "no1": [100, 200, 300],
+    ...         "café": ["espresso", "latte", "mocha"],
+    ...         "t or f": [True, False, None],
+    ...         "hmm": ["aaa", "bbb", "ccc"],
+    ...         "都市": ["東京", "大阪", "京都"],
+    ...     }
+    ... )
+
+    Select columns with alphabetic names; note that accented
+    characters and kanji are recognised as alphabetic here:
+
+    >>> df.select(cs.alpha())
+    shape: (3, 3)
+    ┌──────────┬─────┬──────┐
+    │ café     ┆ hmm ┆ 都市 │
+    │ ---      ┆ --- ┆ ---  │
+    │ str      ┆ str ┆ str  │
+    ╞══════════╪═════╪══════╡
+    │ espresso ┆ aaa ┆ 東京 │
+    │ latte    ┆ bbb ┆ 大阪 │
+    │ mocha    ┆ ccc ┆ 京都 │
+    └──────────┴─────┴──────┘
+
+    Constrain the definition of "alphabetic" to ASCII characters only:
+
+    >>> df.select(cs.alpha(ascii_only=True))
+    shape: (3, 1)
+    ┌─────┐
+    │ hmm │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ aaa │
+    │ bbb │
+    │ ccc │
+    └─────┘
+
+    >>> df.select(cs.alpha(ascii_only=True, ignore_spaces=True))
+    shape: (3, 2)
+    ┌────────┬─────┐
+    │ t or f ┆ hmm │
+    │ ---    ┆ --- │
+    │ bool   ┆ str │
+    ╞════════╪═════╡
+    │ true   ┆ aaa │
+    │ false  ┆ bbb │
+    │ null   ┆ ccc │
+    └────────┴─────┘
+
+    Select all columns *except* for those with alphabetic names:
+
+    >>> df.select(~cs.alpha())
+    shape: (3, 2)
+    ┌─────┬────────┐
+    │ no1 ┆ t or f │
+    │ --- ┆ ---    │
+    │ i64 ┆ bool   │
+    ╞═════╪════════╡
+    │ 100 ┆ true   │
+    │ 200 ┆ false  │
+    │ 300 ┆ null   │
+    └─────┴────────┘
+
+    >>> df.select(~cs.alpha(ignore_spaces=True))
+    shape: (3, 1)
+    ┌─────┐
+    │ no1 │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 100 │
+    │ 200 │
+    │ 300 │
+    └─────┘
+    """
+    # note that we need to supply a pattern compatible with the *rust* regex crate
+    re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
+    re_space = " " if ignore_spaces else ""
+    return _selector_proxy_(
+        F.col(f"^[{re_alpha}{re_space}]+$"),
+        name="alpha",
+        parameters={"ascii_only": ascii_only, "ignore_spaces": ignore_spaces},
+    )
+
+
+def alphanumeric(
+    ascii_only: bool = False,  # noqa: FBT001
+    *,
+    ignore_spaces: bool = False,
+) -> SelectorType:
+    r"""
+    Select all columns with alphanumeric names (eg: only letters and the digits 0-9).
+
+    Parameters
+    ----------
+    ascii_only
+        Indicate whether to consider only ASCII alphabetic characters, or the full
+        Unicode range of valid letters (accented, idiographic, etc).
+    ignore_spaces
+        Indicate whether to ignore the presence of spaces in column names; if so,
+        only the other (non-space) characters are considered.
+
+    Notes
+    -----
+    Matching column names cannot contain *any* non-alphabetic or integer characters.
+    Note that the definition of "alphabetic" consists of all valid Unicode alphabetic
+    characters (`\p{Alphabetic}`) and digit characters (`\d`) by default; this
+    can be changed by setting `ascii_only=True`.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "1st_col": [100, 200, 300],
+    ...         "flagged": [True, False, True],
+    ...         "00prefix": ["01:aa", "02:bb", "03:cc"],
+    ...         "last col": ["x", "y", "z"],
+    ...     }
+    ... )
+
+    Select columns with alphanumeric names:
+
+    >>> df.select(cs.alphanumeric())
+    shape: (3, 2)
+    ┌─────────┬──────────┐
+    │ flagged ┆ 00prefix │
+    │ ---     ┆ ---      │
+    │ bool    ┆ str      │
+    ╞═════════╪══════════╡
+    │ true    ┆ 01:aa    │
+    │ false   ┆ 02:bb    │
+    │ true    ┆ 03:cc    │
+    └─────────┴──────────┘
+
+    >>> df.select(cs.alphanumeric(ignore_spaces=True))
+    shape: (3, 3)
+    ┌─────────┬──────────┬──────────┐
+    │ flagged ┆ 00prefix ┆ last col │
+    │ ---     ┆ ---      ┆ ---      │
+    │ bool    ┆ str      ┆ str      │
+    ╞═════════╪══════════╪══════════╡
+    │ true    ┆ 01:aa    ┆ x        │
+    │ false   ┆ 02:bb    ┆ y        │
+    │ true    ┆ 03:cc    ┆ z        │
+    └─────────┴──────────┴──────────┘
+
+    Select all columns *except* for those with alphanumeric names:
+
+    >>> df.select(~cs.alphanumeric())
+    shape: (3, 2)
+    ┌─────────┬──────────┐
+    │ 1st_col ┆ last col │
+    │ ---     ┆ ---      │
+    │ i64     ┆ str      │
+    ╞═════════╪══════════╡
+    │ 100     ┆ x        │
+    │ 200     ┆ y        │
+    │ 300     ┆ z        │
+    └─────────┴──────────┘
+
+    >>> df.select(~cs.alphanumeric(ignore_spaces=True))
+    shape: (3, 1)
+    ┌─────────┐
+    │ 1st_col │
+    │ ---     │
+    │ i64     │
+    ╞═════════╡
+    │ 100     │
+    │ 200     │
+    │ 300     │
+    └─────────┘
+    """
+    # note that we need to supply patterns compatible with the *rust* regex crate
+    re_alpha = r"a-zA-Z" if ascii_only else r"\p{Alphabetic}"
+    re_digit = "0-9" if ascii_only else r"\d"
+    re_space = " " if ignore_spaces else ""
+    return _selector_proxy_(
+        F.col(f"^[{re_alpha}{re_digit}{re_space}]+$"),
+        name="alphanumeric",
+        parameters={"ascii_only": ascii_only, "ignore_spaces": ignore_spaces},
+    )
 
 
 def binary() -> SelectorType:
@@ -522,6 +826,7 @@ def by_dtype(
     See Also
     --------
     by_name : Select all columns matching the given names.
+    by_index : Select all columns matching the given indices.
 
     Examples
     --------
@@ -579,7 +884,7 @@ def by_dtype(
     all_dtypes: list[PolarsDataType] = []
     for tp in dtypes:
         if is_polars_dtype(tp):
-            all_dtypes.append(tp)  # type: ignore[arg-type]
+            all_dtypes.append(tp)
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
@@ -595,7 +900,105 @@ def by_dtype(
     )
 
 
-def by_name(*names: str | Collection[str]) -> SelectorType:
+def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
+    """
+    Select all columns matching the given indices (or range objects).
+
+    Parameters
+    ----------
+    *indices
+        One or more column indices (or range objects).
+        Negative indexing is supported.
+
+    Notes
+    -----
+    Matching columns are returned in the order in which their indexes
+    appear in the selector, not the underlying schema order.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtypes.
+    by_name : Select all columns matching the given names.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "key": ["abc"],
+    ...         **{f"c{i:02}": [0.5 * i] for i in range(100)},
+    ...     },
+    ... )
+    >>> print(df)
+    shape: (1, 101)
+    ┌─────┬─────┬─────┬─────┬───┬──────┬──────┬──────┬──────┐
+    │ key ┆ c00 ┆ c01 ┆ c02 ┆ … ┆ c96  ┆ c97  ┆ c98  ┆ c99  │
+    │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64 ┆ f64 ┆   ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞═════╪═════╪═════╪═════╪═══╪══════╪══════╪══════╪══════╡
+    │ abc ┆ 0.0 ┆ 0.5 ┆ 1.0 ┆ … ┆ 48.0 ┆ 48.5 ┆ 49.0 ┆ 49.5 │
+    └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
+
+    Select columns by index ("key" column and the two first/last columns):
+
+    >>> df.select(cs.by_index(0, 1, 2, -2, -1))
+    shape: (1, 5)
+    ┌─────┬─────┬─────┬──────┬──────┐
+    │ key ┆ c00 ┆ c01 ┆ c98  ┆ c99  │
+    │ --- ┆ --- ┆ --- ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64 ┆ f64  ┆ f64  │
+    ╞═════╪═════╪═════╪══════╪══════╡
+    │ abc ┆ 0.0 ┆ 0.5 ┆ 49.0 ┆ 49.5 │
+    └─────┴─────┴─────┴──────┴──────┘
+
+    Select the "key" column and use a `range` object to select various columns.
+    Note that you can freely mix and match integer indices and `range` objects:
+
+    >>> df.select(cs.by_index(0, range(1, 101, 20)))
+    shape: (1, 6)
+    ┌─────┬─────┬──────┬──────┬──────┬──────┐
+    │ key ┆ c00 ┆ c20  ┆ c40  ┆ c60  ┆ c80  │
+    │ --- ┆ --- ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞═════╪═════╪══════╪══════╪══════╪══════╡
+    │ abc ┆ 0.0 ┆ 10.0 ┆ 20.0 ┆ 30.0 ┆ 40.0 │
+    └─────┴─────┴──────┴──────┴──────┴──────┘
+
+    >>> df.select(cs.by_index(0, range(101, 0, -25)))
+    shape: (1, 5)
+    ┌─────┬──────┬──────┬──────┬─────┐
+    │ key ┆ c75  ┆ c50  ┆ c25  ┆ c00 │
+    │ --- ┆ ---  ┆ ---  ┆ ---  ┆ --- │
+    │ str ┆ f64  ┆ f64  ┆ f64  ┆ f64 │
+    ╞═════╪══════╪══════╪══════╪═════╡
+    │ abc ┆ 37.5 ┆ 25.0 ┆ 12.5 ┆ 0.0 │
+    └─────┴──────┴──────┴──────┴─────┘
+
+    Select all columns *except* for the even-indexed ones:
+
+    >>> df.select(~cs.by_index(range(1, 100, 2)))
+    shape: (1, 51)
+    ┌─────┬─────┬─────┬─────┬───┬──────┬──────┬──────┬──────┐
+    │ key ┆ c01 ┆ c03 ┆ c05 ┆ … ┆ c93  ┆ c95  ┆ c97  ┆ c99  │
+    │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str ┆ f64 ┆ f64 ┆ f64 ┆   ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+    ╞═════╪═════╪═════╪═════╪═══╪══════╪══════╪══════╪══════╡
+    │ abc ┆ 0.5 ┆ 1.5 ┆ 2.5 ┆ … ┆ 46.5 ┆ 47.5 ┆ 48.5 ┆ 49.5 │
+    └─────┴─────┴─────┴─────┴───┴──────┴──────┴──────┴──────┘
+    """
+    all_indices: list[int] = []
+    for idx in indices:
+        if isinstance(idx, (range, Sequence)):
+            all_indices.extend(idx)  # type: ignore[arg-type]
+        else:
+            all_indices.append(idx)
+
+    return _selector_proxy_(
+        F.nth(all_indices), name="by_index", parameters={"*indices": indices}
+    )
+
+
+def by_name(*names: str | Collection[str], require_all: bool = True) -> SelectorType:
     """
     Select all columns matching the given names.
 
@@ -603,10 +1006,18 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     ----------
     *names
         One or more names of columns to select.
+    require_all
+        Whether to match *all* names (the default) or *any* of the names.
+
+    Notes
+    -----
+    Matching columns are returned in the order in which they are declared in
+    the selector, not the underlying schema order.
 
     See Also
     --------
     by_dtype : Select all columns matching the given dtypes.
+    by_index : Select all columns matching the given indices.
 
     Examples
     --------
@@ -633,6 +1044,19 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     │ y   ┆ 456 │
     └─────┴─────┘
 
+    Match *any* of the given columns by name:
+
+    >>> df.select(cs.by_name("baz", "moose", "foo", "bear", require_all=False))
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ baz │
+    │ --- ┆ --- │
+    │ str ┆ f64 │
+    ╞═════╪═════╡
+    │ x   ┆ 2.0 │
+    │ y   ┆ 5.5 │
+    └─────┴─────┘
+
     Match all columns *except* for those given:
 
     >>> df.select(~cs.by_name("foo", "bar"))
@@ -657,10 +1081,19 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
                     raise TypeError(msg)
                 all_names.append(n)
         else:
-            TypeError(f"Invalid name: {nm!r}")
+            msg = f"invalid name: {nm!r}"
+            raise TypeError(msg)
+
+    selector_params: dict[str, Any] = {"*names": all_names}
+    match_cols: list[str] | str = all_names
+    if not require_all:
+        match_cols = f"^({'|'.join(re_escape(nm) for nm in all_names)})$"
+        selector_params["require_all"] = require_all
 
     return _selector_proxy_(
-        F.col(all_names), name="by_name", parameters={"*names": all_names}
+        F.col(match_cols),
+        name="by_name",
+        parameters=selector_params,
     )
 
 
@@ -1046,6 +1479,97 @@ def decimal() -> SelectorType:
     """
     # TODO: allow explicit selection by scale/precision?
     return _selector_proxy_(F.col(Decimal), name="decimal")
+
+
+def digit(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
+    r"""
+    Select all columns having names consisting only of digits.
+
+    Notes
+    -----
+    Matching column names cannot contain *any* non-digit characters. Note that the
+    definition of "digit" consists of all valid Unicode digit characters (`\d`)
+    by default; this can be changed by setting `ascii_only=True`.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "key": ["aaa", "bbb", "aaa", "bbb", "bbb"],
+    ...         "year": [2001, 2001, 2025, 2025, 2001],
+    ...         "value": [-25, 100, 75, -15, -5],
+    ...     }
+    ... ).pivot(
+    ...     values="value",
+    ...     index="key",
+    ...     columns="year",
+    ...     aggregate_function="sum",
+    ... )
+    >>> print(df)
+    shape: (2, 3)
+    ┌─────┬──────┬──────┐
+    │ key ┆ 2001 ┆ 2025 │
+    │ --- ┆ ---  ┆ ---  │
+    │ str ┆ i64  ┆ i64  │
+    ╞═════╪══════╪══════╡
+    │ aaa ┆ -25  ┆ 75   │
+    │ bbb ┆ 95   ┆ -15  │
+    └─────┴──────┴──────┘
+
+    Select columns with digit names:
+
+    >>> df.select(cs.digit())
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ 2001 ┆ 2025 │
+    │ ---  ┆ ---  │
+    │ i64  ┆ i64  │
+    ╞══════╪══════╡
+    │ -25  ┆ 75   │
+    │ 95   ┆ -15  │
+    └──────┴──────┘
+
+    Select all columns *except* for those with digit names:
+
+    >>> df.select(~cs.digit())
+    shape: (2, 1)
+    ┌─────┐
+    │ key │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ aaa │
+    │ bbb │
+    └─────┘
+
+    Demonstrate use of `ascii_only` flag (by default all valid unicode digits
+    are considered, but this can be constrained to ascii 0-9):
+
+    >>> df = pl.DataFrame({"१९९९": [1999], "२०७७": [2077], "3000": [3000]})
+    >>> df.select(cs.digit())
+    shape: (1, 3)
+    ┌──────┬──────┬──────┐
+    │ १९९९ ┆ २०७७ ┆ 3000 │
+    │ ---  ┆ ---  ┆ ---  │
+    │ i64  ┆ i64  ┆ i64  │
+    ╞══════╪══════╪══════╡
+    │ 1999 ┆ 2077 ┆ 3000 │
+    └──────┴──────┴──────┘
+
+    >>> df.select(cs.digit(ascii_only=True))
+    shape: (1, 1)
+    ┌──────┐
+    │ 3000 │
+    │ ---  │
+    │ i64  │
+    ╞══════╡
+    │ 3000 │
+    └──────┘
+    """
+    re_digit = r"[0-9]" if ascii_only else r"\d"
+    return _selector_proxy_(F.col(rf"^{re_digit}+$"), name="digit")
 
 
 def duration(
@@ -2084,24 +2608,34 @@ def time() -> SelectorType:
 
 __all__ = [
     "all",
+    "alpha",
+    "alphanumeric",
+    "binary",
+    "boolean",
     "by_dtype",
+    "by_index",
     "by_name",
     "categorical",
     "contains",
     "date",
     "datetime",
+    "decimal",
+    "digit",
     "duration",
     "ends_with",
+    "exclude",
+    "expand_selector",
     "first",
     "float",
     "integer",
+    "is_selector",
     "last",
     "matches",
     "numeric",
+    "signed_integer",
     "starts_with",
+    "string",
     "temporal",
     "time",
-    "string",
-    "is_selector",
-    "expand_selector",
+    "unsigned_integer",
 ]

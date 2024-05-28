@@ -55,19 +55,17 @@ where
         }
     }
 
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-            if end - start < min_periods {
-                None
-            } else {
-                // SAFETY:
-                // we are in bounds
-                unsafe { agg_window.update(start, end) }
-            }
-        })
-        .collect_trusted::<Vec<_>>();
-    let arr = PrimitiveArray::from(out);
+    let out = (0..len).map(|idx| {
+        let (start, end) = det_offsets_fn(idx, window_size, len);
+        if end - start < min_periods {
+            None
+        } else {
+            // SAFETY:
+            // we are in bounds
+            unsafe { agg_window.update(start, end) }
+        }
+    });
+    let arr = PrimitiveArray::from_trusted_len_iter(out);
     Ok(Box::new(arr))
 }
 

@@ -110,3 +110,57 @@ def test_cut_deprecated_label_name() -> None:
         s.cut([0.1], category_label="x")
     with pytest.deprecated_call():
         s.cut([0.1], break_point_label="x")
+
+
+def test_cut_bin_name_in_agg_context() -> None:
+    df = pl.DataFrame({"a": [1]}).select(
+        cut=pl.col("a").cut([1, 2], include_breaks=True).over(1),
+        qcut=pl.col("a").qcut([1], include_breaks=True).over(1),
+        qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
+    )
+    schema = pl.Struct({"brk": pl.Float64, "a_bin": pl.Categorical("physical")})
+    assert df.schema == {"cut": schema, "qcut": schema, "qcut_uniform": schema}
+
+
+@pytest.mark.parametrize(
+    ("breaks", "expected_labels", "expected_physical", "expected_unique"),
+    [
+        (
+            [2, 4],
+            pl.Series("x", ["(-inf, 2]", "(-inf, 2]", "(2, 4]", "(2, 4]", "(4, inf]"]),
+            pl.Series("x", [0, 0, 1, 1, 2], dtype=pl.UInt32),
+            3,
+        ),
+        (
+            [99, 101],
+            pl.Series("x", 5 * ["(-inf, 99]"]),
+            pl.Series("x", 5 * [0], dtype=pl.UInt32),
+            1,
+        ),
+    ],
+)
+def test_cut_fast_unique_15981(
+    breaks: list[int],
+    expected_labels: pl.Series,
+    expected_physical: pl.Series,
+    expected_unique: int,
+) -> None:
+    s = pl.Series("x", [1, 2, 3, 4, 5])
+
+    include_breaks = False
+    s_cut = s.cut(breaks, include_breaks=include_breaks)
+
+    assert_series_equal(s_cut.cast(pl.String), expected_labels)
+    assert_series_equal(s_cut.to_physical(), expected_physical)
+    assert s_cut.n_unique() == s_cut.to_physical().n_unique() == expected_unique
+    s_cut.to_frame().group_by(s.name).len()
+
+    include_breaks = True
+    s_cut = (
+        s.cut(breaks, include_breaks=include_breaks).struct.field("category").alias("x")
+    )
+
+    assert_series_equal(s_cut.cast(pl.String), expected_labels)
+    assert_series_equal(s_cut.to_physical(), expected_physical)
+    assert s_cut.n_unique() == s_cut.to_physical().n_unique() == expected_unique
+    s_cut.to_frame().group_by(s.name).len()

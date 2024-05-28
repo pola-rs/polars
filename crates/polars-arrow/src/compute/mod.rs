@@ -11,7 +11,7 @@
 //! Some dynamically-typed operators have an auxiliary function, `can_*`, that returns
 //! true if the operator can be applied to the particular `DataType`.
 
-#[cfg(any(feature = "compute_aggregate", feature = "io_parquet"))]
+#[cfg(feature = "compute_aggregate")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_aggregate")))]
 pub mod aggregate;
 pub mod arity;
@@ -29,6 +29,8 @@ pub mod boolean_kleene;
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_cast")))]
 pub mod cast;
 pub mod concatenate;
+#[cfg(feature = "dtype-decimal")]
+pub mod decimal;
 #[cfg(feature = "compute_take")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_take")))]
 pub mod take;

@@ -25,6 +25,7 @@ from polars.functions.as_datatype import (
 from polars.functions.as_datatype import date_ as date
 from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
+from polars.functions.business import business_day_count
 from polars.functions.col import col
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
@@ -47,6 +48,7 @@ from polars.functions.lazy import (
     cumreduce,
     element,
     exclude,
+    field,
     first,
     fold,
     from_epoch,
@@ -60,6 +62,7 @@ from polars.functions.lazy import (
     mean,
     median,
     n_unique,
+    nth,
     quantile,
     reduce,
     rolling_corr,
@@ -124,6 +127,7 @@ __all__ = [
     "arctan2",
     "arctan2d",
     "arg_sort_by",
+    "business_day_count",
     "coalesce",
     "col",
     "collect_all",
@@ -142,6 +146,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "field",
     "first",
     "fold",
     "format",
@@ -160,6 +165,7 @@ __all__ = [
     "mean_horizontal",
     "median",
     "n_unique",
+    "nth",
     "quantile",
     "reduce",
     "rolling_corr",

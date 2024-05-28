@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
@@ -40,13 +39,14 @@ fn maybe_bytes(uncompressed: usize, compressed: usize) -> Result<(i32, i32)> {
 /// Contains page write metrics.
 pub struct PageWriteSpec {
     pub header: ParquetPageHeader,
+    #[allow(dead_code)]
     pub num_values: usize,
     pub num_rows: Option<usize>,
     pub header_size: u64,
     pub offset: u64,
     pub bytes_written: u64,
     pub compression: Compression,
-    pub statistics: Option<Arc<dyn Statistics>>,
+    pub statistics: Option<Statistics>,
 }
 
 pub fn write_page<W: Write>(

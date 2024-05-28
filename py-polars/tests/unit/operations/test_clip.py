@@ -40,7 +40,7 @@ def test_clip_float(clip_exprs: list[pl.Expr]) -> None:
     lf = pl.LazyFrame(
         {
             "a": [1.0, 2.0, 3.0, 4.0, 5.0],
-            "min": [0, -1.0, 4.0, None, 4.0],
+            "min": [0.0, -1.0, 4.0, None, 4.0],
             "max": [2.0, 1.0, 8.0, 5.0, None],
         }
     )

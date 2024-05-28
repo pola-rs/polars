@@ -483,11 +483,13 @@ impl StringNameSpace {
 
     #[cfg(feature = "string_to_integer")]
     /// Parse string in base radix into decimal.
-    pub fn to_integer(self, base: u32, strict: bool) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::ToInteger(
-                base, strict,
-            )))
+    pub fn to_integer(self, base: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ToInteger(strict)),
+            &[base],
+            false,
+            false,
+        )
     }
 
     /// Return the length of each string as the number of bytes.
@@ -525,9 +527,24 @@ impl StringNameSpace {
         )
     }
 
-    pub fn explode(self) -> Expr {
-        self.0
-            .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
+    /// Take the first `n` characters of the string values.
+    pub fn head(self, n: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Head),
+            &[n],
+            false,
+            false,
+        )
+    }
+
+    /// Take the last `n` characters of the string values.
+    pub fn tail(self, n: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Tail),
+            &[n],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "extract_jsonpath")]
@@ -537,5 +554,15 @@ impl StringNameSpace {
                 dtype,
                 infer_schema_len,
             }))
+    }
+
+    #[cfg(feature = "extract_jsonpath")]
+    pub fn json_path_match(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::JsonPathMatch),
+            &[pat],
+            false,
+            false,
+        )
     }
 }

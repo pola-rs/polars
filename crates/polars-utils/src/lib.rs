@@ -2,6 +2,7 @@
 pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
+pub mod binary_search;
 pub mod cache;
 pub mod cell;
 pub mod clmul;
@@ -40,4 +41,4 @@ pub mod ord;
 pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
-pub use io::open_file;
+pub use io::*;

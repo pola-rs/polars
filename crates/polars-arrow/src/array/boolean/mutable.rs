@@ -98,23 +98,30 @@ impl MutableBooleanArray {
         }
     }
 
+    #[inline]
+    pub fn push_value(&mut self, value: bool) {
+        self.values.push(value);
+        match &mut self.validity {
+            Some(validity) => validity.push(true),
+            None => {},
+        }
+    }
+
+    #[inline]
+    pub fn push_null(&mut self) {
+        self.values.push(false);
+        match &mut self.validity {
+            Some(validity) => validity.push(false),
+            None => self.init_validity(),
+        }
+    }
+
     /// Pushes a new entry to [`MutableBooleanArray`].
+    #[inline]
     pub fn push(&mut self, value: Option<bool>) {
         match value {
-            Some(value) => {
-                self.values.push(value);
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {},
-                }
-            },
-            None => {
-                self.values.push(false);
-                match &mut self.validity {
-                    Some(validity) => validity.push(false),
-                    None => self.init_validity(),
-                }
-            },
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
         }
     }
 
@@ -195,6 +202,31 @@ impl MutableBooleanArray {
         }
     }
 
+    /// Extends `MutableBooleanArray` by additional values of constant value.
+    #[inline]
+    pub fn extend_constant(&mut self, additional: usize, value: Option<bool>) {
+        match value {
+            Some(value) => {
+                self.values.extend_constant(additional, value);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, true);
+                }
+            },
+            None => {
+                self.values.extend_constant(additional, false);
+                if let Some(validity) = self.validity.as_mut() {
+                    validity.extend_constant(additional, false)
+                } else {
+                    self.init_validity();
+                    self.validity
+                        .as_mut()
+                        .unwrap()
+                        .extend_constant(additional, false)
+                };
+            },
+        };
+    }
+
     fn init_validity(&mut self) {
         let mut validity = MutableBitmap::with_capacity(self.values.capacity());
         validity.extend_constant(self.len(), true);
@@ -206,6 +238,10 @@ impl MutableBooleanArray {
     pub fn into_arc(self) -> Arc<dyn Array> {
         let a: BooleanArray = self.into();
         Arc::new(a)
+    }
+
+    pub fn freeze(self) -> BooleanArray {
+        self.into()
     }
 }
 

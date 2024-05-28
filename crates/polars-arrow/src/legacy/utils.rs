@@ -1,9 +1,9 @@
 use std::borrow::Borrow;
 
 use crate::array::PrimitiveArray;
+use crate::bitmap::utils::set_bit_unchecked;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 use crate::trusted_len::{TrustMyLength, TrustedLen};
 use crate::types::NativeType;
@@ -113,21 +113,27 @@ impl<T: NativeType> FromTrustedLenIterator<T> for PrimitiveArray<T> {
     }
 }
 
+impl<T> FromIteratorReversed<T> for Vec<T> {
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = T>>(iter: I) -> Self {
+        unsafe {
+            let len = iter.size_hint().1.unwrap();
+            let mut out: Vec<T> = Vec::with_capacity(len);
+            let mut idx = len;
+            for x in iter {
+                debug_assert!(idx > 0);
+                idx -= 1;
+                out.as_mut_ptr().add(idx).write(x);
+            }
+            debug_assert!(idx == 0);
+            out.set_len(len);
+            out
+        }
+    }
+}
+
 impl<T: NativeType> FromIteratorReversed<T> for PrimitiveArray<T> {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = T>>(iter: I) -> Self {
-        let size = iter.size_hint().1.unwrap();
-
-        let mut vals: Vec<T> = Vec::with_capacity(size);
-        unsafe {
-            // Set to end of buffer.
-            let mut ptr = vals.as_mut_ptr().add(size);
-
-            iter.for_each(|item| {
-                ptr = ptr.sub(1);
-                std::ptr::write(ptr, item);
-            });
-            vals.set_len(size)
-        }
+        let vals: Vec<T> = iter.collect_reversed();
         PrimitiveArray::new(ArrowDataType::from(T::PRIMITIVE), vals.into(), None)
     }
 }
@@ -139,7 +145,7 @@ impl<T: NativeType> FromIteratorReversed<Option<T>> for PrimitiveArray<T> {
         let mut vals: Vec<T> = Vec::with_capacity(size);
         let mut validity = MutableBitmap::with_capacity(size);
         validity.extend_constant(size, true);
-        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+        let validity_slice = validity.as_mut_slice();
         unsafe {
             // Set to end of buffer.
             let mut ptr = vals.as_mut_ptr().add(size);
@@ -154,7 +160,7 @@ impl<T: NativeType> FromIteratorReversed<Option<T>> for PrimitiveArray<T> {
                     },
                     None => {
                         std::ptr::write(ptr, T::default());
-                        unset_bit_raw(validity_ptr, offset)
+                        set_bit_unchecked(validity_slice, offset, false);
                     },
                 }
             });

@@ -34,7 +34,7 @@ fn rolling_evaluate(
                 // clear the cache for every partitioned group
                 let state = state.split();
 
-                let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
+                let (_time_key, _keys, groups) = df.rolling(vec![], options)?;
 
                 let groups_key = format!("{:?}", options);
                 // Set the groups so all expressions in partition can use it.
@@ -269,23 +269,26 @@ pub(super) fn evaluate_physical_expressions(
 pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
+    duplicate_check: bool,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
         return Ok(DataFrame::empty());
     };
     let mut df_height = 0;
+    let mut has_empty = false;
     let mut all_equal_len = true;
     {
         let mut names = PlHashSet::with_capacity(selected_columns.len());
         for s in &selected_columns {
             let len = s.len();
+            has_empty |= len == 0;
             df_height = std::cmp::max(df_height, len);
             if len != first_len {
                 all_equal_len = false;
             }
             let name = s.name();
 
-            if !names.insert(name) {
+            if duplicate_check && !names.insert(name) {
                 let msg = format!(
                     "the name: '{}' is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column \
@@ -302,15 +305,32 @@ pub(super) fn check_expand_literals(
         selected_columns = selected_columns
             .into_iter()
             .map(|series| {
-                Ok(if series.len() == 1 && df_height > 1 {
-                    series.new_from_index(0, df_height)
-                } else if series.len() == df_height || series.len() == 0 {
-                    series
-                } else {
-                    polars_bail!(
+                Ok(match series.len() {
+                    0 if df_height == 1 => series,
+                    1 => {
+                        if has_empty {
+
+                        polars_ensure!(df_height == 1,
                         ComputeError: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     );
+
+                            series.slice(0, 0)
+                        } else if df_height == 1 {
+                            series
+                        } else {
+                            series.new_from_index(0, df_height)
+                        }
+                    },
+                    len if len == df_height => {
+                        series
+                    },
+                    _ => {
+                        polars_bail!(
+                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                        series.len(), df_height
+                    )
+                    }
                 })
             })
             .collect::<PolarsResult<_>>()?

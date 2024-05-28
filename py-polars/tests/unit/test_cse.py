@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import re
-import typing
 from datetime import date, datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -37,7 +38,7 @@ def test_union_duplicates() -> None:
 
     result = len(
         re.findall(
-            r".*CACHE\[id: .*, count: 9].*",
+            r".*CACHE\[id: .*, cache_hits: 9].*",
             pl.concat(lazy_dfs).explain(),
             flags=re.MULTILINE,
         )
@@ -172,6 +173,7 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.debug()
 def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     q = pl.LazyFrame(
@@ -217,7 +219,7 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     )
     assert_frame_equal(result, expected)
 
-    out = capfd.readouterr().out
+    out = capfd.readouterr().err
     assert "run ProjectionExec with 2 CSE" in out
     assert "run StackExec with 2 CSE" in out
 
@@ -323,7 +325,7 @@ def test_cse_10401() -> None:
 
     q = df.with_columns(pl.all().fill_null(0).fill_nan(0))
 
-    assert r"""col("clicks").fill_null([0]).alias("__POLARS_CSER""" in q.explain()
+    assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
 
     expected = pl.DataFrame({"clicks": [1.0, 0.0, 0.0]})
     assert_frame_equal(q.collect(comm_subexpr_elim=True), expected)
@@ -511,7 +513,7 @@ def test_no_cse_in_with_context() -> None:
         .with_context(df2.lazy())
         .select(
             pl.col("date_start", "label").gather(
-                pl.col("date_start").search_sorted("timestamp") - 1
+                pl.col("date_start").search_sorted(pl.col("timestamp")) - 1
             ),
         )
     ).collect().to_dict(as_series=False) == {
@@ -597,7 +599,6 @@ def test_cse_11958() -> None:
     }
 
 
-@typing.no_type_check
 def test_cse_14047() -> None:
     ldf = pl.LazyFrame(
         {
@@ -614,7 +615,7 @@ def test_cse_14047() -> None:
 
     def count_diff(
         price: pl.Expr, upper_bound: float = 0.1, lower_bound: float = 0.001
-    ):
+    ) -> pl.Expr:
         span_end_to_curr = (
             price.count()
             .cast(int)
@@ -629,7 +630,7 @@ def test_cse_14047() -> None:
             f"count_diff_{upper_bound}_{lower_bound}"
         )
 
-    def s_per_count(count_diff, span) -> pl.Expr:
+    def s_per_count(count_diff: pl.Expr, span: tuple[float, float]) -> pl.Expr:
         return (span[1] * 1000 - span[0] * 1000) / count_diff
 
     spans = [(0.001, 0.1), (1, 10)]
@@ -644,3 +645,126 @@ def test_cse_14047() -> None:
     assert_frame_equal(
         ldf.collect(comm_subexpr_elim=True), ldf.collect(comm_subexpr_elim=False)
     )
+
+
+def test_cse_15536() -> None:
+    source = pl.DataFrame({"a": range(10)})
+
+    data = source.lazy().filter(pl.col("a") >= 5)
+
+    assert pl.concat(
+        [
+            data.filter(pl.lit(True) & (pl.col("a") == 6) | (pl.col("a") == 9)),
+            data.filter(pl.lit(True) & (pl.col("a") == 7) | (pl.col("a") == 8)),
+        ]
+    ).collect()["a"].to_list() == [6, 9, 7, 8]
+
+
+def test_cse_15548() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    ldf2 = ldf.filter(pl.col("a") == 1).cache()
+    ldf3 = pl.concat([ldf, ldf2])
+
+    assert len(ldf3.collect(comm_subplan_elim=False)) == 4
+    assert len(ldf3.collect(comm_subplan_elim=True)) == 4
+
+
+@pytest.mark.debug()
+def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
+
+    assert df.lazy().with_row_index().select(
+        pl.when(pl.col("b") < 10)
+        .then(0.1 * pl.col("b"))
+        .when(pl.col("b") < 100)
+        .then(0.2 * pl.col("b"))
+    ).collect(comm_subplan_elim=False).to_dict(as_series=False) == {
+        "literal": [19.8, 19.8]
+    }
+    captured = capfd.readouterr().err
+    assert "1 CSE" in captured
+
+
+@pytest.mark.debug()
+def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
+
+    xf = y.filter(pl.col("y") == 2).select(["a", "b"])
+    y_xf = y.join(xf, on=["a", "b"], how="left")
+
+    y_xf_c = y_xf.select("a", "b")
+    assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
+    captured = capfd.readouterr().err
+    assert "CACHE HIT" in captured
+
+
+def test_cse_manual_cache_15688() -> None:
+    df = pl.LazyFrame(
+        {"a": [1, 2, 3, 1, 2, 3], "b": [1, 1, 1, 1, 1, 1], "id": [1, 1, 1, 2, 2, 2]}
+    )
+
+    df1 = df.filter(id=1).join(df.filter(id=2), on=["a", "b"], how="semi")
+    df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
+    df2 = df2.cache()
+    res = df2.group_by("b").agg(pl.all().sum())
+    assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
+        "b": [1],
+        "a": [6],
+        "id": [3],
+        "foo": [1],
+    }
+
+
+def test_cse_drop_nulls_15795() -> None:
+    A = pl.LazyFrame({"X": 1})
+    B = pl.LazyFrame({"X": 1, "Y": 0}).filter(pl.col("Y").is_not_null())
+    C = A.join(B, on="X").select("X")
+    D = B.select("X")
+    assert C.join(D, on="X").collect().shape == (1, 1)
+
+
+def test_cse_no_projection_15980() -> None:
+    df = pl.LazyFrame({"x": "a", "y": 1})
+    df = pl.concat(df.with_columns(pl.col("y").add(n)) for n in range(2))
+
+    assert df.filter(pl.col("x").eq("a")).select("x").collect().to_dict(
+        as_series=False
+    ) == {"x": ["a", "a"]}
+
+
+@pytest.mark.debug()
+def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    holdings = pl.DataFrame(
+        {
+            "fund_currency": ["CLP", "CLP"],
+            "asset_currency": ["EUR", "USA"],
+        }
+    )
+
+    usd = ["USD"]
+    eur = ["EUR"]
+    clp = ["CLP"]
+
+    currency_factor_query_dict = [
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(usd),
+        pl.col("asset_currency").is_in(clp) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(usd) & pl.col("fund_currency").is_in(usd),
+    ]
+
+    factor_holdings = holdings.lazy().with_columns(
+        [
+            pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
+        ]
+    )
+
+    assert factor_holdings.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+        "fund_currency": ["CLP", "CLP"],
+        "asset_currency": ["EUR", "USA"],
+        "currency_factor": [True, False],
+    }
+    captured = capfd.readouterr().err
+    assert "3 CSE" in captured

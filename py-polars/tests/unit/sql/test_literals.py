@@ -6,7 +6,7 @@ import polars as pl
 from polars.exceptions import ComputeError
 
 
-def test_bin_hex_literals() -> None:
+def test_bit_hex_literals() -> None:
     with pl.SQLContext(df=None, eager_execution=True) as ctx:
         out = ctx.execute(
             """
@@ -37,7 +37,7 @@ def test_bin_hex_literals() -> None:
     }
 
 
-def test_bin_hex_filter() -> None:
+def test_bit_hex_filter() -> None:
     df = pl.DataFrame(
         {"bin": [b"\x01", b"\x02", b"\x03", b"\x04"], "val": [9, 8, 7, 6]}
     )
@@ -47,7 +47,7 @@ def test_bin_hex_filter() -> None:
             assert out.to_series().to_list() == [7, 6]
 
 
-def test_bin_hex_errors() -> None:
+def test_bit_hex_errors() -> None:
     with pl.SQLContext(test=None) as ctx:
         with pytest.raises(
             ComputeError,
@@ -60,3 +60,31 @@ def test_bin_hex_errors() -> None:
             match="hex string literal must have an even number of digits",
         ):
             ctx.execute("SELECT x'00F' FROM test", eager=True)
+
+        with pytest.raises(
+            ComputeError,
+            match="hex string literal must have an even number of digits",
+        ):
+            pl.sql_expr("colx IN (x'FF',x'123')")
+
+        with pytest.raises(
+            ComputeError,
+            match=r'NationalStringLiteral\("hmmm"\) is not yet supported',
+        ):
+            pl.sql_expr("N'hmmm'")
+
+
+def test_bit_hex_membership() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [b"\x05", b"\xff", b"\xcc", b"\x0b"],
+            "y": [1, 2, 3, 4],
+        }
+    )
+    # this checks the internal `visit_any_value` codepath
+    for values in (
+        "b'0101', b'1011'",
+        "x'05', x'0b'",
+    ):
+        dff = df.filter(pl.sql_expr(f"x IN ({values})"))
+        assert dff["y"].to_list() == [1, 4]

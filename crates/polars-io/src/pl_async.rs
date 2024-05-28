@@ -2,13 +2,10 @@ use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
-use std::sync::RwLock;
-use std::thread::ThreadId;
 
 use once_cell::sync::Lazy;
 use polars_core::config::verbose;
 use polars_core::POOL;
-use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 
@@ -86,8 +83,11 @@ impl SemaphoreTuner {
     }
 
     fn tune(&mut self, semaphore: &'static Semaphore) -> bool {
-        let download_speed = self.downloaded.fetch_add(0, Ordering::Relaxed)
-            / self.download_time.fetch_add(0, Ordering::Relaxed);
+        let bytes_downloaded = self.downloaded.fetch_add(0, Ordering::Relaxed);
+        let time_elapsed = self.download_time.fetch_add(0, Ordering::Relaxed);
+        let download_speed = bytes_downloaded
+            .checked_div(time_elapsed)
+            .unwrap_or_default();
 
         let increased = download_speed > self.previous_download_speed;
         self.previous_download_speed = download_speed;
@@ -217,7 +217,6 @@ where
 
 pub struct RuntimeManager {
     rt: Runtime,
-    blocking_threads: RwLock<PlHashSet<ThreadId>>,
 }
 
 impl RuntimeManager {
@@ -229,31 +228,22 @@ impl RuntimeManager {
             .build()
             .unwrap();
 
-        Self {
-            rt,
-            blocking_threads: Default::default(),
-        }
+        Self { rt }
     }
 
     /// Keep track of rayon threads that drive the runtime. Every thread
     /// only allows a single runtime. If this thread calls block_on and this
     /// rayon thread is already driving an async execution we must start a new thread
     /// otherwise we panic. This can happen when we parallelize reads over 100s of files.
+    ///
+    /// # Safety
+    /// The tokio runtime flavor is multi-threaded.
     pub fn block_on_potential_spawn<F>(&'static self, future: F) -> F::Output
     where
         F: Future + Send,
         F::Output: Send,
     {
-        let thread_id = std::thread::current().id();
-
-        if self.blocking_threads.read().unwrap().contains(&thread_id) {
-            std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
-        } else {
-            self.blocking_threads.write().unwrap().insert(thread_id);
-            let out = self.rt.block_on(future);
-            self.blocking_threads.write().unwrap().remove(&thread_id);
-            out
-        }
+        tokio::task::block_in_place(|| self.rt.block_on(future))
     }
 
     pub fn block_on<F>(&self, future: F) -> F::Output
@@ -261,6 +251,15 @@ impl RuntimeManager {
         F: Future,
     {
         self.rt.block_on(future)
+    }
+
+    /// Spawns a future onto the Tokio runtime (see [`tokio::runtime::Runtime::spawn`]).
+    pub fn spawn<F>(&self, future: F) -> tokio::task::JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.rt.spawn(future)
     }
 }
 

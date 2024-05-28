@@ -48,7 +48,7 @@ impl GroupByRollingExec {
             .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let (mut time_key, mut keys, groups) = df.group_by_rolling(keys, &self.options)?;
+        let (mut time_key, mut keys, groups) = df.rolling(keys, &self.options)?;
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
@@ -100,7 +100,7 @@ impl Executor for GroupByRollingExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run GroupbyRollingExec")
+                eprintln!("run GroupbyRollingExec")
             }
         }
         let df = self.input.execute(state)?;

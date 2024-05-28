@@ -84,7 +84,7 @@ For more exercise, below are some window functions for us to compute:
 - sort the pokemon within a type by attack in descending order and select the first `3` as `"strongest/group"`
 - sort the pokemon within a type by name and select the first `3` as `"sorted_by_alphabet"`
 
-{{code_block('user-guide/expressions/window','examples',['over','implode'])}}
+{{code_block('user-guide/expressions/window','examples',['over'])}}
 
 ```python exec="on" result="text" session="user-guide/window"
 --8<-- "python/user-guide/expressions/window.py:examples"

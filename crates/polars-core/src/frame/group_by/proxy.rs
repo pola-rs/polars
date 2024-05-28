@@ -1,6 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
+use arrow::offset::OffsetsBuffer;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;
@@ -321,6 +322,61 @@ impl GroupsProxy {
         }
     }
 
+    pub(crate) fn prepare_list_agg(
+        &self,
+        total_len: usize,
+    ) -> (Option<IdxCa>, OffsetsBuffer<i64>, bool) {
+        let mut can_fast_explode = true;
+        match self {
+            GroupsProxy::Idx(groups) => {
+                let mut list_offset = Vec::with_capacity(self.len() + 1);
+                let mut gather_offsets = Vec::with_capacity(total_len);
+
+                let mut len_so_far = 0i64;
+                list_offset.push(len_so_far);
+
+                for idx in groups {
+                    let idx = idx.1;
+                    gather_offsets.extend_from_slice(idx);
+                    len_so_far += idx.len() as i64;
+                    list_offset.push(len_so_far);
+                    can_fast_explode &= !idx.is_empty();
+                }
+                unsafe {
+                    (
+                        Some(IdxCa::from_vec("", gather_offsets)),
+                        OffsetsBuffer::new_unchecked(list_offset.into()),
+                        can_fast_explode,
+                    )
+                }
+            },
+            GroupsProxy::Slice { groups, .. } => {
+                let mut list_offset = Vec::with_capacity(self.len() + 1);
+                let mut gather_offsets = Vec::with_capacity(total_len);
+                let mut len_so_far = 0i64;
+                list_offset.push(len_so_far);
+
+                for g in groups {
+                    let len = g[1];
+                    let offset = g[0];
+                    gather_offsets.extend(offset..offset + len);
+
+                    len_so_far += len as i64;
+                    list_offset.push(len_so_far);
+                    can_fast_explode &= len > 0;
+                }
+
+                unsafe {
+                    (
+                        Some(IdxCa::from_vec("", gather_offsets)),
+                        OffsetsBuffer::new_unchecked(list_offset.into()),
+                        can_fast_explode,
+                    )
+                }
+            },
+        }
+    }
+
     pub fn iter(&self) -> GroupsProxyIter {
         GroupsProxyIter::new(self)
     }
@@ -343,19 +399,6 @@ impl GroupsProxy {
             GroupsProxy::Idx(groups) => groups.is_sorted_flag(),
             GroupsProxy::Slice { .. } => true,
         }
-    }
-
-    pub fn group_lengths(&self, name: &str) -> IdxCa {
-        let ca: NoNull<IdxCa> = match self {
-            GroupsProxy::Idx(groups) => groups
-                .iter()
-                .map(|(_, groups)| groups.len() as IdxSize)
-                .collect_trusted(),
-            GroupsProxy::Slice { groups, .. } => groups.iter().map(|g| g[1]).collect_trusted(),
-        };
-        let mut ca = ca.into_inner();
-        ca.rename(name);
-        ca
     }
 
     pub fn take_group_firsts(self) -> Vec<IdxSize> {

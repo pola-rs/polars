@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import re
 from datetime import datetime
 from functools import partial
+from math import cosh
 from typing import Any, Callable
 
 import numpy
@@ -74,7 +76,26 @@ TEST_CASES = [
         '1 / (1 + (-pl.col("a")).exp())',
     ),
     # ---------------------------------------------
-    # numpy
+    # math module
+    # ---------------------------------------------
+    ("e", "lambda x: math.asin(x)", 'pl.col("e").arcsin()'),
+    ("e", "lambda x: math.asinh(x)", 'pl.col("e").arcsinh()'),
+    ("e", "lambda x: math.atan(x)", 'pl.col("e").arctan()'),
+    ("e", "lambda x: math.atanh(x)", 'pl.col("e").arctanh()'),
+    ("e", "lambda x: math.cos(x)", 'pl.col("e").cos()'),
+    ("e", "lambda x: math.degrees(x)", 'pl.col("e").degrees()'),
+    ("e", "lambda x: math.exp(x)", 'pl.col("e").exp()'),
+    ("e", "lambda x: math.log(x)", 'pl.col("e").log()'),
+    ("e", "lambda x: math.log10(x)", 'pl.col("e").log10()'),
+    ("e", "lambda x: math.log1p(x)", 'pl.col("e").log1p()'),
+    ("e", "lambda x: math.radians(x)", 'pl.col("e").radians()'),
+    ("e", "lambda x: math.sin(x)", 'pl.col("e").sin()'),
+    ("e", "lambda x: math.sinh(x)", 'pl.col("e").sinh()'),
+    ("e", "lambda x: math.sqrt(x)", 'pl.col("e").sqrt()'),
+    ("e", "lambda x: math.tan(x)", 'pl.col("e").tan()'),
+    ("e", "lambda x: math.tanh(x)", 'pl.col("e").tanh()'),
+    # ---------------------------------------------
+    # numpy module
     # ---------------------------------------------
     ("e", "lambda x: np.arccos(x)", 'pl.col("e").arccos()'),
     ("e", "lambda x: np.arccosh(x)", 'pl.col("e").arccosh()'),
@@ -200,8 +221,8 @@ TEST_CASES = [
     # ---------------------------------------------
     (
         "a",
-        "lambda x: (3 << (32-x)) & 3",
-        '(3 * 2**(32 - pl.col("a"))).cast(pl.Int64) & 3',
+        "lambda x: (3 << (30-x)) & 3",
+        '(3 * 2**(30 - pl.col("a"))).cast(pl.Int64) & 3',
     ),
     (
         "a",
@@ -231,13 +252,15 @@ NOOP_TEST_CASES = [
 ]
 
 EVAL_ENVIRONMENT = {
-    "np": numpy,
-    "pl": pl,
     "MY_CONSTANT": MY_CONSTANT,
     "MY_DICT": MY_DICT,
     "MY_LIST": MY_LIST,
-    "dt": dt,
+    "cosh": cosh,
     "datetime": datetime,
+    "dt": dt,
+    "math": math,
+    "np": numpy,
+    "pl": pl,
 }
 
 
@@ -255,7 +278,10 @@ def test_parse_invalid_function(func: str) -> None:
     ("col", "func", "expr_repr"),
     TEST_CASES,
 )
-@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
+)
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
@@ -271,14 +297,15 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 "b": ["AB", "cd", "eF"],
                 "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
                 "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
-                "e": [1.5, 2.4, 3.1],
+                "e": [0.5, 0.4, 0.1],
                 "f": [
-                    datetime(1999, 12, 31),
+                    datetime(1969, 12, 31),
                     datetime(2024, 5, 6),
                     datetime(2077, 10, 20),
                 ],
             }
         )
+
         result_frame = df.select(
             x=col,
             y=eval(suggested_expression, EVAL_ENVIRONMENT),
@@ -294,7 +321,10 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         )
 
 
-@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+@pytest.mark.filterwarnings(
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
+)
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
@@ -353,12 +383,24 @@ def test_parse_apply_raw_functions() -> None:
 def test_parse_apply_miscellaneous() -> None:
     # note: can also identify inefficient functions and methods as well as lambdas
     class Test:
-        def x10(self, x: pl.Expr) -> pl.Expr:
+        def x10(self, x: float) -> float:
             return x * 10
+
+        def mcosh(self, x: float) -> float:
+            return cosh(x)
 
     parser = BytecodeParser(Test().x10, map_target="expr")
     suggested_expression = parser.to_expression(col="colx")
     assert suggested_expression == 'pl.col("colx") * 10'
+
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match=r"(?s)Series\.map_elements.*with this one instead.*s\.cosh\(\)",
+    ):
+        pl.Series("colx", [0.5, 0.25]).map_elements(
+            function=Test().mcosh,
+            return_dtype=pl.Float64,
+        )
 
     # note: all constants - should not create a warning/suggestion
     suggested_expression = BytecodeParser(
@@ -371,16 +413,18 @@ def test_parse_apply_miscellaneous() -> None:
         PolarsInefficientMapWarning,
         match=r"(?s)Series\.map_elements.*with this one instead.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
     ):
-        pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
+        s = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
-            pl_series.map_elements(lambda x: numpy.cos(3) + x - abs(-1)),
-            numpy.cos(3) + pl_series - 1,
+            s.map_elements(
+                lambda x: numpy.cos(3) + x - abs(-1), return_dtype=pl.Float64
+            ),
+            numpy.cos(3) + s - 1,
         )
 
     # if 's' is already the name of a global variable then the series alias
     # used in the user warning will fall back (in priority order) through
     # various aliases until it finds one that is available.
-    s, srs, series = -1, 0, 1
+    s, srs, series = -1, 0, 1  # type: ignore[assignment]
     expr1 = BytecodeParser(lambda x: x + s, map_target="series")
     expr2 = BytecodeParser(lambda x: srs + x + s, map_target="series")
     expr3 = BytecodeParser(lambda x: srs + x + s - x + series, map_target="series")
@@ -391,28 +435,33 @@ def test_parse_apply_miscellaneous() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data", "func", "expr_repr"),
+    ("name", "data", "func", "expr_repr"),
     [
         (
+            "srs",
             [1, 2, 3],
             lambda x: str(x),
             "s.cast(pl.String)",
         ),
         (
+            "",
             [-20, -12, -5, 0, 5, 12, 20],
             lambda x: (abs(x) != 12) and (x > 10 or x < -10 or x == 0),
             "(s.abs() != 12) & ((s > 10) | (s < -10) | (s == 0))",
         ),
     ],
 )
+@pytest.mark.filterwarnings(
+    "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning"
+)
 def test_parse_apply_series(
-    data: list[Any], func: Callable[[Any], Any], expr_repr: str
+    name: str, data: list[Any], func: Callable[[Any], Any], expr_repr: str
 ) -> None:
     # expression/series generate same warning, with 's' as the series placeholder
     with pytest.warns(
         PolarsInefficientMapWarning, match=r"(?s)Series\.map_elements.*s\.\w+\("
     ):
-        s = pl.Series("srs", data)
+        s = pl.Series(name, data)
 
         parser = BytecodeParser(func, map_target="series")
         suggested_expression = parser.to_expression(s.name)
@@ -439,11 +488,10 @@ def test_expr_exact_warning_message() -> None:
         f'  {green}+ pl.col("a") + 1{end_escape}\n'
     )
     # Check the EXACT warning message. If modifying the message in the future,
-    # please make sure to keep the `^` and `$`,
-    # and to keep the assertion on `len(warnings)`.
+    # make sure to keep the `^` and `$`, and keep the assertion on `len(warnings)`.
     with pytest.warns(PolarsInefficientMapWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
-        df.select(pl.col("a").map_elements(lambda x: x + 1))
+        df.select(pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64))
 
     assert len(warnings) == 1
 
@@ -458,7 +506,7 @@ def test_omit_implicit_bool() -> None:
 
 
 def test_partial_functions_13523() -> None:
-    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+    def plus(value: int, amount: int) -> int:
         return value + amount
 
     data = {"a": [1, 2], "b": [3, 4]}

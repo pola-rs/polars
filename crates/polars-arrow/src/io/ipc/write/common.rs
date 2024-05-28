@@ -6,12 +6,12 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::super::IpcField;
 use super::{write, write_dictionary};
 use crate::array::*;
-use crate::chunk::Chunk;
 use crate::datatypes::*;
 use crate::io::ipc::endianness::is_native_little_endian;
 use crate::io::ipc::read::Dictionaries;
 use crate::legacy::prelude::LargeListArray;
 use crate::match_integer_type;
+use crate::record_batch::RecordBatchT;
 
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -172,7 +172,7 @@ fn encode_dictionary(
 }
 
 pub fn encode_chunk(
-    chunk: &Chunk<Box<dyn Array>>,
+    chunk: &RecordBatchT<Box<dyn Array>>,
     fields: &[IpcField],
     dictionary_tracker: &mut DictionaryTracker,
     options: &WriteOptions,
@@ -190,7 +190,7 @@ pub fn encode_chunk(
 
 // Amortizes `EncodedData` allocation.
 pub fn encode_chunk_amortized(
-    chunk: &Chunk<Box<dyn Array>>,
+    chunk: &RecordBatchT<Box<dyn Array>>,
     fields: &[IpcField],
     dictionary_tracker: &mut DictionaryTracker,
     options: &WriteOptions,
@@ -265,10 +265,10 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
     }
 }
 
-/// Write [`Chunk`] into two sets of bytes, one for the header (ipc::Schema::Message) and the
+/// Write [`RecordBatchT`] into two sets of bytes, one for the header (ipc::Schema::Message) and the
 /// other for the batch's data
 fn chunk_to_bytes_amortized(
-    chunk: &Chunk<Box<dyn Array>>,
+    chunk: &RecordBatchT<Box<dyn Array>>,
     options: &WriteOptions,
     encoded_message: &mut EncodedData,
 ) {
@@ -471,10 +471,10 @@ pub(crate) fn pad_to_64(len: usize) -> usize {
     ((len + 63) & !63) - len
 }
 
-/// An array [`Chunk`] with optional accompanying IPC fields.
+/// An array [`RecordBatchT`] with optional accompanying IPC fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record<'a> {
-    columns: Cow<'a, Chunk<Box<dyn Array>>>,
+    columns: Cow<'a, RecordBatchT<Box<dyn Array>>>,
     fields: Option<Cow<'a, [IpcField]>>,
 }
 
@@ -485,13 +485,13 @@ impl<'a> Record<'a> {
     }
 
     /// Get the Arrow columns in this record.
-    pub fn columns(&self) -> &Chunk<Box<dyn Array>> {
+    pub fn columns(&self) -> &RecordBatchT<Box<dyn Array>> {
         self.columns.borrow()
     }
 }
 
-impl From<Chunk<Box<dyn Array>>> for Record<'static> {
-    fn from(columns: Chunk<Box<dyn Array>>) -> Self {
+impl From<RecordBatchT<Box<dyn Array>>> for Record<'static> {
+    fn from(columns: RecordBatchT<Box<dyn Array>>) -> Self {
         Self {
             columns: Cow::Owned(columns),
             fields: None,
@@ -499,11 +499,11 @@ impl From<Chunk<Box<dyn Array>>> for Record<'static> {
     }
 }
 
-impl<'a, F> From<(Chunk<Box<dyn Array>>, Option<F>)> for Record<'a>
+impl<'a, F> From<(RecordBatchT<Box<dyn Array>>, Option<F>)> for Record<'a>
 where
     F: Into<Cow<'a, [IpcField]>>,
 {
-    fn from((columns, fields): (Chunk<Box<dyn Array>>, Option<F>)) -> Self {
+    fn from((columns, fields): (RecordBatchT<Box<dyn Array>>, Option<F>)) -> Self {
         Self {
             columns: Cow::Owned(columns),
             fields: fields.map(|f| f.into()),
@@ -511,11 +511,11 @@ where
     }
 }
 
-impl<'a, F> From<(&'a Chunk<Box<dyn Array>>, Option<F>)> for Record<'a>
+impl<'a, F> From<(&'a RecordBatchT<Box<dyn Array>>, Option<F>)> for Record<'a>
 where
     F: Into<Cow<'a, [IpcField]>>,
 {
-    fn from((columns, fields): (&'a Chunk<Box<dyn Array>>, Option<F>)) -> Self {
+    fn from((columns, fields): (&'a RecordBatchT<Box<dyn Array>>, Option<F>)) -> Self {
         Self {
             columns: Cow::Borrowed(columns),
             fields: fields.map(|f| f.into()),

@@ -1,38 +1,62 @@
 from __future__ import annotations
 
-import datetime
 import io
 import json
 from collections import OrderedDict
 from io import BytesIO
-from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
 
-if TYPE_CHECKING:
-    from pathlib import Path
+
+def test_write_json_row_oriented() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+    out = df.write_json(row_oriented=True)
+    assert out == '[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]'
+
+    # Test round trip
+    f = io.BytesIO()
+    f.write(out.encode())
+    f.seek(0)
+    result = pl.read_json(f)
+    assert_frame_equal(result, df)
 
 
-@pytest.mark.parametrize("buf", [io.BytesIO(), io.StringIO()])
-def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
-    df.write_json(buf)
-    buf.seek(0)
-    read_df = pl.read_json(buf)
-    assert_frame_equal(df, read_df, categorical_as_str=True)
+def test_write_json_categoricals() -> None:
+    data = {"column": ["test1", "test2", "test3", "test4"]}
+    df = pl.DataFrame(data).with_columns(pl.col("column").cast(pl.Categorical))
+
+    assert (
+        df.write_json(row_oriented=True, file=None)
+        == '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
+    )
 
 
-@pytest.mark.write_disk()
-def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
+def test_write_json_duration() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [91762939, 91762890, 6020836], dtype=pl.Duration(time_unit="ms")
+            )
+        }
+    )
 
-    file_path = tmp_path / "small.json"
-    df.write_json(file_path)
-    out = pl.read_json(file_path)
+    # we don't guarantee a format, just round-circling
+    value = str(df.write_json(row_oriented=True))
+    assert value == """[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]"""
 
-    assert_frame_equal(df, out, categorical_as_str=True)
+
+def test_json_infer_schema_length_11148() -> None:
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
+    with pytest.raises(AssertionError):
+        assert set(result.columns) == {"col1", "col2"}
+
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
+    assert set(result.columns) == {"col1", "col2"}
 
 
 def test_to_from_buffer_arraywise_schema() -> None:
@@ -84,43 +108,6 @@ def test_to_from_buffer_arraywise_schema_override() -> None:
     )
 
 
-def test_write_json_to_string() -> None:
-    # Tests if it runs if no arg given
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    expected_str = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]}'
-    assert df.write_json() == expected_str
-
-
-def test_write_json(df: pl.DataFrame) -> None:
-    # Text-based conversion loses time info
-    df = df.select(pl.all().exclude(["cat", "time"]))
-    s = df.write_json()
-    f = io.BytesIO()
-    f.write(s.encode())
-    f.seek(0)
-    out = pl.read_json(f)
-    assert_frame_equal(out, df)
-
-    file = io.BytesIO()
-    df.write_json(file)
-    file.seek(0)
-    out = pl.read_json(file)
-    assert_frame_equal(out, df)
-
-
-def test_write_json_row_oriented() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
-    out = df.write_json(row_oriented=True)
-    assert out == '[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]'
-
-    # Test round trip
-    f = io.BytesIO()
-    f.write(out.encode())
-    f.seek(0)
-    result = pl.read_json(f)
-    assert_frame_equal(result, df)
-
-
 def test_write_ndjson() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
     out = df.write_ndjson()
@@ -165,16 +152,6 @@ def test_ndjson_nested_string_int() -> None:
     }
 
 
-def test_write_json_categoricals() -> None:
-    data = {"column": ["test1", "test2", "test3", "test4"]}
-    df = pl.DataFrame(data).with_columns(pl.col("column").cast(pl.Categorical))
-
-    assert (
-        df.write_json(row_oriented=True, file=None)
-        == '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
-    )
-
-
 def test_json_supertype_infer() -> None:
     json_string = """[
 {"c":[{"b": [], "a": "1"}]},
@@ -186,20 +163,13 @@ def test_json_supertype_infer() -> None:
     assert_frame_equal(python_infer, polars_infer)
 
 
-def test_json_sliced_list_serialization() -> None:
+def test_ndjson_sliced_list_serialization() -> None:
     data = {"col1": [0, 2], "col2": [[3, 4, 5], [6, 7, 8]]}
     df = pl.DataFrame(data)
     f = io.BytesIO()
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
-
-
-def test_json_deserialize_empty_list_10458() -> None:
-    schema = {"LIST_OF_STRINGS": pl.List(pl.String)}
-    serialized_schema = pl.DataFrame(schema=schema).write_json()
-    df = pl.read_json(io.StringIO(serialized_schema))
-    assert df.schema == schema
 
 
 def test_json_deserialize_9687() -> None:
@@ -214,17 +184,6 @@ def test_json_deserialize_9687() -> None:
     result = pl.read_json(json.dumps(response).encode())
 
     assert result.to_dict(as_series=False) == {k: [v] for k, v in response.items()}
-
-
-def test_json_infer_schema_length_11148() -> None:
-    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
-    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
-    with pytest.raises(AssertionError):
-        assert set(result.columns) == {"col1", "col2"}
-
-    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
-    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
-    assert set(result.columns) == {"col1", "col2"}
 
 
 def test_ndjson_ignore_errors() -> None:
@@ -274,86 +233,6 @@ def test_ndjson_ignore_errors() -> None:
         ],
     }
     assert result.to_dict(as_series=False) == expected
-
-
-def test_write_json_duration() -> None:
-    df = pl.DataFrame(
-        {
-            "a": pl.Series(
-                [91762939, 91762890, 6020836], dtype=pl.Duration(time_unit="ms")
-            )
-        }
-    )
-
-    # we don't guarantee a format, just round-circling
-    value = str(df.write_json(row_oriented=True))
-    assert value == """[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]"""
-
-
-@pytest.mark.parametrize(
-    ("data", "dtype"),
-    [
-        ([[1, 2, 3], [None, None, None], [1, None, 3]], pl.Array(pl.Int32(), width=3)),
-        ([["a", "b"], [None, None]], pl.Array(pl.Utf8, width=2)),
-        ([[True, False, None], [None, None, None]], pl.Array(pl.Utf8, width=3)),
-        (
-            [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
-            pl.List(pl.Array(pl.Int32(), width=3)),
-        ),
-        (
-            [
-                [datetime.datetime(1991, 1, 1), datetime.datetime(1991, 1, 1), None],
-                [None, None, None],
-            ],
-            pl.Array(pl.Datetime, width=3),
-        ),
-    ],
-)
-def test_write_read_json_array(data: Any, dtype: pl.DataType) -> None:
-    df = pl.DataFrame({"foo": data}, schema={"foo": dtype})
-    buf = io.StringIO()
-    df.write_json(buf)
-    buf.seek(0)
-    deserialized_df = pl.read_json(buf)
-    assert_frame_equal(deserialized_df, df)
-
-
-@pytest.mark.parametrize(
-    ("data", "dtype"),
-    [
-        (
-            [
-                [
-                    datetime.datetime(1997, 10, 1),
-                    datetime.datetime(2000, 1, 2, 10, 30, 1),
-                ],
-                [None, None],
-            ],
-            pl.Array(pl.Datetime, width=2),
-        ),
-        (
-            [[datetime.date(1997, 10, 1), datetime.date(2000, 1, 1)], [None, None]],
-            pl.Array(pl.Date, width=2),
-        ),
-        (
-            [
-                [datetime.timedelta(seconds=1), datetime.timedelta(seconds=10)],
-                [None, None],
-            ],
-            pl.Array(pl.Duration, width=2),
-        ),
-    ],
-)
-def test_write_read_json_array_logical_inner_type(
-    data: Any, dtype: pl.DataType
-) -> None:
-    df = pl.DataFrame({"foo": data}, schema={"foo": dtype})
-    buf = io.StringIO()
-    df.write_json(buf)
-    buf.seek(0)
-    deserialized_df = pl.read_json(buf)
-    assert deserialized_df.dtypes == df.dtypes
-    assert deserialized_df.to_dict(as_series=False) == df.to_dict(as_series=False)
 
 
 def test_json_null_infer() -> None:
@@ -408,14 +287,3 @@ def test_ndjson_null_inference_13183() -> None:
         "start_time": [0.795, 1.6239999999999999, 2.184, None],
         "end_time": [1.495, 2.0540000000000003, 2.645, None],
     }
-
-
-@pytest.mark.parametrize("pretty", [True, False])
-def test_json_enum(pretty: bool) -> None:
-    dtype = pl.Enum(["foo", "bar", "ham"])
-    df = pl.DataFrame([pl.Series("e", ["foo", "bar", "ham"], dtype=dtype)])
-    buf = io.StringIO()
-    df.write_json(buf, pretty=pretty)
-    buf.seek(0)
-    df_in = pl.read_json(buf)
-    assert df_in.schema["e"] == dtype

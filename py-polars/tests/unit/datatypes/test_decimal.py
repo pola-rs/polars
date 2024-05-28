@@ -5,6 +5,7 @@ import itertools
 import operator
 from dataclasses import dataclass
 from decimal import Decimal as D
+from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
 
 import pytest
@@ -69,30 +70,33 @@ def test_frame_from_pydecimal_and_ints(
 
 
 @pytest.mark.parametrize(
-    ("trim_zeros", "expected"),
+    ("input", "trim_zeros", "expected"),
     [
-        (True, "0.01"),
-        (False, "0.010000000000000000000000000"),
+        ("0.00", True, "0"),
+        ("0.00", False, "0.00"),
+        ("-1", True, "-1"),
+        ("-1.000000000000000000000000000", False, "-1.000000000000000000000000000"),
+        ("0.0100", True, "0.01"),
+        ("0.0100", False, "0.0100"),
+        ("0.010000000000000000000000000", False, "0.010000000000000000000000000"),
+        ("-1.123801239123981293891283123", True, "-1.123801239123981293891283123"),
+        (
+            "12345678901.234567890123458390192857685",
+            True,
+            "12345678901.234567890123458390192857685",
+        ),
+        (
+            "-99999999999.999999999999999999999999999",
+            True,
+            "-99999999999.999999999999999999999999999",
+        ),
     ],
 )
-def test_to_from_pydecimal_and_format(trim_zeros: bool, expected: str) -> None:
-    dec_strs = [
-        "0",
-        "-1",
-        expected,
-        "-1.123801239123981293891283123",
-        "12345678901.234567890123458390192857685",
-        "-99999999999.999999999999999999999999999",
-    ]
+def test_decimal_format(input: str, trim_zeros: bool, expected: str) -> None:
     with pl.Config(trim_decimal_zeros=trim_zeros):
-        formatted = (
-            str(pl.Series(list(map(D, dec_strs))))
-            .split("[", 1)[1]
-            .split("\n", 1)[1]
-            .strip()[1:-1]
-            .split()
-        )
-        assert formatted == dec_strs
+        series = pl.Series([input]).str.to_decimal()
+        formatted = str(series).split("\n")[-2].strip()
+        assert formatted == expected
 
 
 def test_init_decimal_dtype() -> None:
@@ -390,12 +394,15 @@ def test_decimal_unique() -> None:
 
 
 def test_decimal_write_parquet_12375() -> None:
-    f = io.BytesIO()
     df = pl.DataFrame(
-        {"hi": [True, False, True, False], "bye": [1, 2, 3, D(47283957238957239875)]}
+        {
+            "hi": [True, False, True, False],
+            "bye": [1, 2, 3, D(47283957238957239875)],
+        }
     )
     assert df["bye"].dtype == pl.Decimal
 
+    f = io.BytesIO()
     df.write_parquet(f)
 
 
@@ -406,3 +413,61 @@ def test_decimal_list_get_13847() -> None:
         out = df.select(pl.col("a").list.get(0))
         expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
         assert_frame_equal(out, expected)
+
+
+def test_decimal_explode() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+
+        nested_decimal_df = pl.DataFrame(
+            {
+                "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
+            }
+        )
+        df = nested_decimal_df.explode("bar")
+        expected_df = pl.DataFrame(
+            {
+                "bar": [D("3.4"), D("3.4"), D("4.5")],
+            }
+        )
+        assert_frame_equal(df, expected_df)
+
+        # test group-by head #15330
+        df = pl.DataFrame(
+            {
+                "foo": [1, 1, 2],
+                "bar": [D("3.4"), D("3.4"), D("4.5")],
+            }
+        )
+        head_df = df.group_by("foo", maintain_order=True).head(1)
+        expected_df = pl.DataFrame({"foo": [1, 2], "bar": [D("3.4"), D("4.5")]})
+        assert_frame_equal(head_df, expected_df)
+
+
+def test_decimal_streaming() -> None:
+    seed(1)
+    scale = D("1e18")
+    data = [
+        {"group": choice("abc"), "value": randrange(10**32) / scale} for _ in range(20)
+    ]
+    lf = pl.LazyFrame(data, schema_overrides={"value": pl.Decimal(scale=18)})
+    assert lf.group_by("group").agg(pl.sum("value")).collect(streaming=True).sort(
+        "group"
+    ).to_dict(as_series=False) == {
+        "group": ["a", "b", "c"],
+        "value": [
+            D("244215083629512.120161049441284000"),
+            D("510640422312378.070344831471216000"),
+            D("161102921617598.363263936811563000"),
+        ],
+    }
+
+
+def test_decimal_supertype() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+        pl.Config.activate_decimals()
+        q = pl.LazyFrame([0.12345678]).select(
+            pl.col("column_0").cast(pl.Decimal(scale=6)) * 1
+        )
+        assert q.collect().dtypes[0].is_decimal()

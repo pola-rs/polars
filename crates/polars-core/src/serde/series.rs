@@ -7,7 +7,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::chunked_array::builder::AnonymousListBuilder;
-use crate::chunked_array::Settings;
+use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 
 impl Serialize for Series {
@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for Series {
             {
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
-                let mut bit_settings: Option<Settings> = None;
+                let mut bit_settings: Option<MetadataFlags> = None;
                 let mut values_set = false;
                 while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
                     match key.as_ref() {

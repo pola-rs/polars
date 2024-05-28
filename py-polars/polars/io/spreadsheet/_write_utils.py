@@ -186,11 +186,11 @@ def _xl_column_range(
     """Return the excel sheet range of a named column, accounting for all offsets."""
     col_start = (
         table_start[0] + int(include_header),
-        table_start[1] + df.get_column_index(col) if isinstance(col, str) else col[0],
+        table_start[1] + (df.get_column_index(col) if isinstance(col, str) else col[0]),
     )
     col_finish = (
         col_start[0] + len(df) - 1,
-        col_start[1] + 0 if isinstance(col, str) else (col[1] - col[0]),
+        col_start[1] + (0 if isinstance(col, str) else (col[1] - col[0])),
     )
     if as_range:
         return "".join(_xl_rowcols_to_range(*col_start, *col_finish))

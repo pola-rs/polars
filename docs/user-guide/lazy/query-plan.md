@@ -25,7 +25,9 @@ Below we consider the following query:
 
 ### Graphviz visualization
 
-First we visualise the non-optimized plan by setting `optimized=False`.
+To create visualizations of the query plan, [Graphviz should be installed](https://graphviz.org/download/) and added to your PATH.
+
+First we visualize the non-optimized plan by setting `optimized=False`.
 
 {{code_block('user-guide/lazy/query-plan','showplan',['show_graph'])}}
 

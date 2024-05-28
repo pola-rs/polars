@@ -63,25 +63,47 @@ pub trait StringNameSpaceImpl: AsString {
 
     #[cfg(feature = "string_to_integer")]
     // Parse a string number with base _radix_ into a decimal (i64)
-    fn to_integer(&self, base: u32, strict: bool) -> PolarsResult<Int64Chunked> {
+    fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_string();
-        let f = |opt_s: Option<&str>| -> Option<i64> {
-            opt_s.and_then(|s| <i64 as Num>::from_str_radix(s, base).ok())
+        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
+            match (opt_s, opt_base) {
+                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s, base).ok(),
+                _ => None,
+            }
         };
-        let out: Int64Chunked = ca.apply_generic(f);
-
+        let out = broadcast_binary_elementwise(ca, base, f);
         if strict && ca.null_count() != out.null_count() {
-            let failure_mask = !ca.is_null() & out.is_null();
+            let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
             let all_failures = ca.filter(&failure_mask)?;
+            if all_failures.is_empty() {
+                return Ok(out);
+            }
             let n_failures = all_failures.len();
             let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
-            let some_error_msg = some_failures
-                .get(0)
-                .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
-                .map_or_else(
-                    || unreachable!("failed to extract ParseIntError"),
-                    |e| format!("{}", e),
-                );
+            let some_error_msg = match base.len() {
+                1 => {
+                    // we can ensure that base is not null.
+                    let base = base.get(0).unwrap();
+                    some_failures
+                        .get(0)
+                        .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
+                        .map_or_else(
+                            || unreachable!("failed to extract ParseIntError"),
+                            |e| format!("{}", e),
+                        )
+                },
+                _ => {
+                    let base_filures = base.filter(&failure_mask)?;
+                    some_failures
+                        .get(0)
+                        .zip(base_filures.get(0))
+                        .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
+                        .map_or_else(
+                            || unreachable!("failed to extract ParseIntError"),
+                            |e| format!("{}", e),
+                        )
+                },
+            };
             polars_bail!(
                 ComputeError:
                 "strict integer parsing failed for {} value(s): {}; error message for the \
@@ -435,21 +457,21 @@ pub trait StringNameSpaceImpl: AsString {
     fn split_exact(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, |s, by| s.split(by))
+        split_to_struct(ca, by, n + 1, str::split, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn split_exact_inclusive(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, |s, by| s.split_inclusive(by))
+        split_to_struct(ca, by, n + 1, str::split_inclusive, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn splitn(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n, |s, by| s.splitn(n, by))
+        split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
     }
 
     fn split(&self, by: &StringChunked) -> ListChunked {
@@ -589,6 +611,29 @@ pub trait StringNameSpaceImpl: AsString {
         let length = length.strict_cast(&DataType::UInt64)?;
 
         Ok(substring::substring(ca, offset.i64()?, length.u64()?))
+    }
+
+    /// Slice the first `n` values of the string.
+    ///
+    /// Determines a substring starting at the beginning of the string up to offset `n` of each
+    /// element in `array`. `n` can be negative, in which case the slice ends `n` characters from
+    /// the end of the string.
+    fn str_head(&self, n: &Series) -> PolarsResult<StringChunked> {
+        let ca = self.as_string();
+        let n = n.strict_cast(&DataType::Int64)?;
+
+        Ok(substring::head(ca, n.i64()?))
+    }
+
+    /// Slice the last `n` values of the string.
+    ///
+    /// Determines a substring starting at offset `n` of each element in `array`. `n` can be
+    /// negative, in which case the slice begins `n` characters from the start of the string.
+    fn str_tail(&self, n: &Series) -> PolarsResult<StringChunked> {
+        let ca = self.as_string();
+        let n = n.strict_cast(&DataType::Int64)?;
+
+        Ok(substring::tail(ca, n.i64()?))
     }
 }
 

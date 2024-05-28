@@ -55,7 +55,7 @@ def test_eq_array_cmp_list() -> None:
 def test_eq_array_cmp_int() -> None:
     s = pl.Series([[1, 3], [1, 2]], dtype=pl.Array(pl.Int16, 2))
     with pytest.raises(
-        TypeError, match="cannot convert Python type 'int' to Array\\(Int16, width=2\\)"
+        TypeError, match="cannot convert Python type 'int' to Array\\(Int16, size=2\\)"
     ):
         s == 1  # noqa: B015
 

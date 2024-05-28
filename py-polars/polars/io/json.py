@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import contextlib
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars._reexport as pl
+from polars._utils.various import normalize_filepath
+from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
     from io import IOBase
-    from pathlib import Path
 
     from polars import DataFrame
     from polars.type_aliases import SchemaDefinition
@@ -26,9 +32,9 @@ def read_json(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -49,10 +55,46 @@ def read_json(
     See Also
     --------
     read_ndjson
+
+    Examples
+    --------
+    >>> from io import StringIO
+    >>> json_str = '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
+    >>> pl.read_json(StringIO(json_str))
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 6   │
+    │ 2   ┆ 7   │
+    │ 3   ┆ 8   │
+    └─────┴─────┘
+
+    With the schema defined.
+
+    >>> pl.read_json(StringIO(json_str), schema={"foo": pl.Int64, "bar": pl.Float64})
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 6.0 │
+    │ 2   ┆ 7.0 │
+    │ 3   ┆ 8.0 │
+    └─────┴─────┘
     """
-    return pl.DataFrame._read_json(
+    if isinstance(source, StringIO):
+        source = BytesIO(source.getvalue().encode())
+    elif isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+
+    pydf = PyDataFrame.read_json(
         source,
+        infer_schema_length=infer_schema_length,
         schema=schema,
         schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
     )
+    return wrap_df(pydf)

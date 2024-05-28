@@ -1,7 +1,4 @@
 //! Interface with the object_store crate and define AsyncSeek, AsyncRead.
-//! This is used, for example, by the [parquet2] crate.
-//!
-//! [parquet2]: https://crates.io/crates/parquet2
 
 use std::sync::Arc;
 
@@ -120,7 +117,7 @@ mod tests {
 
     #[test]
     fn csv_to_local_objectstore_cloudwriter() {
-        use crate::csv::CsvWriter;
+        use crate::csv::write::CsvWriter;
         use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();
@@ -144,7 +141,7 @@ mod tests {
     #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
-        use crate::csv::CsvWriter;
+        use crate::csv::write::CsvWriter;
         use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();

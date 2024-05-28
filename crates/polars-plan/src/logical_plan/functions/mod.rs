@@ -1,14 +1,19 @@
 mod count;
+mod dsl;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
 mod python_udf;
 mod rename;
+mod schema;
+
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub use dsl::*;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -56,17 +61,10 @@ pub enum FunctionNode {
     Pipeline {
         function: Arc<dyn DataFrameUdfMut>,
         schema: SchemaRef,
-        original: Option<Arc<LogicalPlan>>,
+        original: Option<Arc<DslPlan>>,
     },
     Unnest {
         columns: Arc<[Arc<str>]>,
-    },
-    FastProjection {
-        columns: Arc<[SmartString]>,
-        duplicate_check: bool,
-    },
-    DropNulls {
-        subset: Arc<[Arc<str>]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
@@ -83,37 +81,34 @@ pub enum FunctionNode {
         new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Explode {
         columns: Arc<[Arc<str>]>,
-        schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Melt {
         args: Arc<MeltArgs>,
-        schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     RowIndex {
         name: Arc<str>,
-        schema: SchemaRef,
+        // Might be cached.
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
         offset: Option<IdxSize>,
     },
 }
+
+impl Eq for FunctionNode {}
 
 impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (
-                FastProjection {
-                    columns: l,
-                    duplicate_check: dl,
-                },
-                FastProjection {
-                    columns: r,
-                    duplicate_check: dr,
-                },
-            ) => l == r && dl == dr,
-            (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
             (
@@ -131,7 +126,53 @@ impl PartialEq for FunctionNode {
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
+            #[cfg(feature = "merge_sorted")]
+            (MergeSorted { column: l }, MergeSorted { column: r }) => l == r,
             _ => false,
+        }
+    }
+}
+
+impl Hash for FunctionNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "python")]
+            FunctionNode::OpaquePython { .. } => {},
+            FunctionNode::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionNode::Count {
+                paths,
+                scan_type,
+                alias,
+            } => {
+                paths.hash(state);
+                scan_type.hash(state);
+                alias.hash(state);
+            },
+            FunctionNode::Pipeline { .. } => {},
+            FunctionNode::Unnest { columns } => columns.hash(state),
+            FunctionNode::Rechunk => {},
+            #[cfg(feature = "merge_sorted")]
+            FunctionNode::MergeSorted { column } => column.hash(state),
+            FunctionNode::Rename {
+                existing,
+                new,
+                swapping: _,
+                ..
+            } => {
+                existing.hash(state);
+                new.hash(state);
+            },
+            FunctionNode::Explode { columns, schema: _ } => columns.hash(state),
+            FunctionNode::Melt { args, schema: _ } => args.hash(state),
+            FunctionNode::RowIndex {
+                name,
+                schema: _,
+                offset,
+            } => {
+                name.hash(state);
+                offset.hash(state);
+            },
         }
     }
 }
@@ -144,12 +185,7 @@ impl FunctionNode {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            DropNulls { .. }
-            | FastProjection { .. }
-            | Count { .. }
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. } => true,
+            Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -169,102 +205,13 @@ impl FunctionNode {
         }
     }
 
-    pub(crate) fn schema<'a>(
-        &self,
-        input_schema: &'a SchemaRef,
-    ) -> PolarsResult<Cow<'a, SchemaRef>> {
-        use FunctionNode::*;
-        match self {
-            Opaque { schema, .. } => match schema {
-                None => Ok(Cow::Borrowed(input_schema)),
-                Some(schema_fn) => {
-                    let output_schema = schema_fn.get_schema(input_schema)?;
-                    Ok(Cow::Owned(output_schema))
-                },
-            },
-            #[cfg(feature = "python")]
-            OpaquePython { schema, .. } => Ok(schema
-                .as_ref()
-                .map(|schema| Cow::Owned(schema.clone()))
-                .unwrap_or_else(|| Cow::Borrowed(input_schema))),
-            Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            FastProjection { columns, .. } => {
-                let schema = columns
-                    .iter()
-                    .map(|name| {
-                        let name = name.as_ref();
-                        input_schema.try_get_field(name)
-                    })
-                    .collect::<PolarsResult<Schema>>()?;
-                Ok(Cow::Owned(Arc::new(schema)))
-            },
-            DropNulls { .. } => Ok(Cow::Borrowed(input_schema)),
-            Count { alias, .. } => {
-                let mut schema: Schema = Schema::with_capacity(1);
-                let name =
-                    SmartString::from(alias.as_ref().map(|alias| alias.as_ref()).unwrap_or("len"));
-                schema.insert_at_index(0, name, IDX_DTYPE)?;
-                Ok(Cow::Owned(Arc::new(schema)))
-            },
-            Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest { columns: _columns } => {
-                #[cfg(feature = "dtype-struct")]
-                {
-                    let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
-                    for (name, dtype) in input_schema.iter() {
-                        if _columns.iter().any(|item| item.as_ref() == name.as_str()) {
-                            match dtype {
-                                DataType::Struct(flds) => {
-                                    for fld in flds {
-                                        new_schema.with_column(
-                                            fld.name().clone(),
-                                            fld.data_type().clone(),
-                                        );
-                                    }
-                                },
-                                DataType::Unknown => {
-                                    // pass through unknown
-                                },
-                                _ => {
-                                    polars_bail!(
-                                        SchemaMismatch: "expected struct dtype, got: `{}`", dtype
-                                    );
-                                },
-                            }
-                        } else {
-                            new_schema.with_column(name.clone(), dtype.clone());
-                        }
-                    }
-
-                    Ok(Cow::Owned(Arc::new(new_schema)))
-                }
-                #[cfg(not(feature = "dtype-struct"))]
-                {
-                    panic!("activate feature 'dtype-struct'")
-                }
-            },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
-            Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
-            Explode { schema, .. } | RowIndex { schema, .. } | Melt { schema, .. } => {
-                Ok(Cow::Owned(schema.clone()))
-            },
-        }
-    }
-
     pub(crate) fn allow_predicate_pd(&self) -> bool {
         use FunctionNode::*;
         match self {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython { predicate_pd, .. } => *predicate_pd,
-            FastProjection { .. }
-            | DropNulls { .. }
-            | Rechunk
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. }
-            | Melt { .. } => true,
+            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } | Count { .. } => false,
@@ -278,9 +225,7 @@ impl FunctionNode {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython { projection_pd, .. } => *projection_pd,
-            FastProjection { .. }
-            | DropNulls { .. }
-            | Rechunk
+            Rechunk
             | Count { .. }
             | Unnest { .. }
             | Rename { .. }
@@ -315,17 +260,6 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            FastProjection {
-                columns,
-                duplicate_check,
-            } => {
-                if *duplicate_check {
-                    df._select_impl(columns.as_ref())
-                } else {
-                    df._select_impl_unchecked(columns.as_ref())
-                }
-            },
-            DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Count {
                 paths, scan_type, ..
             } => count::count_rows(paths, scan_type),
@@ -382,16 +316,6 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            FastProjection { columns, .. } => {
-                write!(f, "FAST_PROJECT: ")?;
-                let columns = columns.as_ref();
-                fmt_column_delimited(f, columns, "[", "]")
-            },
-            DropNulls { subset } => {
-                write!(f, "DROP_NULLS by: ")?;
-                let subset = subset.as_ref();
-                fmt_column_delimited(f, subset, "[", "]")
-            },
             Rechunk => write!(f, "RECHUNK"),
             Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {
@@ -403,12 +327,15 @@ impl Display for FunctionNode {
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
+                    let ir_plan = original.as_ref().clone().to_alp().unwrap();
+                    let ir_display = ir_plan.display();
+
                     writeln!(f, "--- STREAMING")?;
-                    write!(f, "{:?}", original.as_ref())?;
+                    write!(f, "{ir_display}")?;
                     let indent = 2;
-                    writeln!(f, "{:indent$}--- END STREAMING", "")
+                    write!(f, "{:indent$}--- END STREAMING", "")
                 } else {
-                    writeln!(f, "STREAMING")
+                    write!(f, "STREAMING")
                 }
             },
             Rename { .. } => write!(f, "RENAME"),

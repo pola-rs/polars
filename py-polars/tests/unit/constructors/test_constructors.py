@@ -167,10 +167,6 @@ def test_init_dict() -> None:
     )
     assert df.schema == {"c": pl.Int8, "d": pl.Int16}
 
-    dfe = df.clear()
-    assert df.schema == dfe.schema
-    assert len(dfe) == 0
-
     # empty nested objects
     for empty_val in [None, "", {}, []]:  # type: ignore[var-annotated]
         test = [{"field": {"sub_field": empty_val, "sub_field_2": 2}}]
@@ -561,7 +557,8 @@ def test_init_ndarray() -> None:
 
     test_rows = [(1, 2), (3, 4)]
     df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
-    assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
+    expected = pl.DataFrame(test_rows, orient="row")
+    assert_frame_equal(df, expected)
 
     # round trip export/init
     for shape in ((4, 4), (4, 8), (8, 4)):
@@ -1121,19 +1118,9 @@ def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_upcast_primitive_and_strings() -> None:
-    assert pl.Series([1, 1.0, 1]).dtype == pl.Float64
-    assert pl.Series([1, 1, "1.0"]).dtype == pl.String
-    assert pl.Series([1, 1.0, "1.0"]).dtype == pl.String
-    assert pl.Series([True, 1]).dtype == pl.Int64
-    assert pl.Series([True, 1.0]).dtype == pl.Float64
-    assert pl.Series([True, 1], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, 1.0], dtype=pl.Boolean).dtype == pl.Boolean
-    assert pl.Series([False, "1.0"]).dtype == pl.String
-    assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
-        pl.Float64,
-        pl.Float64,
-    ]
+def test_from_dict_upcast_primitive() -> None:
+    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]})
+    assert df.dtypes == [pl.Float64, pl.Float64]
 
 
 def test_u64_lit_5031() -> None:
@@ -1235,7 +1222,7 @@ def test_from_dicts_schema() -> None:
         assert df.schema == schema
 
 
-def test_nested_read_dict_4143() -> None:
+def test_nested_read_dicts_4143() -> None:
     result = pl.from_dicts(
         [
             {
@@ -1270,7 +1257,7 @@ def test_nested_read_dict_4143() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_nested_read_dict_4143_2() -> None:
+def test_nested_read_dicts_4143_2() -> None:
     result = pl.from_dicts(
         [
             {
@@ -1490,13 +1477,20 @@ def test_nested_categorical() -> None:
 def test_datetime_date_subclasses() -> None:
     class FakeDate(date): ...
 
+    class FakeDateChild(FakeDate): ...
+
     class FakeDatetime(FakeDate, datetime): ...
+
+    result = pl.Series([FakeDate(2020, 1, 1)])
+    expected = pl.Series([date(2020, 1, 1)])
+    assert_series_equal(result, expected)
+
+    result = pl.Series([FakeDateChild(2020, 1, 1)])
+    expected = pl.Series([date(2020, 1, 1)])
+    assert_series_equal(result, expected)
 
     result = pl.Series([FakeDatetime(2020, 1, 1, 3)])
     expected = pl.Series([datetime(2020, 1, 1, 3)])
-    assert_series_equal(result, expected)
-    result = pl.Series([FakeDate(2020, 1, 1)])
-    expected = pl.Series([date(2020, 1, 1)])
     assert_series_equal(result, expected)
 
 
@@ -1595,3 +1589,42 @@ def test_numpy_inference(
 ) -> None:
     result = infer_func(input)
     assert result == expected_dtype
+
+
+def test_array_construction() -> None:
+    payload = [[1, 2, 3], None, [4, 2, 3]]
+
+    dtype = pl.Array(pl.Int64, 3)
+    s = pl.Series(payload, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == payload
+
+    # inner type
+    dtype = pl.Array(pl.UInt8, 2)
+    payload = [[1, 2], None, [3, 4]]
+    s = pl.Series(payload, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == payload
+
+    # create using schema
+    df = pl.DataFrame(
+        schema={
+            "a": pl.Array(pl.Float32, 3),
+            "b": pl.Array(pl.Datetime("ms"), 5),
+        }
+    )
+    assert df.dtypes == [
+        pl.Array(pl.Float32, 3),
+        pl.Array(pl.Datetime("ms"), 5),
+    ]
+    assert df.rows() == []
+
+    # from dicts
+    rows = [
+        {"row_id": "a", "data": [1, 2, 3]},
+        {"row_id": "b", "data": [2, 3, 4]},
+    ]
+    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
+    df = pl.from_dicts(rows, schema=schema)
+    assert df.schema == schema
+    assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]

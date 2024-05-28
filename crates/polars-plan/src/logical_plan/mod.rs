@@ -1,24 +1,24 @@
+use std::fmt;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use polars_core::prelude::*;
+use recursive::recursive;
 
-use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
-use crate::utils::{expr_to_leaf_column_names, get_single_leaf};
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
 pub(crate) mod anonymous_scan;
 
 mod apply;
-mod builder;
-mod builder_alp;
-pub mod builder_functions;
+mod builder_dsl;
+mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+pub mod expr_ir;
 mod file_scan;
 mod format;
 mod functions;
@@ -27,21 +27,20 @@ pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
-pub(crate) mod projection;
 mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
-pub(crate) mod tree_format;
 pub mod visitor;
 
 pub use aexpr::*;
 pub use alp::*;
 pub use anonymous_scan::*;
 pub use apply::*;
-pub use builder::*;
-pub use builder_alp::*;
+pub use builder_dsl::*;
+pub use builder_ir::*;
 pub use conversion::*;
+pub(crate) use expr_ir::*;
 pub use file_scan::*;
 pub use functions::*;
 pub use iterator::*;
@@ -52,17 +51,7 @@ pub use schema::*;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use self::tree_format::{TreeFmtNode, TreeFmtVisitor};
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "cse",
-    feature = "json"
-))]
-pub use crate::logical_plan::optimizer::file_caching::{
-    collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
-};
+pub type ColumnName = Arc<str>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Context {
@@ -72,88 +61,26 @@ pub enum Context {
     Default,
 }
 
-#[derive(Debug)]
-pub(crate) struct ErrorStateUnsync {
-    n_times: usize,
-    err: PolarsError,
-}
-
-#[derive(Clone)]
-pub struct ErrorState(pub(crate) Arc<Mutex<ErrorStateUnsync>>);
-
-impl std::fmt::Debug for ErrorState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let this = self.0.lock().unwrap();
-        // Skip over the Arc<Mutex<ErrorStateUnsync>> and just print the fields we care
-        // about. Technically this is misleading, but the insides of ErrorState are not
-        // public, so this only affects authors of polars, not users (and the odds that
-        // this affects authors is slim)
-        f.debug_struct("ErrorState")
-            .field("n_times", &this.n_times)
-            .field("err", &this.err)
-            .finish()
-    }
-}
-
-impl From<PolarsError> for ErrorState {
-    fn from(err: PolarsError) -> Self {
-        Self(Arc::new(Mutex::new(ErrorStateUnsync { n_times: 0, err })))
-    }
-}
-
-impl ErrorState {
-    fn take(&self) -> PolarsError {
-        let mut this = self.0.lock().unwrap();
-
-        let ret_err = if this.n_times == 0 {
-            this.err.wrap_msg(&|msg| msg.to_owned())
-        } else {
-            this.err.wrap_msg(&|msg| {
-                let n_times = this.n_times;
-
-                let plural_s;
-                let was_were;
-
-                if n_times == 1 {
-                    plural_s = "";
-                    was_were = "was"
-                } else {
-                    plural_s = "s";
-                    was_were = "were";
-                };
-                format!(
-                    "{msg}\n\nLogicalPlan had already failed with the above error; \
-                     after failure, {n_times} additional operation{plural_s} \
-                     {was_were} attempted on the LazyFrame",
-                )
-            })
-        };
-        this.n_times += 1;
-
-        ret_err
-    }
-}
-
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
-#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum LogicalPlan {
+pub enum DslPlan {
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
-    Selection {
-        input: Box<LogicalPlan>,
+    Filter {
+        input: Arc<DslPlan>,
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
     Cache {
-        input: Box<LogicalPlan>,
+        input: Arc<DslPlan>,
         id: usize,
-        count: usize,
+        cache_hits: u32,
     },
     Scan {
         paths: Arc<[PathBuf]>,
-        file_info: FileInfo,
+        // Option as this is mostly materialized on the IR phase.
+        file_info: Option<FileInfo>,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
         scan_type: FileScan,
@@ -168,95 +95,123 @@ pub enum LogicalPlan {
         projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
     },
-    /// Column selection
-    Projection {
+    /// Polars' `select` operation, this can mean projection, but also full data access.
+    Select {
         expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
-        schema: SchemaRef,
+        input: Arc<DslPlan>,
         options: ProjectionOptions,
     },
     /// Groupby aggregation
-    Aggregate {
-        input: Box<LogicalPlan>,
-        keys: Arc<Vec<Expr>>,
+    GroupBy {
+        input: Arc<DslPlan>,
+        keys: Vec<Expr>,
         aggs: Vec<Expr>,
-        schema: SchemaRef,
         #[cfg_attr(feature = "serde", serde(skip))]
-        apply: Option<Arc<dyn DataFrameUdf>>,
+        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
     },
     /// Join operation
     Join {
-        input_left: Box<LogicalPlan>,
-        input_right: Box<LogicalPlan>,
-        schema: SchemaRef,
+        input_left: Arc<DslPlan>,
+        input_right: Arc<DslPlan>,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
     },
     /// Adding columns to the table without a Join
     HStack {
-        input: Box<LogicalPlan>,
+        input: Arc<DslPlan>,
         exprs: Vec<Expr>,
-        schema: SchemaRef,
         options: ProjectionOptions,
     },
     /// Remove duplicates from the table
     Distinct {
-        input: Box<LogicalPlan>,
+        input: Arc<DslPlan>,
         options: DistinctOptions,
     },
     /// Sort the table
     Sort {
-        input: Box<LogicalPlan>,
+        input: Arc<DslPlan>,
         by_column: Vec<Expr>,
-        args: SortArguments,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
     },
     /// Slice the table
     Slice {
-        input: Box<LogicalPlan>,
+        input: Arc<DslPlan>,
         offset: i64,
         len: IdxSize,
     },
     /// A (User Defined) Function
     MapFunction {
-        input: Box<LogicalPlan>,
-        function: FunctionNode,
+        input: Arc<DslPlan>,
+        function: DslFunction,
     },
+    /// Vertical concatenation
     Union {
-        inputs: Vec<LogicalPlan>,
-        options: UnionOptions,
+        inputs: Vec<DslPlan>,
+        args: UnionArgs,
     },
     /// Horizontal concatenation of multiple plans
     HConcat {
-        inputs: Vec<LogicalPlan>,
-        schema: SchemaRef,
+        inputs: Vec<DslPlan>,
         options: HConcatOptions,
-    },
-    /// Catches errors and throws them later
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Error {
-        input: Box<LogicalPlan>,
-        err: ErrorState,
     },
     /// This allows expressions to access other tables
     ExtContext {
-        input: Box<LogicalPlan>,
-        contexts: Vec<LogicalPlan>,
-        schema: SchemaRef,
+        input: Arc<DslPlan>,
+        contexts: Vec<DslPlan>,
     },
     Sink {
-        input: Box<LogicalPlan>,
+        input: Arc<DslPlan>,
         payload: SinkType,
+    },
+    IR {
+        #[cfg_attr(feature = "serde", serde(skip))]
+        node: Option<Node>,
+        version: u32,
+        // Keep the original Dsl around as we need that for serialization.
+        dsl: Arc<DslPlan>,
     },
 }
 
-impl Default for LogicalPlan {
+impl Clone for DslPlan {
+    // Autogenerated by rust-analyzer, don't care about it looking nice, it just
+    // calls clone on every member of every enum variant.
+    #[rustfmt::skip]
+    #[allow(clippy::clone_on_copy)]
+    #[recursive]
+    fn clone(&self) -> Self {
+        match self {
+            #[cfg(feature = "python")]
+            Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
+            Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
+            Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
+            Self::Scan { paths, file_info, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
+            Self::DataFrameScan { df, schema, output_schema, projection, selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), projection: projection.clone(), selection: selection.clone() },
+            Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
+            Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
+            Self::Join { input_left, input_right, left_on, right_on, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone() },
+            Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
+            Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
+            Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
+            Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
+            Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
+            Self::Union { inputs, args} => Self::Union { inputs: inputs.clone(), args: args.clone() },
+            Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
+            Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
+            Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
+            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version}
+        }
+    }
+}
+
+impl Default for DslPlan {
     fn default() -> Self {
         let df = DataFrame::new::<Series>(vec![]).unwrap();
         let schema = df.schema();
-        DataFrameScan {
+        DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema: Arc::new(schema),
             output_schema: None,
@@ -266,23 +221,32 @@ impl Default for LogicalPlan {
     }
 }
 
-impl LogicalPlan {
-    pub fn describe(&self) -> String {
-        format!("{self:#?}")
+impl DslPlan {
+    pub fn describe(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe())
     }
 
-    pub fn describe_tree_format(&self) -> String {
-        let mut visitor = TreeFmtVisitor::default();
-        TreeFmtNode::root_logical_plan(self).traverse(&mut visitor);
-        format!("{visitor:#?}")
+    pub fn describe_tree_format(&self) -> PolarsResult<String> {
+        Ok(self.clone().to_alp()?.describe_tree_format())
     }
 
-    pub fn to_alp(self) -> PolarsResult<(Node, Arena<ALogicalPlan>, Arena<AExpr>)> {
+    pub fn display(&self) -> PolarsResult<impl fmt::Display> {
+        struct DslPlanDisplay(IRPlan);
+        impl fmt::Display for DslPlanDisplay {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.as_ref().display().fmt(f)
+            }
+        }
+        Ok(DslPlanDisplay(self.clone().to_alp()?))
+    }
+
+    pub fn to_alp(self) -> PolarsResult<IRPlan> {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
 
-        let node = to_alp(self, &mut expr_arena, &mut lp_arena)?;
+        let node = to_alp(self, &mut expr_arena, &mut lp_arena, true, true)?;
+        let plan = IRPlan::new(node, lp_arena, expr_arena);
 
-        Ok((node, lp_arena, expr_arena))
+        Ok(plan)
     }
 }

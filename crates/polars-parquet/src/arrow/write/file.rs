@@ -6,7 +6,7 @@ use polars_error::{PolarsError, PolarsResult};
 use super::schema::schema_to_metadata_key;
 use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
-use crate::parquet::write::{RowGroupIter, WriteOptions as FileWriteOptions};
+use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
 /// Attaches [`ArrowSchema`] to `key_value_metadata`
 pub fn add_arrow_schema(
@@ -71,7 +71,7 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Writes a row group to the file.
-    pub fn write(&mut self, row_group: RowGroupIter<'_, PolarsError>) -> PolarsResult<()> {
+    pub fn write(&mut self, row_group: RowGroupIterColumns<'_, PolarsError>) -> PolarsResult<()> {
         Ok(self.writer.write(row_group)?)
     }
 

@@ -1,6 +1,9 @@
 use arrow::legacy::prelude::DynArgs;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
     pub window_size: usize,
@@ -11,7 +14,20 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub fn_params: DynArgs,
+}
+
+#[cfg(feature = "rolling_window")]
+impl PartialEq for RollingOptionsFixedWindow {
+    fn eq(&self, other: &Self) -> bool {
+        self.window_size == other.window_size
+            && self.min_periods == other.min_periods
+            && self.weights == other.weights
+            && self.center == other.center
+            && self.fn_params.is_none()
+            && other.fn_params.is_none()
+    }
 }
 
 impl Default for RollingOptionsFixedWindow {
@@ -30,8 +46,8 @@ impl Default for RollingOptionsFixedWindow {
 mod inner_mod {
     use std::ops::SubAssign;
 
+    use arrow::bitmap::utils::set_bit_unchecked;
     use arrow::bitmap::MutableBitmap;
-    use arrow::legacy::bit_util::unset_bit_raw;
     use arrow::legacy::trusted_len::TrustedLenPush;
     use num_traits::pow::Pow;
     use num_traits::{Float, Zero};
@@ -124,7 +140,7 @@ mod inner_mod {
                             *ptr = arr_window;
                         }
                         // reset flags as we reuse this container
-                        series_container.clear_settings();
+                        series_container.clear_flags();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
                         let s = if size == options.window_size {
@@ -178,7 +194,7 @@ mod inner_mod {
                             *ptr = arr_window;
                         }
                         // reset flags as we reuse this container
-                        series_container.clear_settings();
+                        series_container.clear_flags();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
                         let s = f(&series_container);
@@ -219,7 +235,7 @@ mod inner_mod {
             let mut validity = MutableBitmap::with_capacity(ca.len());
             validity.extend_constant(window_size - 1, false);
             validity.extend_constant(ca.len() - (window_size - 1), true);
-            let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+            let validity_slice = validity.as_mut_slice();
 
             let mut values = Vec::with_capacity(ca.len());
             values.extend(std::iter::repeat(T::Native::default()).take(window_size - 1));
@@ -247,7 +263,7 @@ mod inner_mod {
                         // and the `validity_ptr`.
                         unsafe {
                             values.push_unchecked(T::Native::default());
-                            unset_bit_raw(validity_ptr, offset + window_size - 1);
+                            set_bit_unchecked(validity_slice, offset + window_size - 1, false);
                         }
                     },
                 }

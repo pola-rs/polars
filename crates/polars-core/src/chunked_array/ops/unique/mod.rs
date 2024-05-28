@@ -45,7 +45,7 @@ pub(crate) fn is_unique_helper(
 }
 
 #[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
     fn unique(&self) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
         polars_bail!(opq = unique, self.dtype());
     }
@@ -79,7 +79,7 @@ macro_rules! arg_unique_ca {
     }};
 }
 
-impl<T> ChunkUnique<T> for ChunkedArray<T>
+impl<T> ChunkUnique for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
@@ -171,10 +171,10 @@ where
     }
 }
 
-impl ChunkUnique<StringType> for StringChunked {
+impl ChunkUnique for StringChunked {
     fn unique(&self) -> PolarsResult<Self> {
         let out = self.as_binary().unique()?;
-        Ok(unsafe { out.to_string() })
+        Ok(unsafe { out.to_string_unchecked() })
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
@@ -186,7 +186,7 @@ impl ChunkUnique<StringType> for StringChunked {
     }
 }
 
-impl ChunkUnique<BinaryType> for BinaryChunked {
+impl ChunkUnique for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
         match self.null_count() {
             0 => {
@@ -234,7 +234,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
     }
 }
 
-impl ChunkUnique<BooleanType> for BooleanChunked {
+impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         // can be None, Some(true), Some(false)
         let mut unique = Vec::with_capacity(3);

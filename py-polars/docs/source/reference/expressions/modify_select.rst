@@ -11,6 +11,7 @@ Manipulation/selection
     Expr.arg_true
     Expr.backward_fill
     Expr.bottom_k
+    Expr.bottom_k_by
     Expr.cast
     Expr.ceil
     Expr.clip
@@ -33,6 +34,7 @@ Manipulation/selection
     Expr.head
     Expr.inspect
     Expr.interpolate
+    Expr.interpolate_by
     Expr.limit
     Expr.lower_bound
     Expr.map_dict
@@ -61,5 +63,6 @@ Manipulation/selection
     Expr.take_every
     Expr.to_physical
     Expr.top_k
+    Expr.top_k_by
     Expr.upper_bound
     Expr.where

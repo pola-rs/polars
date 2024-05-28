@@ -56,7 +56,7 @@ pub enum TemporalFunction {
     BaseUtcOffset,
     #[cfg(feature = "timezones")]
     DSTOffset,
-    Round(String, String),
+    Round(String),
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>, NonExistent),
     Combine(TimeUnit),
@@ -465,11 +465,11 @@ pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Series> {
-    let every = Duration::parse(every);
+pub(super) fn round(s: &[Series], offset: &str) -> PolarsResult<Series> {
     let offset = Duration::parse(offset);
 
     let time_series = &s[0];
+    let every = s[1].str()?;
 
     Ok(match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {

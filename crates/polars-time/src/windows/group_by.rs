@@ -180,6 +180,7 @@ pub fn group_by_windows(
                 window
                     .get_overlapping_bounds_iter(
                         boundary,
+                        closed_window,
                         tu,
                         tz.parse::<Tz>().ok().as_ref(),
                         start_by,
@@ -198,7 +199,7 @@ pub fn group_by_windows(
         _ => {
             update_groups_and_bounds(
                 window
-                    .get_overlapping_bounds_iter(boundary, tu, None, start_by)
+                    .get_overlapping_bounds_iter(boundary, closed_window, tu, None, start_by)
                     .unwrap(),
                 start_offset,
                 time,
@@ -229,7 +230,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     tz: Option<Tz>,
     start_offset: usize,
     upper_bound: Option<usize>,
-) -> PolarsResult<impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_> {
+) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
     let add = match tu {
@@ -442,7 +443,7 @@ pub(crate) fn group_by_values_iter_lookahead(
     })
 }
 
-#[cfg(feature = "rolling_window")]
+#[cfg(feature = "rolling_window_by")]
 #[inline]
 pub(crate) fn group_by_values_iter(
     period: Duration,
@@ -450,7 +451,7 @@ pub(crate) fn group_by_values_iter(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> PolarsResult<impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_> {
+) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
     let mut offset = period;
     offset.negative = true;
     // t is at the right endpoint of the window
@@ -575,7 +576,7 @@ pub fn group_by_values(
     let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
 
     // we have a (partial) lookbehind window
-    if offset.negative {
+    if offset.negative && !offset.is_zero() {
         // lookbehind
         if offset.duration_ns() == period.duration_ns() {
             // t is right at the end of the window
@@ -646,7 +647,7 @@ pub fn group_by_values(
             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                 .collect::<PolarsResult<_>>()
         }
-    } else if offset != Duration::parse("0ns")
+    } else if !offset.is_zero()
         || closed_window == ClosedWindow::Right
         || closed_window == ClosedWindow::None
     {

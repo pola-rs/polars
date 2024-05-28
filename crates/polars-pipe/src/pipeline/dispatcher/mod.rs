@@ -7,13 +7,14 @@ use std::sync::{Arc, Mutex};
 use polars_core::error::PolarsResult;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
+use polars_expr::state::ExecutionState;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use crate::executors::sources::DataFrameSource;
 use crate::operators::{
-    DataChunk, FinalizedSink, OperatorResult, PExecutionContext, SExecutionContext, Sink,
-    SinkResult, Source, SourceResult,
+    DataChunk, FinalizedSink, OperatorResult, PExecutionContext, Sink, SinkResult, Source,
+    SourceResult,
 };
 use crate::pipeline::dispatcher::drive_operator::{par_flush, par_process_chunks};
 mod drive_operator;
@@ -310,7 +311,7 @@ impl PipeLine {
 /// Executes all branches and replaces operators and sinks during execution to ensure
 /// we materialize.
 pub fn execute_pipeline(
-    state: Box<dyn SExecutionContext>,
+    state: ExecutionState,
     mut pipelines: Vec<PipeLine>,
 ) -> PolarsResult<DataFrame> {
     let mut pipeline = pipelines.pop().unwrap();

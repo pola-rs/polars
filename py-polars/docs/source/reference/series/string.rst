@@ -22,6 +22,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.extract_all
     Series.str.extract_groups
     Series.str.find
+    Series.str.head
     Series.str.json_decode
     Series.str.json_extract
     Series.str.json_path_match
@@ -33,6 +34,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.n_chars
     Series.str.pad_end
     Series.str.pad_start
+    Series.str.parse_int
     Series.str.replace
     Series.str.replace_all
     Series.str.replace_many
@@ -51,6 +53,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.strip_prefix
     Series.str.strip_suffix
     Series.str.strptime
+    Series.str.tail
     Series.str.to_date
     Series.str.to_datetime
     Series.str.to_decimal
@@ -60,4 +63,3 @@ The following methods are available under the `Series.str` attribute.
     Series.str.to_titlecase
     Series.str.to_uppercase
     Series.str.zfill
-    Series.str.parse_int

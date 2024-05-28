@@ -8,7 +8,7 @@ use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{serialize_statistics, FixedLenStatistics};
+use crate::parquet::statistics::FixedLenStatistics;
 
 pub(crate) fn encode_plain(array: &FixedSizeBinaryArray, is_optional: bool, buffer: &mut Vec<u8>) {
     // append the non-null values
@@ -52,7 +52,7 @@ pub fn array_to_page(
         array.null_count(),
         0,
         definition_levels_byte_length,
-        statistics.map(|x| serialize_statistics(&x)),
+        statistics.map(|x| x.serialize()),
         type_,
         options,
         Encoding::Plain,

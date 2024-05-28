@@ -40,9 +40,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.8', '3.12']
-    defaults:
-      run:
-        working-directory: py-polars
 
     steps:
       - uses: actions/checkout@v4
@@ -52,11 +49,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Create virtual environment
         run: |
-          pip install -r requirements-dev.txt
-          pip install -r requirements-lint.txt
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        working-directory: py-polars
+        run: |
+          uv pip install -r requirements-dev.txt -r requirements-lint.txt
 
       # Allow untyped calls for older Python versions
       - name: Run mypy
+        working-directory: py-polars
         run: mypy ${{ (matrix.python-version == '3.8') && '--allow-untyped-calls' || '' }}

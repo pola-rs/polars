@@ -5,15 +5,15 @@ use std::borrow::Cow;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
-use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 #[cfg(feature = "dtype-categorical")]
 use super::_check_categorical_src;
-use super::{_finish_join, build_tables, multiple_keys as mk, prepare_bytes};
+use super::{_finish_join, build_tables, prepare_bytes};
 use crate::frame::IntoDf;
+use crate::series::SeriesMethods;
 
 trait AsofJoinState<T>: Default {
     fn next<F: FnMut(IdxSize) -> Option<T>>(
@@ -142,7 +142,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
@@ -185,13 +185,13 @@ fn check_asof_columns(
         a.dtype(), b.dtype()
     );
     if check_sorted {
-        ensure_sorted_arg(a, "asof_join")?;
-        ensure_sorted_arg(b, "asof_join")?;
+        a.ensure_sorted_arg("asof_join")?;
+        b.ensure_sorted_arg("asof_join")?;
     }
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key

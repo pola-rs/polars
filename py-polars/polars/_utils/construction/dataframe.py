@@ -23,6 +23,7 @@ from polars._utils.construction.utils import (
     contains_nested,
     is_namedtuple,
     is_pydantic_model,
+    is_simple_numpy_backed_pandas_series,
     nt_unpack,
     try_get_type_hints,
 )
@@ -44,6 +45,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import (
     _NUMPY_AVAILABLE,
+    _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     dataclasses,
@@ -66,6 +68,8 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
+
+_MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
 
 def dict_to_pydf(
@@ -95,7 +99,7 @@ def dict_to_pydf(
             int(
                 _check_for_numpy(val)
                 and isinstance(val, np.ndarray)
-                and len(val) > 1000
+                and len(val) > _MIN_NUMPY_SIZE_FOR_MULTITHREADING
             )
             for val in data.values()
         )
@@ -112,7 +116,7 @@ def dict_to_pydf(
                     zip(
                         column_names,
                         pool.map(
-                            lambda t: pl.Series(t[0], t[1])
+                            lambda t: pl.Series(t[0], t[1], nan_to_null=nan_to_null)
                             if isinstance(t[1], np.ndarray)
                             else t[1],
                             list(data.items()),
@@ -123,14 +127,18 @@ def dict_to_pydf(
     if not data and schema_overrides:
         data_series = [
             pl.Series(
-                name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
+                name,
+                [],
+                dtype=schema_overrides.get(name),
+                strict=strict,
+                nan_to_null=nan_to_null,
             )._s
             for name in column_names
         ]
     else:
         data_series = [
             s._s
-            for s in _expand_dict_scalars(
+            for s in _expand_dict_values(
                 data,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -192,13 +200,16 @@ def _unpack_schema(
     # determine column names from schema
     if isinstance(schema, Mapping):
         column_names: list[str] = list(schema)
-        # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
     else:
-        column_names = [
-            (col or f"column_{i}") if isinstance(col, str) else col[0]
-            for i, col in enumerate(schema)
-        ]
+        column_names = []
+        for i, col in enumerate(schema):
+            if isinstance(col, str):
+                unnamed = not col and col not in schema_overrides
+                col = f"column_{i}" if unnamed else col
+            else:
+                col = col[0]
+            column_names.append(col)
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
@@ -303,7 +314,7 @@ def _post_apply_columns(
     return pydf
 
 
-def _expand_dict_scalars(
+def _expand_dict_values(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     *,
     schema_overrides: SchemaDict | None = None,
@@ -330,9 +341,20 @@ def _expand_dict_scalars(
             for name, val in data.items():
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
-                    updated_data[name] = pl.DataFrame(val, strict=strict).to_struct(
-                        name
-                    )
+                    vdf = pl.DataFrame(val, strict=strict)
+                    if (
+                        len(vdf) == 1
+                        and array_len > 1
+                        and all(not d.is_nested() for d in vdf.schema.values())
+                    ):
+                        s_vals = {
+                            nm: vdf[nm].extend_constant(v, n=(array_len - 1))
+                            for nm, v in val.items()
+                        }
+                        st = pl.DataFrame(s_vals).to_struct(name)
+                    else:
+                        st = vdf.to_struct(name)
+                    updated_data[name] = st
 
                 elif isinstance(val, pl.Series):
                     s = val.rename(name) if name != val.name else val
@@ -536,12 +558,14 @@ def _sequence_of_sequence_to_pydf(
 
         if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
-            pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+            pydf = PyDataFrame.from_dicts(
+                dicts, strict=strict, infer_schema_length=infer_schema_length
+            )
         else:
-            pydf = PyDataFrame.read_rows(
+            pydf = PyDataFrame.from_rows(
                 data,
-                infer_schema_length,
-                local_schema_override or None,
+                schema=local_schema_override or None,
+                infer_schema_length=infer_schema_length,
             )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
@@ -555,7 +579,10 @@ def _sequence_of_sequence_to_pydf(
         )
         data_series: list[PySeries] = [
             pl.Series(
-                column_names[i], element, schema_overrides.get(column_names[i])
+                column_names[i],
+                element,
+                dtype=schema_overrides.get(column_names[i]),
+                strict=strict,
             )._s
             for i, element in enumerate(data)
         ]
@@ -648,8 +675,12 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    pydf = PyDataFrame.read_dicts(
-        data, infer_schema_length, dicts_schema, schema_overrides
+    pydf = PyDataFrame.from_dicts(
+        data,
+        dicts_schema,
+        schema_overrides,
+        strict=strict,
+        infer_schema_length=infer_schema_length,
     )
 
     # TODO: we can remove this `schema_overrides` block completely
@@ -667,13 +698,20 @@ def _sequence_of_elements_to_pydf(
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
+    *,
+    strict: bool,
     **kwargs: Any,
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
     data_series: list[PySeries] = [
-        pl.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
+        pl.Series(
+            column_names[0],
+            data,
+            schema_overrides.get(column_names[0]),
+            strict=strict,
+        )._s
     ]
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
@@ -683,12 +721,10 @@ def _sequence_of_numpy_to_pydf(
     first_element: np.ndarray[Any, Any],
     **kwargs: Any,
 ) -> PyDataFrame:
-    to_pydf = (
-        _sequence_of_sequence_to_pydf
-        if first_element.ndim == 1
-        else _sequence_of_elements_to_pydf
-    )
-    return to_pydf(first_element, **kwargs)  # type: ignore[operator]
+    if first_element.ndim == 1:
+        return _sequence_of_sequence_to_pydf(first_element, **kwargs)
+    else:
+        return _sequence_of_elements_to_pydf(first_element, **kwargs)
 
 
 def _sequence_of_pandas_to_pydf(
@@ -743,10 +779,14 @@ def _sequence_of_dataclasses_to_pydf(
     )
     if unpack_nested:
         dicts = [asdict(md) for md in data]
-        pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+        pydf = PyDataFrame.from_dicts(
+            dicts, strict=strict, infer_schema_length=infer_schema_length
+        )
     else:
         rows = [astuple(dc) for dc in data]
-        pydf = PyDataFrame.read_rows(rows, infer_schema_length, overrides or None)
+        pydf = PyDataFrame.from_rows(
+            rows, schema=overrides or None, infer_schema_length=infer_schema_length
+        )
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}
@@ -790,17 +830,26 @@ def _sequence_of_pydantic_models_to_pydf(
             if old_pydantic
             else [md.model_dump(mode="python") for md in data]
         )
-        pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+        pydf = PyDataFrame.from_dicts(
+            dicts, strict=strict, infer_schema_length=infer_schema_length
+        )
 
     elif len(model_fields) > 50:
-        # 'read_rows' is the faster codepath for models with a lot of fields...
+        # 'from_rows' is the faster codepath for models with a lot of fields...
         get_values = itemgetter(*model_fields)
         rows = [get_values(md.__dict__) for md in data]
-        pydf = PyDataFrame.read_rows(rows, infer_schema_length, overrides)
+        pydf = PyDataFrame.from_rows(
+            rows, schema=overrides, infer_schema_length=infer_schema_length
+        )
     else:
-        # ...and 'read_dicts' is faster otherwise
+        # ...and 'from_dicts' is faster otherwise
         dicts = [md.__dict__ for md in data]
-        pydf = PyDataFrame.read_dicts(dicts, infer_schema_length, overrides)
+        pydf = PyDataFrame.from_dicts(
+            dicts,
+            schema=overrides,
+            strict=strict,
+            infer_schema_length=infer_schema_length,
+        )
 
     if overrides:
         structs = {c: tp for c, tp in overrides.items() if isinstance(tp, Struct)}
@@ -972,10 +1021,30 @@ def pandas_to_pydf(
     include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
+    convert_index = include_index and not _pandas_has_default_index(data)
+    if not convert_index and all(
+        is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
+    ):
+        # Convert via NumPy directly, no PyArrow needed.
+        return pl.DataFrame(
+            {str(col): data[col].to_numpy() for col in data.columns},
+            schema=schema,
+            strict=strict,
+            schema_overrides=schema_overrides,
+            nan_to_null=nan_to_null,
+        )._df
+
+    if not _PYARROW_AVAILABLE:
+        msg = (
+            "pyarrow is required for converting a pandas dataframe to Polars, "
+            "unless each of its columns is a simple numpy-backed one "
+            "(e.g. 'int64', 'bool', 'float32' - not 'Int64')"
+        )
+        raise ImportError(msg)
     arrow_dict = {}
     length = data.shape[0]
 
-    if include_index and not _pandas_has_default_index(data):
+    if convert_index:
         for idxcol in data.index.names:
             arrow_dict[str(idxcol)] = plc.pandas_series_to_arrow(
                 data.index.get_level_values(idxcol),
@@ -1122,7 +1191,7 @@ def numpy_to_pydf(
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from a numpy ndarray (including structured ndarrays)."""
+    """Construct a PyDataFrame from a NumPy ndarray (including structured ndarrays)."""
     shape = data.shape
     two_d = len(shape) == 2
 

@@ -4,9 +4,9 @@ use polars_error::PolarsResult;
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
 use crate::compute::cast::CastOptions;
-use crate::datatypes::{ArrowDataType, TimeUnit};
 #[cfg(feature = "dtype-decimal")]
-use crate::legacy::compute::decimal::deserialize_decimal;
+use crate::compute::decimal::deserialize_decimal;
+use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::temporal_conversions::EPOCH_DAYS_FROM_CE;
 use crate::types::NativeType;
@@ -21,6 +21,7 @@ pub(super) fn binview_to_dictionary<K: DictionaryKey>(
     from: &BinaryViewArray,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new();
+    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())
@@ -30,6 +31,7 @@ pub(super) fn utf8view_to_dictionary<K: DictionaryKey>(
     from: &Utf8ViewArray,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new();
+    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())

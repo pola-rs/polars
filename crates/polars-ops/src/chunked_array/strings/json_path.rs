@@ -2,20 +2,21 @@ use std::borrow::Cow;
 
 use arrow::array::ValueSize;
 use jsonpath_lib::PathCompiled;
+use polars_core::prelude::arity::{broadcast_try_binary_elementwise, unary_elementwise};
 use serde_json::Value;
 
 use super::*;
 
-pub fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
+pub fn extract_json(expr: &PathCompiled, json_str: &str) -> Option<String> {
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
         let first = *result.first()?;
 
         match first {
-            Value::String(s) => Some(Cow::Owned(s.clone())),
+            Value::String(s) => Some(s.clone()),
             Value::Null => None,
-            v => Some(Cow::Owned(v.to_string())),
+            v => Some(v.to_string()),
         }
     })
 }
@@ -41,12 +42,38 @@ pub fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a,
 pub trait Utf8JsonPathImpl: AsString {
     /// Extract json path, first match
     /// Refer to <https://goessner.net/articles/JsonPath/>
-    fn json_path_match(&self, json_path: &str) -> PolarsResult<StringChunked> {
-        let pat = PathCompiled::compile(json_path)
-            .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression {}", e))?;
-        Ok(self
-            .as_string()
-            .apply(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
+    fn json_path_match(&self, json_path: &StringChunked) -> PolarsResult<StringChunked> {
+        let ca = self.as_string();
+        match (ca.len(), json_path.len()) {
+            (_, 1) => {
+                // SAFETY: `json_path` was verified to have exactly 1 element.
+                let opt_path = unsafe { json_path.get_unchecked(0) };
+                let out = if let Some(path) = opt_path {
+                    let pat = PathCompiled::compile(path).map_err(
+                        |e| polars_err!(ComputeError: "error compiling JSON path expression {}", e),
+                    )?;
+                    unary_elementwise(ca, |opt_s| opt_s.and_then(|s| extract_json(&pat, s)))
+                } else {
+                    StringChunked::full_null(ca.name(), ca.len())
+                };
+                Ok(out)
+            },
+            (len_ca, len_path) if len_ca == 1 || len_ca == len_path => {
+                broadcast_try_binary_elementwise(ca, json_path, |opt_str, opt_path| {
+                    match (opt_str, opt_path) {
+                    (Some(str_val), Some(path)) => {
+                        PathCompiled::compile(path)
+                            .map_err(|e| polars_err!(ComputeError: "error compiling JSON path expression {}", e))
+                            .map(|path| extract_json(&path, str_val))
+                    },
+                    _ => Ok(None),
+                }
+                })
+            },
+            (len_ca, len_path) => {
+                polars_bail!(ComputeError: "The length of `ca` and `json_path` should either 1 or the same, but `{}`, `{}` founded", len_ca, len_path)
+            },
+        }
     }
 
     /// Returns the inferred DataType for JSON values for each row

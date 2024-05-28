@@ -5,15 +5,15 @@ use polars_core::error::to_compute_err;
 #[cfg(feature = "parquet")]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::count_rows as count_rows_csv;
+use polars_io::csv::read::count_rows as count_rows_csv;
 #[cfg(all(feature = "parquet", feature = "cloud"))]
-use polars_io::parquet::ParquetAsyncReader;
+use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetReader;
+use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
-#[cfg(feature = "parquet")]
-use polars_io::{is_cloud_url, SerReader};
+#[cfg(any(feature = "parquet", feature = "ipc"))]
+use polars_io::{utils::is_cloud_url, SerReader};
 
 use super::*;
 
@@ -22,30 +22,38 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
     match scan_type {
         #[cfg(feature = "csv")]
         FileScan::Csv { options } => {
+            let parse_options = options.get_parse_options();
             let n_rows: PolarsResult<usize> = paths
                 .iter()
                 .map(|path| {
                     count_rows_csv(
                         path,
-                        options.separator,
-                        options.quote_char,
-                        options.comment_prefix.as_ref(),
-                        options.eol_char,
+                        parse_options.separator,
+                        parse_options.quote_char,
+                        parse_options.comment_prefix.as_ref(),
+                        parse_options.eol_char,
                         options.has_header,
                     )
                 })
                 .sum();
-            Ok(DataFrame::new(vec![Series::new("len", [n_rows? as IdxSize])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new(
+                crate::constants::LEN,
+                [n_rows? as IdxSize],
+            )])
+            .unwrap())
         },
         #[cfg(feature = "parquet")]
         FileScan::Parquet { cloud_options, .. } => {
             let n_rows = count_rows_parquet(paths, cloud_options.as_ref())?;
-            Ok(DataFrame::new(vec![Series::new("len", [n_rows as IdxSize])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new(
+                crate::constants::LEN,
+                [n_rows as IdxSize],
+            )])
+            .unwrap())
         },
         #[cfg(feature = "ipc")]
         FileScan::Ipc {
             options,
-            #[cfg(feature = "cloud")]
             cloud_options,
             metadata,
         } => {
@@ -57,7 +65,7 @@ pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<
             )?
             .try_into()
             .map_err(to_compute_err)?;
-            Ok(DataFrame::new(vec![Series::new("len", [count])]).unwrap())
+            Ok(DataFrame::new(vec![Series::new(crate::constants::LEN, [count])]).unwrap())
         },
         FileScan::Anonymous { .. } => {
             unreachable!();

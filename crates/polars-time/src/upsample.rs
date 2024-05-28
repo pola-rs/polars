@@ -1,8 +1,8 @@
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
-use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
+use polars_ops::series::SeriesMethods;
 
 use crate::prelude::*;
 
@@ -98,6 +98,9 @@ impl PolarsUpsample for DataFrame {
         offset: Duration,
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
+        let time_type = self.column(time_column)?.dtype();
+        ensure_duration_matches_data_type(offset, time_type, "offset")?;
+        ensure_duration_matches_data_type(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, offset, false)
     }
 
@@ -109,6 +112,9 @@ impl PolarsUpsample for DataFrame {
         offset: Duration,
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
+        let time_type = self.column(time_column)?.dtype();
+        ensure_duration_matches_data_type(offset, time_type, "offset")?;
+        ensure_duration_matches_data_type(every, time_type, "every")?;
         upsample_impl(self, by, time_column, every, offset, true)
     }
 }
@@ -122,15 +128,45 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    ensure_sorted_arg(s, "upsample")?;
-    if matches!(s.dtype(), DataType::Date) {
+    s.ensure_sorted_arg("upsample")?;
+    let time_type = s.dtype();
+    if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
-        df.try_apply(index_column, |s| {
+        df.apply(index_column, |s| {
             s.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable).unwrap();
-        out.try_apply(index_column, |s| s.cast(&DataType::Date))
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
+            .unwrap();
+        Ok(out)
+    } else if matches!(
+        time_type,
+        DataType::UInt32 | DataType::UInt64 | DataType::Int32
+    ) {
+        let mut df = source.clone();
+
+        df.apply(index_column, |s| {
+            s.cast(&DataType::Int64)
+                .unwrap()
+                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                .unwrap()
+        })
+        .unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
+            .unwrap();
+        Ok(out)
+    } else if matches!(time_type, DataType::Int64) {
+        let mut df = source.clone();
+        df.apply(index_column, |s| {
+            s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+                .unwrap()
+        })
+        .unwrap();
+        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
     } else if by.is_empty() {

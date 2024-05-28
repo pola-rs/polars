@@ -4,8 +4,12 @@ mod primitive;
 mod sidecar;
 
 use std::io::{Cursor, Read, Seek};
-use std::sync::Arc;
 
+use polars::io::parquet::read::ParquetReader;
+use polars::io::parquet::write::ParquetWriter;
+use polars::io::SerReader;
+use polars_core::df;
+use polars_core::prelude::*;
 use polars_parquet::parquet::compression::{BrotliLevel, CompressionOptions};
 use polars_parquet::parquet::error::Result;
 use polars_parquet::parquet::metadata::{Descriptor, SchemaDescriptor};
@@ -39,7 +43,7 @@ pub fn array_to_page(
     }
 }
 
-fn read_column<R: Read + Seek>(reader: &mut R) -> Result<(Array, Option<Arc<dyn Statistics>>)> {
+fn read_column<R: Read + Seek>(reader: &mut R) -> Result<(Array, Option<Statistics>)> {
     let (a, statistics) = super::read::read_column(reader, 0, "col")?;
     Ok((a, statistics))
 }
@@ -50,7 +54,7 @@ async fn read_column_async<
     R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
 >(
     reader: &mut R,
-) -> Result<(Array, Option<Arc<dyn Statistics>>)> {
+) -> Result<(Array, Option<Statistics>)> {
     let (a, statistics) = super::read::read_column_async(reader, 0, "col").await?;
     Ok((a, statistics))
 }
@@ -103,10 +107,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> Result<()> {
     let (result, statistics) = read_column(&mut Cursor::new(data))?;
     assert_eq!(array, result);
     let stats = alltypes_statistics(column);
-    assert_eq!(
-        statistics.as_ref().map(|x| x.as_ref()),
-        Some(stats).as_ref().map(|x| x.as_ref())
-    );
+    assert_eq!(statistics.as_ref(), Some(stats).as_ref(),);
     Ok(())
 }
 
@@ -281,9 +282,79 @@ async fn test_column_async(column: &str, compression: CompressionOptions) -> Res
     let (result, statistics) = read_column_async(&mut futures::io::Cursor::new(data)).await?;
     assert_eq!(array, result);
     let stats = alltypes_statistics(column);
-    assert_eq!(
-        statistics.as_ref().map(|x| x.as_ref()),
-        Some(stats).as_ref().map(|x| x.as_ref())
-    );
+    assert_eq!(statistics.as_ref(), Some(stats).as_ref());
     Ok(())
+}
+
+#[test]
+fn test_parquet() {
+    // In CI: This test will be skipped because the file does not exist.
+    if let Ok(r) = polars_utils::open_file("data/simple.parquet") {
+        let reader = ParquetReader::new(r);
+        let df = reader.finish().unwrap();
+        assert_eq!(df.get_column_names(), ["a", "b"]);
+        assert_eq!(df.shape(), (3, 2));
+    }
+}
+
+#[test]
+#[cfg(feature = "dtype-datetime")]
+fn test_parquet_datetime_round_trip() -> PolarsResult<()> {
+    use std::io::{Cursor, Seek, SeekFrom};
+
+    let mut f = Cursor::new(vec![]);
+
+    let mut df = df![
+        "datetime" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
+    ]?;
+
+    df.try_apply("datetime", |s| {
+        s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+    })?;
+
+    ParquetWriter::new(&mut f).finish(&mut df)?;
+
+    f.seek(SeekFrom::Start(0))?;
+
+    let read = ParquetReader::new(f).finish()?;
+    assert!(read.equals_missing(&df));
+    Ok(())
+}
+
+#[test]
+fn test_read_parquet_with_projection() {
+    let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+    let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+
+    ParquetWriter::new(&mut buf)
+        .finish(&mut df)
+        .expect("parquet writer");
+    buf.set_position(0);
+
+    let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+    let df_read = ParquetReader::new(buf)
+        .with_projection(Some(vec![1, 2]))
+        .finish()
+        .unwrap();
+    assert_eq!(df_read.shape(), (3, 2));
+    df_read.equals(&expected);
+}
+
+#[test]
+fn test_read_parquet_with_columns() {
+    let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+    let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+
+    ParquetWriter::new(&mut buf)
+        .finish(&mut df)
+        .expect("parquet writer");
+    buf.set_position(0);
+
+    let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+    let df_read = ParquetReader::new(buf)
+        .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
+        .finish()
+        .unwrap();
+    assert_eq!(df_read.shape(), (3, 2));
+    df_read.equals(&expected);
 }

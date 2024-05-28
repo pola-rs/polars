@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars::prelude::*;
 use polars_ops::prelude::array::ArrToStructNameGenerator;
 use pyo3::prelude::*;
@@ -40,6 +42,10 @@ impl PyExpr {
         }
     }
 
+    fn arr_n_unique(&self) -> Self {
+        self.inner.clone().arr().n_unique().into()
+    }
+
     fn arr_to_list(&self) -> Self {
         self.inner.clone().arr().to_list().into()
     }
@@ -76,8 +82,12 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn arr_get(&self, index: PyExpr) -> Self {
-        self.inner.clone().arr().get(index.inner).into()
+    fn arr_get(&self, index: PyExpr, null_on_oob: bool) -> Self {
+        self.inner
+            .clone()
+            .arr()
+            .get(index.inner, null_on_oob)
+            .into()
     }
 
     fn arr_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
@@ -104,7 +114,7 @@ impl PyExpr {
             Arc::new(move |idx: usize| {
                 Python::with_gil(|py| {
                     let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: SmartString = out.extract::<&str>(py).unwrap().into();
+                    let out: SmartString = out.extract::<Cow<str>>(py).unwrap().into();
                     out
                 })
             }) as ArrToStructNameGenerator

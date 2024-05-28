@@ -8,6 +8,7 @@ Boolean
 
     Expr.all
     Expr.any
+    Expr.has_nulls
     Expr.is_between
     Expr.is_duplicated
     Expr.is_finite

@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct ProjectionExprs {
-    expr: Vec<Node>,
+    expr: Vec<ExprIR>,
     /// offset from the back
     /// `expr[expr.len() - common_sub_offset..]`
     /// are the common sub expressions
@@ -12,47 +12,40 @@ pub struct ProjectionExprs {
 }
 
 impl Deref for ProjectionExprs {
-    type Target = Vec<Node>;
+    type Target = Vec<ExprIR>;
 
     fn deref(&self) -> &Self::Target {
         &self.expr
     }
 }
 
-impl From<Vec<Node>> for ProjectionExprs {
-    fn from(value: Vec<Node>) -> Self {
+impl From<Vec<ExprIR>> for ProjectionExprs {
+    fn from(value: Vec<ExprIR>) -> Self {
         Self::new(value)
     }
 }
 
-impl FromIterator<Node> for ProjectionExprs {
-    fn from_iter<T: IntoIterator<Item = Node>>(iter: T) -> Self {
-        let expr = iter.into_iter().collect();
-        Self::new(expr)
-    }
-}
-
 impl ProjectionExprs {
-    pub(crate) fn new(expr: Vec<Node>) -> Self {
+    pub(crate) fn new(expr: Vec<ExprIR>) -> Self {
         Self::new_with_cse(expr, 0)
     }
 
-    pub fn default_exprs(&self) -> &[Node] {
+    pub fn default_exprs(&self) -> &[ExprIR] {
         &self.expr[..self.expr.len() - self.common_sub_offset]
     }
 
-    pub fn cse_exprs(&self) -> &[Node] {
+    pub fn cse_exprs(&self) -> &[ExprIR] {
         &self.expr[self.expr.len() - self.common_sub_offset..]
     }
 
-    pub(crate) fn new_with_cse(expr: Vec<Node>, common_sub_offset: usize) -> Self {
+    pub(crate) fn new_with_cse(expr: Vec<ExprIR>, common_sub_offset: usize) -> Self {
         Self {
             expr,
             common_sub_offset,
         }
     }
 
-    pub(crate) fn has_sub_exprs(&self) -> bool {
+    pub fn has_sub_exprs(&self) -> bool {
         self.common_sub_offset != 0
     }
 
@@ -60,15 +53,30 @@ impl ProjectionExprs {
         debug_assert!(!self.has_sub_exprs(), "should not have sub-expressions yet");
     }
 
-    pub(crate) fn exprs(self) -> Vec<Node> {
+    pub(crate) fn exprs_mut(&mut self) -> &mut Vec<ExprIR> {
         self.dbg_assert_no_sub_exprs();
+        &mut self.expr
+    }
+
+    // @TODO: I don't think we can assume this
+    pub(crate) fn as_exprs(&self) -> &[ExprIR] {
+        self.dbg_assert_no_sub_exprs();
+        &self.expr
+    }
+
+    pub(crate) fn exprs(self) -> Vec<ExprIR> {
+        self.dbg_assert_no_sub_exprs();
+        self.expr
+    }
+
+    pub(crate) fn all_exprs(self) -> Vec<ExprIR> {
         self.expr
     }
 }
 
 impl IntoIterator for ProjectionExprs {
-    type Item = Node;
-    type IntoIter = <Vec<Node> as IntoIterator>::IntoIter;
+    type Item = ExprIR;
+    type IntoIter = <Vec<ExprIR> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         assert!(!self.has_sub_exprs(), "should not have sub-expressions yet");
@@ -77,8 +85,8 @@ impl IntoIterator for ProjectionExprs {
 }
 
 impl<'a> IntoIterator for &'a ProjectionExprs {
-    type Item = &'a Node;
-    type IntoIter = <&'a Vec<Node> as IntoIterator>::IntoIter;
+    type Item = &'a ExprIR;
+    type IntoIter = <&'a Vec<ExprIR> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         assert!(!self.has_sub_exprs(), "should not have sub-expressions yet");

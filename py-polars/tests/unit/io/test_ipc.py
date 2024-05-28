@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.type_aliases import IpcCompression
+    from tests.unit.conftest import MemoryUsage
 
 COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
@@ -266,3 +268,88 @@ def test_ipc_view_gc_14448() -> None:
     df.write_ipc(f, future=True)
     f.seek(0)
     assert_frame_equal(pl.read_ipc(f), df)
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("stream", [True, False])
+def test_read_ipc_only_loads_selected_columns(
+    memory_usage_without_pyarrow: MemoryUsage,
+    tmp_path: Path,
+    stream: bool,
+) -> None:
+    """Only requested columns are loaded by ``read_ipc()``/``read_ipc_stream()``."""
+    tmp_path.mkdir(exist_ok=True)
+
+    # Each column will be about 16MB of RAM. There's a fixed overhead tied to
+    # block size so smaller file sizes can be misleading in terms of memory
+    # usage.
+    series = pl.arange(0, 2_000_000, dtype=pl.Int64, eager=True)
+
+    file_path = tmp_path / "multicolumn.ipc"
+    df = pl.DataFrame(
+        {
+            "a": series,
+            "b": series,
+        }
+    )
+    write_ipc(df, stream, file_path)
+    del df, series
+
+    memory_usage_without_pyarrow.reset_tracking()
+
+    # Only load one column:
+    kwargs = {}
+    if not stream:
+        kwargs["memory_map"] = False
+    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
+    del df
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 32_000_000 at least, but there's some overhead.
+    assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
+
+
+@pytest.mark.write_disk()
+def test_ipc_decimal_15920(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    tmp_path.mkdir(exist_ok=True)
+
+    base_df = pl.Series(
+        "x",
+        [
+            *[
+                Decimal(x)
+                for x in [
+                    "10.1", "11.2", "12.3", "13.4", "14.5", "15.6", "16.7", "17.8", "18.9", "19.0",
+                    "20.1", "21.2", "22.3", "23.4", "24.5", "25.6", "26.7", "27.8", "28.9", "29.0",
+                    "30.1", "31.2", "32.3", "33.4", "34.5", "35.6", "36.7", "37.8", "38.9", "39.0"
+                ]
+            ],
+            *(50 * [None])
+        ],
+        dtype=pl.Decimal(18, 2),
+    ).to_frame()  # fmt: skip
+
+    for df in [base_df, base_df.drop_nulls()]:
+        path = f"{tmp_path}/data"
+        df.write_ipc(path)
+        assert_frame_equal(pl.read_ipc(path), df)
+
+
+@pytest.mark.write_disk()
+def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
+    p = tmp_path / "foo.ipc"
+    df = pl.DataFrame({"foo": [1, 2, 3]})
+    # first write is allowed
+    df.write_ipc(p)
+
+    # now open as memory mapped
+    df = pl.read_ipc(p, memory_map=True)
+
+    with pytest.raises(
+        pl.ComputeError, match="cannot write to file: already memory mapped"
+    ):
+        df.write_ipc(p)

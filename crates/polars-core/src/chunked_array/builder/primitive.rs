@@ -27,16 +27,7 @@ where
 
     fn finish(mut self) -> ChunkedArray<T> {
         let arr = self.array_builder.as_box();
-        let mut ca = ChunkedArray {
-            field: Arc::new(self.field),
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        ca.compute_len();
-        ca
+        ChunkedArray::new_with_compute_len(Arc::new(self.field), vec![arr])
     }
 
     fn shrink_to_fit(&mut self) {

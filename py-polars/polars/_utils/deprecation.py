@@ -6,13 +6,14 @@ from functools import wraps
 from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
 from polars._utils.various import find_stacklevel
+from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
     from polars import Expr
-    from polars.type_aliases import Ambiguous
+    from polars.type_aliases import Ambiguous, ClosedInterval
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -80,7 +81,7 @@ def deprecate_parameter_as_positional(
     old_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
-    Decorator to mark a function argument as deprecated due to being made positinoal.
+    Decorator to mark a function argument as deprecated due to being made positional.
 
     Use as follows::
 
@@ -275,3 +276,36 @@ def deprecate_saturating(duration: T) -> T:
         )
         return duration[:-11]  # type: ignore[return-value]
     return duration
+
+
+def validate_rolling_by_aggs_arguments(
+    weights: list[float] | None, *, center: bool
+) -> None:
+    if weights is not None:
+        msg = "`weights` is not supported in `rolling_*(..., by=...)` expression"
+        raise InvalidOperationError(msg)
+    if center:
+        msg = "`center=True` is not supported in `rolling_*(..., by=...)` expression"
+        raise InvalidOperationError(msg)
+
+
+def validate_rolling_aggs_arguments(
+    window_size: int | str, closed: ClosedInterval | None
+) -> int:
+    if isinstance(window_size, str):
+        issue_deprecation_warning(
+            "Passing a str to `rolling_*` is deprecated.\n\n"
+            "Please, either:\n"
+            "- pass an integer if you want a fixed window size (e.g. `rolling_mean(3)`)\n"
+            "- pass a string if you are computing the rolling operation based on another column (e.g. `rolling_mean_by('date', '3d'))\n",
+            version="0.20.26",
+        )
+        try:
+            window_size = int(window_size.rstrip("i"))
+        except ValueError:
+            msg = f"Expected a string of the form 'ni', where `n` is a positive integer, got: {window_size}"
+            raise InvalidOperationError(msg) from None
+    if closed is not None:
+        msg = "`closed` is not supported in `rolling_*(...)` expression"
+        raise InvalidOperationError(msg)
+    return window_size

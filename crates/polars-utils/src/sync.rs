@@ -13,11 +13,7 @@ impl<T> SyncPtr<T> {
         Self(ptr)
     }
 
-    /// # Safety
-    ///
-    /// This will make a pointer sync and send.
-    /// Ensure that you don't break aliasing rules.
-    pub unsafe fn from_const(ptr: *const T) -> Self {
+    pub fn from_const(ptr: *const T) -> Self {
         Self(ptr as *mut T)
     }
 
@@ -43,3 +39,9 @@ impl<T> SyncPtr<T> {
 
 unsafe impl<T> Sync for SyncPtr<T> {}
 unsafe impl<T> Send for SyncPtr<T> {}
+
+impl<T> From<*const T> for SyncPtr<T> {
+    fn from(value: *const T) -> Self {
+        Self::from_const(value)
+    }
+}

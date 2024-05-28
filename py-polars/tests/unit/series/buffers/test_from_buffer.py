@@ -13,7 +13,8 @@ from polars.testing.parametric import series
 @given(
     s=series(
         allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
+        allow_chunks=False,
+        allow_null=False,
     )
 )
 def test_series_from_buffer(s: pl.Series) -> None:

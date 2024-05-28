@@ -20,9 +20,10 @@ fn cum_fold_dtype() -> GetOutput {
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
@@ -58,9 +59,10 @@ where
 /// An accumulator is initialized to the series given by the first expression in `exprs`, and then each subsequent value
 /// of the accumulator is computed from `f(acc, next_expr_series)`. If `exprs` is empty, an error is returned when
 /// `collect` is called.
-pub fn reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+pub fn reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
 
@@ -98,9 +100,10 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cum_reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+pub fn cum_reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
 
@@ -143,14 +146,10 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cum_fold_exprs<F: 'static, E: AsRef<[Expr]>>(
-    acc: Expr,
-    f: F,
-    exprs: E,
-    include_init: bool,
-) -> Expr
+pub fn cum_fold_exprs<F, E>(acc: Expr, f: F, exprs: E, include_init: bool) -> Expr
 where
-    F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
@@ -196,26 +195,12 @@ where
 pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    // We prefer this path as the optimizer can better deal with the binary operations.
-    // However if we have a single expression, we might loose information.
-    // E.g. `all().is_null()` would reduce to `all().is_null()` (the & is not needed as there is no rhs (yet)
-    // And upon expansion, it becomes
-    // `col(i).is_null() for i in len(df))`
-    // so we would miss the boolean operator.
-    if exprs.len() > 1 {
-        return Ok(exprs.into_iter().reduce(|l, r| l.logical_and(r)).unwrap());
-    }
-
+    // This will be reduced to `expr & expr` during conversion to IR.
     Ok(Expr::Function {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: false,
-            cast_to_supertypes: false,
-            allow_rename: true,
             ..Default::default()
         },
     })
@@ -227,21 +212,12 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    // See comment in `all_horizontal`.
-    if exprs.len() > 1 {
-        return Ok(exprs.into_iter().reduce(|l, r| l.logical_or(r)).unwrap());
-    }
-
+    // This will be reduced to `expr | expr` during conversion to IR.
     Ok(Expr::Function {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: false,
-            cast_to_supertypes: false,
-            allow_rename: true,
             ..Default::default()
         },
     })

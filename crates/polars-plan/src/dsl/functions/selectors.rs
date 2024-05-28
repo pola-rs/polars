@@ -27,7 +27,7 @@ use super::*;
 pub fn col(name: &str) -> Expr {
     match name {
         "*" => Expr::Wildcard,
-        _ => Expr::Column(Arc::from(name)),
+        _ => Expr::Column(ColumnName::from(name)),
     }
 }
 
@@ -39,6 +39,10 @@ pub fn all() -> Expr {
 /// Select multiple columns by name.
 pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
     let names = names.into_vec();
+    let names = names
+        .into_iter()
+        .map(|v| ColumnName::from(v.as_str()))
+        .collect();
     Expr::Columns(names)
 }
 
@@ -51,4 +55,10 @@ pub fn dtype_col(dtype: &DataType) -> Expr {
 pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
     let dtypes = dtype.as_ref().to_vec();
     Expr::DtypeColumn(dtypes)
+}
+
+/// Select multiple columns by index.
+pub fn index_cols<N: AsRef<[i64]>>(indices: N) -> Expr {
+    let indices = indices.as_ref().to_vec();
+    Expr::IndexColumn(Arc::from(indices))
 }

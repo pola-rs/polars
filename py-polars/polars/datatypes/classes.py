@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
 import polars._reexport as pl
 import polars.datatypes
+import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -83,7 +84,7 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_nested(self) -> bool:  # noqa: D102
+    def is_nested(cls) -> bool:  # noqa: D102
         ...
 
 
@@ -202,7 +203,7 @@ class DataType(metaclass=DataTypeClass):
 
     @classmethod
     def is_float(cls) -> bool:
-        """Check whether the data type is a temporal type."""
+        """Check whether the data type is a floating point type."""
         return issubclass(cls, FloatType)
 
     @classmethod
@@ -238,7 +239,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
             if not isinstance(it, (DataType, DataTypeClass)):
                 msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
                 raise TypeError(msg)
-        dtype_group = super().__new__(cls, items)  # type: ignore[arg-type]
+        dtype_group = super().__new__(cls, items)
         dtype_group._match_base_type = match_base_type
         return dtype_group
 
@@ -422,8 +423,8 @@ class Datetime(TemporalType):
     time_zone
         Time zone string, as defined in zoneinfo (to see valid strings run
         `import zoneinfo; zoneinfo.available_timezones()` for a full list).
-        When using to match dtypes, can use "*" to check for Datetime columns
-        that have any timezone.
+        When used to match dtypes, can set this to "*" to check for Datetime
+        columns that have any (non-null) timezone.
 
     Notes
     -----
@@ -598,7 +599,7 @@ class Enum(DataType):
             self.categories = pl.Series(name="category", dtype=String)
             return
 
-        if categories.null_count() > 0:
+        if categories.has_nulls():
             msg = "Enum categories must not contain null values"
             raise TypeError(msg)
 
@@ -628,6 +629,14 @@ class Enum(DataType):
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}(categories={self.categories.to_list()!r})"
+
+    def union(self, other: Enum) -> Enum:
+        """Union of two Enums."""
+        return Enum(
+            F.concat((self.categories, other.categories)).unique(maintain_order=True)
+        )
+
+    __or__ = union
 
 
 class Object(DataType):
@@ -726,11 +735,31 @@ class Array(NestedType):
     """
 
     inner: PolarsDataType | None = None
-    width: int
+    size: int
+    # outer shape
+    shape: None | tuple[int, ...] = None
 
-    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
+    def __init__(
+        self,
+        inner: PolarsDataType | PythonDataType,
+        shape: int | tuple[int, ...] | None = None,
+        width: int | None = None,
+    ):
+        if width is not None:
+            shape = width
+        elif isinstance(shape, tuple):
+            if len(shape) > 1:
+                self.shape = shape
+                for dim in shape[1:]:
+                    inner = Array(inner, dim)
+            shape = shape[0]
+
+        if shape is None:
+            msg = "either 'shape' or 'width' must be set"
+            raise ValueError(msg)
+
         self.inner = polars.datatypes.py_type_to_dtype(inner)
-        self.width = width
+        self.size = shape
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -743,7 +772,7 @@ class Array(NestedType):
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
         if isinstance(other, Array):
-            if self.width != other.width:
+            if self.size != other.size:
                 return False
             elif self.inner is None or other.inner is None:
                 return True
@@ -753,11 +782,19 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner, self.width))
+        return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, width={self.width})"
+
+        if self.shape:
+            # get leaf type
+            dtype = self.inner
+            while isinstance(dtype, Array):
+                dtype = dtype.inner
+
+            return f"{class_name}({dtype!r}, shape={self.shape})"
+        return f"{class_name}({self.inner!r}, size={self.size})"
 
 
 class Field:

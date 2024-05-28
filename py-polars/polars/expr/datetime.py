@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING
+from datetime import timedelta
+from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
@@ -19,10 +20,16 @@ from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
-    from datetime import timedelta
-
     from polars import Expr
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, NonExistent, TimeUnit
+    from polars.type_aliases import (
+        Ambiguous,
+        EpochTimeUnit,
+        IntoExpr,
+        IntoExprColumn,
+        NonExistent,
+        Roll,
+        TimeUnit,
+    )
 
 
 class ExprDateTimeNameSpace:
@@ -32,6 +39,123 @@ class ExprDateTimeNameSpace:
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
+
+    def add_business_days(
+        self,
+        n: int | IntoExpr,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+        roll: Roll = "raise",
+    ) -> Expr:
+        """
+        Offset by `n` business days.
+
+        Parameters
+        ----------
+        n
+            Number of business days to offset by. Can be a single number of an
+            expression.
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `business_day_count`.
+        roll
+            What to do when the start date lands on a non-business day. Options are:
+
+            - `'raise'`: raise an error
+            - `'forward'`: move to the next business day
+            - `'backward'`: move to the previous business day
+
+        Returns
+        -------
+        Expr
+            Data type is preserved.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame({"start": [date(2020, 1, 1), date(2020, 1, 2)]})
+        >>> df.with_columns(result=pl.col("start").dt.add_business_days(5))
+        shape: (2, 2)
+        ┌────────────┬────────────┐
+        │ start      ┆ result     │
+        │ ---        ┆ ---        │
+        │ date       ┆ date       │
+        ╞════════════╪════════════╡
+        │ 2020-01-01 ┆ 2020-01-08 │
+        │ 2020-01-02 ┆ 2020-01-09 │
+        └────────────┴────────────┘
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> df.with_columns(result=pl.col("start").dt.add_business_days(5, week_mask))
+        shape: (2, 2)
+        ┌────────────┬────────────┐
+        │ start      ┆ result     │
+        │ ---        ┆ ---        │
+        │ date       ┆ date       │
+        ╞════════════╪════════════╡
+        │ 2020-01-01 ┆ 2020-01-07 │
+        │ 2020-01-02 ┆ 2020-01-08 │
+        └────────────┴────────────┘
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> df.with_columns(
+        ...     result=pl.col("start").dt.add_business_days(5, holidays=holidays)
+        ... )
+        shape: (2, 2)
+        ┌────────────┬────────────┐
+        │ start      ┆ result     │
+        │ ---        ┆ ---        │
+        │ date       ┆ date       │
+        ╞════════════╪════════════╡
+        │ 2020-01-01 ┆ 2020-01-10 │
+        │ 2020-01-02 ┆ 2020-01-13 │
+        └────────────┴────────────┘
+
+        Roll all dates forwards to the next business day:
+
+        >>> df = pl.DataFrame({"start": [date(2020, 1, 5), date(2020, 1, 6)]})
+        >>> df.with_columns(
+        ...     rolled_forwards=pl.col("start").dt.add_business_days(0, roll="forward")
+        ... )
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ rolled_forwards │
+        │ ---        ┆ ---             │
+        │ date       ┆ date            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-05 ┆ 2020-01-06      │
+        │ 2020-01-06 ┆ 2020-01-06      │
+        └────────────┴─────────────────┘
+        """
+        n_pyexpr = parse_as_expression(n)
+        unix_epoch = dt.date(1970, 1, 1)
+        return wrap_expr(
+            self._pyexpr.dt_add_business_days(
+                n_pyexpr,
+                week_mask,
+                [(holiday - unix_epoch).days for holiday in holidays],
+                roll,
+            )
+        )
 
     def truncate(
         self,
@@ -57,6 +181,10 @@ class ExprDateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+
+            .. deprecated:: 0.20.19
+                This argument is deprecated and will be removed in the next breaking
+                release. Instead, chain `dt.truncate` with `dt.offset_by`.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -65,7 +193,7 @@ class ExprDateTimeNameSpace:
             - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
-                Use `ambiguous` instead
+                This is now automatically inferred; you can safely omit this argument.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -74,7 +202,7 @@ class ExprDateTimeNameSpace:
             - `'latest'`: use the latest datetime
 
             .. deprecated:: 0.19.3
-                This is now auto-inferred, you can safely remove this argument.
+                This is now automatically inferred; you can safely omit this argument.
 
         Notes
         -----
@@ -182,17 +310,23 @@ class ExprDateTimeNameSpace:
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
+        if offset is not None:
+            issue_deprecation_warning(
+                "`offset` is deprecated and will be removed in the next breaking release. "
+                "Instead, chain `dt.truncate` with `dt.offset_by`.",
+                version="0.20.19",
+            )
         if not isinstance(every, pl.Expr):
             every = parse_as_duration_string(every)
 
         if use_earliest is not None:
             issue_deprecation_warning(
-                "`use_earliest` is deprecated. It is now auto-inferred, you can safely remove this argument.",
+                "`use_earliest` is deprecated. It is now automatically inferred; you can safely omit this argument.",
                 version="0.19.13",
             )
         if ambiguous is not None:
             issue_deprecation_warning(
-                "`ambiguous` is deprecated. It is now auto-inferred, you can safely remove this argument.",
+                "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
                 version="0.19.13",
             )
         every = parse_as_expression(every, str_as_lit=True)
@@ -210,7 +344,7 @@ class ExprDateTimeNameSpace:
     @unstable()
     def round(
         self,
-        every: str | timedelta,
+        every: str | timedelta | IntoExprColumn,
         offset: str | timedelta | None = None,
         *,
         ambiguous: Ambiguous | Expr | None = None,
@@ -237,6 +371,10 @@ class ExprDateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+
+            .. deprecated:: 0.20.19
+                This argument is deprecated and will be removed in the next breaking
+                release. Instead, chain `dt.round` with `dt.offset_by`.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -245,7 +383,7 @@ class ExprDateTimeNameSpace:
             - `'latest'`: use the latest datetime
 
             .. deprecated:: 0.19.3
-                This is now auto-inferred, you can safely remove this argument.
+                This is now automatically inferred; you can safely omit this argument.
 
         Returns
         -------
@@ -329,18 +467,26 @@ class ExprDateTimeNameSpace:
         """
         every = deprecate_saturating(every)
         offset = deprecate_saturating(offset)
+        if offset is not None:
+            issue_deprecation_warning(
+                "`offset` is deprecated and will be removed in the next breaking release. "
+                "Instead, chain `dt.round` with `dt.offset_by`.",
+                version="0.20.19",
+            )
         if offset is None:
             offset = "0ns"
 
         if ambiguous is not None:
             issue_deprecation_warning(
-                "`ambiguous` is deprecated. It is now auto-inferred, you can safely remove this argument.",
+                "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
                 version="0.19.13",
             )
-
+        if isinstance(every, timedelta):
+            every = parse_as_duration_string(every)
+        every = parse_as_expression(every, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_round(
-                parse_as_duration_string(every),
+                every,
                 parse_as_duration_string(offset),
             )
         )
@@ -1434,12 +1580,12 @@ class ExprDateTimeNameSpace:
         ...     .to_frame()
         ... )
         >>> df.with_columns(
-        ...     pl.col("date").dt.timestamp().alias("timestamp_ns"),
+        ...     pl.col("date").dt.timestamp().alias("timestamp_us"),
         ...     pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
         ... )
         shape: (3, 3)
         ┌────────────┬─────────────────┬──────────────┐
-        │ date       ┆ timestamp_ns    ┆ timestamp_ms │
+        │ date       ┆ timestamp_us    ┆ timestamp_ms │
         │ ---        ┆ ---             ┆ ---          │
         │ date       ┆ i64             ┆ i64          │
         ╞════════════╪═════════════════╪══════════════╡
@@ -2010,7 +2156,6 @@ class ExprDateTimeNameSpace:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
-            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day (which may
             not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -2077,6 +2222,8 @@ class ExprDateTimeNameSpace:
         """
         Roll backward to the first day of the month.
 
+        For datetimes, the time-of-day is preserved.
+
         Returns
         -------
         Expr
@@ -2125,6 +2272,8 @@ class ExprDateTimeNameSpace:
     def month_end(self) -> Expr:
         """
         Roll forward to the last day of the month.
+
+        For datetimes, the time-of-day is preserved.
 
         Returns
         -------

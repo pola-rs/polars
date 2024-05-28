@@ -1,55 +1,61 @@
-use arrow::legacy::error::PolarsResult;
+use std::sync::Arc;
+
+use polars_core::error::PolarsResult;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
+use visitor::{RewritingVisitor, TreeWalker};
 
 use crate::prelude::*;
 
 macro_rules! push_expr {
-    ($current_expr:expr, $push:ident, $iter:ident) => {{
+    ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Len => {},
-            Alias(e, _) => $push(e),
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_)
+            | IndexColumn(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            Field(_) => {},
+            Alias(e, _) => $push($c, e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
-                $push(right);
-                $push(left);
+                $push($c, right);
+                $push($c, left);
             },
-            Cast { expr, .. } => $push(expr),
-            Sort { expr, .. } => $push(expr),
+            Cast { expr, .. } => $push($c, expr),
+            Sort { expr, .. } => $push($c, expr),
             Gather { expr, idx, .. } => {
-                $push(idx);
-                $push(expr);
+                $push($c, idx);
+                $push($c, expr);
             },
             Filter { input, by } => {
-                $push(by);
+                $push($c, by);
                 // latest, so that it is popped first
-                $push(input);
+                $push($c, input);
             },
             SortBy { expr, by, .. } => {
                 for e in by {
-                    $push(e)
+                    $push_owned($c, e)
                 }
                 // latest, so that it is popped first
-                $push(expr);
+                $push($c, expr);
             },
             Agg(agg_e) => {
                 use AggExpr::*;
                 match agg_e {
-                    Max { input, .. } => $push(input),
-                    Min { input, .. } => $push(input),
-                    Mean(e) => $push(e),
-                    Median(e) => $push(e),
-                    NUnique(e) => $push(e),
-                    First(e) => $push(e),
-                    Last(e) => $push(e),
-                    Implode(e) => $push(e),
-                    Count(e, _) => $push(e),
-                    Quantile { expr, .. } => $push(expr),
-                    Sum(e) => $push(e),
-                    AggGroups(e) => $push(e),
-                    Std(e, _) => $push(e),
-                    Var(e, _) => $push(e),
+                    Max { input, .. } => $push($c, input),
+                    Min { input, .. } => $push($c, input),
+                    Mean(e) => $push($c, e),
+                    Median(e) => $push($c, e),
+                    NUnique(e) => $push($c, e),
+                    First(e) => $push($c, e),
+                    Last(e) => $push($c, e),
+                    Implode(e) => $push($c, e),
+                    Count(e, _) => $push($c, e),
+                    Quantile { expr, .. } => $push($c, expr),
+                    Sum(e) => $push($c, e),
+                    AggGroups(e) => $push($c, e),
+                    Std(e, _) => $push($c, e),
+                    Var(e, _) => $push($c, e),
                 }
             },
             Ternary {
@@ -57,86 +63,45 @@ macro_rules! push_expr {
                 falsy,
                 predicate,
             } => {
-                $push(predicate);
-                $push(falsy);
+                $push($c, predicate);
+                $push($c, falsy);
                 // latest, so that it is popped first
-                $push(truthy);
+                $push($c, truthy);
             },
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
-            AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
-            Function { input, .. } => input.$iter().rev().for_each(|e| $push(e)),
-            Explode(e) => $push(e),
+            AnonymousFunction { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
+            Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
+            Explode(e) => $push($c, e),
             Window {
                 function,
                 partition_by,
                 ..
             } => {
                 for e in partition_by.into_iter().rev() {
-                    $push(e)
+                    $push_owned($c, e)
                 }
                 // latest so that it is popped first
-                $push(function);
+                $push($c, function);
             },
             Slice {
                 input,
                 offset,
                 length,
             } => {
-                $push(length);
-                $push(offset);
+                $push($c, length);
+                $push($c, offset);
                 // latest, so that it is popped first
-                $push(input);
+                $push($c, input);
             },
-            Exclude(e, _) => $push(e),
-            KeepName(e) => $push(e),
-            RenameAlias { expr, .. } => $push(expr),
+            Exclude(e, _) => $push($c, e),
+            KeepName(e) => $push($c, e),
+            RenameAlias { expr, .. } => $push($c, expr),
             SubPlan { .. } => {},
             // pass
             Selector(_) => {},
         }
     }};
-}
-
-impl Expr {
-    /// Expr::mutate().apply(fn())
-    pub fn mutate(&mut self) -> ExprMut {
-        let stack = unitvec!(self);
-        ExprMut { stack }
-    }
-}
-
-pub struct ExprMut<'a> {
-    stack: UnitVec<&'a mut Expr>,
-}
-
-impl<'a> ExprMut<'a> {
-    ///
-    /// # Arguments
-    /// * `f` - A function that may mutate an expression. If the function returns `true` iteration
-    /// continues.
-    pub fn apply<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&mut Expr) -> bool,
-    {
-        let _ = self.try_apply(|e| Ok(f(e)));
-    }
-
-    pub fn try_apply<F>(&mut self, mut f: F) -> PolarsResult<()>
-    where
-        F: FnMut(&mut Expr) -> PolarsResult<bool>,
-    {
-        while let Some(current_expr) = self.stack.pop() {
-            // the order is important, we first modify the Expr
-            // before we push its children on the stack.
-            // The modification can make the children invalid.
-            if !f(current_expr)? {
-                break;
-            }
-            current_expr.nodes_mut(&mut self.stack)
-        }
-        Ok(())
-    }
 }
 
 pub struct ExprIter<'a> {
@@ -154,15 +119,38 @@ impl<'a> Iterator for ExprIter<'a> {
     }
 }
 
+pub struct ExprMapper<F> {
+    f: F,
+}
+
+impl<F: FnMut(Expr) -> PolarsResult<Expr>> RewritingVisitor for ExprMapper<F> {
+    type Node = Expr;
+    type Arena = ();
+
+    fn mutate(&mut self, node: Self::Node, _arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
+        (self.f)(node)
+    }
+}
+
 impl Expr {
     pub fn nodes<'a>(&'a self, container: &mut UnitVec<&'a Expr>) {
-        let mut push = |e: &'a Expr| container.push(e);
-        push_expr!(self, push, iter);
+        let push = |c: &mut UnitVec<&'a Expr>, e: &'a Expr| c.push(e);
+        push_expr!(self, container, push, push, iter);
     }
 
-    pub fn nodes_mut<'a>(&'a mut self, container: &mut UnitVec<&'a mut Expr>) {
-        let mut push = |e: &'a mut Expr| container.push(e);
-        push_expr!(self, push, iter_mut);
+    pub fn nodes_owned(self, container: &mut UnitVec<Expr>) {
+        let push_arc = |c: &mut UnitVec<Expr>, e: Arc<Expr>| c.push(Arc::unwrap_or_clone(e));
+        let push_owned = |c: &mut UnitVec<Expr>, e: Expr| c.push(e);
+        push_expr!(self, container, push_arc, push_owned, into_iter);
+    }
+
+    pub fn map_expr<F: FnMut(Self) -> Self>(self, mut f: F) -> Self {
+        self.rewrite(&mut ExprMapper { f: |e| Ok(f(e)) }, &mut ())
+            .unwrap()
+    }
+
+    pub fn try_map_expr<F: FnMut(Self) -> PolarsResult<Self>>(self, f: F) -> PolarsResult<Self> {
+        self.rewrite(&mut ExprMapper { f }, &mut ())
     }
 }
 
@@ -213,14 +201,14 @@ impl<'a> ArenaExprIter<'a> for &'a Arena<AExpr> {
 
 pub struct AlpIter<'a> {
     stack: UnitVec<Node>,
-    arena: &'a Arena<ALogicalPlan>,
+    arena: &'a Arena<IR>,
 }
 
 pub trait ArenaLpIter<'a> {
     fn iter(&self, root: Node) -> AlpIter<'a>;
 }
 
-impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
+impl<'a> ArenaLpIter<'a> for &'a Arena<IR> {
     fn iter(&self, root: Node) -> AlpIter<'a> {
         let stack = unitvec![root];
         AlpIter { stack, arena: self }
@@ -228,7 +216,7 @@ impl<'a> ArenaLpIter<'a> for &'a Arena<ALogicalPlan> {
 }
 
 impl<'a> Iterator for AlpIter<'a> {
-    type Item = (Node, &'a ALogicalPlan);
+    type Item = (Node, &'a IR);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|node| {

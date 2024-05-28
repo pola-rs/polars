@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use super::*;
 use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};
 use crate::utils::get_iter_capacity;
@@ -71,14 +69,7 @@ where
 
         self.field.dtype = get_object_type::<T>();
 
-        ChunkedArray {
-            field: Arc::new(self.field),
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: len as IdxSize,
-            null_count,
-        }
+        ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len as IdxSize, null_count)
     }
 }
 
@@ -150,14 +141,7 @@ where
             len,
         });
 
-        ObjectChunked {
-            field,
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: len as IdxSize,
-            null_count: 0,
-        }
+        ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0)
     }
 
     pub fn new_from_vec_and_validity(name: &str, v: Vec<T>, validity: Bitmap) -> Self {
@@ -171,14 +155,7 @@ where
             len,
         });
 
-        ObjectChunked {
-            field,
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: len as IdxSize,
-            null_count: null_count as IdxSize,
-        }
+        ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, null_count as IdxSize)
     }
 
     pub fn new_empty(name: &str) -> Self {

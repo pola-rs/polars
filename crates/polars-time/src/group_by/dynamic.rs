@@ -3,9 +3,9 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
@@ -17,7 +17,7 @@ use crate::prelude::*;
 #[repr(transparent)]
 struct Wrap<T>(pub T);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column.
@@ -34,9 +34,6 @@ pub struct DynamicGroupOptions {
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
-    /// In cases sortedness cannot be checked by the sorted flag,
-    /// traverse the data to check sortedness.
-    pub check_sorted: bool,
 }
 
 impl Default for DynamicGroupOptions {
@@ -50,7 +47,6 @@ impl Default for DynamicGroupOptions {
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
-            check_sorted: true,
         }
     }
 }
@@ -64,9 +60,6 @@ pub struct RollingGroupOptions {
     pub period: Duration,
     pub offset: Duration,
     pub closed_window: ClosedWindow,
-    /// In cases sortedness cannot be checked by the sorted flag,
-    /// traverse the data to check sortedness.
-    pub check_sorted: bool,
 }
 
 impl Default for RollingGroupOptions {
@@ -76,7 +69,6 @@ impl Default for RollingGroupOptions {
             period: Duration::new(1),
             offset: Duration::new(1),
             closed_window: ClosedWindow::Left,
-            check_sorted: true,
         }
     }
 }
@@ -90,57 +82,59 @@ const LB_NAME: &str = "_lower_boundary";
 const UP_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
-    fn group_by_rolling(
+    fn rolling(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
 
     fn group_by_dynamic(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)>;
 }
 
 impl PolarsTemporalGroupby for DataFrame {
-    fn group_by_rolling(
+    fn rolling(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        Wrap(self).group_by_rolling(by, options)
+        Wrap(self).rolling(group_by, options)
     }
 
     fn group_by_dynamic(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        Wrap(self).group_by_dynamic(by, options)
+        Wrap(self).group_by_dynamic(group_by, options)
     }
 }
 
 impl Wrap<&DataFrame> {
-    fn group_by_rolling(
+    fn rolling(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         polars_ensure!(
-                        options.period.duration_ns() > 0 && !options.period.negative,
+                        !options.period.is_zero() && !options.period.negative,
                         ComputeError:
                         "rolling window period should be strictly positive",
         );
         let time = self.0.column(&options.index_column)?.clone();
-        if by.is_empty() {
+        if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            ensure_sorted_arg(&time, "group_by_rolling")?;
+            time.ensure_sorted_arg("rolling")?;
         }
         let time_type = time.dtype();
 
-        polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic group_by not supported, fill nulls.");
+        polars_ensure!(time.null_count() == 0, ComputeError: "null values in `rolling` not supported, fill nulls.");
+        ensure_duration_matches_data_type(options.period, time_type, "period")?;
+        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
 
         use DataType::*;
         let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
@@ -153,9 +147,9 @@ impl Wrap<&DataFrame> {
             UInt32 | UInt64 | Int32 => {
                 let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
-                let (out, by, gt) = self.impl_group_by_rolling(
+                let (out, by, gt) = self.impl_rolling(
                     dt,
-                    by,
+                    group_by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
@@ -167,9 +161,9 @@ impl Wrap<&DataFrame> {
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
-                let (out, by, gt) = self.impl_group_by_rolling(
+                let (out, by, gt) = self.impl_rolling(
                     dt,
-                    by,
+                    group_by,
                     options,
                     TimeUnit::Nanoseconds,
                     None,
@@ -180,43 +174,37 @@ impl Wrap<&DataFrame> {
             },
             dt => polars_bail!(
                 ComputeError:
-                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64, UInt32, UInt64 }}, got {}",
                 dt
             ),
         };
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                self.impl_group_by_rolling(dt, by, options, tu, tz.parse::<Tz>().ok(), time_type)
+                self.impl_rolling(dt, group_by, options, tu, tz.parse::<Tz>().ok(), time_type)
             },
-            _ => self.impl_group_by_rolling(dt, by, options, tu, None, time_type),
+            _ => self.impl_rolling(dt, group_by, options, tu, None, time_type),
         }
     }
 
     /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        if options.offset.parsed_int || options.every.parsed_int || options.period.parsed_int {
-            polars_ensure!(
-                ((options.offset.parsed_int || options.offset.is_zero())
-                    && (options.every.parsed_int || options.every.is_zero())
-                    && (options.period.parsed_int || options.period.is_zero())),
-                ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
-            )
-        }
-
         let time = self.0.column(&options.index_column)?.rechunk();
-        if by.is_empty() {
+        if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            ensure_sorted_arg(&time, "group_by_dynamic")?;
+            time.ensure_sorted_arg("group_by_dynamic")?;
         }
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic group_by not supported, fill nulls.");
+        ensure_duration_matches_data_type(options.every, time_type, "every")?;
+        ensure_duration_matches_data_type(options.offset, time_type, "offset")?;
+        ensure_duration_matches_data_type(options.period, time_type, "period")?;
 
         use DataType::*;
         let (dt, tu) = match time_type {
@@ -228,8 +216,13 @@ impl Wrap<&DataFrame> {
             Int32 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
-                let (out, mut keys, gt) =
-                    self.impl_group_by_dynamic(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
+                let (out, mut keys, gt) = self.impl_group_by_dynamic(
+                    dt,
+                    group_by,
+                    options,
+                    TimeUnit::Nanoseconds,
+                    &time_type,
+                )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
                 for k in &mut keys {
                     if k.name() == UP_NAME || k.name() == LB_NAME {
@@ -241,8 +234,13 @@ impl Wrap<&DataFrame> {
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
-                let (out, mut keys, gt) =
-                    self.impl_group_by_dynamic(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
+                let (out, mut keys, gt) = self.impl_group_by_dynamic(
+                    dt,
+                    group_by,
+                    options,
+                    TimeUnit::Nanoseconds,
+                    &time_type,
+                )?;
                 let out = out.cast(&Int64).unwrap();
                 for k in &mut keys {
                     if k.name() == UP_NAME || k.name() == LB_NAME {
@@ -257,7 +255,7 @@ impl Wrap<&DataFrame> {
                 dt
             ),
         };
-        self.impl_group_by_dynamic(dt, by, options, tu, time_type)
+        self.impl_group_by_dynamic(dt, group_by, options, tu, time_type)
     }
 
     fn impl_group_by_dynamic(
@@ -343,9 +341,7 @@ impl Wrap<&DataFrame> {
                                 let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
-                                if options.check_sorted
-                                    && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
-                                {
+                                if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
                                     check_sortedness_slice(ts)?
                                 }
                                 let (sub_groups, lower, upper) = group_by_windows(
@@ -422,9 +418,7 @@ impl Wrap<&DataFrame> {
                                 let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
-                                if options.check_sorted
-                                    && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
-                                {
+                                if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
                                     check_sortedness_slice(ts)?
                                 }
                                 let (sub_groups, _, _) = group_by_windows(
@@ -516,10 +510,10 @@ impl Wrap<&DataFrame> {
     }
 
     /// Returns: time_keys, keys, groupsproxy
-    fn impl_group_by_rolling(
+    fn impl_rolling(
         &self,
         dt: Series,
-        by: Vec<Series>,
+        group_by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
         tz: Option<Tz>,
@@ -527,7 +521,7 @@ impl Wrap<&DataFrame> {
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();
 
-        let groups = if by.is_empty() {
+        let groups = if group_by.is_empty() {
             // a requirement for the index
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
@@ -548,7 +542,7 @@ impl Wrap<&DataFrame> {
         } else {
             let groups = self
                 .0
-                .group_by_with_series(by.clone(), true, true)?
+                .group_by_with_series(group_by.clone(), true, true)?
                 .take_groups();
 
             // we keep a local copy, as we are reordering on next operation.
@@ -567,9 +561,7 @@ impl Wrap<&DataFrame> {
                             let dt = unsafe { dt_local.take_unchecked(base_g.1) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
-                            if options.check_sorted
-                                && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
-                            {
+                            if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
                                 check_sortedness_slice(ts)?
                             }
 
@@ -617,7 +609,7 @@ impl Wrap<&DataFrame> {
 
         let dt = dt.cast(time_type).unwrap();
 
-        Ok((dt, by, groups))
+        Ok((dt, group_by, groups))
     }
 }
 
@@ -625,7 +617,13 @@ fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> 
     sub_groups
         .iter()
         .map(|&[first, len]| {
-            let new_first = base_g[0] + first;
+            let new_first = if len == 0 {
+                // In case the group is empty, keep the original first so that the
+                // group_by keys still point to the original group.
+                base_g[0]
+            } else {
+                base_g[0] + first
+            };
             [new_first, len]
         })
         .collect_trusted::<Vec<_>>()
@@ -697,14 +695,13 @@ mod test {
             let df = DataFrame::new(vec![date, a.clone()])?;
 
             let (_, _, groups) = df
-                .group_by_rolling(
+                .rolling(
                     vec![],
                     &RollingGroupOptions {
                         index_column: "dt".into(),
                         period: Duration::parse("2d"),
                         offset: Duration::parse("-2d"),
                         closed_window: ClosedWindow::Right,
-                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -745,14 +742,13 @@ mod test {
         let df = DataFrame::new(vec![date, a.clone()])?;
 
         let (_, _, groups) = df
-            .group_by_rolling(
+            .rolling(
                 vec![],
                 &RollingGroupOptions {
                     index_column: "dt".into(),
                     period: Duration::parse("2d"),
                     offset: Duration::parse("-2d"),
                     closed_window: ClosedWindow::Right,
-                    ..Default::default()
                 },
             )
             .unwrap();
@@ -836,7 +832,6 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
-                    ..Default::default()
                 },
             )
             .unwrap();
@@ -957,7 +952,6 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
-                    ..Default::default()
                 },
             )
             .unwrap();

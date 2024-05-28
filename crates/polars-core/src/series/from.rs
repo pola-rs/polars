@@ -123,7 +123,9 @@ impl Series {
                 }
             },
             Null => new_null(name, &chunks),
-            Unknown => panic!("uh oh, somehow we don't know the dtype?"),
+            Unknown(_) => {
+                panic!("dtype is unknown; consider supplying data-types for all operations")
+            },
             #[allow(unreachable_patterns)]
             _ => unreachable!(),
         }
@@ -441,11 +443,6 @@ impl Series {
                 Ok(StructChunked::new_unchecked(name, &fields).into_series())
             },
             ArrowDataType::FixedSizeBinary(_) => {
-                if verbose() {
-                    eprintln!(
-                        "Polars does not support decimal types so the 'Series' are read as Float64"
-                    );
-                }
                 let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },

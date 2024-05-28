@@ -13,7 +13,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io.spreadsheet.functions import _identify_workbook
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
@@ -242,6 +242,30 @@ def test_read_excel_basic_datatypes(
         )
         assert_frame_equal(df, df)
 
+    # check some additional overrides
+    # (note: xlsx2csv can't currently convert datetime with trailing '00:00:00' to date)
+    dt_override = {"datetime": pl.Date} if engine != "xlsx2csv" else {}
+    df = pl.read_excel(
+        xls,
+        sheet_id=sheet_id,
+        sheet_name=sheet_name,
+        engine=engine,
+        schema_overrides={"A": pl.Float32, **dt_override},
+    )
+    assert_series_equal(
+        df["A"],
+        pl.Series(name="A", values=[1.0, 2.0, 3.0, 4.0, 5.0], dtype=pl.Float32),
+    )
+    if dt_override:
+        assert_series_equal(
+            df["datetime"],
+            pl.Series(
+                name="datetime",
+                values=[date(2023, 1, x) for x in range(1, 6)],
+                dtype=pl.Date,
+            ),
+        )
+
 
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
@@ -436,6 +460,29 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         assert df["test4"].schema[col] == dtype
 
 
+@pytest.mark.parametrize(
+    ("engine", "read_opts_param"),
+    [
+        ("xlsx2csv", "infer_schema_length"),
+        ("calamine", "schema_sample_rows"),
+    ],
+)
+def test_invalid_parameter_combinations(
+    path_xlsx: Path, engine: str, read_opts_param: str
+) -> None:
+    with pytest.raises(
+        ParameterCollisionError,
+        match=f"cannot specify both `infer_schema_length`.*{read_opts_param}",
+    ):
+        pl.read_excel(  # type: ignore[call-overload]
+            path_xlsx,
+            sheet_id=1,
+            engine=engine,
+            read_options={read_opts_param: 512},
+            infer_schema_length=1024,
+        )
+
+
 def test_unsupported_engine() -> None:
     with pytest.raises(NotImplementedError):
         pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
@@ -479,7 +526,7 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
             "column_totals": True,
             "float_precision": 0,
         },
-        # slightly customised formatting, with some formulas
+        # slightly customized formatting, with some formulas
         {
             "position": (0, 0),
             "table_style": {
@@ -508,7 +555,7 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
             "column_totals": True,
             "row_totals": True,
         },
-        # heavily customised formatting/definition
+        # heavily customized formatting/definition
         {
             "position": "A1",
             "table_name": "PolarsFrameData",
@@ -572,7 +619,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
     engine: ExcelSpreadsheetEngine
     for engine in ("calamine", "xlsx2csv"):  # type: ignore[assignment]
-        table_params = (
+        read_options = (
             {}
             if write_params.get("include_header", True)
             else (
@@ -594,7 +641,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             xls,
             sheet_name="data",
             engine=engine,
-            read_options=table_params,
+            read_options=read_options,
         )[:3].select(df.columns[:3])
         if engine == "xlsx2csv":
             xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
@@ -811,6 +858,15 @@ def test_excel_hidden_columns(
     assert_frame_equal(df, read_df)
 
 
+def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
+    df = pl.read_excel(io_files_path / "nan_test.xlsx", engine="calamine")
+    nan = float("nan")
+    assert_frame_equal(
+        pl.DataFrame({"float_col": [nan, nan, nan, 100.0, 200.0, 300.0]}),
+        df,
+    )
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
@@ -864,11 +920,16 @@ def test_identify_workbook(
     # identify from IO[bytes]
     with Path.open(spreadsheet_path, "rb") as f:
         assert _identify_workbook(f) == file_type
+        assert isinstance(pl.read_excel(f, engine="calamine"), pl.DataFrame)
 
     # identify from bytes
     with Path.open(spreadsheet_path, "rb") as f:
-        assert _identify_workbook(f.read()) == file_type
+        raw_data = f.read()
+        assert _identify_workbook(raw_data) == file_type
+        assert isinstance(pl.read_excel(raw_data, engine="calamine"), pl.DataFrame)
 
     # identify from BytesIO
     with Path.open(spreadsheet_path, "rb") as f:
-        assert _identify_workbook(BytesIO(f.read())) == file_type
+        bytesio_data = BytesIO(f.read())
+        assert _identify_workbook(bytesio_data) == file_type
+        assert isinstance(pl.read_excel(bytesio_data, engine="calamine"), pl.DataFrame)

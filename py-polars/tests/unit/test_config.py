@@ -339,7 +339,7 @@ def test_set_tbl_width_chars() -> None:
             "this is 10": [4, 5, 6],
         }
     )
-    assert max(len(line) for line in str(df).split("\n")) == 70
+    assert max(len(line) for line in str(df).split("\n")) == 68
 
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60
@@ -572,7 +572,7 @@ def test_numeric_right_alignment() -> None:
             )
 
     df = pl.DataFrame(
-        {"a": [1.1, 22.2, 3.33], "b": [444, 55.5, 6.6], "c": [77.7, 8888, 9.9999]}
+        {"a": [1.1, 22.2, 3.33], "b": [444.0, 55.5, 6.6], "c": [77.7, 8888.0, 9.9999]}
     )
     with pl.Config(fmt_float="full", float_precision=1):
         assert (

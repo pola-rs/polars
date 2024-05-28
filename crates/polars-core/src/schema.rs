@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 
 use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
@@ -15,6 +16,12 @@ use crate::utils::try_get_supertype;
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
     inner: PlIndexMap<SmartString, DataType>,
+}
+
+impl Hash for Schema {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.inner.iter().for_each(|v| v.hash(state))
+    }
 }
 
 // Schemas will only compare equal if they have the same fields in the same order. We can't use `self.inner ==
@@ -72,6 +79,11 @@ impl Schema {
         let map: PlIndexMap<_, _> =
             IndexMap::with_capacity_and_hasher(capacity, ahash::RandomState::default());
         Self { inner: map }
+    }
+
+    /// Reserve `additional` memory spaces in the schema.
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
     }
 
     /// The number of fields in the schema
@@ -340,6 +352,21 @@ impl Schema {
     ///   index
     pub fn merge(&mut self, other: Self) {
         self.inner.extend(other.inner)
+    }
+
+    /// Merge borrowed `other` into `self`
+    ///
+    /// Merging logic:
+    /// - Fields that occur in `self` but not `other` are unmodified
+    /// - Fields that occur in `other` but not `self` are appended, in order, to the end of `self`
+    /// - Fields that occur in both `self` and `other` are updated with the dtype from `other`, but keep their original
+    ///   index
+    pub fn merge_from_ref(&mut self, other: &Self) {
+        self.inner.extend(
+            other
+                .iter()
+                .map(|(column, datatype)| (column.clone(), datatype.clone())),
+        )
     }
 
     /// Convert self to `ArrowSchema` by cloning the fields

@@ -57,7 +57,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             BaseUtcOffset => map!(datetime::base_utc_offset),
             #[cfg(feature = "timezones")]
             DSTOffset => map!(datetime::dst_offset),
-            Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
+            Round(offset) => map_as_slice!(datetime::round, &offset),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, non_existent) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref(), non_existent)
@@ -194,15 +194,18 @@ fn apply_offsets_to_datetime(
 ) -> PolarsResult<Int64Chunked> {
     match (datetime.len(), offsets.len()) {
         (1, _) => match datetime.0.get(0) {
-            Some(dt) => offsets.try_apply_values_generic(|offset| {
+            Some(dt) => offsets.try_apply_nonnull_values_generic(|offset| {
                 offset_fn(&Duration::parse(offset), dt, time_zone)
             }),
             _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
         },
         (_, 1) => match offsets.get(0) {
-            Some(offset) => datetime
-                .0
-                .try_apply(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
+            Some(offset) => {
+                let offset = &Duration::parse(offset);
+                datetime
+                    .0
+                    .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
+            },
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {
@@ -266,7 +269,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                         let offset = Duration::parse(offset);
                         tz.is_none()
                             || tz.as_deref() == Some("UTC")
-                            || offset.is_constant_duration()
+                            || offset.is_constant_duration(tz.as_deref())
                     },
                     None => false,
                 },

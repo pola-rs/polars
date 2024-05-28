@@ -1,7 +1,12 @@
 use super::*;
 
 impl CategoricalChunked {
-    pub fn full_null(name: &str, is_enum: bool, length: usize) -> CategoricalChunked {
+    pub fn full_null(
+        name: &str,
+        is_enum: bool,
+        length: usize,
+        ordering: CategoricalOrdering,
+    ) -> CategoricalChunked {
         let cats = UInt32Chunked::full_null(name, length);
 
         unsafe {
@@ -9,7 +14,7 @@ impl CategoricalChunked {
                 cats,
                 Arc::new(RevMapping::default()),
                 is_enum,
-                Default::default(),
+                ordering,
             )
         }
     }

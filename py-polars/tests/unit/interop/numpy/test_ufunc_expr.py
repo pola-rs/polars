@@ -5,13 +5,6 @@ from typing import Any, Callable, cast
 import numpy as np
 import pytest
 
-try:
-    import numba  # type: ignore[import-untyped]
-except ImportError:
-    # Numba can take a while to support new Python versions, so we don't want a
-    # hard dependency on it.
-    numba = None
-
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -140,9 +133,8 @@ def test_grouped_ufunc() -> None:
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
 
 
-@pytest.mark.skipif(numba is None, reason="Numba is not available")
 def test_generalized_ufunc_scalar() -> None:
-    assert numba is not None  # to pacify type checkers
+    numba = pytest.importorskip("numba")
 
     @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
     def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]
@@ -175,3 +167,31 @@ def test_generalized_ufunc_scalar() -> None:
     assert_frame_equal(
         indirect, pl.DataFrame({"labels": ["a", "b"], "values": [13, 32]})
     )
+
+
+def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
+    numba = pytest.importorskip("numba")
+
+    @numba.guvectorize([(numba.float64[:], numba.float64[:])], "(n)->(n)")  # type: ignore[misc]
+    def gufunc_mean(arr: Any, result: Any) -> None:
+        mean = arr.mean()
+        for i in range(len(arr)):
+            result[i] = mean + i
+
+    return gufunc_mean  # type: ignore[no-any-return]
+
+
+def test_generalized_ufunc() -> None:
+    gufunc_mean = make_gufunc_mean()
+    df = pl.DataFrame({"s": [1.0, 2.0, 3.0]})
+    result = df.select([pl.col("s").map_batches(gufunc_mean).alias("result")])
+    expected = pl.DataFrame({"result": [2.0, 3.0, 4.0]})
+    assert_frame_equal(result, expected)
+
+
+def test_grouped_generalized_ufunc() -> None:
+    gufunc_mean = make_gufunc_mean()
+    df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [1.0, 2.0, 3.0, 4.0]})
+    result = df.group_by("id").agg(pl.col("values").map_batches(gufunc_mean)).sort("id")
+    expected = pl.DataFrame({"id": ["a", "b"], "values": [[1.5, 2.5], [3.5, 4.5]]})
+    assert_frame_equal(result, expected)

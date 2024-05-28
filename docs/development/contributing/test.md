@@ -25,10 +25,13 @@ This will compile the Rust bindings and then run the unit tests.
 
 If you're working in the Python code only, you can avoid recompiling every time by simply running `pytest` instead from your virtual environment.
 
-By default, slow tests are skipped.
-Slow tests are marked as such using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
-If you wish to run slow tests, run `pytest -m slow`.
-Or run `pytest -m ""` to run _all_ tests, regardless of marker.
+By default, "slow" tests and "ci-only" tests are skipped for local test runs.
+Such tests are marked using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
+To run these tests specifically, you can run `pytest -m slow`, `pytest -m ci_only`, `pytest -m slow ci_only`
+or run `pytest -m ""` to run _all_ tests, regardless of marker.
+
+Note that the "ci-only" tests may require you to run `make requirements-all` to get additional dependencies
+(such as `torch`) that are otherwise not installed as part of the default Polars development environment.
 
 Tests can be run in parallel by running `pytest -n auto`.
 The parallelization is handled by [`pytest-xdist`](https://pytest-xdist.readthedocs.io/en/latest/).
@@ -95,22 +98,21 @@ In addition to the [regular options](https://docs.python.org/3/library/doctest.h
 
 ## Benchmark tests
 
-The `benchmark` folder contains code for running the [H2O AI database benchmark](https://github.com/h2oai/db-benchmark).
-It also contains various other benchmark tests.
-
+The `benchmark` folder contains code for running various benchmark tests.
 The aim of this part of the test suite is to spot performance regressions in the code, and to verify that Polars functionality works as expected when run on a release build or at a larger scale.
 
-### Running the H2O AI database benchmark
+Polars uses [CodSpeed](https://codspeed.io/pola-rs/polars) for tracking the performance of the benchmark tests.
 
-The benchmark is somewhat cumbersome to run locally. You must first generate the dataset using the R script provided in the `benchmark` folder. Afterwards, you can simply run the Python script to run the benchmark.
+### Generating data
 
-Make sure to install a release build of Polars before running the benchmark to guarantee the best results.
+For most tests, a relatively large dataset must be generated first.
+This is done as part of the `pytest` setup process.
 
-Refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml) for detailed steps.
+The data generation logic was taken from the [H2O.ai database benchmark](https://github.com/h2oai/db-benchmark), which is the foundation for many of the benchmark tests.
 
-### Running other benchmark tests
+### Running the benchmark tests
 
-The other benchmark tests are run using pytest.
+The benchmark tests can be run using pytest.
 Run `pytest -m benchmark --durations 0 -v` to run these tests and report run duration.
 
 Note that benchmark tests are excluded by default when running `pytest`.

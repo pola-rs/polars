@@ -9,10 +9,10 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::offset::OffsetsBuffer;
 use smartstring::alias::String as SmartString;
 
-use self::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use super::*;
 use crate::chunked_array::iterator::StructIter;
 use crate::datatypes::*;
+use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
 use crate::utils::index_to_chunked_index;
 
 /// This is logical type [`StructChunked`] that
@@ -415,8 +415,7 @@ impl StructChunked {
     }
 
     pub fn rows_encode(&self) -> PolarsResult<BinaryOffsetChunked> {
-        let descending = vec![false; self.fields.len()];
-        _get_rows_encoded_ca(self.name(), &self.fields, &descending, false)
+        _get_rows_encoded_ca_unordered(self.name(), &self.fields)
     }
 
     pub fn iter(&self) -> StructIter {

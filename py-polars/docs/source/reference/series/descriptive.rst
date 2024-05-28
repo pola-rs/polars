@@ -9,6 +9,7 @@ Descriptive
     Series.chunk_lengths
     Series.describe
     Series.estimated_size
+    Series.has_nulls
     Series.has_validity
     Series.is_boolean
     Series.is_duplicated

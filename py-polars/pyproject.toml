@@ -40,12 +40,14 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 adbc = ["adbc_driver_manager", "adbc_driver_sqlite"]
+async = ["nest_asyncio"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx >= 0.3.2"]
-deltalake = ["deltalake >= 0.14.0"]
+deltalake = ["deltalake >= 0.15.0"]
 fastexcel = ["fastexcel >= 0.9"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
+iceberg = ["pyiceberg >= 0.5.0"]
 matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
@@ -53,18 +55,17 @@ pandas = ["pyarrow >= 7.0.0", "pandas"]
 plot = ["hvplot >= 0.9.1"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
-pyiceberg = ["pyiceberg >= 0.5.0"]
 pyxlsb = ["pyxlsb >= 1.0"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[adbc,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,pyiceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
+  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,iceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
 ]
 
 [tool.maturin]
-include = ["rust-toolchain.toml"]
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
 [tool.mypy]
 files = ["polars", "tests"]
@@ -87,19 +88,22 @@ module = [
   "backports",
   "connectorx",
   "deltalake.*",
-  "ezodf.*",
   "fsspec.*",
   "gevent",
   "hvplot.*",
+  "jax.*",
   "kuzu",
   "matplotlib.*",
   "moto.server",
+  "nest_asyncio",
   "openpyxl",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
+  "pyiceberg.*",
   "pyxlsb",
   "sqlalchemy.*",
+  "torch.*",
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",
@@ -205,13 +209,15 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark and not write_disk and not docs",
+  "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]
 markers = [
-  "write_disk: Tests that write to disk",
-  "slow: Tests with a longer than average runtime.",
-  "benchmark: Tests that should be run on a Polars release build.",
+  "ci_only: Tests that should only run on CI by default.",
+  "debug: Tests that should be run on a Polars debug build.",
   "docs: Documentation code snippets",
+  "release: Tests that should be run on a Polars release build.",
+  "slow: Tests with a longer than average runtime.",
+  "write_disk: Tests that write to disk",
 ]
 filterwarnings = [
   # Fail on warnings
@@ -228,6 +234,13 @@ filterwarnings = [
   # TODO: Excel tests lead to unclosed file warnings
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
+  "ignore:the 'pyxlsb' engine is deprecated.*:DeprecationWarning",
+  # TODO: Remove when behavior is updated
+  # https://github.com/pola-rs/polars/issues/13441
+  "ignore:.*default coalesce behavior of left join.*:DeprecationWarning",
+  # TODO: Remove when default is updated
+  # https://github.com/pola-rs/polars/issues/14526
+  "ignore:.*will only write row-oriented JSON.*:DeprecationWarning",
 ]
 xfail_strict = true
 

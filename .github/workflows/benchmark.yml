@@ -23,6 +23,7 @@ concurrency:
 env:
   SCCACHE_GHA_ENABLED: 'true'
   RUSTC_WRAPPER: sccache
+  RUST_BACKTRACE: 1
 
 jobs:
   main:
@@ -35,41 +36,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
+
       - name: Create virtual environment
         run: |
-          python -m venv .venv
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: pip install -r requirements-dev.txt
-
-      - name: Load benchmark data from cache
-        id: cache-data
-        uses: actions/cache/restore@v4
-        with:
-          path: py-polars/tests/benchmark/G1_1e7_1e2_5_0.csv
-          key: benchmark-data
-
-      - name: Set up R
-        if: steps.cache-data.outputs.cache-hit != 'true'
-        uses: r-lib/actions/setup-r@v2
-        with:
-          r-version: '3.5.3'
-
-      - name: Generate data
-        if: steps.cache-data.outputs.cache-hit != 'true'
-        working-directory: py-polars/tests/benchmark
-        run: |
-          Rscript -e 'install.packages("data.table", repos="https://cloud.r-project.org")'
-          Rscript groupby-datagen.R 1e7 1e2 5 0
-
-      - name: Save benchmark data in cache
-        if: github.ref_name == 'main'
-        uses: actions/cache/save@v4
-        with:
-          path: py-polars/tests/benchmark/G1_1e7_1e2_5_0.csv
-          key: ${{ steps.cache-data.outputs.cache-primary-key }}
+        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
 
       - name: Set up Rust
         run: rustup show
@@ -81,7 +60,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@v0.0.4
 
       - name: Install Polars release build
         env:
@@ -89,14 +68,12 @@ jobs:
         working-directory: py-polars
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
-      - name: Run H2O AI database benchmark - on strings
-        working-directory: py-polars/tests/benchmark
-        run: python run_h2oai_benchmark.py on_strings
+      - name: Run benchmark tests
+        uses: CodSpeedHQ/action@v2
+        with:
+          working-directory: py-polars
+          run: pytest -m benchmark --codspeed -v
 
-      - name: Run H2O AI database benchmark - on categoricals
-        working-directory: py-polars/tests/benchmark
-        run: python run_h2oai_benchmark.py
-
-      - name: Run various benchmark tests
+      - name: Run non-benchmark tests
         working-directory: py-polars
-        run: pytest -m benchmark --durations 0 -v
+        run: pytest -m 'not benchmark and not debug' -n auto --dist loadgroup

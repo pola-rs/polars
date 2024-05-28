@@ -50,12 +50,9 @@ def test_asarray(numpy_interop_test_data: Any) -> None:
     assert_array_equal(pl_series_to_numpy_array, numpy_array)
 
 
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
+def test_to_numpy(numpy_interop_test_data: Any) -> None:
     name, values, pl_dtype, np_dtype = numpy_interop_test_data
-    pl_series_to_numpy_array = pl.Series(name, values, pl_dtype).to_numpy(
-        use_pyarrow=use_pyarrow
-    )
+    pl_series_to_numpy_array = pl.Series(name, values, pl_dtype).to_numpy()
     numpy_array = np.asarray(values, dtype=np_dtype)
     assert_array_equal(pl_series_to_numpy_array, numpy_array)
 

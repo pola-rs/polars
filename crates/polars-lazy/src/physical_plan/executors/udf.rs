@@ -11,7 +11,7 @@ impl Executor for UdfExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run UdfExec")
+                eprintln!("run UdfExec")
             }
         }
         let df = self.input.execute(state)?;
