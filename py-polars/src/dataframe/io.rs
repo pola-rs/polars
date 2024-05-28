@@ -213,44 +213,27 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        // memmap the file first.
-
         use crate::file::read_if_bytesio;
         py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
-            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
-            let bytes = mmap_read.deref();
-            // Happy path is our column oriented json as that is most performant,
-            // on failure we try the arrow json reader instead, which is row-oriented.
-            match serde_json::from_slice::<DataFrame>(bytes) {
-                Ok(df) => Ok(df.into()),
-                Err(e) => {
-                    let msg = format!("{e}");
-                    if msg.contains("successful parse invalid data") {
-                        let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
-                        Err(PyErr::from(e))
-                    } else {
-                        let mut builder = JsonReader::new(mmap_bytes_r)
-                            .with_json_format(JsonFormat::Json)
-                            .infer_schema_len(infer_schema_length);
+            let mut builder = JsonReader::new(mmap_bytes_r)
+                .with_json_format(JsonFormat::Json)
+                .infer_schema_len(infer_schema_length);
 
-                        if let Some(schema) = schema {
-                            builder = builder.with_schema(Arc::new(schema.0));
-                        }
-
-                        if let Some(schema) = schema_overrides.as_ref() {
-                            builder = builder.with_schema_overwrite(&schema.0);
-                        }
-
-                        let out = builder
-                            .finish()
-                            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-                        Ok(out.into())
-                    }
-                },
+            if let Some(schema) = schema {
+                builder = builder.with_schema(Arc::new(schema.0));
             }
+
+            if let Some(schema) = schema_overrides.as_ref() {
+                builder = builder.with_schema_overwrite(&schema.0);
+            }
+
+            let out = builder
+                .finish()
+                .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+            Ok(out.into())
         })
     }
 
