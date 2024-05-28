@@ -2340,24 +2340,24 @@ class DataFrame:
                 version="0.20.31",
             )
 
-        def serialize_to_string(*, pretty: bool, row_oriented: bool) -> str:
+        def write_json_to_string(*, pretty: bool, row_oriented: bool) -> str:
             with BytesIO() as buf:
                 self._df.write_json_old(buf, pretty=pretty, row_oriented=row_oriented)
                 json_bytes = buf.getvalue()
             return json_bytes.decode("utf8")
 
         if file is None:
-            return serialize_to_string(pretty=pretty, row_oriented=row_oriented)
+            return write_json_to_string(pretty=pretty, row_oriented=row_oriented)
         elif isinstance(file, StringIO):
-            json_str = serialize_to_string(pretty=pretty, row_oriented=row_oriented)
+            json_str = write_json_to_string(pretty=pretty, row_oriented=row_oriented)
             file.write(json_str)
             return None
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
-            self._df.serialize(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
             return None
         else:
-            self._df.serialize(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
             return None
 
     @overload
