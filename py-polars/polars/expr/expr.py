@@ -4526,7 +4526,8 @@ class Expr:
         is_elementwise: bool = False,
         returns_scalar: bool = False,
     ) -> Self:
-        """Apply a custom python function to a whole Series or sequence of Series.
+        """
+        Apply a custom python function to a whole Series or sequence of Series.
 
         The output of this custom function is presumed to be either a Series,
         or a NumPy array (in which case it will be automatically converted into
@@ -4556,6 +4557,11 @@ class Expr:
             function. This parameter only works in a group-by context.
             The function will be invoked only once on a list of groups, rather than
             once per group.
+        returns_scalar
+            If the function returns a scalar, by default it will be wrapped in
+            a list in the output, since the assumption is that the function
+            always returns something Series-like. If you want to keep the
+            result as a scalar, set this argument to True.
 
         Warnings
         --------
