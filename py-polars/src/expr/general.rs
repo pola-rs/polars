@@ -764,7 +764,14 @@ impl PyExpr {
         is_elementwise: bool,
         returns_scalar: bool,
     ) -> Self {
-        map_single(self, lambda, output_type, agg_list, is_elementwise, returns_scalar)
+        map_single(
+            self,
+            lambda,
+            output_type,
+            agg_list,
+            is_elementwise,
+            returns_scalar,
+        )
     }
 
     fn dot(&self, other: Self) -> Self {
