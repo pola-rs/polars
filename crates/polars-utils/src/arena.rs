@@ -79,6 +79,7 @@ impl<T> Arena<T> {
 
     #[inline]
     pub fn get(&self, idx: Node) -> &T {
+        dbg!(idx.0);
         self.items.get(idx.0).unwrap()
     }
 
