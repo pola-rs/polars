@@ -154,14 +154,16 @@ def test_generalized_ufunc_scalar() -> None:
     assert custom_sum(df.get_column("values")) == 15
 
     # Indirect call of the gufunc:
-    indirect = df.select(pl.col("values").map_to_scalar(custom_sum))
+    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=True))
     assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
+    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=False))
+    assert_frame_equal(indirect, pl.DataFrame({"values": [15]}))
 
     # group_by()
     df = pl.DataFrame({"labels": ["a", "b", "a", "b"], "values": [10, 2, 3, 30]})
     indirect = (
         df.group_by("labels")
-        .agg(pl.col("values").map_to_scalar(custom_sum))
+        .agg(pl.col("values").map_batches(custom_sum, returns_scalar=True))
         .sort("labels")
     )
     assert_frame_equal(
