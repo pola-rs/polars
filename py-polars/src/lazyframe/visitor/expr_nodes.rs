@@ -561,7 +561,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 options: py.None(),
             },
             IRAggExpr::NUnique(n) => Agg {
-                name: "nunique".to_object(py),
+                name: "n_unique".to_object(py),
                 arguments: n.0,
                 options: py.None(),
             },
@@ -984,20 +984,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Log1p => return Err(PyNotImplementedError::new_err("log1p")),
                 FunctionExpr::Exp => return Err(PyNotImplementedError::new_err("exp")),
                 FunctionExpr::Unique(_) => return Err(PyNotImplementedError::new_err("unique")),
-                FunctionExpr::Round { decimals: _ } => {
-                    return Err(PyNotImplementedError::new_err("round"))
-                },
-                FunctionExpr::RoundSF { digits: _ } => {
-                    return Err(PyNotImplementedError::new_err("round sf"))
-                },
+                FunctionExpr::Round { decimals } => ("round", decimals).to_object(py),
+                FunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).to_object(py),
                 FunctionExpr::Floor => ("floor",).to_object(py),
                 FunctionExpr::Ceil => ("ceil",).to_object(py),
-                FunctionExpr::UpperBound => {
-                    return Err(PyNotImplementedError::new_err("upper bound"))
-                },
-                FunctionExpr::LowerBound => {
-                    return Err(PyNotImplementedError::new_err("lower bound"))
-                },
+                FunctionExpr::UpperBound => ("upper_bound",).to_object(py),
+                FunctionExpr::LowerBound => ("lower_bound",).to_object(py),
                 FunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
                 FunctionExpr::ConcatExpr(_) => {
                     return Err(PyNotImplementedError::new_err("concat expr"))
@@ -1064,7 +1056,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("fill null with strategy"))
                 },
                 FunctionExpr::GatherEvery { n, offset } => {
-                    ("strided_slice", offset, n).to_object(py)
+                    ("gather_every", offset, n).to_object(py)
                 },
                 FunctionExpr::Reinterpret(_) => {
                     return Err(PyNotImplementedError::new_err("reinterpret"))
