@@ -104,16 +104,21 @@ pub struct PythonUdfExpression {
     python_function: PyObject,
     output_type: Option<DataType>,
     is_elementwise: bool,
-    returns_scalar: bool
+    returns_scalar: bool,
 }
 
 impl PythonUdfExpression {
-    pub fn new(lambda: PyObject, output_type: Option<DataType>, is_elementwise: bool, returns_scalar: bool) -> Self {
+    pub fn new(
+        lambda: PyObject,
+        output_type: Option<DataType>,
+        is_elementwise: bool,
+        returns_scalar: bool,
+    ) -> Self {
         Self {
             python_function: lambda,
             output_type,
             is_elementwise,
-            returns_scalar
+            returns_scalar,
         }
     }
 
@@ -140,7 +145,7 @@ impl PythonUdfExpression {
                 python_function.into(),
                 output_type,
                 is_elementwise,
-                returns_scalar
+                returns_scalar,
             )) as Arc<dyn SeriesUdf>)
         })
     }
@@ -184,8 +189,15 @@ impl SeriesUdf for PythonUdfExpression {
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         buf.extend_from_slice(MAGIC_BYTE_MARK);
-        ciborium::ser::into_writer(&(self.output_type.clone(), self.is_elementwise, self.returns_scalar), &mut *buf)
-            .unwrap();
+        ciborium::ser::into_writer(
+            &(
+                self.output_type.clone(),
+                self.is_elementwise,
+                self.returns_scalar,
+            ),
+            &mut *buf,
+        )
+        .unwrap();
 
         Python::with_gil(|py| {
             let pickle = PyModule::import_bound(py, "cloudpickle")
