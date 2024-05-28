@@ -679,14 +679,12 @@ impl PyExpr {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
-        check_sorted: bool,
     ) -> Self {
         let options = RollingGroupOptions {
             index_column: index_column.into(),
             period: Duration::parse(period),
             offset: Duration::parse(offset),
             closed_window: closed.0,
-            check_sorted,
         };
 
         self.inner.clone().rolling(options).into()

@@ -5,7 +5,6 @@ use std::borrow::Cow;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
-use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -14,6 +13,7 @@ use smartstring::alias::String as SmartString;
 use super::_check_categorical_src;
 use super::{_finish_join, build_tables, prepare_bytes};
 use crate::frame::IntoDf;
+use crate::series::SeriesMethods;
 
 trait AsofJoinState<T>: Default {
     fn next<F: FnMut(IdxSize) -> Option<T>>(
@@ -185,8 +185,8 @@ fn check_asof_columns(
         a.dtype(), b.dtype()
     );
     if check_sorted {
-        ensure_sorted_arg(a, "asof_join")?;
-        ensure_sorted_arg(b, "asof_join")?;
+        a.ensure_sorted_arg("asof_join")?;
+        b.ensure_sorted_arg("asof_join")?;
     }
     Ok(())
 }

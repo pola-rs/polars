@@ -51,6 +51,11 @@ pub trait SeriesMethods: SeriesSealed {
         }
     }
 
+    fn ensure_sorted_arg(&self, operation: &str) -> PolarsResult<()> {
+        polars_ensure!(self.is_sorted(Default::default())?, InvalidOperation: "argument in operation '{}' is not sorted, please sort the 'expr/series/column' first", operation);
+        Ok(())
+    }
+
     /// Checks if a [`Series`] is sorted. Tries to fail fast.
     fn is_sorted(&self, options: SortOptions) -> PolarsResult<bool> {
         let s = self.as_series();

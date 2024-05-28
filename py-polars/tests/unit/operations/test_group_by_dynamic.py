@@ -373,7 +373,7 @@ def test_rolling_dynamic_sortedness_check() -> None:
     # no `by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
+        match=r"argument in operation 'group_by_dynamic' is not sorted",
     ):
         df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
 
@@ -491,17 +491,23 @@ def test_group_by_dynamic_validation() -> None:
         )
 
 
-def test_no_sorted_err() -> None:
+def test_no_sorted_no_error() -> None:
     df = pl.DataFrame(
         {
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
         }
     )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
-    ):
-        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().name.suffix("_foo"))
+    result = df.group_by_dynamic("dt", every="1h").agg(
+        pl.all().count().name.suffix("_foo")
+    )
+    expected = pl.DataFrame(
+        {
+            "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
+            "dt_foo": [1, 1],
+        },
+        schema_overrides={"dt_foo": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Kathmandu")])
@@ -968,18 +974,17 @@ def test_group_by_dynamic_check_sorted_15225() -> None:
             "c": [1, 1, 2],
         }
     )
-    result = df.group_by_dynamic("b", every="2d", check_sorted=False).agg(pl.sum("a"))
+    with pytest.deprecated_call(match="`check_sorted` is now deprecated"):
+        result = df.group_by_dynamic("b", every="2d", check_sorted=False).agg(
+            pl.sum("a")
+        )
     expected = pl.DataFrame({"b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]})
     assert_frame_equal(result, expected)
-    result = df.group_by_dynamic("b", every="2d", check_sorted=False, group_by="c").agg(
-        pl.sum("a")
-    )
+    result = df.group_by_dynamic("b", every="2d", group_by="c").agg(pl.sum("a"))
     expected = pl.DataFrame(
         {"c": [1, 2], "b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]}
     )
     assert_frame_equal(result, expected)
-    with pytest.raises(pl.InvalidOperationError, match="not explicitly sorted"):
-        result = df.group_by_dynamic("b", every="2d").agg(pl.sum("a"))
 
 
 @pytest.mark.parametrize("start_by", ["window", "friday"])
