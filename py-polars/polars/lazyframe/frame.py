@@ -589,22 +589,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6   │
         └─────┘
         """
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
+
+        def serialize_to_string() -> str:
             with BytesIO() as buf:
                 self._ldf.serialize(buf)
                 json_bytes = buf.getvalue()
+            return json_bytes.decode("utf8")
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
+        if file is None:
+            return serialize_to_string()
+        elif isinstance(file, StringIO):
+            json_str = serialize_to_string()
+            file.write(json_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._ldf.serialize(file)
+            return None
         else:
             self._ldf.serialize(file)
-        return None
+            return None
 
     def pipe(
         self,

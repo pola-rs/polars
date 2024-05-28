@@ -2347,22 +2347,26 @@ class DataFrame:
         >>> df.write_ndjson()
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
         """
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
+
+        def write_ndjson_to_string() -> str:
             with BytesIO() as buf:
                 self._df.write_ndjson(buf)
-                json_bytes = buf.getvalue()
+                ndjson_bytes = buf.getvalue()
+            return ndjson_bytes.decode("utf8")
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
+        if file is None:
+            return write_ndjson_to_string()
+        elif isinstance(file, StringIO):
+            ndjson_str = write_ndjson_to_string()
+            file.write(ndjson_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._df.write_ndjson(file)
+            return None
         else:
             self._df.write_ndjson(file)
-        return None
+            return None
 
     @overload
     def write_csv(
