@@ -3980,7 +3980,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null ┆ z     ┆ d         │
         │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
         └──────┴──────┴──────┴───────┴───────────┘
-        >>> lf.join(other_lf, on="ham", how="left").collect()
+        >>> lf.join(other_lf, on="ham", how="left", coalesce=True).collect()
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -4021,8 +4021,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer'` should be replaced with `how='full'`.",
                 version="0.20.29",
             )
+        elif how == "outer_coalesce":
+            coalesce = True
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
+                version="0.20.29",
+            )
+        elif how == "left" and coalesce is None:
+            issue_deprecation_warning(
+                "The default coalesce behavior of left join will change to `False` in the next breaking release."
+                " Pass `coalesce=True` to keep the current behavior and silence this warning.",
+                version="0.20.30",
+            )
 
-        if how == "cross":
+        elif how == "cross":
             return self._from_pyldf(
                 self._ldf.join(
                     other._ldf,
@@ -4047,14 +4060,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             msg = "must specify `on` OR `left_on` and `right_on`"
             raise ValueError(msg)
-
-        if how == "outer_coalesce":
-            coalesce = True
-            how = "full"
-            issue_deprecation_warning(
-                "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
-                version="0.20.29",
-            )
 
         return self._from_pyldf(
             self._ldf.join(

@@ -833,7 +833,7 @@ def test_full_outer_join_coalesce_different_names_13450() -> None:
         }
     )
 
-    out = df1.join(df2, left_on="L1", right_on="L3", how="outer_coalesce")
+    out = df1.join(df2, left_on="L1", right_on="L3", how="full", coalesce=True)
     assert_frame_equal(out, expected)
 
 
@@ -993,7 +993,7 @@ def test_join_coalesce(how: JoinStrategy) -> None:
     assert out.columns == ["a", "b", "c"]
 
 
-@pytest.mark.parametrize("how", ["left", "inner", "full", "outer"])
+@pytest.mark.parametrize("how", ["left", "inner", "full"])
 def test_join_empties(how: JoinStrategy) -> None:
     df1 = pl.DataFrame({"col1": [], "col2": [], "col3": []})
     df2 = pl.DataFrame({"col2": [], "col4": [], "col5": []})
@@ -1006,4 +1006,11 @@ def test_join_raise_on_redundant_keys() -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
     with pytest.raises(pl.InvalidOperationError, match="already joined on"):
-        left.join(right, on=["a", "a"], how="outer_coalesce")
+        left.join(right, on=["a", "a"], how="full", coalesce=True)
+
+
+def test_left_join_coalesce_default_deprecation_message() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
+    with pytest.deprecated_call():
+        left.join(right, on="a", how="left")
