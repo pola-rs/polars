@@ -338,7 +338,7 @@ impl SQLExprVisitor<'_> {
     fn visit_compound_identifier(&self, idents: &[Ident]) -> PolarsResult<Expr> {
         match idents {
             [tbl_name, column_name] => {
-                let lf = self
+                let mut lf = self
                     .ctx
                     .get_table_from_current_scope(&tbl_name.value)
                     .ok_or_else(|| {

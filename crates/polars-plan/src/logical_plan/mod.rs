@@ -167,6 +167,13 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         payload: SinkType,
     },
+    IR {
+        #[cfg_attr(feature = "serde", serde(skip))]
+        node: Option<Node>,
+        version: u32,
+        // Keep the original Dsl around as we need that for serialization.
+        dsl: Arc<DslPlan>,
+    },
 }
 
 impl Clone for DslPlan {
@@ -195,6 +202,7 @@ impl Clone for DslPlan {
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
+            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version}
         }
     }
 }

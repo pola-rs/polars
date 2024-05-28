@@ -565,6 +565,13 @@ pub fn to_alp_impl(
                 .map_err(|e| e.context(failed_input!(sink)))?;
             IR::Sink { input, payload }
         },
+        DslPlan::IR { node, dsl, version } => {
+            return if let (true, Some(node)) = (version == lp_arena.version(), node) {
+                Ok(node)
+            } else {
+                to_alp_impl(owned(dsl), expr_arena, lp_arena, convert)
+            }
+        },
     };
     Ok(lp_arena.add(v))
 }

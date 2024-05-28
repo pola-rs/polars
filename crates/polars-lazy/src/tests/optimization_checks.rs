@@ -485,7 +485,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     });
 
     // whole `with_columns` pruned
-    let q = df.lazy().with_column(col("c0")).select([col("c1")]);
+    let mut q = df.lazy().with_column(col("c0")).select([col("c1")]);
 
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
 

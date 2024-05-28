@@ -15,7 +15,7 @@ pub mod pivot;
     feature = "json"
 ))]
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
 #[cfg(feature = "csv")]
@@ -55,6 +55,7 @@ impl IntoLazy for DataFrame {
         LazyFrame {
             logical_plan: lp,
             opt_state: Default::default(),
+            cached_arena: Default::default(),
         }
     }
 }
@@ -73,6 +74,7 @@ impl IntoLazy for LazyFrame {
 pub struct LazyFrame {
     pub logical_plan: DslPlan,
     pub(crate) opt_state: OptState,
+    pub(crate) cached_arena: Arc<Mutex<Option<CachedArena>>>,
 }
 
 impl From<DslPlan> for LazyFrame {
@@ -83,18 +85,101 @@ impl From<DslPlan> for LazyFrame {
                 file_caching: true,
                 ..Default::default()
             },
+            cached_arena: Default::default(),
         }
     }
 }
 
+pub(crate) struct CachedArena {
+    lp_arena: Arena<IR>,
+    expr_arena: Arena<AExpr>,
+}
+
 impl LazyFrame {
+    pub(crate) fn from_inner(
+        logical_plan: DslPlan,
+        opt_state: OptState,
+        cached_arena: Arc<Mutex<Option<CachedArena>>>,
+    ) -> Self {
+        Self {
+            logical_plan,
+            opt_state,
+            cached_arena,
+        }
+    }
+
     /// Get a handle to the schema — a map from column names to data types — of the current
     /// `LazyFrame` computation.
     ///
     /// Returns an `Err` if the logical plan has already encountered an error (i.e., if
     /// `self.collect()` would fail), `Ok` otherwise.
-    pub fn schema(&self) -> PolarsResult<SchemaRef> {
-        self.logical_plan.compute_schema()
+    pub fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        let mut cached_arenas = self.cached_arena.lock().unwrap();
+
+        match &mut *cached_arenas {
+            None => {
+                let mut lp_arena = Default::default();
+                let mut expr_arena = Default::default();
+                let node = to_alp(
+                    self.logical_plan.clone(),
+                    &mut expr_arena,
+                    &mut lp_arena,
+                    false,
+                    true,
+                )?;
+
+                let schema = lp_arena.get(node).schema(&lp_arena).into_owned();
+
+                // Cache the logical plan and the arenas, so that next schema call is cheap.
+                self.logical_plan = DslPlan::IR {
+                    node: Some(node),
+                    dsl: Arc::new(self.logical_plan.clone()),
+                    version: lp_arena.version(),
+                };
+                *cached_arenas = Some(CachedArena {
+                    lp_arena,
+                    expr_arena,
+                });
+
+                Ok(schema)
+            },
+            Some(arenas) => {
+                match self.logical_plan {
+                    // We have got arenas and don't need to convert the DSL.
+                    DslPlan::IR {
+                        node: Some(node), ..
+                    } => Ok(arenas
+                        .lp_arena
+                        .get(node)
+                        .schema(&arenas.lp_arena)
+                        .into_owned()),
+                    _ => {
+                        // We have got arenas, but still need to convert (parts) of the DSL.
+                        let node = to_alp(
+                            self.logical_plan.clone(),
+                            &mut arenas.expr_arena,
+                            &mut arenas.lp_arena,
+                            false,
+                            true,
+                        )?;
+
+                        let schema = arenas
+                            .lp_arena
+                            .get(node)
+                            .schema(&arenas.lp_arena)
+                            .into_owned();
+                        // Cache the logical plan so that next schema call is cheap.
+                        self.logical_plan = DslPlan::IR {
+                            node: Some(node),
+                            dsl: Arc::new(self.logical_plan.clone()),
+                            version: arenas.lp_arena.version(),
+                        };
+
+                        Ok(schema)
+                    },
+                }
+            },
+        }
     }
 
     pub(crate) fn get_plan_builder(self) -> DslBuilder {
@@ -109,6 +194,7 @@ impl LazyFrame {
         LazyFrame {
             logical_plan,
             opt_state,
+            cached_arena: Default::default(),
         }
     }
 
@@ -516,17 +602,25 @@ impl LazyFrame {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![], false)
     }
 
-    pub fn to_alp_optimized(self) -> PolarsResult<IRPlan> {
-        let mut lp_arena = Arena::with_capacity(16);
-        let mut expr_arena = Arena::with_capacity(16);
+    pub fn to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
+        let (mut lp_arena, mut expr_arena) = self.get_arenas();
         let node =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], false)?;
 
         Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
 
-    pub fn to_alp(self) -> PolarsResult<IRPlan> {
-        self.logical_plan.to_alp()
+    pub fn to_alp(mut self) -> PolarsResult<IRPlan> {
+        let (mut lp_arena, mut expr_arena) = self.get_arenas();
+        let node = to_alp(
+            self.logical_plan,
+            &mut expr_arena,
+            &mut lp_arena,
+            true,
+            true,
+        )?;
+        let plan = IRPlan::new(node, lp_arena, expr_arena);
+        Ok(plan)
     }
 
     pub(crate) fn optimize_with_scratch(
@@ -587,16 +681,23 @@ impl LazyFrame {
         Ok(lp_top)
     }
 
+    fn get_arenas(&mut self) -> (Arena<IR>, Arena<AExpr>) {
+        match self.cached_arena.lock().unwrap().as_mut() {
+            Some(arenas) => (arenas.lp_arena.clone(), arenas.expr_arena.clone()),
+            None => (Arena::with_capacity(16), Arena::with_capacity(16)),
+        }
+    }
+
     fn prepare_collect_post_opt<P>(
-        self,
+        mut self,
         check_sink: bool,
         post_opt: P,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)>
     where
         P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
     {
-        let mut expr_arena = Arena::with_capacity(16);
-        let mut lp_arena = Arena::with_capacity(16);
+        let (mut lp_arena, mut expr_arena) = self.get_arenas();
+
         let mut scratch = vec![];
         let lp_top =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
@@ -935,7 +1036,7 @@ impl LazyFrame {
     /// *group_by_dynamic*
     #[cfg(feature = "dynamic_group_by")]
     pub fn rolling<E: AsRef<[Expr]>>(
-        self,
+        mut self,
         index_column: Expr,
         group_by: E,
         mut options: RollingGroupOptions,
@@ -980,7 +1081,7 @@ impl LazyFrame {
     /// with a ordinary group_by on these keys.
     #[cfg(feature = "dynamic_group_by")]
     pub fn group_by_dynamic<E: AsRef<[Expr]>>(
-        self,
+        mut self,
         index_column: Expr,
         group_by: E,
         mut options: DynamicGroupOptions,
@@ -1672,6 +1773,7 @@ impl From<LazyGroupBy> for LazyFrame {
         Self {
             logical_plan: lgb.logical_plan,
             opt_state: lgb.opt_state,
+            cached_arena: Default::default(),
         }
     }
 }

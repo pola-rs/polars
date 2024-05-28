@@ -22,6 +22,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     );
 
     let mut opt_state = lf.opt_state;
+    let cached_arenas = lf.cached_arena.clone();
 
     let mut lps = Vec::with_capacity(inputs.len());
     lps.push(lf.logical_plan);
@@ -34,9 +35,7 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
     }
 
     let lp = DslPlan::Union { inputs: lps, args };
-    let mut lf = LazyFrame::from(lp);
-    lf.opt_state = opt_state;
-    Ok(lf)
+    Ok(LazyFrame::from_inner(lp, opt_state, cached_arenas))
 }
 
 #[cfg(feature = "diagonal_concat")]
@@ -56,9 +55,12 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
     let lfs = inputs.as_ref();
-    let mut opt_state = lfs.first().map(|lf| lf.opt_state).ok_or_else(
-        || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
-    )?;
+    let (mut opt_state, cached_arena) = lfs
+        .first()
+        .map(|lf| (lf.opt_state, lf.cached_arena.clone()))
+        .ok_or_else(
+            || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
+        )?;
 
     for lf in &lfs[1..] {
         // ensure we enable file caching if any lf has it enabled
@@ -72,10 +74,7 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
         inputs: lfs.iter().map(|lf| lf.logical_plan.clone()).collect(),
         options,
     };
-    let mut lf = LazyFrame::from(lp);
-    lf.opt_state = opt_state;
-
-    Ok(lf)
+    Ok(LazyFrame::from_inner(lp, opt_state, cached_arena))
 }
 
 /// Concat multiple [`LazyFrame`]s vertically.

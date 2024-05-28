@@ -694,7 +694,11 @@ impl SQLContext {
         Ok((tbl_name, lf))
     }
 
-    fn process_order_by(&mut self, lf: LazyFrame, ob: &[OrderByExpr]) -> PolarsResult<LazyFrame> {
+    fn process_order_by(
+        &mut self,
+        mut lf: LazyFrame,
+        ob: &[OrderByExpr],
+    ) -> PolarsResult<LazyFrame> {
         let mut by = Vec::with_capacity(ob.len());
         let mut descending = Vec::with_capacity(ob.len());
 
@@ -718,7 +722,7 @@ impl SQLContext {
 
     fn process_group_by(
         &mut self,
-        lf: LazyFrame,
+        mut lf: LazyFrame,
         contains_wildcard: bool,
         group_by_keys: &[Expr],
         projections: &[Expr],
@@ -846,7 +850,7 @@ impl SQLContext {
         let idents = idents.as_slice();
         let e = match idents {
             [tbl_name] => {
-                let lf = self.table_map.get(&tbl_name.value).ok_or_else(|| {
+                let lf = self.table_map.get_mut(&tbl_name.value).ok_or_else(|| {
                     polars_err!(
                         ComputeError: "no table named '{}' found",
                         tbl_name
