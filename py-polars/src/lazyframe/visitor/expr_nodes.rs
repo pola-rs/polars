@@ -1,9 +1,11 @@
+use polars::datatypes::TimeUnit;
 use polars_core::series::IsSorted;
+use polars_core::utils::arrow::legacy::kernels::NonExistent;
 use polars_ops::prelude::ClosedInterval;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::function_expr::trigonometry::TrigonometricFunction;
-use polars_plan::dsl::{BooleanFunction, StringFunction};
+use polars_plan::dsl::{BooleanFunction, StringFunction, TemporalFunction};
 use polars_plan::prelude::{
     AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
@@ -189,6 +191,66 @@ pub enum PyBooleanFunction {
 impl PyBooleanFunction {
     fn __hash__(&self) -> isize {
         *self as isize
+    }
+}
+
+#[pyclass(name = "TemporalFunction")]
+#[derive(Copy, Clone)]
+pub enum PyTemporalFunction {
+    Millennium,
+    Century,
+    Year,
+    IsLeapYear,
+    IsoYear,
+    Quarter,
+    Month,
+    Week,
+    WeekDay,
+    Day,
+    OrdinalDay,
+    Time,
+    Date,
+    Datetime,
+    Duration,
+    Hour,
+    Minute,
+    Second,
+    Millisecond,
+    Microsecond,
+    Nanosecond,
+    TotalDays,
+    TotalHours,
+    TotalMinutes,
+    TotalSeconds,
+    TotalMilliseconds,
+    TotalMicroseconds,
+    TotalNanoseconds,
+    ToString,
+    CastTimeUnit,
+    WithTimeUnit,
+    ConvertTimeZone,
+    TimeStamp,
+    Truncate,
+    MonthStart,
+    MonthEnd,
+    BaseUtcOffset,
+    DSTOffset,
+    Round,
+    ReplaceTimeZone,
+    Combine,
+    DatetimeFunction,
+}
+
+#[pymethods]
+impl PyTemporalFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+impl IntoPy<PyObject> for Wrap<TimeUnit> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        self.0.to_ascii().into_py(py)
     }
 }
 
@@ -792,8 +854,99 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
                 },
-                FunctionExpr::TemporalExpr(_) => {
-                    return Err(PyNotImplementedError::new_err("temporal expr"))
+                FunctionExpr::TemporalExpr(fun) => match fun {
+                    TemporalFunction::Millennium => (PyTemporalFunction::Millennium,).into_py(py),
+                    TemporalFunction::Century => (PyTemporalFunction::Century,).into_py(py),
+                    TemporalFunction::Year => (PyTemporalFunction::Year,).into_py(py),
+                    TemporalFunction::IsLeapYear => (PyTemporalFunction::IsLeapYear,).into_py(py),
+                    TemporalFunction::IsoYear => (PyTemporalFunction::IsoYear,).into_py(py),
+                    TemporalFunction::Quarter => (PyTemporalFunction::Quarter,).into_py(py),
+                    TemporalFunction::Month => (PyTemporalFunction::Month,).into_py(py),
+                    TemporalFunction::Week => (PyTemporalFunction::Week,).into_py(py),
+                    TemporalFunction::WeekDay => (PyTemporalFunction::WeekDay,).into_py(py),
+                    TemporalFunction::Day => (PyTemporalFunction::Day,).into_py(py),
+                    TemporalFunction::OrdinalDay => (PyTemporalFunction::OrdinalDay,).into_py(py),
+                    TemporalFunction::Time => (PyTemporalFunction::Time,).into_py(py),
+                    TemporalFunction::Date => (PyTemporalFunction::Date,).into_py(py),
+                    TemporalFunction::Datetime => (PyTemporalFunction::Datetime,).into_py(py),
+                    TemporalFunction::Duration(time_unit) => {
+                        (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py(py)
+                    },
+                    TemporalFunction::Hour => (PyTemporalFunction::Hour,).into_py(py),
+                    TemporalFunction::Minute => (PyTemporalFunction::Minute,).into_py(py),
+                    TemporalFunction::Second => (PyTemporalFunction::Second,).into_py(py),
+                    TemporalFunction::Millisecond => (PyTemporalFunction::Millisecond,).into_py(py),
+                    TemporalFunction::Microsecond => (PyTemporalFunction::Microsecond,).into_py(py),
+                    TemporalFunction::Nanosecond => (PyTemporalFunction::Nanosecond,).into_py(py),
+                    TemporalFunction::TotalDays => (PyTemporalFunction::TotalDays,).into_py(py),
+                    TemporalFunction::TotalHours => (PyTemporalFunction::TotalHours,).into_py(py),
+                    TemporalFunction::TotalMinutes => {
+                        (PyTemporalFunction::TotalMinutes,).into_py(py)
+                    },
+                    TemporalFunction::TotalSeconds => {
+                        (PyTemporalFunction::TotalSeconds,).into_py(py)
+                    },
+                    TemporalFunction::TotalMilliseconds => {
+                        (PyTemporalFunction::TotalMilliseconds,).into_py(py)
+                    },
+                    TemporalFunction::TotalMicroseconds => {
+                        (PyTemporalFunction::TotalMicroseconds,).into_py(py)
+                    },
+                    TemporalFunction::TotalNanoseconds => {
+                        (PyTemporalFunction::TotalNanoseconds,).into_py(py)
+                    },
+                    TemporalFunction::ToString(format) => {
+                        (PyTemporalFunction::ToString, format).into_py(py)
+                    },
+                    TemporalFunction::CastTimeUnit(time_unit) => {
+                        (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py(py)
+                    },
+                    TemporalFunction::WithTimeUnit(time_unit) => {
+                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py(py)
+                    },
+                    TemporalFunction::ConvertTimeZone(time_zone) => {
+                        (PyTemporalFunction::ConvertTimeZone, time_zone).into_py(py)
+                    },
+                    TemporalFunction::TimeStamp(time_unit) => {
+                        (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
+                    },
+                    TemporalFunction::Truncate(bucket) => {
+                        (PyTemporalFunction::Truncate, bucket).into_py(py)
+                    },
+                    TemporalFunction::MonthStart => (PyTemporalFunction::MonthStart,).into_py(py),
+                    TemporalFunction::MonthEnd => (PyTemporalFunction::MonthEnd,).into_py(py),
+                    TemporalFunction::BaseUtcOffset => {
+                        (PyTemporalFunction::BaseUtcOffset,).into_py(py)
+                    },
+                    TemporalFunction::DSTOffset => (PyTemporalFunction::DSTOffset,).into_py(py),
+                    TemporalFunction::Round(bucket) => {
+                        (PyTemporalFunction::Round, bucket).into_py(py)
+                    },
+                    TemporalFunction::ReplaceTimeZone(time_zone, non_existent) => (
+                        PyTemporalFunction::ReplaceTimeZone,
+                        time_zone
+                            .as_ref()
+                            .map_or_else(|| py.None(), |s| s.to_object(py)),
+                        match non_existent {
+                            NonExistent::Null => "nullify",
+                            NonExistent::Raise => "raise",
+                        },
+                    )
+                        .into_py(py),
+                    TemporalFunction::Combine(time_unit) => {
+                        (PyTemporalFunction::Combine, Wrap(*time_unit)).into_py(py)
+                    },
+                    TemporalFunction::DatetimeFunction {
+                        time_unit,
+                        time_zone,
+                    } => (
+                        PyTemporalFunction::DatetimeFunction,
+                        Wrap(*time_unit),
+                        time_zone
+                            .as_ref()
+                            .map_or_else(|| py.None(), |s| s.to_object(py)),
+                    )
+                        .into_py(py),
                 },
                 FunctionExpr::Boolean(boolfun) => match boolfun {
                     BooleanFunction::Any { ignore_nulls } => {

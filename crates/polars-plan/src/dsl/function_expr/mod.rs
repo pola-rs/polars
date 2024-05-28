@@ -92,7 +92,7 @@ pub(super) use self::business::BusinessFunction;
 #[cfg(feature = "dtype-categorical")]
 pub use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
-pub(super) use self::datetime::TemporalFunction;
+pub use self::datetime::TemporalFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
