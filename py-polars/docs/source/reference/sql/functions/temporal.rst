@@ -11,12 +11,15 @@ Temporal
      - Converts a formatted string date to an actual Date type.
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
+   * - :ref:`EXTRACT <extract>`
+     - Offers the same functionality as `DATE_PART` with slightly different syntax.
 
 .. _date:
 
 DATE
 ----
-Converts a formatted string date to an actual Date type; ISO-8601 format is assumed unless a strftime-compatible formatting string is provided as the second parameter.
+Converts a formatted string date to an actual Date type; ISO-8601 format is assumed
+unless a strftime-compatible formatting string is provided as the second parameter.
 
 **Example:**
 
@@ -38,3 +41,14 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
     SELECT DATE_PART('year', column_1) FROM df;
     SELECT DATE_PART('day', column_1) FROM df;
+
+.. _extract:
+
+EXTRACT
+-------
+Extracts a part of a date (or datetime) such as 'year', 'month', etc.
+
+.. code-block:: sql
+
+    SELECT EXTRACT(isoyear FROM column_1) FROM df;
+    SELECT EXTRACT(minute FROM column_1) FROM df;

@@ -23,7 +23,8 @@ Set Operations
 
 UNION
 -----
-Combine the result sets of two or more SELECT statements into a single result set.
+Combine the distinct result sets of two or more SELECT statements.
+The final result set will have no duplicate rows.
 
 **Example:**
 
@@ -37,7 +38,8 @@ Combine the result sets of two or more SELECT statements into a single result se
 
 UNION ALL
 ---------
-Combine the result sets of two or more SELECT statements into a single result set.
+Combine the complete result sets of two or more SELECT statements.
+The final result set will be composed of all rows from each query.
 
 **Example:**
 
@@ -51,7 +53,9 @@ Combine the result sets of two or more SELECT statements into a single result se
 
 UNION BY NAME
 -------------
-Combine the result sets of two or more SELECT statements into a single result set.
+Combine the result sets of two or more SELECT statements by column name
+instead of by position; if `ALL` is omitted the final result will have
+no duplicate rows.
 
 **Example:**
 
