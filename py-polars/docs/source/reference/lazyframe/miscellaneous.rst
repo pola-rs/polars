@@ -16,8 +16,8 @@ Miscellaneous
     LazyFrame.pipe
     LazyFrame.profile
 
-Read/write logical plan
------------------------
+Serialization
+-------------
 
 .. autosummary::
    :toctree: api/
