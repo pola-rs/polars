@@ -34,7 +34,7 @@ Specifies the table(s) from which to retrieve or delete data.
 
 .. code-block:: sql
 
-	SELECT * FROM df
+    SELECT * FROM df
 
 .. _join:
 
@@ -57,7 +57,7 @@ Combines rows from two or more tables based on a related column.
 
 .. code-block:: sql
 
-	SELECT product_id FROM df_product LEFT JOIN df_categories USING (product_id)
+    SELECT product_id FROM df_product LEFT JOIN df_categories USING (product_id)
 
 .. _group_by:
 
@@ -69,7 +69,7 @@ Group rows that have the same values in specified columns into summary rows.
 
 .. code-block:: sql
 
-	SELECT column_1, SUM(column_2) FROM df GROUP BY column_1
+    SELECT column_1, SUM(column_2) FROM df GROUP BY column_1
 
 .. _limit:
 
@@ -105,7 +105,7 @@ Sort the query result based on one or more specified columns.
 
 .. code-block:: sql
 
-	SELECT * FROM df ORDER BY column_1 ASC, column_2 DESC
+    SELECT * FROM df ORDER BY column_1 ASC, column_2 DESC
 
 .. _select:
 
@@ -129,6 +129,6 @@ Combine the result sets of two or more SELECT statements into a single result se
 
 .. code-block:: sql
 
-	SELECT name, city FROM df.customers
-	UNION
-	SELECT name, city FROM df.suppliers
+    SELECT name, city FROM df.customers
+    UNION
+    SELECT name, city FROM df.suppliers

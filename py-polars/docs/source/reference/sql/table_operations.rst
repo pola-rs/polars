@@ -28,7 +28,7 @@ Create a new table and its columns in the context.
 
 .. code-block:: sql
 
-	CREATE TABLE new_table
+    CREATE TABLE new_table
     AS
     SELECT * FROM df WHERE value > 42
 
@@ -42,7 +42,7 @@ Delete a specified table and related data from the context.
 
 .. code-block:: sql
 
-	DROP TABLE old_table
+    DROP TABLE old_table
 
 .. _explain:
 
@@ -54,7 +54,7 @@ Returns Logical Plan of the query.
 
 .. code-block:: sql
 
-	EXPLAIN SELECT * FROM df 
+    EXPLAIN SELECT * FROM df
 
 .. _show_tables:
 
