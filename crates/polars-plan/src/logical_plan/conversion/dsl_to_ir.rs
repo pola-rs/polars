@@ -79,7 +79,6 @@ pub fn to_alp_impl(
 
         Ok(lp_node)
     }
-    dbg!(lp_arena.len());
 
     let v = match lp {
         DslPlan::Scan {
@@ -566,9 +565,8 @@ pub fn to_alp_impl(
                 .map_err(|e| e.context(failed_input!(sink)))?;
             IR::Sink { input, payload }
         },
-        DslPlan::IR { node, dsl } => {
-            dbg!("IR", lp_arena.len());
-            return if let Some(node) = node {
+        DslPlan::IR { node, dsl, version } => {
+            return if let (true, Some(node)) = (version == lp_arena.version(), node) {
                 Ok(node)
             } else {
                 to_alp_impl(owned(dsl), expr_arena, lp_arena, convert)

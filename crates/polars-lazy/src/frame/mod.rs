@@ -66,11 +66,6 @@ impl IntoLazy for LazyFrame {
     }
 }
 
-struct CachedArena {
-    lp_arena: Arena<IR>,
-    expr_arena: Arena<AExpr>,
-}
-
 /// Lazy abstraction over an eager `DataFrame`.
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
 /// modify a logical plan until output is requested (via [`collect`](crate::frame::LazyFrame::collect)).
@@ -93,6 +88,11 @@ impl From<DslPlan> for LazyFrame {
             cached_arena: Default::default(),
         }
     }
+}
+
+struct CachedArena {
+    lp_arena: Arena<IR>,
+    expr_arena: Arena<AExpr>,
 }
 
 impl LazyFrame {
@@ -119,8 +119,11 @@ impl LazyFrame {
                 let schema = lp_arena.get(node).schema(&lp_arena).into_owned();
 
                 // Cache the logical plan and the arenas, so that next schema call is cheap.
-                self.logical_plan = DslPlan::IR {node: Some(node), dsl: Arc::new(self.logical_plan.clone())};
-                dbg!("set", lp_arena.len());
+                self.logical_plan = DslPlan::IR {
+                    node: Some(node),
+                    dsl: Arc::new(self.logical_plan.clone()),
+                    version: lp_arena.version(),
+                };
                 *cached_arenas = Some(CachedArena {
                     lp_arena,
                     expr_arena,
@@ -131,13 +134,13 @@ impl LazyFrame {
             Some(arenas) => {
                 match self.logical_plan {
                     // We have got arenas and don't need to convert the DSL.
-                    DslPlan::IR {node: Some(node), ..} => {
-                        Ok(arenas
-                            .lp_arena
-                            .get(node)
-                            .schema(&arenas.lp_arena)
-                            .into_owned())
-                    },
+                    DslPlan::IR {
+                        node: Some(node), ..
+                    } => Ok(arenas
+                        .lp_arena
+                        .get(node)
+                        .schema(&arenas.lp_arena)
+                        .into_owned()),
                     _ => {
                         // We have got arenas, but still need to convert (parts) of the DSL.
                         let node = to_alp(
@@ -148,13 +151,20 @@ impl LazyFrame {
                             true,
                         )?;
 
-                        dbg!("set", arenas.lp_arena.len());
-                        let schema = arenas.lp_arena.get(node).schema(&arenas.lp_arena).into_owned();
+                        let schema = arenas
+                            .lp_arena
+                            .get(node)
+                            .schema(&arenas.lp_arena)
+                            .into_owned();
                         // Cache the logical plan so that next schema call is cheap.
-                        self.logical_plan = DslPlan::IR {node: Some(node), dsl: Arc::new(self.logical_plan.clone())};
+                        self.logical_plan = DslPlan::IR {
+                            node: Some(node),
+                            dsl: Arc::new(self.logical_plan.clone()),
+                            version: arenas.lp_arena.version(),
+                        };
 
                         Ok(schema)
-                    }
+                    },
                 }
             },
         }
@@ -590,7 +600,13 @@ impl LazyFrame {
 
     pub fn to_alp(mut self) -> PolarsResult<IRPlan> {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let node = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena, true, true)?;
+        let node = to_alp(
+            self.logical_plan,
+            &mut expr_arena,
+            &mut lp_arena,
+            true,
+            true,
+        )?;
         let plan = IRPlan::new(node, lp_arena, expr_arena);
         Ok(plan)
     }
@@ -655,12 +671,8 @@ impl LazyFrame {
 
     fn get_arenas(&mut self) -> (Arena<IR>, Arena<AExpr>) {
         match self.cached_arena.lock().unwrap().as_mut() {
-            Some(arenas) => {
-                (arenas.lp_arena.clone(), arenas.expr_arena.clone())
-            },
-            None => {
-                (Arena::with_capacity(16), Arena::with_capacity(16))
-            }
+            Some(arenas) => (arenas.lp_arena.clone(), arenas.expr_arena.clone()),
+            None => (Arena::with_capacity(16), Arena::with_capacity(16)),
         }
     }
 

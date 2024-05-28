@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use crate::error::*;
 use crate::slice::GetSaferUnchecked;
 
@@ -27,8 +29,11 @@ impl Default for Node {
     }
 }
 
+static ARENA_VERSION: AtomicU32 = AtomicU32::new(0);
+
 #[derive(Clone)]
 pub struct Arena<T> {
+    version: u32,
     items: Vec<T>,
 }
 
@@ -41,6 +46,11 @@ impl<T> Default for Arena<T> {
 /// Simple Arena implementation
 /// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
 impl<T> Arena<T> {
+    #[inline]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
     pub fn add(&mut self, val: T) -> Node {
         let idx = self.items.len();
         self.items.push(val);
@@ -60,12 +70,16 @@ impl<T> Arena<T> {
     }
 
     pub fn new() -> Self {
-        Arena { items: vec![] }
+        Arena {
+            items: vec![],
+            version: ARENA_VERSION.fetch_add(1, Ordering::Relaxed),
+        }
     }
 
     pub fn with_capacity(cap: usize) -> Self {
         Arena {
             items: Vec::with_capacity(cap),
+            version: ARENA_VERSION.fetch_add(1, Ordering::Relaxed),
         }
     }
 
@@ -79,7 +93,6 @@ impl<T> Arena<T> {
 
     #[inline]
     pub fn get(&self, idx: Node) -> &T {
-        dbg!(idx.0);
         self.items.get(idx.0).unwrap()
     }
 
