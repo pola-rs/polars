@@ -1,4 +1,7 @@
+from typing import Literal
+
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -434,3 +437,19 @@ def test_double_projection_pushdown_15895() -> None:
         "C": [[0]],
         "A": [[1]],
     }
+
+
+@pytest.mark.parametrize("join_type", ["inner", "left", "full"])
+def test_non_coalesce_join_projection_pushdown_16515(
+    join_type: Literal["inner", "left", "full"],
+) -> None:
+    left = pl.LazyFrame({"x": 1})
+    right = pl.LazyFrame({"y": 1})
+
+    assert (
+        left.join(right, how=join_type, left_on="x", right_on="y", coalesce=False)
+        .select("y")
+        .collect()
+        .item()
+        == 1
+    )
