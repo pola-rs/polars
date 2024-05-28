@@ -98,6 +98,7 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
+from polars.polars import PyDataFrame
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
@@ -121,7 +122,6 @@ if TYPE_CHECKING:
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.ml.torch import PolarsDataset
-    from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -417,6 +417,46 @@ class DataFrame:
                 " for the `data` parameter"
             )
             raise TypeError(msg)
+
+    @classmethod
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
+        """
+        Read a serialized DataFrame from a file.
+
+        Parameters
+        ----------
+        source
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
+
+        See Also
+        --------
+        DataFrame.serialize
+
+        Examples
+        --------
+        >>> import io
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
+        >>> json = df.serialize()
+        >>> pl.DataFrame.deserialize(io.StringIO(json))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4.0 │
+        │ 2   ┆ 5.0 │
+        │ 3   ┆ 6.0 │
+        └─────┴─────┘
+        """
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+
+        return cls._from_pydf(PyDataFrame.deserialize(source))
 
     @classmethod
     def _from_pydf(cls, py_df: PyDataFrame) -> Self:

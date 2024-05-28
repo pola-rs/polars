@@ -348,7 +348,7 @@ class LazyFrame:
     @classmethod
     def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
-        Read a logical plan from a JSON file to construct a LazyFrame.
+        Read a logical plan from a file to construct a LazyFrame.
 
         Parameters
         ----------
@@ -359,11 +359,9 @@ class LazyFrame:
 
         Warnings
         --------
-            This function uses :mod:`pickle` under some circumstances, and as
-            such inherits the security implications. Deserializing can execute
-            arbitrary code so it should only be attempted on trusted data.
-            pickle is only used when the logical plan contains python UDFs.
-
+        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        and as such inherits the security implications. Deserializing can execute
+        arbitrary code, so it should only be attempted on trusted data.
 
         See Also
         --------

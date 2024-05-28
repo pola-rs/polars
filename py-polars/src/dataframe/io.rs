@@ -185,6 +185,27 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
+    pub fn deserialize(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
+        use crate::file::read_if_bytesio;
+        py_f = read_if_bytesio(py_f);
+        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+
+        py.allow_threads(move || {
+            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
+            let bytes = mmap_read.deref();
+            match serde_json::from_slice::<DataFrame>(bytes) {
+                Ok(df) => Ok(df.into()),
+                Err(e) => {
+                    let msg = format!("{e}");
+                    let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
+                    Err(PyErr::from(e))
+                },
+            }
+        })
+    }
+
+    #[staticmethod]
+    #[cfg(feature = "json")]
     pub fn read_json(
         py: Python,
         mut py_f: Bound<PyAny>,
