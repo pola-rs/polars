@@ -4,44 +4,33 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-def test_join_on_subquery() -> None:
-    df1 = pl.DataFrame({"x": [-1, 0, 1, 2, 3, 4]})
+@pytest.mark.parametrize(
+    ("cols", "join_type", "constraint"),
+    [
+        ("x", "INNER", ""),
+        ("y", "INNER", ""),
+        ("x", "LEFT", "WHERE y IN (0,1,2,3,4,5)"),
+        ("y", "LEFT", "WHERE y >= 0"),
+        ("df1.*", "FULL", "WHERE y >= 0"),
+        ("df2.*", "FULL", "WHERE x >= 0"),
+        ("* EXCLUDE y", "LEFT", "WHERE y >= 0"),
+        ("* EXCLUDE x", "LEFT", "WHERE x >= 0"),
+    ],
+)
+def test_from_subquery(cols: str, join_type: str, constraint: str) -> None:
+    df1 = pl.DataFrame({"x": [-1, 0, 3, 1, 2, -1]})
     df2 = pl.DataFrame({"y": [0, 1, 2, 3]})
 
     sql = pl.SQLContext(df1=df1, df2=df2)
     res = sql.execute(
-        """
-        SELECT * FROM df1
-        INNER JOIN (SELECT * FROM df2) AS df2
-        ON df1.x = df2.y
+        f"""
+        SELECT {cols} FROM (SELECT * FROM df1) AS df1
+        {join_type} JOIN (SELECT * FROM df2) AS df2
+        ON df1.x = df2.y {constraint}
         """,
         eager=True,
     )
-    df_expected_join = pl.DataFrame({"x": [0, 1, 2, 3]})
-    assert_frame_equal(
-        left=res,
-        right=df_expected_join,
-    )
-
-
-def test_from_subquery() -> None:
-    df1 = pl.DataFrame({"x": [-1, 0, 1, 2, 3, 4]})
-    df2 = pl.DataFrame({"y": [0, 1, 2, 3]})
-
-    sql = pl.SQLContext(df1=df1, df2=df2)
-    res = sql.execute(
-        """
-        SELECT * FROM (SELECT * FROM df1) AS df1
-        INNER JOIN (SELECT * FROM df2) AS df2
-        ON df1.x = df2.y
-        """,
-        eager=True,
-    )
-    df_expected_join = pl.DataFrame({"x": [0, 1, 2, 3]})
-    assert_frame_equal(
-        left=res,
-        right=df_expected_join,
-    )
+    assert sorted(res.to_series()) == [0, 1, 2, 3]
 
 
 def test_in_subquery() -> None:
