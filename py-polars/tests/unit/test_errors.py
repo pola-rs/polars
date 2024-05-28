@@ -538,37 +538,6 @@ def test_invalid_group_by_arg() -> None:
         df.group_by(1).agg({"a": "sum"})
 
 
-def test_serde_validation() -> None:
-    f = io.StringIO(
-        """
-    {
-      "columns": [
-        {
-          "name": "a",
-          "datatype": "Int64",
-          "values": [
-            1,
-            2
-          ]
-        },
-        {
-          "name": "b",
-          "datatype": "Int64",
-          "values": [
-            1
-          ]
-        }
-      ]
-    }
-    """
-    )
-    with pytest.raises(
-        pl.ComputeError,
-        match=r"lengths don't match",
-    ):
-        pl.read_json(f)
-
-
 def test_overflow_msg() -> None:
     with pytest.raises(
         pl.ComputeError,

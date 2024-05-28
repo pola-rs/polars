@@ -144,3 +144,34 @@ def test_json_deserialize_empty_list_10458() -> None:
     serialized_schema = pl.DataFrame(schema=schema).serialize()
     df = pl.DataFrame.deserialize(io.StringIO(serialized_schema))
     assert df.schema == schema
+
+
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.DataFrame.deserialize(f)
