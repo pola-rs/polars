@@ -194,3 +194,58 @@ def test_reverse_order() -> None:
     )
 
     df.collect()
+
+
+def test_realias_of_unread_column_16530() -> None:
+    df = (
+        pl.LazyFrame({"x": [True]})
+        .with_columns(x=pl.lit(False))
+        .with_columns(y=~pl.col("x"))
+        .with_columns(y=pl.lit(False))
+    )
+
+    explain = df.explain()
+
+    assert explain.count("WITH_COLUMNS") == 1
+    assert df.collect().equals(pl.DataFrame({"x": [False], "y": [False]}))
+
+
+def test_realias_with_dependencies() -> None:
+    df = (
+        pl.LazyFrame({"x": [True]})
+        .with_columns(x=pl.lit(False))
+        .with_columns(y=~pl.col("x"))
+        .with_columns(y=pl.lit(False), z=pl.col("y") | True)
+    )
+
+    explain = df.explain()
+
+    assert explain.count("WITH_COLUMNS") == 3
+    assert df.collect().equals(pl.DataFrame({"x": [False], "y": [False], "z": [True]}))
+
+
+def test_refuse_pushdown_with_aliases() -> None:
+    df = (
+        pl.LazyFrame({"x": [True]})
+        .with_columns(x=pl.lit(False))
+        .with_columns(y=pl.lit(True))
+        .with_columns(y=pl.lit(False), z=pl.col("y") | True)
+    )
+
+    explain = df.explain()
+
+    assert explain.count("WITH_COLUMNS") == 2
+    assert df.collect().equals(pl.DataFrame({"x": [False], "y": [False], "z": [True]}))
+
+
+def test_neighbour_live_expr() -> None:
+    df = (
+        pl.LazyFrame({"x": [True]})
+        .with_columns(y=pl.lit(False))
+        .with_columns(x=pl.lit(False), z=pl.col("x") | False)
+    )
+
+    explain = df.explain()
+
+    assert explain.count("WITH_COLUMNS") == 1
+    assert df.collect().equals(pl.DataFrame({"x": [False], "y": [False], "z": [True]}))
