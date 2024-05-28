@@ -4532,7 +4532,7 @@ class Expr:
         The output of this custom function is presumed to be either a Series,
         or a NumPy array (in which case it will be automatically converted into
         a Series), or a scalar that will be converted into a Series. If the
-        result is a scalar and you want it to stay as a scalr, pass in
+        result is a scalar and you want it to stay as a scalar, pass in
         ``returns_scalar=True``. If you want to apply a
         custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
