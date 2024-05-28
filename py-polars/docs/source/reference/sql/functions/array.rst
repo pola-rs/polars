@@ -1,5 +1,5 @@
-Array Functions
-=====================
+Array
+=====
 
 .. list-table::
    :header-rows: 1
@@ -27,13 +27,13 @@ Array Functions
      - Takes all elements of the array and joins them into one string.
    * - :ref:`ARRAY_UNIQUE <array_unique>`
      - Returns the array with the unique elements.
-   * - :ref:`EXPLODE <explode>`
+   * - :ref:`UNNEST <unnest>`
      - Unnests/explodes an array column into multiple rows.
 
 .. _array_contains:
 
 ARRAY_CONTAINS
----------------
+--------------
 Returns true if the array contains the value.
 
 **Example:**
@@ -45,7 +45,7 @@ Returns true if the array contains the value.
 .. _array_get:
 
 ARRAY_GET
------------
+---------
 Returns the value at the given index in the array.
 
 **Example:**
@@ -57,7 +57,7 @@ Returns the value at the given index in the array.
 .. _array_length:
 
 ARRAY_LENGTH
--------------
+------------
 Returns the length of the array.
 
 **Example:**
@@ -69,7 +69,7 @@ Returns the length of the array.
 .. _array_max:
 
 ARRAY_MAX
-------------
+---------
 Returns the maximum value in an array; equivalent to `array_max`.
 
 **Example:**
@@ -81,7 +81,7 @@ Returns the maximum value in an array; equivalent to `array_max`.
 .. _array_mean:
 
 ARRAY_MEAN
------------
+----------
 Returns the mean of all values in an array.
 
 **Example:**
@@ -93,7 +93,7 @@ Returns the mean of all values in an array.
 .. _array_min:
 
 ARRAY_MIN
-------------
+---------
 Returns the minimum value in an array; equivalent to `array_min`.
 
 **Example:**
@@ -105,7 +105,7 @@ Returns the minimum value in an array; equivalent to `array_min`.
 .. _array_reverse:
 
 ARRAY_REVERSE
----------------
+-------------
 Returns the array with the elements in reverse order.
 
 **Example:**
@@ -117,7 +117,7 @@ Returns the array with the elements in reverse order.
 .. _array_sum:
 
 ARRAY_SUM
------------
+---------
 Returns the sum of all values in an array.
 
 **Example:**
@@ -129,7 +129,7 @@ Returns the sum of all values in an array.
 .. _array_to_string:
 
 ARRAY_TO_STRING
------------------
+---------------
 Takes all elements of the array and joins them into one string.
 
 **Example:**
@@ -142,7 +142,7 @@ Takes all elements of the array and joins them into one string.
 .. _array_unique:
 
 ARRAY_UNIQUE
--------------
+------------
 Returns the array with the unique elements.
 
 **Example:**
@@ -151,10 +151,10 @@ Returns the array with the unique elements.
 
     SELECT ARRAY_UNIQUE(column_1) FROM df;
 
-.. _explode:
+.. _unnest:
 
-EXPLODE
------------
+UNNEST
+------
 Unnests/explodes an array column into multiple rows.
 
 **Example:**

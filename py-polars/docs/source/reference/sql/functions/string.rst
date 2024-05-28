@@ -1,5 +1,5 @@
-String functions
-=====================
+String
+======
 
 .. list-table::
    :header-rows: 1
@@ -47,7 +47,7 @@ String functions
 .. _bit_length:
 
 BIT_LENGTH
------------
+----------
 Returns the length of the input string in bits.
 
 **Example:**
@@ -59,7 +59,7 @@ Returns the length of the input string in bits.
 .. _concat:
 
 CONCAT
------------
+------
 Returns all input expressions concatenated together as a string.
 
 **Example:**
@@ -71,7 +71,7 @@ Returns all input expressions concatenated together as a string.
 .. _concat_ws:
 
 CONCAT_WS
------------
+---------
 Returns all input expressions concatenated together (and interleaved with a separator) as a string.
 
 **Example:**
@@ -82,7 +82,7 @@ Returns all input expressions concatenated together (and interleaved with a sepa
 .. _ends_with:
 
 ENDS_WITH
------------
+---------
 Returns True if the value ends with the second argument.
 
 **Example:**
@@ -95,7 +95,7 @@ Returns True if the value ends with the second argument.
 .. _initcap:
 
 INITCAP
------------
+-------
 Returns the value with the first letter capitalized.
 
 **Example:**
@@ -107,7 +107,7 @@ Returns the value with the first letter capitalized.
 .. _left:
 
 LEFT
------------
+----
 Returns the first (leftmost) `n` characters.
 
 **Example:**
@@ -119,7 +119,7 @@ Returns the first (leftmost) `n` characters.
 .. _length:
 
 LENGTH
------------
+------
 Returns the character length of the string.
 
 **Example:**
@@ -131,7 +131,7 @@ Returns the character length of the string.
 .. _lower:
 
 LOWER
------------
+-----
 Returns a lowercased column.
 
 **Example:**
@@ -143,7 +143,7 @@ Returns a lowercased column.
 .. _ltrim:
 
 LTRIM
------------
+-----
 Strips whitespaces from the left.
 
 **Example:**
@@ -155,7 +155,7 @@ Strips whitespaces from the left.
 .. _octet_length:
 
 OCTET_LENGTH
---------------
+------------
 Returns the length of a given string in bytes.
 
 **Example:**
@@ -167,7 +167,7 @@ Returns the length of a given string in bytes.
 .. _regexp_like:
 
 REGEXP_LIKE
--------------
+-----------
 Returns True if `pattern` matches the value (optional: `flags`).
 
 **Example:**
@@ -179,7 +179,7 @@ Returns True if `pattern` matches the value (optional: `flags`).
 .. _replace:
 
 REPLACE
------------
+-------
 Replaces a given substring with another string.
 
 **Example:**
@@ -191,7 +191,7 @@ Replaces a given substring with another string.
 .. _reverse:
 
 REVERSE
------------
+-------
 Returns the reversed string.
 
 **Example:**
@@ -203,7 +203,7 @@ Returns the reversed string.
 .. _right:
 
 RIGHT
------------
+-----
 Returns the last (rightmost) `n` characters.
 
 **Example:**
@@ -215,7 +215,7 @@ Returns the last (rightmost) `n` characters.
 .. _rtrim:
 
 RTRIM
------------
+-----
 Strips whitespaces from the right.
 
 **Example:**
@@ -227,7 +227,7 @@ Strips whitespaces from the right.
 .. _starts_with:
 
 STARTS_WITH
-------------
+-----------
 Returns True if the value starts with the second argument.
 
 **Example:**
@@ -240,7 +240,7 @@ Returns True if the value starts with the second argument.
 .. _strpos:
 
 STRPOS
------------
+------
 Returns the index of the given substring in the target string.
 
 **Example:**
@@ -252,7 +252,7 @@ Returns the index of the given substring in the target string.
 .. _substring:
 
 SUBSTRING
------------
+---------
 Returns a portion of the data (first character = 0) in the range [start, start + length].
 
 **Example:**
@@ -264,7 +264,7 @@ Returns a portion of the data (first character = 0) in the range [start, start +
 .. _upper:
 
 UPPER
------------
+-----
 Returns an uppercased column.
 
 **Example:**

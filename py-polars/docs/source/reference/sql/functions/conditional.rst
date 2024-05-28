@@ -1,5 +1,5 @@
-Conditional functions
-==========================
+Conditional
+===========
 
 .. list-table::
    :header-rows: 1
@@ -23,7 +23,7 @@ Conditional functions
 .. _coalesce:
 
 COALESCE
------------
+--------
 Returns the first non-null value in the provided values/columns.
 
 **Example:**
@@ -35,7 +35,7 @@ Returns the first non-null value in the provided values/columns.
 .. _greatest:
 
 GREATEST
------------
+--------
 Returns the greatest value in the list of expressions.
 
 **Example:**
@@ -47,7 +47,7 @@ Returns the greatest value in the list of expressions.
 .. _if:
 
 IF
------------
+--
 Returns expr1 if the boolean condition provided as the first parameter evaluates to true, and expr2 otherwise.
 
 **Example:**
@@ -59,7 +59,7 @@ Returns expr1 if the boolean condition provided as the first parameter evaluates
 .. _ifnull:
 
 IFNULL
------------
+------
 If an expression value is NULL, return an alternative value.
 
 **Example:**
@@ -71,7 +71,7 @@ If an expression value is NULL, return an alternative value.
 .. _least:
 
 LEAST
------------
+-----
 Returns the smallest value in the list of expressions.
 
 **Example:**
@@ -83,7 +83,7 @@ Returns the smallest value in the list of expressions.
 .. _nullif:
 
 NULLIF
------------
+------
 Returns NULL if two expressions are equal, otherwise returns the first.
 
 **Example:**

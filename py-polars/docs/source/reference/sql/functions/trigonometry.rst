@@ -1,5 +1,5 @@
-Trig functions
-===================
+Trigonometry
+============
 
 .. list-table::
    :header-rows: 1
@@ -45,7 +45,7 @@ Trig functions
 .. _acos:
 
 ACOS
------------
+----
 Compute inverse cosine of the input column (in radians).
 
 **Example:**
@@ -57,7 +57,7 @@ Compute inverse cosine of the input column (in radians).
 .. _acosd:
 
 ACOSD
------------
+-----
 Compute inverse cosine of the input column (in degrees).
 
 **Example:**
@@ -69,7 +69,7 @@ Compute inverse cosine of the input column (in degrees).
 .. _asin:
 
 ASIN
------------
+----
 Compute inverse sine of the input column (in radians).
 
 **Example:**
@@ -81,7 +81,7 @@ Compute inverse sine of the input column (in radians).
 .. _asind:
 
 ASIND
------------
+-----
 Compute inverse sine of the input column (in degrees).
 
 **Example:**
@@ -93,7 +93,7 @@ Compute inverse sine of the input column (in degrees).
 .. _atan:
 
 ATAN
------------
+----
 Compute inverse tangent of the input column (in radians).
 
 **Example:**
@@ -105,7 +105,7 @@ Compute inverse tangent of the input column (in radians).
 .. _atand:
 
 ATAND
------------
+-----
 Compute inverse tangent of the input column (in degrees).
 
 **Example:**
@@ -116,8 +116,8 @@ Compute inverse tangent of the input column (in degrees).
 
 .. _atan2:
 
-Atan2
------------
+ATAN2
+-----
 Compute the inverse tangent of column_2/column_1 (in radians).
 
 **Example:**
@@ -129,7 +129,7 @@ Compute the inverse tangent of column_2/column_1 (in radians).
 .. _atan2d:
 
 ATAN2D
------------
+------
 Compute the inverse tangent of column_2/column_1 (in degrees).
 
 **Example:**
@@ -141,7 +141,7 @@ Compute the inverse tangent of column_2/column_1 (in degrees).
 .. _cot:
 
 COT
------------
+---
 Compute the cotangent of the input column (in radians).
 
 **Example:**
@@ -153,7 +153,7 @@ Compute the cotangent of the input column (in radians).
 .. _cotd:
 
 COTD
------------
+----
 Compute cotangent of the input column (in degrees).
 
 **Example:**
@@ -165,7 +165,7 @@ Compute cotangent of the input column (in degrees).
 .. _cos:
 
 COS
------------
+---
 Compute the cosine of the input column (in radians).
 
 **Example:**
@@ -177,7 +177,7 @@ Compute the cosine of the input column (in radians).
 .. _cosd:
 
 COSD
------------
+----
 Compute the cosine of the input column (in degrees).
 
 **Example:**
@@ -189,7 +189,7 @@ Compute the cosine of the input column (in degrees).
 .. _degrees:
 
 DEGREES
------------
+-------
 Convert between radians and degrees.
 
 **Example:**
@@ -201,7 +201,7 @@ Convert between radians and degrees.
 .. _radians:
 
 RADIANS
------------
+-------
 Convert between degrees and radians.
 
 **Example:**
@@ -213,7 +213,7 @@ Convert between degrees and radians.
 .. _sin:
 
 SIN
------------
+---
 Compute the sine of the input column (in radians).
 
 **Example:**
@@ -225,7 +225,7 @@ Compute the sine of the input column (in radians).
 .. _sind:
 
 SIND
------------
+----
 Compute the sine of the input column (in degrees).
 
 **Example:**
@@ -237,7 +237,7 @@ Compute the sine of the input column (in degrees).
 .. _tan:
 
 TAN
------------
+---
 Compute the tangent of the input column (in radians).
 
 **Example:**
@@ -249,7 +249,7 @@ Compute the tangent of the input column (in radians).
 .. _tand:
 
 TAND
------------
+----
 Compute the tangent of the input column (in degrees).
 
 **Example:**

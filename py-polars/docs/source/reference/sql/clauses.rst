@@ -1,5 +1,5 @@
-SQL Operations
-=====================
+SQL Clauses
+===========
 
 .. list-table::
    :header-rows: 1
@@ -7,12 +7,6 @@ SQL Operations
 
    * - Function
      - Description
-   * - :ref:`CREATE TABLES <create_tables>`
-     - Define a new table and its columns in the context.
-   * - :ref:`DROP TABLES <drop_tables>`
-     - Delete a specified table and related data from the context.
-   * - :ref:`EXPLAIN <explain>`
-     - Returns logical plan of the query.
    * - :ref:`FROM <from>`
      - Specify the table(s) from which to retrieve or delete data.
    * - :ref:`JOIN <join>`
@@ -27,57 +21,13 @@ SQL Operations
      - Sort the query result based on one or more specified columns.
    * - :ref:`SELECT <select>`
      - Retrieves specific data from one or more tables.
-   * - :ref:`SHOW TABLES <show_tables>`
-     - Returns a list of all tables in the context.
-   * - :ref:`SUBQUERIES <subqueries>`
-     - Retrieves data from nested queries for the main query.
-   * - :ref:`TRUNCATE <truncate>`
-     - Remove rows from table without deleting the table from context.
    * - :ref:`UNION <union>`
      - Combine the result sets of two or more SELECT statements into a single result set.
-
-.. _create_tables:
-
-CREATE TABLES
------------------
-Create a new table and its columns in the context.
-
-**Example:**
-
-.. code-block:: sql
-
-	CREATE TABLE new_table
-    AS
-    SELECT * FROM df WHERE value > 42
-
-.. _drop_tables:
-
-DROP TABLES
------------------
-Delete a specified table and related data from the context.
-
-**Example:**
-
-.. code-block:: sql
-
-	DROP TABLE old_table
-
-.. _explain:
-
-EXPLAIN
--------
-Returns Logical Plan of the query.
-
-**Example:**
-
-.. code-block:: sql
-
-	EXPLAIN SELECT * FROM df 
 
 .. _from:
 
 FROM
----------
+----
 Specifies the table(s) from which to retrieve or delete data.
 
 **Example:**
@@ -89,7 +39,7 @@ Specifies the table(s) from which to retrieve or delete data.
 .. _join:
 
 JOIN
-----------
+----
 Combines rows from two or more tables based on a related column. 
 
 **Join Types**
@@ -112,7 +62,7 @@ Combines rows from two or more tables based on a related column.
 .. _group_by:
 
 GROUP BY
----------
+--------
 Group rows that have the same values in specified columns into summary rows.
 
 **Example:**
@@ -124,7 +74,7 @@ Group rows that have the same values in specified columns into summary rows.
 .. _limit:
 
 LIMIT
----------
+-----
 Limit the number of rows returned by the query.
 
 **Example:**
@@ -136,7 +86,7 @@ Limit the number of rows returned by the query.
 .. _offset:
 
 OFFSET
--------
+------
 Skip a number of rows before starting to return rows from the query.
 
 **Example:**
@@ -148,7 +98,7 @@ Skip a number of rows before starting to return rows from the query.
 .. _order_by:
 
 ORDER BY
----------
+--------
 Sort the query result based on one or more specified columns.
 
 **Example:**
@@ -160,7 +110,7 @@ Sort the query result based on one or more specified columns.
 .. _select:
 
 SELECT
--------
+------
 Select the columns to be returned by the query.
 
 **Example:**
@@ -169,46 +119,10 @@ Select the columns to be returned by the query.
 
     SELECT column_1, column_2 FROM df;
 
-.. _show_tables:
-
-SHOW TABLES
-------------
-Display the list of tables in the context.
-
-**Example:**
-
-.. code-block:: sql
-
-    SHOW TABLES
-
-.. _subqueries:
-
-SUBQUERIES
-------------
-Retrieves data from nested queries for the main query. Registers the nested query as table in the context.
-
-**Example:**
-
-.. code-block:: sql
-
-    SELECT column_1 FROM (SELECT column_1 FROM df WHERE column_2 > 42) AS alias
-
-.. _truncate:
-
-TRUNCATE
---------
-Removes all rows from the specified table, but keeps the table.
-
-**Example:**
-
-.. code-block:: sql
-
-    TRUNCATE TABLE df
-
 .. _union:
 
 UNION
----------
+-----
 Combine the result sets of two or more SELECT statements into a single result set.
 
 **Example:**

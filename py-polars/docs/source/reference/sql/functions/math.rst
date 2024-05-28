@@ -1,5 +1,5 @@
-Math functions
-===================
+Math
+====
 
 .. list-table::
    :header-rows: 1
@@ -43,7 +43,7 @@ Math functions
 .. _abs:
 
 ABS
------------
+---
 Returns the absolute value of the input column.
 
 **Example:**
@@ -55,7 +55,7 @@ Returns the absolute value of the input column.
 .. _ceil:
 
 CEIL 
---------------
+----
 Returns the nearest integer closest from zero.
 
 **Example:**
@@ -67,7 +67,7 @@ Returns the nearest integer closest from zero.
 .. _exp:
 
 EXP 
-------------
+---
 Computes the exponential of the given value.
 
 **Example:**
@@ -79,7 +79,7 @@ Computes the exponential of the given value.
 .. _floor_function:
 
 FLOOR 
---------------
+-----
 Returns the nearest integer away from zero.
 
 **Example:**
@@ -91,7 +91,7 @@ Returns the nearest integer away from zero.
 .. _pi:
 
 PI 
------------
+--
 Returns a (very good) approximation of 𝜋.
 
 **Example:**
@@ -103,7 +103,7 @@ Returns a (very good) approximation of 𝜋.
 .. _ln:
 
 LN
------------
+--
 Computes the natural logarithm of the given value.
 
 **Example:**
@@ -115,7 +115,7 @@ Computes the natural logarithm of the given value.
 .. _log2:
 
 LOG2 
--------------
+----
 Computes the logarithm of the given value in base 2.
 
 **Example:**
@@ -127,7 +127,7 @@ Computes the logarithm of the given value in base 2.
 .. _log10:
 
 LOG10
---------------
+-----
 Computes the logarithm of the given value in base 10.
 
 **Example:**
@@ -139,7 +139,7 @@ Computes the logarithm of the given value in base 10.
 .. _log:
 
 LOG
-------------
+---
 Computes the `base` logarithm of the given value.
 
 **Example:**
@@ -151,7 +151,7 @@ Computes the `base` logarithm of the given value.
 .. _log1p:
 
 LOG1P
---------------
+-----
 Computes the natural logarithm of "given value plus one".
 
 **Example:**
@@ -163,7 +163,7 @@ Computes the natural logarithm of "given value plus one".
 .. _pow:
 
 POW
------------
+---
 Returns the value to the power of the given exponent.
 
 **Example:**
@@ -175,7 +175,7 @@ Returns the value to the power of the given exponent.
 .. _mod:
 
 MOD
------------
+---
 Returns the remainder of a numeric expression divided by another numeric expression.
 
 **Example:**
@@ -187,7 +187,7 @@ Returns the remainder of a numeric expression divided by another numeric express
 .. _sqrt:
 
 SQRT
------------
+----
 Returns the square root (√) of a number.
 
 **Example:**
@@ -199,7 +199,7 @@ Returns the square root (√) of a number.
 .. _cbrt:
 
 CBRT
------------
+----
 Returns the cube root (∛) of a number.
 
 **Example:**
@@ -211,7 +211,7 @@ Returns the cube root (∛) of a number.
 .. _round:
 
 ROUND
------------
+-----
 Round a number to `x` decimals (default: 0) away from zero.
 
 **Example:**
@@ -223,7 +223,7 @@ Round a number to `x` decimals (default: 0) away from zero.
 .. _sign:
 
 SIGN
------------
+----
 Returns the sign of the argument as -1, 0, or +1.
 
 **Example:**

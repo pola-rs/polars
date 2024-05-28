@@ -1,5 +1,5 @@
-Aggregate Functions
-=========================
+Aggregate
+=========
 
 .. list-table::
    :header-rows: 1
@@ -31,7 +31,7 @@ Aggregate Functions
 .. _avg:
 
 AVG
------------
+---
 Returns the average (mean) of all the elements in the grouping.
 
 **Example:**
@@ -43,7 +43,7 @@ Returns the average (mean) of all the elements in the grouping.
 .. _count:
 
 COUNT
------------
+-----
 Returns the amount of elements in the grouping.
 
 **Example:**
@@ -58,7 +58,7 @@ Returns the amount of elements in the grouping.
 .. _first:
 
 FIRST
------------
+-----
 Returns the first element of the grouping.
 
 **Example:**
@@ -70,7 +70,7 @@ Returns the first element of the grouping.
 .. _last:
 
 LAST
------------
+----
 Returns the last element of the grouping.
 
 **Example:**
@@ -82,7 +82,7 @@ Returns the last element of the grouping.
 .. _max:
 
 MAX
------------
+---
 Returns the greatest (maximum) of all the elements in the grouping.
 
 **Example:**
@@ -94,7 +94,7 @@ Returns the greatest (maximum) of all the elements in the grouping.
 .. _median:
 
 MEDIAN
------------
+------
 Returns the median element from the grouping.
 
 **Example:**
@@ -106,7 +106,7 @@ Returns the median element from the grouping.
 .. _min:
 
 MIN
------------
+---
 Returns the smallest (minimum) of all the elements in the grouping.
 
 **Example:**
@@ -118,7 +118,7 @@ Returns the smallest (minimum) of all the elements in the grouping.
 .. _stddev:
 
 STDDEV
------------
+------
 Returns the standard deviation of all the elements in the grouping.
 
 **Example:**
@@ -130,7 +130,7 @@ Returns the standard deviation of all the elements in the grouping.
 .. _sum:
 
 SUM
------------
+---
 Returns the sum of all the elements in the grouping.
 
 **Example:**
@@ -142,7 +142,7 @@ Returns the sum of all the elements in the grouping.
 .. _variance:
 
 VARIANCE
------------
+--------
 Returns the variance of all the elements in the grouping.
 
 **Example:**
