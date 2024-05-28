@@ -340,7 +340,7 @@ class Expr:
     @classmethod
     def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
-        Read an expression from a JSON file.
+        Read a serialized expression from a file.
 
         Parameters
         ----------
@@ -351,10 +351,9 @@ class Expr:
 
         Warnings
         --------
-            This function uses :mod:`pickle` under some circumstances, and as
-            such inherits the security implications. Deserializing can execute
-            arbitrary code so it should only be attempted on trusted data.
-            pickle is only used when the logical plan contains python UDFs.
+        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        and as such inherits the security implications. Deserializing can execute
+        arbitrary code, so it should only be attempted on trusted data.
 
         See Also
         --------

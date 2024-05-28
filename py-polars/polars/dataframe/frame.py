@@ -102,6 +102,7 @@ from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
@@ -121,7 +122,6 @@ if TYPE_CHECKING:
     from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.ml.torch import PolarsDataset
-    from polars.polars import PyDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -417,6 +417,46 @@ class DataFrame:
                 " for the `data` parameter"
             )
             raise TypeError(msg)
+
+    @classmethod
+    def deserialize(cls, source: str | Path | IOBase) -> Self:
+        """
+        Read a serialized DataFrame from a file.
+
+        Parameters
+        ----------
+        source
+            Path to a file or a file-like object (by file-like object, we refer to
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
+
+        See Also
+        --------
+        DataFrame.serialize
+
+        Examples
+        --------
+        >>> import io
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
+        >>> json = df.serialize()
+        >>> pl.DataFrame.deserialize(io.StringIO(json))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4.0 │
+        │ 2   ┆ 5.0 │
+        │ 3   ┆ 6.0 │
+        └─────┴─────┘
+        """
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+
+        return cls._from_pydf(PyDataFrame.deserialize(source))
 
     @classmethod
     def _from_pydf(cls, py_df: PyDataFrame) -> Self:
@@ -2175,12 +2215,60 @@ class DataFrame:
         return output.getvalue()
 
     @overload
+    def serialize(self, file: None = ...) -> str: ...
+
+    @overload
+    def serialize(self, file: IOBase | str | Path) -> None: ...
+
+    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Serialize this DataFrame to a file or string in JSON format.
+
+        Parameters
+        ----------
+        file
+            File path or writable file-like object to which the result will be written.
+            If set to `None` (default), the output is returned as a string instead.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...     }
+        ... )
+        >>> df.serialize()
+        '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
+        """
+
+        def serialize_to_string() -> str:
+            with BytesIO() as buf:
+                self._df.serialize(buf)
+                json_bytes = buf.getvalue()
+            return json_bytes.decode("utf8")
+
+        if file is None:
+            return serialize_to_string()
+        elif isinstance(file, StringIO):
+            json_str = serialize_to_string()
+            file.write(json_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._df.serialize(file)
+            return None
+        else:
+            self._df.serialize(file)
+            return None
+
+    @overload
     def write_json(
         self,
         file: None = ...,
         *,
-        pretty: bool = ...,
         row_oriented: bool = ...,
+        pretty: bool | None = ...,
     ) -> str: ...
 
     @overload
@@ -2188,16 +2276,16 @@ class DataFrame:
         self,
         file: IOBase | str | Path,
         *,
-        pretty: bool = ...,
         row_oriented: bool = ...,
+        pretty: bool | None = ...,
     ) -> None: ...
 
     def write_json(
         self,
         file: IOBase | str | Path | None = None,
         *,
-        pretty: bool = False,
         row_oriented: bool = False,
+        pretty: bool | None = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -2207,10 +2295,17 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        pretty
-            Pretty serialize json.
         row_oriented
             Write to row oriented json. This is slower, but more common.
+
+        pretty
+            Pretty serialize json.
+
+            .. deprecated:: 0.20.31
+                The `pretty` functionality for `write_json` will be removed in the next
+                breaking release. Use :meth:`serialize` to serialize the DataFrame in
+                the regular JSON format.
+
 
         See Also
         --------
@@ -2224,27 +2319,44 @@ class DataFrame:
         ...         "bar": [6, 7, 8],
         ...     }
         ... )
-        >>> df.write_json()
-        '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
         >>> df.write_json(row_oriented=True)
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
         """
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
-            with BytesIO() as buf:
-                self._df.write_json(buf, pretty, row_oriented)
-                json_bytes = buf.getvalue()
-
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
+        if pretty is not None:
+            issue_deprecation_warning(
+                "The `pretty` functionality for `write_json` will be removed in the next breaking release."
+                " Use `DataFrame.serialize` to serialize the DataFrame in the regular JSON format.",
+                version="0.20.31",
+            )
         else:
-            self._df.write_json(file, pretty, row_oriented)
-        return None
+            pretty = False
+
+        if not row_oriented:
+            issue_deprecation_warning(
+                "`DataFrame.write_json` will only write row-oriented JSON in the next breaking release."
+                " Use `DataFrame.serialize` instead.",
+                version="0.20.31",
+            )
+
+        def write_json_to_string(*, pretty: bool, row_oriented: bool) -> str:
+            with BytesIO() as buf:
+                self._df.write_json_old(buf, pretty=pretty, row_oriented=row_oriented)
+                json_bytes = buf.getvalue()
+            return json_bytes.decode("utf8")
+
+        if file is None:
+            return write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+        elif isinstance(file, StringIO):
+            json_str = write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            file.write(json_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            return None
+        else:
+            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            return None
 
     @overload
     def write_ndjson(self, file: None = None) -> str: ...
@@ -2273,22 +2385,26 @@ class DataFrame:
         >>> df.write_ndjson()
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
         """
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
+
+        def write_ndjson_to_string() -> str:
             with BytesIO() as buf:
                 self._df.write_ndjson(buf)
-                json_bytes = buf.getvalue()
+                ndjson_bytes = buf.getvalue()
+            return ndjson_bytes.decode("utf8")
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
+        if file is None:
+            return write_ndjson_to_string()
+        elif isinstance(file, StringIO):
+            ndjson_str = write_ndjson_to_string()
+            file.write(ndjson_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._df.write_ndjson(file)
+            return None
         else:
             self._df.write_ndjson(file)
-        return None
+            return None
 
     @overload
     def write_csv(
