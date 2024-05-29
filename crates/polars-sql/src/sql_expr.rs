@@ -299,7 +299,7 @@ impl SQLExprVisitor<'_> {
         }
 
         let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
-        let schema = lf.schema()?;
+        let schema = lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
 
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {
@@ -335,7 +335,7 @@ impl SQLExprVisitor<'_> {
     /// Visit a compound SQL identifier
     ///
     /// e.g. df.column or "df"."column"
-    fn visit_compound_identifier(&self, idents: &[Ident]) -> PolarsResult<Expr> {
+    fn visit_compound_identifier(&mut self, idents: &[Ident]) -> PolarsResult<Expr> {
         match idents {
             [tbl_name, column_name] => {
                 let mut lf = self
@@ -348,9 +348,15 @@ impl SQLExprVisitor<'_> {
                         )
                     })?;
 
-                let schema = lf.schema()?;
+                let schema =
+                    lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
                 if let Some((_, name, _)) = schema.get_full(&column_name.value) {
-                    Ok(col(name))
+                    let resolved = &self.ctx.resolve_name(&tbl_name.value, &column_name.value);
+                    Ok(if name != resolved {
+                        col(resolved).alias(name)
+                    } else {
+                        col(name)
+                    })
                 } else {
                     polars_bail!(
                         ColumnNotFound: "no column named '{}' found in table '{}'",
@@ -959,25 +965,6 @@ impl SQLExprVisitor<'_> {
     }
 }
 
-pub(super) fn process_join(
-    left_tbl: LazyFrame,
-    right_tbl: LazyFrame,
-    constraint: &JoinConstraint,
-    tbl_name: &str,
-    join_tbl_name: &str,
-    join_type: JoinType,
-) -> PolarsResult<LazyFrame> {
-    let (left_on, right_on) = process_join_constraint(constraint, tbl_name, join_tbl_name)?;
-
-    Ok(left_tbl
-        .join_builder()
-        .with(right_tbl)
-        .left_on(left_on)
-        .right_on(right_on)
-        .how(join_type)
-        .finish())
-}
-
 fn collect_compound_identifiers(
     left: &[Ident],
     right: &[Ident],
@@ -988,12 +975,11 @@ fn collect_compound_identifiers(
         let (tbl_a, col_a) = (&left[0].value, &left[1].value);
         let (tbl_b, col_b) = (&right[0].value, &right[1].value);
 
-        if left_name == tbl_a && right_name == tbl_b {
-            Ok((vec![col(col_a)], vec![col(col_b)]))
-        } else if left_name == tbl_b && right_name == tbl_a {
+        // switch left/right operands if the caller has them in reverse
+        if left_name == tbl_b || right_name == tbl_a {
             Ok((vec![col(col_b)], vec![col(col_a)]))
         } else {
-            polars_bail!(InvalidOperation: "collect_compound_identifiers: left_name={:?}, right_name={:?}, tbl_a={:?}, tbl_b={:?}", left_name, right_name, tbl_a, tbl_b);
+            Ok((vec![col(col_a)], vec![col(col_b)]))
         }
     } else {
         polars_bail!(InvalidOperation: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -1042,9 +1028,9 @@ pub(super) fn process_join_constraint(
     if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
         if op == &BinaryOperator::And {
             let (mut left_on, mut right_on) = process_join_on(left, left_name, right_name)?;
-            let (left_on_2, right_on_2) = process_join_on(right, left_name, right_name)?;
-            left_on.extend(left_on_2);
-            right_on.extend(right_on_2);
+            let (left_on_, right_on_) = process_join_on(right, left_name, right_name)?;
+            left_on.extend(left_on_);
+            right_on.extend(right_on_);
             return Ok((left_on, right_on));
         }
         if op != &BinaryOperator::Eq {

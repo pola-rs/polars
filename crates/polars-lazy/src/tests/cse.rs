@@ -305,7 +305,7 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
     ]?
     .lazy();
 
-    let left = left.cross_join(right.clone().select([col("A")]));
+    let left = left.cross_join(right.clone().select([col("A")]), None);
     let q = left.join(
         right.rename(["B"], ["C"]),
         [col("A"), col("C")],

@@ -1085,8 +1085,13 @@ impl LazyFrame {
 
     /// Creates the Cartesian product from both frames, preserving the order of the left keys.
     #[cfg(feature = "cross_join")]
-    pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
-        self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
+    pub fn cross_join(self, other: LazyFrame, suffix: Option<String>) -> LazyFrame {
+        self.join(
+            other,
+            vec![],
+            vec![],
+            JoinArgs::new(JoinType::Cross).with_suffix(suffix),
+        )
     }
 
     /// Left outer join this query with another lazy query.
@@ -1237,9 +1242,7 @@ impl LazyFrame {
         if let Some(suffix) = args.suffix {
             builder = builder.suffix(suffix);
         }
-
         // Note: args.slice is set by the optimizer
-
         builder.finish()
     }
 

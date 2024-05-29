@@ -88,6 +88,11 @@ impl JoinArgs {
         self
     }
 
+    pub fn with_suffix(mut self, suffix: Option<String>) -> Self {
+        self.suffix = suffix;
+        self
+    }
+
     pub fn suffix(&self) -> &str {
         self.suffix.as_deref().unwrap_or("_right")
     }

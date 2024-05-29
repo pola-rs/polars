@@ -180,7 +180,7 @@ def test_order_by(foods_ipc_path: Path) -> None:
         df.x,
         df.y as y_alias
         FROM df
-        ORDER BY y
+        ORDER BY y_alias
         """,
         eager=True,
     )

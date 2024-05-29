@@ -3193,6 +3193,7 @@ dependencies = [
  "polars-core",
  "polars-error",
  "polars-lazy",
+ "polars-ops",
  "polars-plan",
  "rand",
  "serde",

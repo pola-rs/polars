@@ -3,18 +3,19 @@ use std::cell::RefCell;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
+use polars_ops::frame::JoinCoalesce;
 use polars_plan::prelude::*;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinOperator,
-    ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
-    SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
+    Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinConstraint,
+    JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr,
+    SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
     Value as SQLValue, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::sql_expr::{parse_sql_expr, process_join};
+use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -22,10 +23,12 @@ use crate::table_functions::PolarsTableFunctions;
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
+    pub(crate) lp_arena: Arena<IR>,
+    pub(crate) expr_arena: Arena<AExpr>,
+
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
-    aliases: RefCell<PlHashMap<String, String>>,
-    lp_arena: Arena<IR>,
-    expr_arena: Arena<AExpr>,
+    table_aliases: RefCell<PlHashMap<String, String>>,
+    joined_aliases: RefCell<PlHashMap<String, PlHashMap<String, String>>>,
 }
 
 impl Default for SQLContext {
@@ -34,7 +37,8 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             table_map: Default::default(),
             cte_map: Default::default(),
-            aliases: Default::default(),
+            table_aliases: Default::default(),
+            joined_aliases: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
         }
@@ -114,7 +118,8 @@ impl SQLContext {
             .map_err(to_compute_err)?
             .parse_statements()
             .map_err(to_compute_err)?;
-        polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
+
+        polars_ensure!(ast.len() == 1, ComputeError: "One (and only one) statement at a time please");
         let res = self.execute_statement(ast.first().unwrap())?;
 
         // Ensure the result uses the proper arenas.
@@ -123,9 +128,11 @@ impl SQLContext {
         let expr_arena = std::mem::take(&mut self.expr_arena);
         res.set_cached_arena(lp_arena, expr_arena);
 
-        // Every execution should clear the CTE map.
+        // Every execution should clear the statement-level maps.
         self.cte_map.borrow_mut().clear();
-        self.aliases.borrow_mut().clear();
+        self.table_aliases.borrow_mut().clear();
+        self.joined_aliases.borrow_mut().clear();
+
         Ok(res)
     }
 
@@ -148,22 +155,6 @@ impl SQLContext {
 }
 
 impl SQLContext {
-    fn register_cte(&mut self, name: &str, lf: LazyFrame) {
-        self.cte_map.borrow_mut().insert(name.to_owned(), lf);
-    }
-
-    pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
-        let table_name = self.table_map.get(name).cloned();
-        table_name
-            .or_else(|| self.cte_map.borrow().get(name).cloned())
-            .or_else(|| {
-                self.aliases
-                    .borrow()
-                    .get(name)
-                    .and_then(|alias| self.table_map.get(alias).cloned())
-            })
-    }
-
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let ast = stmt;
         Ok(match ast {
@@ -192,6 +183,31 @@ impl SQLContext {
         let lf = self.process_set_expr(&query.body, query)?;
 
         self.process_limit_offset(lf, &query.limit, &query.offset)
+    }
+
+    pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
+        let table_name = self.table_map.get(name).cloned();
+        table_name
+            .or_else(|| self.cte_map.borrow().get(name).cloned())
+            .or_else(|| {
+                self.table_aliases
+                    .borrow()
+                    .get(name)
+                    .and_then(|alias| self.table_map.get(alias).cloned())
+            })
+    }
+
+    pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
+        if self.joined_aliases.borrow().contains_key(tbl_name) {
+            self.joined_aliases
+                .borrow()
+                .get(tbl_name)
+                .and_then(|aliases| aliases.get(column_name))
+                .cloned()
+                .unwrap_or_else(|| column_name.to_string())
+        } else {
+            column_name.to_string()
+        }
     }
 
     fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
@@ -312,6 +328,10 @@ impl SQLContext {
         }
     }
 
+    fn register_cte(&mut self, name: &str, lf: LazyFrame) {
+        self.cte_map.borrow_mut().insert(name.to_owned(), lf);
+    }
+
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
             if with.recursive {
@@ -331,41 +351,67 @@ impl SQLContext {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
-                let (r_name, rf) = self.get_table(&tbl.relation)?;
+                let (r_name, mut rf) = self.get_table(&tbl.relation)?;
+                let left_schema =
+                    lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+                let right_schema =
+                    rf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+
                 lf = match &tbl.join_operator {
-                    JoinOperator::CrossJoin => lf.cross_join(rf),
                     JoinOperator::FullOuter(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Full)?
+                        self.process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Full)?
                     },
                     JoinOperator::Inner(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?
+                        self.process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?
                     },
                     JoinOperator::LeftOuter(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Left)?
+                        self.process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Left)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::LeftAnti(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Anti)?
+                        self.process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Anti)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::LeftSemi(constraint) => {
-                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Semi)?
+                        self.process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Semi)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::RightAnti(constraint) => {
-                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Anti)?
+                        self.process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Anti)?
                     },
                     #[cfg(feature = "semi_anti_join")]
                     JoinOperator::RightSemi(constraint) => {
-                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Semi)?
+                        self.process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Semi)?
                     },
+                    JoinOperator::CrossJoin => lf.cross_join(rf, Some(format!(":{}", r_name))),
                     join_type => {
                         polars_bail!(
                             InvalidOperation:
                             "join type '{:?}' not yet supported by polars-sql", join_type
                         );
                     },
-                }
+                };
+
+                // track join-aliased columns so we can resolve them later
+                let joined_schema =
+                    lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+                self.joined_aliases.borrow_mut().insert(
+                    r_name.to_string(),
+                    right_schema
+                        .iter_names()
+                        .filter_map(|name| {
+                            // col exists in both tables and is aliased in the joined result
+                            let aliased_name = format!("{}:{}", name, r_name);
+                            if left_schema.contains(name)
+                                && joined_schema.contains(aliased_name.as_str())
+                            {
+                                Some((name.to_string(), aliased_name))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<PlHashMap<String, String>>(),
+                );
             }
         };
         Ok(lf)
@@ -594,6 +640,31 @@ impl SQLContext {
         Ok(lf)
     }
 
+    pub(super) fn process_join(
+        &self,
+        left_tbl: LazyFrame,
+        right_tbl: LazyFrame,
+        constraint: &JoinConstraint,
+        tbl_name: &str,
+        join_tbl_name: &str,
+        join_type: JoinType,
+    ) -> PolarsResult<LazyFrame> {
+        let (left_on, right_on) = process_join_constraint(constraint, tbl_name, join_tbl_name)?;
+
+        let joined_tbl = left_tbl
+            .clone()
+            .join_builder()
+            .with(right_tbl.clone())
+            .left_on(left_on)
+            .right_on(right_on)
+            .how(join_type)
+            .suffix(format!(":{}", join_tbl_name))
+            .coalesce(JoinCoalesce::KeepColumns)
+            .finish();
+
+        Ok(joined_tbl)
+    }
+
     fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
         let mut contexts = vec![];
         for expr in exprs {
@@ -660,7 +731,7 @@ impl SQLContext {
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
                     match alias {
                         Some(alias) => {
-                            self.aliases
+                            self.table_aliases
                                 .borrow_mut()
                                 .insert(alias.name.value.clone(), tbl_name.to_string());
                             Ok((alias.to_string(), lf))
