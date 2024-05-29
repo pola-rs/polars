@@ -54,7 +54,7 @@ _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
 def _open_posix_libc() -> ctypes.CDLL:
     # Avoid importing ctypes.util if possible.
     try:
-        if os.uname().sysname == "Darwin":
+        if os.uname().sysname == "Darwin":  # type: ignore[attr-defined,unused-ignore]
             return ctypes.CDLL("libc.dylib", use_errno=True)
         else:
             return ctypes.CDLL("libc.so.6", use_errno=True)
@@ -147,7 +147,7 @@ class CPUID:
                 # Here ctypes.windll.kernel32 is needed to get the
                 # right DLL. Otherwise it will fail when running
                 # 32 bit Python on 64 bit Windows.
-                self.win = ctypes.windll.kernel32  # type: ignore[attr-defined]
+                self.win = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
                 opc = _CDECL_32_OPC
         else:
             opc = _POSIX_64_OPC if _IS_64BIT else _CDECL_32_OPC
@@ -183,13 +183,13 @@ class CPUID:
             self.mmap = mmap.mmap(
                 -1,
                 size,
-                mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
-                mmap.PROT_READ | mmap.PROT_WRITE,
+                mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,  # type: ignore[attr-defined,unused-ignore]
+                mmap.PROT_READ | mmap.PROT_WRITE,  # type: ignore[attr-defined,unused-ignore]
             )
             self.addr = ctypes.addressof(ctypes.c_void_p.from_buffer(self.mmap))
             self.mmap.write(code)
 
-            if mprotect(self.addr, size, mmap.PROT_READ | mmap.PROT_EXEC) != 0:
+            if mprotect(self.addr, size, mmap.PROT_READ | mmap.PROT_EXEC) != 0:  # type: ignore[attr-defined,unused-ignore]
                 msg = "could not execute mprotect for CPUID check"
                 raise RuntimeError(msg)
 
