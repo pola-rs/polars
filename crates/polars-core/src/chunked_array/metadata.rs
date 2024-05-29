@@ -14,6 +14,7 @@ pub struct Metadata<T: PolarsDataType> {
     min_value: Option<T::OwnedPhysical>,
     max_value: Option<T::OwnedPhysical>,
 
+    /// Number of unique non-null values
     distinct_count: Option<IdxSize>,
 }
 

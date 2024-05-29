@@ -8,6 +8,7 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{BooleanStatistics, ParquetStatistics};
+use crate::write::StatisticsOptions;
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
     // encode values using bitpacking
@@ -59,8 +60,8 @@ pub fn array_to_page(
 
     encode_plain(array, is_optional, &mut buffer)?;
 
-    let statistics = if options.write_statistics {
-        Some(build_statistics(array))
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, &options.statistics))
     } else {
         None
     };
@@ -79,12 +80,27 @@ pub fn array_to_page(
     )
 }
 
-pub(super) fn build_statistics(array: &BooleanArray) -> ParquetStatistics {
+pub(super) fn build_statistics(
+    array: &BooleanArray,
+    options: &StatisticsOptions,
+) -> ParquetStatistics {
+    use polars_compute::distinct_count::DistinctCountKernel;
+    use polars_compute::min_max::MinMaxKernel;
+
     BooleanStatistics {
-        null_count: Some(array.null_count() as i64),
-        distinct_count: None,
-        max_value: array.iter().flatten().max(),
-        min_value: array.iter().flatten().min(),
+        null_count: options.null_count.then(|| array.null_count() as i64),
+        distinct_count: options
+            .distinct_count
+            .then(|| array.distinct_count().try_into().ok())
+            .flatten(),
+        max_value: options
+            .max_value
+            .then(|| array.max_propagate_nan_kernel())
+            .flatten(),
+        min_value: options
+            .min_value
+            .then(|| array.min_propagate_nan_kernel())
+            .flatten(),
     }
     .serialize()
 }

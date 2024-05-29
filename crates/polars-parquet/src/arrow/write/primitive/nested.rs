@@ -31,8 +31,8 @@ where
 
     let buffer = encode_plain(array, is_optional, buffer);
 
-    let statistics = if options.write_statistics {
-        Some(build_statistics(array, type_.clone()).serialize())
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };

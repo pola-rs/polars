@@ -3287,7 +3287,7 @@ class DataFrame:
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool = True,
+        statistics: bool | str | dict[str, bool] = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
@@ -3315,6 +3315,19 @@ class DataFrame:
 
         statistics
             Write statistics to the parquet headers. This is the default behavior.
+
+            Possible values:
+
+            - `True`: enable default set of statistics (default)
+            - `False`: disable all statistics
+            - "full": calculate and write all available statistics. Cannot be
+              combined with `use_pyarrow`.
+            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
+              `use_pyarrow`. Available keys:
+              - "min": column minimum value (default: `True`)
+              - "max": column maximum value (default: `True`)
+              - "distinct_count": number of unique column values (default: `False`)
+              - "null_count": number of null values in column (default: `True`)
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
         data_page_size
@@ -3366,6 +3379,10 @@ class DataFrame:
                 file = normalize_filepath(file)
 
         if use_pyarrow:
+            if statistics == "full" or isinstance(statistics, dict):
+                msg = "write_parquet with `use_pyarrow=True` allows only boolean values for `statistics`"
+                raise ValueError(msg)
+
             tbl = self.to_arrow()
             data = {}
 
@@ -3405,6 +3422,23 @@ class DataFrame:
                 )
 
         else:
+            if isinstance(statistics, bool) and statistics:
+                statistics = {
+                    "min": True,
+                    "max": True,
+                    "distinct_count": False,
+                    "null_count": True,
+                }
+            elif isinstance(statistics, bool) and not statistics:
+                statistics = {}
+            elif statistics == "full":
+                statistics = {
+                    "min": True,
+                    "max": True,
+                    "distinct_count": True,
+                    "null_count": True,
+                }
+
             self._df.write_parquet(
                 file,
                 compression,

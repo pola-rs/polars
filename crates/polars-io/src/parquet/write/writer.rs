@@ -4,7 +4,8 @@ use std::sync::Mutex;
 use arrow::datatypes::PhysicalType;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, Version, WriteOptions,
+    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, StatisticsOptions,
+    Version, WriteOptions,
 };
 
 use super::batched_writer::BatchedWriter;
@@ -18,7 +19,7 @@ pub struct ParquetWriter<W> {
     /// Data page compression
     compression: CompressionOptions,
     /// Compute and write column statistics.
-    statistics: bool,
+    statistics: StatisticsOptions,
     /// if `None` will be 512^2 rows
     row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
@@ -39,7 +40,7 @@ where
         ParquetWriter {
             writer,
             compression: ParquetCompression::default().into(),
-            statistics: true,
+            statistics: StatisticsOptions::default(),
             row_group_size: None,
             data_page_size: None,
             parallel: true,
@@ -56,7 +57,7 @@ where
     }
 
     /// Compute and write statistic
-    pub fn with_statistics(mut self, statistics: bool) -> Self {
+    pub fn with_statistics(mut self, statistics: StatisticsOptions) -> Self {
         self.statistics = statistics;
         self
     }
@@ -100,7 +101,7 @@ where
 
     fn materialize_options(&self) -> WriteOptions {
         WriteOptions {
-            write_statistics: self.statistics,
+            statistics: self.statistics,
             compression: self.compression,
             version: Version::V1,
             data_pagesize_limit: self.data_page_size,
