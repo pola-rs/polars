@@ -157,7 +157,8 @@ impl<T> Arena<T> {
     }
 
     pub fn clear(&mut self) {
-        self.items.clear()
+        self.items.clear();
+        self.version = ARENA_VERSION.fetch_add(1, Ordering::Relaxed);
     }
 }
 

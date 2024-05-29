@@ -24,6 +24,8 @@ pub struct SQLContext {
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
     aliases: RefCell<PlHashMap<String, String>>,
+    lp_arena: Arena<IR>,
+    expr_arena: Arena<AExpr>,
 }
 
 impl Default for SQLContext {
@@ -33,6 +35,8 @@ impl Default for SQLContext {
             table_map: Default::default(),
             cte_map: Default::default(),
             aliases: Default::default(),
+            lp_arena: Default::default(),
+            expr_arena: Default::default(),
         }
     }
 }
@@ -111,11 +115,18 @@ impl SQLContext {
             .parse_statements()
             .map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
-        let res = self.execute_statement(ast.first().unwrap());
+        let res = self.execute_statement(ast.first().unwrap())?;
+
+        // Ensure the result uses the proper arenas.
+        // This will instantiate new arenas with a new version.
+        let lp_arena = std::mem::take(&mut self.lp_arena);
+        let expr_arena = std::mem::take(&mut self.expr_arena);
+        res.set_cached_arena(lp_arena, expr_arena);
+
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
         self.aliases.borrow_mut().clear();
-        res
+        Ok(res)
     }
 
     /// add a function registry to the SQLContext
@@ -283,7 +294,12 @@ impl SQLContext {
                 None => {
                     let tbl = table_name.to_string();
                     if let Some(lf) = self.table_map.get_mut(&tbl) {
-                        *lf = DataFrame::from(lf.schema().unwrap().as_ref()).lazy();
+                        *lf = DataFrame::from(
+                            lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
+                                .unwrap()
+                                .as_ref(),
+                        )
+                        .lazy();
                         Ok(lf.clone())
                     } else {
                         polars_bail!(ComputeError: "table '{}' does not exist", tbl);
@@ -369,7 +385,7 @@ impl SQLContext {
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
-        let schema = Some(lf.schema()?);
+        let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
         if let Some(expr) = select_stmt.selection.as_ref() {
             let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
             lf = self.process_subqueries(lf, vec![&mut filter_expression]);
@@ -473,7 +489,7 @@ impl SQLContext {
             if query.order_by.is_empty() {
                 lf.select(projections)
             } else if !contains_wildcard {
-                let schema = lf.schema()?;
+                let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
                 let mut column_names = schema.get_names();
                 let mut retained_names = PlHashSet::new();
 
@@ -538,7 +554,7 @@ impl SQLContext {
             lf = self.process_order_by(lf, &query.order_by)?;
 
             // Apply optional 'having' clause, post-aggregation.
-            let schema = Some(lf.schema()?);
+            let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
             match select_stmt.having.as_ref() {
                 Some(expr) => lf.filter(parse_sql_expr(expr, self, schema.as_deref())?),
                 None => lf,
@@ -550,7 +566,7 @@ impl SQLContext {
             Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
                 // TODO: support exprs in `unique` see https://github.com/pola-rs/polars/issues/5760
-                let schema = Some(lf.schema()?);
+                let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
                 let cols = exprs
                     .iter()
                     .map(|e| {
@@ -702,7 +718,7 @@ impl SQLContext {
         let mut by = Vec::with_capacity(ob.len());
         let mut descending = Vec::with_capacity(ob.len());
 
-        let schema = Some(lf.schema()?);
+        let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
         for ob in ob {
             by.push(parse_sql_expr(&ob.expr, self, schema.as_deref())?);
             descending.push(!ob.asc.unwrap_or(true));
@@ -731,7 +747,7 @@ impl SQLContext {
             !contains_wildcard,
             ComputeError: "group_by error: can't process wildcard in group_by"
         );
-        let schema_before = lf.schema()?;
+        let schema_before = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
         let group_by_keys_schema =
             expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
 
@@ -856,7 +872,7 @@ impl SQLContext {
                         tbl_name
                     )
                 })?;
-                let schema = lf.schema()?;
+                let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
                 cols(schema.iter_names())
             },
             e => polars_bail!(
