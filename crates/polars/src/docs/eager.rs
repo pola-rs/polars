@@ -323,10 +323,10 @@
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
 //! // create a mask to filter out null values
-//! let mask = df.column("sepal.width")?.is_not_null();
+//! let mask = df.column("sepal_width")?.is_not_null();
 //!
 //! // select column
-//! let s = df.column("sepal.length")?;
+//! let s = df.column("sepal_length")?;
 //!
 //! // apply filter on a Series
 //! let filtered_series = s.filter(&mask);
@@ -395,7 +395,7 @@
 //! // join on a single column
 //! temp.left_join(&rain, ["days"], ["days"]);
 //! temp.inner_join(&rain, ["days"], ["days"]);
-//! temp.outer_join(&rain, ["days"], ["days"]);
+//! temp.full_join(&rain, ["days"], ["days"]);
 //!
 //! // join on multiple columns
 //! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinArgs::new(JoinType::Left));

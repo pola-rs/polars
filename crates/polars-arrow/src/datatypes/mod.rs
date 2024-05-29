@@ -301,13 +301,16 @@ impl From<arrow_schema::DataType> for ArrowDataType {
             DataType::RunEndEncoded(_, _) => {
                 panic!("Run-end encoding not supported by polars_arrow")
             },
+            // This ensures that it doesn't fail to compile when new variants are added to Arrow
+            #[allow(unreachable_patterns)]
+            dtype => unimplemented!("unsupported datatype: {dtype}"),
         }
     }
 }
 
 /// Mode of [`ArrowDataType::Union`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UnionMode {
     /// Dense union
     Dense,

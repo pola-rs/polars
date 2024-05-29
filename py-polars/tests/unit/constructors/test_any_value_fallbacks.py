@@ -24,6 +24,12 @@ from polars.polars import PySeries
         (pl.Time, [time(0, 0), time(23, 59, 59), None]),
         (pl.Datetime, [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None]),
         (pl.Duration, [timedelta(hours=0), timedelta(seconds=100), None]),
+        (pl.Categorical, ["a", "b", "a", None]),
+        (pl.Enum(["a", "b"]), ["a", "b", "a", None]),
+        (
+            pl.Struct({"a": pl.Int8, "b": pl.String}),
+            [{"a": 1, "b": "foo"}, {"a": -1, "b": "bar"}],
+        ),
     ],
 )
 @pytest.mark.parametrize("strict", [True, False])
@@ -52,6 +58,12 @@ def test_fallback_with_dtype_strict(
         (pl.Duration, [0, 1200]),
         (pl.Duration("ms"), [timedelta(hours=0), timedelta(seconds=100)]),
         (pl.Duration("ns"), [timedelta(hours=0), timedelta(seconds=100)]),
+        (pl.Categorical, [0, 1, 0]),
+        (pl.Enum(["a", "b"]), [0, 1, 0]),
+        (
+            pl.Struct({"a": pl.Int8, "b": pl.String}),
+            [{"a": 1, "b": "foo"}, {"a": 2.0, "b": "bar"}],
+        ),
     ],
 )
 def test_fallback_with_dtype_strict_failure(
@@ -177,6 +189,21 @@ def test_fallback_with_dtype_strict_failure(
                 None,
             ],
         ),
+        (
+            pl.Categorical,
+            ["xyz", 1, 2.5, date(1970, 1, 1), True, b"123", None],
+            ["xyz", "1", "2.5", "1970-01-01", "true", None, None],
+        ),
+        (
+            pl.Enum(["a", "b"]),
+            ["a", "b", "c", 1, 2, None],
+            ["a", "b", None, None, None, None],
+        ),
+        (
+            pl.Struct({"a": pl.Int8, "b": pl.String}),
+            [{"a": 1, "b": "foo"}, {"a": 1_000, "b": 2.0}],
+            [{"a": 1, "b": "foo"}, {"a": None, "b": "2.0"}],
+        ),
     ],
 )
 def test_fallback_with_dtype_nonstrict(
@@ -185,30 +212,33 @@ def test_fallback_with_dtype_nonstrict(
     result = wrap_s(
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=False)
     )
-    print(result.to_list())
     assert result.to_list() == expected
 
 
 @pytest.mark.parametrize(
-    ("values", "expected_dtype"),
+    ("expected_dtype", "values"),
     [
-        ([-1, 0, 100_000, None], pl.Int64),
-        ([-1.5, 0.0, 10.0, None], pl.Float64),
-        ([True, False, None], pl.Boolean),
-        ([b"123", b"xyz", None], pl.Binary),
-        (["123", "xyz", None], pl.String),
-        ([date(1970, 1, 1), date(2020, 12, 31), None], pl.Date),
-        ([time(0, 0), time(23, 59, 59), None], pl.Time),
+        (pl.Int64, [-1, 0, 100_000, None]),
+        (pl.Float64, [-1.5, 0.0, 10.0, None]),
+        (pl.Boolean, [True, False, None]),
+        (pl.Binary, [b"123", b"xyz", None]),
+        (pl.String, ["123", "xyz", None]),
+        (pl.Date, [date(1970, 1, 1), date(2020, 12, 31), None]),
+        (pl.Time, [time(0, 0), time(23, 59, 59), None]),
         (
-            [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None],
             pl.Datetime("us"),
+            [datetime(1970, 1, 1), datetime(2020, 12, 31, 23, 59, 59), None],
         ),
-        ([timedelta(hours=0), timedelta(seconds=100), None], pl.Duration("us")),
+        (pl.Duration("us"), [timedelta(hours=0), timedelta(seconds=100), None]),
+        (
+            pl.Struct({"a": pl.Int64, "b": pl.String, "c": pl.Float64}),
+            [{"a": 1, "b": "foo", "c": None}, {"a": -1, "b": "bar", "c": 3.0}],
+        ),
     ],
 )
 @pytest.mark.parametrize("strict", [True, False])
 def test_fallback_without_dtype(
-    values: list[Any], expected_dtype: pl.PolarsDataType, strict: bool
+    expected_dtype: pl.PolarsDataType, values: list[Any], strict: bool
 ) -> None:
     result = wrap_s(PySeries.new_from_any_values("", values, strict=strict))
     assert result.to_list() == values
@@ -227,6 +257,8 @@ def test_fallback_without_dtype(
         [time(0, 0), 1_000],
         [datetime(1970, 1, 1), date(2020, 12, 31)],
         [timedelta(hours=0), 1_000],
+        [{"a": 1, "b": "foo"}, {"a": -1, "b": date(2020, 12, 31)}],
+        [{"a": None}, {"a": 1.0}, {"a": 1}],
     ],
 )
 def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
@@ -246,6 +278,22 @@ def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
             pl.Datetime("us"),
         ),
         ([1, 2.0, b"d", date(2022, 1, 1)], [1, 2.0, b"d", date(2022, 1, 1)], pl.Object),
+        (
+            [
+                {"a": 1, "b": "foo", "c": None},
+                {"a": 2.0, "b": date(2020, 12, 31), "c": None},
+            ],
+            [
+                {"a": 1.0, "b": "foo", "c": None},
+                {"a": 2.0, "b": "2020-12-31", "c": None},
+            ],
+            pl.Struct({"a": pl.Float64, "b": pl.String, "c": pl.Null}),
+        ),
+        (
+            [{"a": None}, {"a": 1.0}, {"a": 1}],
+            [{"a": None}, {"a": 1.0}, {"a": 1.0}],
+            pl.Struct({"a": pl.Float64}),
+        ),
     ],
 )
 def test_fallback_without_dtype_nonstrict_mixed_types(
@@ -256,3 +304,36 @@ def test_fallback_without_dtype_nonstrict_mixed_types(
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
     assert result.dtype == expected_dtype
     assert result.to_list() == expected
+
+
+def test_fallback_without_dtype_large_int() -> None:
+    values = [1, 2**64, None]
+    with pytest.raises(
+        OverflowError,
+        match="int value too large for Polars integer types: 18446744073709551616",
+    ):
+        PySeries.new_from_any_values("", values, strict=True)
+
+    result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
+    assert result.dtype == pl.Float64
+    assert result.to_list() == [1.0, 1.8446744073709552e19, None]
+
+
+def test_fallback_with_dtype_large_int() -> None:
+    values = [1, 2**64, None]
+    with pytest.raises(OverflowError):
+        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=True)
+
+    result = wrap_s(
+        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=False)
+    )
+    assert result.dtype == pl.Int64
+    assert result.to_list() == [1, None, None]
+
+
+def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
+    dtype = pl.Enum(["a", "b"])
+    values = ["a", "b", "c", None]
+
+    with pytest.raises(TypeError, match="conversion from `str` to `enum` failed"):
+        PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)

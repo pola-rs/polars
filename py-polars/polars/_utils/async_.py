@@ -85,13 +85,16 @@ class _AioDataFrameResult(Awaitable[T], Generic[T]):
         if isinstance(obj, Exception):
             self.loop.call_soon_threadsafe(self.result.set_exception, obj)
         else:
-            self.loop.call_soon_threadsafe(self.result.set_result, wrap_df(obj))
+            self.loop.call_soon_threadsafe(
+                self.result.set_result,  # type: ignore[arg-type]
+                wrap_df(obj),
+            )
 
     def _callback_all(self, obj: list[PyDataFrame] | Exception) -> None:
         if isinstance(obj, Exception):
             self.loop.call_soon_threadsafe(self.result.set_exception, obj)
         else:
             self.loop.call_soon_threadsafe(
-                self.result.set_result,
+                self.result.set_result,  # type: ignore[arg-type]
                 [wrap_df(pydf) for pydf in obj],
             )

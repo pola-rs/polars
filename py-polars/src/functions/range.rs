@@ -1,8 +1,10 @@
 use polars::lazy::dsl;
+use polars_core::with_match_physical_integer_polars_type;
 use pyo3::prelude::*;
 
+use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::PyExpr;
+use crate::{PyExpr, PySeries};
 
 #[pyfunction]
 pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -> PyExpr {
@@ -12,9 +14,47 @@ pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -
     dsl::int_range(start, end, step, dtype).into()
 }
 
+/// Eager version of `int_range` to avoid overhead from the expression engine.
 #[pyfunction]
-pub fn int_ranges(start: PyExpr, end: PyExpr, step: PyExpr, dtype: Wrap<DataType>) -> PyExpr {
+pub fn eager_int_range(
+    lower: &Bound<'_, PyAny>,
+    upper: &Bound<'_, PyAny>,
+    step: &Bound<'_, PyAny>,
+    dtype: Wrap<DataType>,
+) -> PyResult<PySeries> {
     let dtype = dtype.0;
+    if !dtype.is_integer() {
+        return Err(PyPolarsErr::from(
+            polars_err!(ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype),
+        )
+        .into());
+    }
+
+    let ret = with_match_physical_integer_polars_type!(dtype, |$T| {
+        let start_v: <$T as PolarsNumericType>::Native = lower.extract()?;
+        let end_v: <$T as PolarsNumericType>::Native = upper.extract()?;
+        let step: i64 = step.extract()?;
+        new_int_range::<$T>(start_v, end_v, step, "literal")
+    });
+
+    let s = ret.map_err(PyPolarsErr::from)?;
+    Ok(s.into())
+}
+
+#[pyfunction]
+pub fn int_ranges(
+    start: PyExpr,
+    end: PyExpr,
+    step: PyExpr,
+    dtype: Wrap<DataType>,
+) -> PyResult<PyExpr> {
+    let dtype = dtype.0;
+    if !dtype.is_integer() {
+        return Err(PyPolarsErr::from(
+            polars_err!(ComputeError: "non-integer `dtype` passed to `int_ranges`: {:?}", dtype),
+        )
+        .into());
+    }
 
     let mut result = dsl::int_ranges(start.inner, end.inner, step.inner);
 
@@ -22,7 +62,7 @@ pub fn int_ranges(start: PyExpr, end: PyExpr, step: PyExpr, dtype: Wrap<DataType
         result = result.cast(DataType::List(Box::new(dtype)))
     }
 
-    result.into()
+    Ok(result.into())
 }
 
 #[pyfunction]

@@ -2,15 +2,27 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, Sequence
 
 import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import normalize_filepath
-from polars.dependencies import _PYARROW_AVAILABLE
-from polars.io._utils import _prepare_file_arg
+from polars._utils.various import (
+    is_str_sequence,
+    normalize_filepath,
+)
+from polars._utils.wrap import wrap_df, wrap_ldf
+from polars.dependencies import import_optional
+from polars.io._utils import (
+    is_glob_pattern,
+    is_local_file,
+    parse_columns_arg,
+    parse_row_index_args,
+    prepare_file_arg,
+)
+from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 
-with contextlib.suppress(ImportError):
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame, PyLazyFrame
     from polars.polars import read_ipc_schema as _read_ipc_schema
 
 if TYPE_CHECKING:
@@ -34,13 +46,16 @@ def read_ipc(
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
 
+    See "File or Random Access format" on https://arrow.apache.org/docs/python/ipc.html.
+    Arrow IPC files are also known as Feather (v2) files.
+
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
-        remote files.
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
+        to open remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -79,18 +94,20 @@ def read_ipc(
         msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
         raise ValueError(msg)
 
-    with _prepare_file_arg(
+    with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                msg = "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
-                raise ModuleNotFoundError(msg)
-
-            import pyarrow as pa
-            import pyarrow.feather
-
-            tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
+            pyarrow_feather = import_optional(
+                "pyarrow.feather",
+                err_prefix="",
+                err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
+            )
+            tbl = pyarrow_feather.read_table(
+                data,
+                memory_map=memory_map,
+                columns=columns,
+            )
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_index_name is not None:
                 df = df.with_row_index(row_index_name, row_index_offset)
@@ -98,7 +115,7 @@ def read_ipc(
                 df = df.slice(0, n_rows)
             return df
 
-        return pl.DataFrame._read_ipc(
+        return _read_ipc_impl(
             data,
             columns=columns,
             n_rows=n_rows,
@@ -107,6 +124,54 @@ def read_ipc(
             rechunk=rechunk,
             memory_map=memory_map,
         )
+
+
+def _read_ipc_impl(
+    source: str | Path | IO[bytes] | bytes,
+    *,
+    columns: Sequence[int] | Sequence[str] | None = None,
+    n_rows: int | None = None,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    rechunk: bool = True,
+    memory_map: bool = True,
+) -> DataFrame:
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    if isinstance(columns, str):
+        columns = [columns]
+
+    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
+        scan = scan_ipc(
+            source,
+            n_rows=n_rows,
+            rechunk=rechunk,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            memory_map=memory_map,
+        )
+        if columns is None:
+            df = scan.collect()
+        elif is_str_sequence(columns, allow_str=False):
+            df = scan.select(columns).collect()
+        else:
+            msg = (
+                "cannot use glob patterns and integer based projection as `columns` argument"
+                "\n\nUse columns: List[str]"
+            )
+            raise TypeError(msg)
+        return df
+
+    projection, columns = parse_columns_arg(columns)
+    pydf = PyDataFrame.read_ipc(
+        source,
+        columns,
+        projection,
+        n_rows,
+        parse_row_index_args(row_index_name, row_index_offset),
+        memory_map=memory_map,
+    )
+    return wrap_df(pydf)
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -125,13 +190,15 @@ def read_ipc_stream(
     """
     Read into a DataFrame from Arrow IPC record batch stream.
 
+    See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
+
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
-        remote files.
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance). If `fsspec` is installed, it will be used
+        to open remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -156,20 +223,16 @@ def read_ipc_stream(
     -------
     DataFrame
     """
-    with _prepare_file_arg(
+    with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                msg = (
-                    "'pyarrow' is required when using"
-                    " 'read_ipc_stream(..., use_pyarrow=True)'"
-                )
-                raise ModuleNotFoundError(msg)
-
-            import pyarrow as pa
-
-            with pa.ipc.RecordBatchStreamReader(data) as reader:
+            pyarrow_ipc = import_optional(
+                "pyarrow.ipc",
+                err_prefix="",
+                err_suffix="is required when using 'read_ipc_stream(..., use_pyarrow=True)'",
+            )
+            with pyarrow_ipc.RecordBatchStreamReader(data) as reader:
                 tbl = reader.read_all()
                 df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
                 if row_index_name is not None:
@@ -178,7 +241,7 @@ def read_ipc_stream(
                     df = df.slice(0, n_rows)
                 return df
 
-        return pl.DataFrame._read_ipc_stream(
+        return _read_ipc_stream_impl(
             data,
             columns=columns,
             n_rows=n_rows,
@@ -188,6 +251,32 @@ def read_ipc_stream(
         )
 
 
+def _read_ipc_stream_impl(
+    source: str | Path | IO[bytes] | bytes,
+    *,
+    columns: Sequence[int] | Sequence[str] | None = None,
+    n_rows: int | None = None,
+    row_index_name: str | None = None,
+    row_index_offset: int = 0,
+    rechunk: bool = True,
+) -> DataFrame:
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+    if isinstance(columns, str):
+        columns = [columns]
+
+    projection, columns = parse_columns_arg(columns)
+    pydf = PyDataFrame.read_ipc_stream(
+        source,
+        columns,
+        projection,
+        n_rows,
+        parse_row_index_args(row_index_name, row_index_offset),
+        rechunk,
+    )
+    return wrap_df(pydf)
+
+
 def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
     """
     Get the schema of an IPC file without reading data.
@@ -195,9 +284,9 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
 
     Returns
     -------
@@ -257,14 +346,33 @@ def scan_ipc(
         Number of retries if accessing a cloud instance fails.
 
     """
-    return pl.LazyFrame._scan_ipc(
+    if isinstance(source, (str, Path)):
+        can_use_fsspec = True
+        source = normalize_filepath(source)
+        sources = []
+    else:
+        can_use_fsspec = False
+        sources = [normalize_filepath(source) for source in source]
+        source = None  # type: ignore[assignment]
+
+    # try fsspec scanner
+    if can_use_fsspec and not is_local_file(source):  # type: ignore[arg-type]
+        scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
+        if n_rows:
+            scan = scan.head(n_rows)
+        if row_index_name is not None:
+            scan = scan.with_row_index(row_index_name, row_index_offset)
+        return scan
+
+    pylf = PyLazyFrame.new_from_ipc(
         source,
-        n_rows=n_rows,
-        cache=cache,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        storage_options=storage_options,
+        sources,
+        n_rows,
+        cache,
+        rechunk,
+        parse_row_index_args(row_index_name, row_index_offset),
         memory_map=memory_map,
+        cloud_options=storage_options,
         retries=retries,
     )
+    return wrap_ldf(pylf)

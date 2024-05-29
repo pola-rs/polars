@@ -234,15 +234,60 @@ class ListNameSpace:
         """
 
     def median(self) -> Series:
-        """Compute the median value of the arrays in the list."""
+        """
+        Compute the median value of the arrays in the list.
 
-    def std(self) -> Series:
-        """Compute the std value of the arrays in the list."""
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.median()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                0.0
+                5.5
+        ]
+        """
 
-    def var(self) -> Series:
-        """Compute the var value of the arrays in the list."""
+    def std(self, ddof: int = 1) -> Series:
+        """
+        Compute the std value of the arrays in the list.
 
-    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.std()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                6.363961
+        ]
+        """
+
+    def var(self, ddof: int = 1) -> Series:
+        """
+        Compute the var value of the arrays in the list.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[-1, 0, 1], [1, 10]])
+        >>> s.list.var()
+        shape: (2,)
+        Series: 'values' [f64]
+        [
+                1.0
+                40.5
+        ]
+        """
+
+    def sort(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        multithreaded: bool = True,
+    ) -> Series:
         """
         Sort the arrays in this column.
 
@@ -252,6 +297,8 @@ class ListNameSpace:
             Sort in descending order.
         nulls_last
             Place null values last.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------
@@ -347,7 +394,12 @@ class ListNameSpace:
         ]
         """
 
-    def get(self, index: int | Series | list[int]) -> Series:
+    def get(
+        self,
+        index: int | Series | list[int],
+        *,
+        null_on_oob: bool = True,
+    ) -> Series:
         """
         Get the value by index in the sublists.
 
@@ -359,11 +411,15 @@ class ListNameSpace:
         ----------
         index
             Index to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Examples
         --------
         >>> s = pl.Series("a", [[3, 2, 1], [], [1, 2]])
-        >>> s.list.get(0)
+        >>> s.list.get(0, null_on_oob=True)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -1024,7 +1080,7 @@ class ListNameSpace:
         Return the number of elements in each list.
 
         .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :meth:`.len`.
         """
 
     @deprecate_renamed_function("gather", version="0.19.14")

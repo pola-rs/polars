@@ -22,7 +22,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
-
 if TYPE_CHECKING:
     from typing import Awaitable, Collection, Literal
 
@@ -34,6 +33,18 @@ if TYPE_CHECKING:
         PolarsDataType,
         RollingInterpolationMethod,
     )
+
+
+def field(name: str | list[str]) -> Expr:
+    """
+    Select a field in the current `struct.with_fields` scope.
+
+    name
+        Name of the field(s) to select.
+    """
+    if isinstance(name, str):
+        name = [name]
+    return wrap_expr(plr.field(name))
 
 
 def element() -> Expr:
@@ -518,18 +529,16 @@ def approx_n_unique(*columns: str) -> Expr:
 @deprecate_parameter_as_positional("column", version="0.20.4")
 def first(*columns: str) -> Expr:
     """
-    Get the first value.
+    Get the first column or value.
 
-    This function has different behavior depending on the input type:
-
-    - `None` -> Takes first column of a context (equivalent to `cs.first()`).
-    - `str` or `[str,]` -> Syntactic sugar for `pl.col(columns).first()`.
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the first
+    column of the context; otherwise, takes the first value of the given column(s).
 
     Parameters
     ----------
     *columns
-        One or more column names. If not provided (default), returns an expression
-        to take the first column of the context instead.
+        One or more column names.
 
     Examples
     --------
@@ -540,6 +549,9 @@ def first(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
+
+    Return the first column:
+
     >>> df.select(pl.first())
     shape: (3, 1)
     ┌─────┐
@@ -551,6 +563,9 @@ def first(*columns: str) -> Expr:
     │ 8   │
     │ 3   │
     └─────┘
+
+    Return the first value for the given column(s):
+
     >>> df.select(pl.first("b"))
     shape: (1, 1)
     ┌─────┐
@@ -580,18 +595,16 @@ def first(*columns: str) -> Expr:
 @deprecate_parameter_as_positional("column", version="0.20.4")
 def last(*columns: str) -> Expr:
     """
-    Get the last value.
+    Get the last column or value.
 
-    This function has different behavior depending on the input type:
-
-    - `None` -> Takes last column of a context (equivalent to `cs.last()`).
-    - `str` or `[str,]` -> Syntactic sugar for `pl.col(columns).last()`.
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the last
+    column of the context; otherwise, takes the last value of the given column(s).
 
     Parameters
     ----------
     *columns
-        One or more column names. If set to `None` (default), returns an expression
-        to take the last column of the context instead.
+        One or more column names.
 
     Examples
     --------
@@ -602,6 +615,9 @@ def last(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
+
+    Return the last column:
+
     >>> df.select(pl.last())
     shape: (3, 1)
     ┌─────┐
@@ -613,6 +629,9 @@ def last(*columns: str) -> Expr:
     │ bar │
     │ baz │
     └─────┘
+
+    Return the last value for the given column(s):
+
     >>> df.select(pl.last("a"))
     shape: (1, 1)
     ┌─────┐
@@ -637,6 +656,90 @@ def last(*columns: str) -> Expr:
         return wrap_expr(plr.last())
 
     return F.col(*columns).last()
+
+
+def nth(n: int | Sequence[int], *columns: str) -> Expr:
+    """
+    Get the nth column(s) or value(s).
+
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the nth
+    column of the context; otherwise, takes the nth value of the given column(s).
+
+    Parameters
+    ----------
+    n
+        One or more indices representing the columns/values to retrieve.
+    *columns
+        One or more column names. If omitted (the default), returns an
+        expression that takes the nth column of the context; otherwise,
+        takes the nth value of the given column(s).
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, 2],
+    ...         "c": ["foo", "bar", "baz"],
+    ...     }
+    ... )
+
+    Return the "nth" column(s):
+
+    >>> df.select(pl.nth(1))
+    shape: (3, 1)
+    ┌─────┐
+    │ b   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 4   │
+    │ 5   │
+    │ 2   │
+    └─────┘
+
+    >>> df.select(pl.nth([2, 0]))
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ c   ┆ a   │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ foo ┆ 1   │
+    │ bar ┆ 8   │
+    │ baz ┆ 3   │
+    └─────┴─────┘
+
+    Return the "nth" value(s) for the given columns:
+
+    >>> df.select(pl.nth(-2, "b", "c"))
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ b   ┆ c   │
+    │ --- ┆ --- │
+    │ i64 ┆ str │
+    ╞═════╪═════╡
+    │ 5   ┆ bar │
+    └─────┴─────┘
+
+    >>> df.select(pl.nth([0, 2], "c", "a"))
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ c   ┆ a   │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ foo ┆ 1   │
+    │ baz ┆ 3   │
+    └─────┴─────┘
+    """
+    indices = [n] if isinstance(n, int) else n
+    if not columns:
+        return wrap_expr(plr.index_cols(indices))
+
+    cols = F.col(*columns)
+    return cols.get(indices[0]) if len(indices) == 1 else cols.gather(indices)
 
 
 def head(column: str, n: int = 10) -> Expr:
@@ -1537,9 +1640,12 @@ def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
+    nulls_last: bool = False,
+    multithreaded: bool = True,
+    maintain_order: bool = False,
 ) -> Expr:
     """
-    Return the row indices that would sort the columns.
+    Return the row indices that would sort the column(s).
 
     Parameters
     ----------
@@ -1551,6 +1657,17 @@ def arg_sort_by(
     descending
         Sort in descending order. When sorting by multiple columns, can be specified
         per column by passing a sequence of booleans.
+    nulls_last
+        Place null values last.
+    multithreaded
+        Sort using multiple threads.
+    maintain_order
+        Whether the order should be maintained if elements are equal.
+
+    See Also
+    --------
+    Expr.gather: Take values by index.
+    Expr.rank : Get the rank of each row.
 
     Examples
     --------
@@ -1560,6 +1677,7 @@ def arg_sort_by(
     ...     {
     ...         "a": [0, 1, 1, 0],
     ...         "b": [3, 2, 3, 2],
+    ...         "c": [1, 2, 3, 4],
     ...     }
     ... )
     >>> df.select(pl.arg_sort_by("a"))
@@ -1590,6 +1708,21 @@ def arg_sort_by(
     │ 0   │
     │ 3   │
     └─────┘
+
+    Use gather to apply the arg sort to other columns.
+
+    >>> df.select(pl.col("c").gather(pl.arg_sort_by("a")))
+    shape: (4, 1)
+    ┌─────┐
+    │ c   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 4   │
+    │ 2   │
+    │ 3   │
+    └─────┘
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
@@ -1598,7 +1731,9 @@ def arg_sort_by(
     elif len(exprs) != len(descending):
         msg = f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
         raise ValueError(msg)
-    return wrap_expr(plr.arg_sort_by(exprs, descending))
+    return wrap_expr(
+        plr.arg_sort_by(exprs, descending, nulls_last, multithreaded, maintain_order)
+    )
 
 
 def collect_all(
@@ -1612,6 +1747,7 @@ def collect_all(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1639,6 +1775,8 @@ def collect_all(
         Will try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1663,6 +1801,7 @@ def collect_all(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+        cluster_with_columns = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1679,6 +1818,7 @@ def collect_all(
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1705,6 +1845,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = True,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
@@ -1722,6 +1863,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]]: ...
 
@@ -1739,6 +1881,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
@@ -1777,6 +1920,8 @@ def collect_all_async(
         Will try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1813,6 +1958,7 @@ def collect_all_async(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+        cluster_with_columns = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1829,6 +1975,7 @@ def collect_all_async(
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -2189,10 +2336,10 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
     ┌─────┬─────┬───────┐
     │ a   ┆ a_a ┆ a_txt │
     │ --- ┆ --- ┆ ---   │
-    │ i64 ┆ f64 ┆ str   │
+    │ i64 ┆ i64 ┆ str   │
     ╞═════╪═════╪═══════╡
-    │ 2   ┆ 4.0 ┆ 2     │
-    │ 1   ┆ 1.0 ┆ 1     │
+    │ 2   ┆ 4   ┆ 2     │
+    │ 1   ┆ 1   ┆ 1     │
     └─────┴─────┴───────┘
     """
     if isinstance(sql, str):
@@ -2213,6 +2360,9 @@ def cumfold(
     Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
+
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_fold`.
 
     Parameters
     ----------
@@ -2245,6 +2395,9 @@ def cumreduce(
     Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
+
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_reduce`.
 
     Parameters
     ----------

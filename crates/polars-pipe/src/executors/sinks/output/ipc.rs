@@ -2,8 +2,8 @@ use std::path::Path;
 
 use crossbeam_channel::bounded;
 use polars_core::prelude::*;
+use polars_io::ipc::IpcWriterOptions;
 use polars_io::prelude::*;
-use polars_plan::prelude::IpcWriterOptions;
 
 use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
 use crate::pipeline::morsels_per_sink;

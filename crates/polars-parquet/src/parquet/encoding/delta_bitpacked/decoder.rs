@@ -30,7 +30,7 @@ impl<'a> Block<'a> {
         let length = std::cmp::min(length, num_mini_blocks * values_per_mini_block);
 
         let mut consumed_bytes = 0;
-        let (min_delta, consumed) = zigzag_leb128::decode(values)?;
+        let (min_delta, consumed) = zigzag_leb128::decode(values);
         consumed_bytes += consumed;
         values = &values[consumed..];
 
@@ -133,19 +133,19 @@ pub struct Decoder<'a> {
 impl<'a> Decoder<'a> {
     pub fn try_new(mut values: &'a [u8]) -> Result<Self, Error> {
         let mut consumed_bytes = 0;
-        let (block_size, consumed) = uleb128::decode(values)?;
+        let (block_size, consumed) = uleb128::decode(values);
         consumed_bytes += consumed;
         assert_eq!(block_size % 128, 0);
         values = &values[consumed..];
-        let (num_mini_blocks, consumed) = uleb128::decode(values)?;
+        let (num_mini_blocks, consumed) = uleb128::decode(values);
         let num_mini_blocks = num_mini_blocks as usize;
         consumed_bytes += consumed;
         values = &values[consumed..];
-        let (total_count, consumed) = uleb128::decode(values)?;
+        let (total_count, consumed) = uleb128::decode(values);
         let total_count = total_count as usize;
         consumed_bytes += consumed;
         values = &values[consumed..];
-        let (first_value, consumed) = zigzag_leb128::decode(values)?;
+        let (first_value, consumed) = zigzag_leb128::decode(values);
         consumed_bytes += consumed;
         values = &values[consumed..];
 

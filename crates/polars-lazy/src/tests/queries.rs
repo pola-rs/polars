@@ -20,17 +20,17 @@ fn test_lazy_exec() {
     let _new = df
         .clone()
         .lazy()
-        .select([col("sepal.width"), col("variety")])
-        .sort("sepal.width", Default::default())
+        .select([col("sepal_width"), col("variety")])
+        .sort(["sepal_width"], Default::default())
         .collect();
 
     let new = df
         .lazy()
-        .filter(not(col("sepal.width").lt(lit(3.5))))
+        .filter(not(col("sepal_width").lt(lit(3.5))))
         .collect()
         .unwrap();
 
-    let check = new.column("sepal.width").unwrap().f64().unwrap().gt(3.4);
+    let check = new.column("sepal_width").unwrap().f64().unwrap().gt(3.4);
     assert!(check.all())
 }
 
@@ -39,10 +39,10 @@ fn test_lazy_alias() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").alias("petals"), col("sepal.width")])
+        .select([col("sepal_width").alias("petals"), col("sepal_width")])
         .collect()
         .unwrap();
-    assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
+    assert_eq!(new.get_column_names(), &["petals", "sepal_width"]);
 }
 
 #[test]
@@ -50,16 +50,16 @@ fn test_lazy_melt() {
     let df = get_df();
 
     let args = MeltArgs {
-        id_vars: vec!["petal.width".into(), "petal.length".into()],
-        value_vars: vec!["sepal.length".into(), "sepal.width".into()],
+        id_vars: vec!["petal_width".into(), "petal_length".into()],
+        value_vars: vec!["sepal_length".into(), "sepal_width".into()],
         ..Default::default()
     };
 
     let out = df
         .lazy()
         .melt(args)
-        .filter(col("variable").eq(lit("sepal.length")))
-        .select([col("variable"), col("petal.width"), col("value")])
+        .filter(col("variable").eq(lit("sepal_length")))
+        .select([col("variable"), col("petal_width"), col("value")])
         .collect()
         .unwrap();
     assert_eq!(out.shape(), (7, 3));
@@ -87,11 +87,11 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
-        new.column("sepal.width").unwrap().f64().unwrap().get(0),
+        new.column("sepal_width").unwrap().f64().unwrap().get(0),
         Some(700.0)
     );
 }
@@ -102,7 +102,7 @@ fn test_lazy_is_null() {
     let new = df
         .clone()
         .lazy()
-        .filter(col("sepal.width").is_null())
+        .filter(col("sepal_width").is_null())
         .collect()
         .unwrap();
 
@@ -111,7 +111,7 @@ fn test_lazy_is_null() {
     let new = df
         .clone()
         .lazy()
-        .filter(col("sepal.width").is_not_null())
+        .filter(col("sepal_width").is_not_null())
         .collect()
         .unwrap();
     assert_eq!(new.height(), df.height());
@@ -119,7 +119,7 @@ fn test_lazy_is_null() {
     let new = df
         .lazy()
         .group_by([col("variety")])
-        .agg([col("sepal.width").min()])
+        .agg([col("sepal_width").min()])
         .collect()
         .unwrap();
 
@@ -134,8 +134,8 @@ fn test_lazy_pushdown_through_agg() {
         .lazy()
         .group_by([col("variety")])
         .agg([
-            col("sepal.length").min(),
-            col("petal.length").min().alias("foo"),
+            col("sepal_length").min(),
+            col("petal_length").min().alias("foo"),
         ])
         .select([col("foo")])
         // second selection is to test if optimizer can handle that
@@ -153,7 +153,7 @@ fn test_lazy_shift() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").alias("foo").shift(lit(2))])
+        .select([col("sepal_width").alias("foo").shift(lit(2))])
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
@@ -205,18 +205,18 @@ fn test_lazy_ternary_and_predicates() {
     let ldf = df
         .lazy()
         .with_column(
-            when(col("sepal.length").lt(lit(5.0)))
+            when(col("sepal_length").lt(lit(5.0)))
                 .then(
                     lit(3), // is another type on purpose to check type coercion
                 )
-                .otherwise(col("sepal.width"))
+                .otherwise(col("sepal_width"))
                 .alias("foo"),
         )
         .filter(col("foo").gt(lit(3.0)));
 
     let new = ldf.collect().unwrap();
-    let length = new.column("sepal.length").unwrap();
-    assert_eq!(length, &Series::new("sepal.length", &[5.1f64, 5.0, 5.4]));
+    let length = new.column("sepal_length").unwrap();
+    assert_eq!(length, &Series::new("sepal_length", &[5.1f64, 5.0, 5.4]));
     assert_eq!(new.shape(), (3, 6));
 }
 
@@ -387,7 +387,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
         )
         .group_by([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])
-        .sort("sum", Default::default())
+        .sort(["sum"], Default::default())
         .collect()?;
     let vals = out
         .column("sum")?
@@ -550,21 +550,15 @@ fn test_simplify_expr() {
 
     let plan = df
         .lazy()
-        .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
+        .select(&[lit(1.0) + lit(1.0) + col("sepal_width")])
         .logical_plan;
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(SimplifyExprRule {})];
-
-    let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer
-        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-        .unwrap();
+    let lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena, true, false).unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
-        matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
+        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float(2.0))))
     );
 }
 
@@ -640,16 +634,10 @@ fn test_type_coercion() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
-
-    let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer
-        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-        .unwrap();
+    let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
     let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-    if let LogicalPlan::Projection { expr, .. } = lp {
+    if let DslPlan::Select { expr, .. } = lp {
         if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
             assert!(matches!(&**left, Expr::Cast { .. }));
             // bar is already float, does not have to be coerced
@@ -673,7 +661,7 @@ fn test_lazy_partition_agg() {
         .lazy()
         .group_by([col("foo")])
         .agg([col("bar").mean()])
-        .sort("foo", Default::default())
+        .sort(["foo"], Default::default())
         .collect()
         .unwrap();
 
@@ -685,7 +673,7 @@ fn test_lazy_partition_agg() {
     let out = scan_foods_csv()
         .group_by([col("category")])
         .agg([col("calories")])
-        .sort("category", Default::default())
+        .sort(["category"], Default::default())
         .collect()
         .unwrap();
     let cat_agg_list = out.select_at_idx(1).unwrap();
@@ -713,7 +701,7 @@ fn test_lazy_group_by_apply() {
         .group_by([col("fruits")])
         .agg([col("cars").apply(
             |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
-            GetOutput::same_type(),
+            GetOutput::from_type(DataType::UInt32),
         )])
         .collect()
         .unwrap();
@@ -763,7 +751,7 @@ fn test_lazy_group_by() {
         .lazy()
         .group_by([col("groups")])
         .agg([col("a").mean()])
-        .sort("a", Default::default())
+        .sort(["a"], Default::default())
         .collect()
         .unwrap();
 
@@ -793,10 +781,10 @@ fn test_lazy_group_by_sort() {
         .clone()
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort(false).first()])
+        .agg([col("b").sort(Default::default()).first()])
         .collect()
         .unwrap()
-        .sort(["a"], false, false)
+        .sort(["a"], Default::default())
         .unwrap();
 
     assert_eq!(
@@ -807,10 +795,10 @@ fn test_lazy_group_by_sort() {
     let out = df
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort(false).last()])
+        .agg([col("b").sort(Default::default()).last()])
         .collect()
         .unwrap()
-        .sort(["a"], false, false)
+        .sort(["a"], Default::default())
         .unwrap();
 
     assert_eq!(
@@ -831,10 +819,15 @@ fn test_lazy_group_by_sort_by() {
     let out = df
         .lazy()
         .group_by([col("a")])
-        .agg([col("b").sort_by([col("c")], [true]).first()])
+        .agg([col("b")
+            .sort_by(
+                [col("c")],
+                SortMultipleOptions::default().with_order_descending(true),
+            )
+            .first()])
         .collect()
         .unwrap()
-        .sort(["a"], false, false)
+        .sort(["a"], Default::default())
         .unwrap();
 
     assert_eq!(
@@ -876,7 +869,7 @@ fn test_lazy_group_by_binary_expr() {
         .lazy()
         .group_by([col("a")])
         .agg([col("b").mean() * lit(2)])
-        .sort("a", Default::default())
+        .sort(["a"], Default::default())
         .collect()
         .unwrap();
     assert_eq!(
@@ -913,15 +906,7 @@ fn test_lazy_group_by_filter() -> PolarsResult<()> {
                 .last()
                 .alias("b_last"),
         ])
-        .sort(
-            "a",
-            SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-            },
-        )
+        .sort(["a"], SortMultipleOptions::default())
         .collect()?;
 
     assert_eq!(
@@ -988,22 +973,22 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
         .clone()
         .lazy()
         .sort(
-            "vals",
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
+            ["vals"],
+            SortMultipleOptions::default().with_order_descending(true),
         )
         .group_by([col("groups")])
         .agg([col("vals").head(Some(2)).alias("foo")])
-        .sort("groups", SortOptions::default())
+        .sort(["groups"], Default::default())
         .collect()?;
 
     let out2 = df
         .lazy()
         .group_by([col("groups")])
-        .agg([col("vals").sort(true).head(Some(2)).alias("foo")])
-        .sort("groups", SortOptions::default())
+        .agg([col("vals")
+            .sort(SortOptions::default().with_order_descending(true))
+            .head(Some(2))
+            .alias("foo")])
+        .sort(["groups"], Default::default())
         .collect()?;
 
     assert!(out1.column("foo")?.equals(out2.column("foo")?));
@@ -1011,6 +996,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_group_by_cum_sum() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
@@ -1021,7 +1007,7 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         .lazy()
         .group_by([col("groups")])
         .agg([col("vals").cum_sum(false)])
-        .sort("groups", Default::default())
+        .sort(["groups"], Default::default())
         .collect()?;
 
     assert_eq!(
@@ -1048,7 +1034,10 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([arg_sort_by([col("int"), col("flt")], &[true, false])])
+        .select([arg_sort_by(
+            [col("int"), col("flt")],
+            SortMultipleOptions::default().with_order_descendings([true, false]),
+        )])
         .collect()?;
 
     assert_eq!(
@@ -1063,7 +1052,10 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
     // check if this runs
     let _out = df
         .lazy()
-        .select([arg_sort_by([col("str"), col("flt")], &[true, false])])
+        .select([arg_sort_by(
+            [col("str"), col("flt")],
+            SortMultipleOptions::default().with_order_descendings([true, false]),
+        )])
         .collect()?;
     Ok(())
 }
@@ -1179,7 +1171,7 @@ fn test_cross_join() -> PolarsResult<()> {
         "b" => [None, Some(12)]
     ]?;
 
-    let out = df1.lazy().cross_join(df2.lazy()).collect()?;
+    let out = df1.lazy().cross_join(df2.lazy(), None).collect()?;
     assert_eq!(out.shape(), (6, 4));
     Ok(())
 }
@@ -1264,7 +1256,7 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("a").sort_by([col("b"), col("c")], [false])])
+        .select([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
     let a = out.column("a")?;
@@ -1278,7 +1270,7 @@ fn test_sort_by() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("b")])
-        .agg([col("a").sort_by([col("b"), col("c")], [false])])
+        .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
     let a = out.column("a")?.explode()?;
     assert_eq!(
@@ -1290,7 +1282,7 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("b")])
-        .agg([col("a").sort_by([col("b"), col("c")], [false])])
+        .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
     let a = out.column("a")?.explode()?;
@@ -1425,11 +1417,8 @@ fn test_group_by_small_ints() -> PolarsResult<()> {
         .group_by([col("id_16"), col("id_32")])
         .agg([col("id_16").sum().alias("foo")])
         .sort(
-            "foo",
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
+            ["foo"],
+            SortMultipleOptions::default().with_order_descending(true),
         )
         .collect()?;
 
@@ -1556,6 +1545,7 @@ fn test_fill_nan() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "regex")]
 fn test_exclude_regex() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
@@ -1782,7 +1772,7 @@ fn test_partitioned_gb_1() -> PolarsResult<()> {
         (col("vals").eq(lit("a"))).sum().alias("eq_a"),
         (col("vals").eq(lit("b"))).sum().alias("eq_b"),
     ])
-    .sort("keys", Default::default())
+    .sort(["keys"], Default::default())
     .collect()?;
 
     assert!(out.equals(&df![
@@ -1912,7 +1902,12 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
     .lazy();
 
     let res = q
-        .sort_by_exprs([col("A")], [false], false, true)
+        .sort_by_exprs(
+            [col("A")],
+            SortMultipleOptions::default()
+                .with_maintain_order(true)
+                .with_nulls_last(true),
+        )
         .slice(0, 3)
         .collect()?;
     println!("{:?}", res);

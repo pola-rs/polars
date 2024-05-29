@@ -4,6 +4,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -675,7 +676,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, None], pl.UInt32),
+        ("n_unique", [], [1, 0], pl.UInt32),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
@@ -766,6 +767,13 @@ def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
+
+
+def test_group_by_series_partitioned(partition_limit: int) -> None:
+    # test 15354
+    df = pl.DataFrame([0, 0] * partition_limit)
+    groups = pl.Series([0, 1] * partition_limit)
+    df.group_by(groups).agg(pl.all().is_not_null().sum())
 
 
 def test_groupby_deprecated() -> None:
@@ -967,3 +975,99 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
             [False, False, False, False, False, False, False, False, False, False],
         ],
     }
+
+
+def test_aggregated_scalar_elementwise_15602() -> None:
+    df = pl.DataFrame({"group": [1, 2, 1]})
+
+    out = df.group_by("group", maintain_order=True).agg(
+        foo=pl.col("group").is_between(1, pl.max("group"))
+    )
+    expected = pl.DataFrame({"group": [1, 2], "foo": [[True, True], [True]]})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_multiple_null_cols_15623() -> None:
+    df = pl.DataFrame(schema={"a": pl.Null, "b": pl.Null}).group_by(pl.all()).len()
+    assert df.is_empty()
+
+
+@pytest.mark.release()
+def test_categorical_vs_str_group_by() -> None:
+    # this triggers the perfect hash table
+    s = pl.Series("a", np.random.randint(0, 50, 100))
+    s_with_nulls = pl.select(
+        pl.when(s < 3).then(None).otherwise(s).alias("a")
+    ).to_series()
+
+    for s_ in [s, s_with_nulls]:
+        s_ = s_.cast(str)
+        cat_out = (
+            s_.cast(pl.Categorical)
+            .to_frame("a")
+            .group_by("a")
+            .agg(pl.first().alias("first"))
+        )
+
+        str_out = s_.to_frame("a").group_by("a").agg(pl.first().alias("first"))
+        cat_out.with_columns(pl.col("a").cast(str))
+        assert_frame_equal(
+            cat_out.with_columns(
+                pl.col("a").cast(str), pl.col("first").cast(pl.List(str))
+            ).sort("a"),
+            str_out.sort("a"),
+        )
+
+
+@pytest.mark.release()
+def test_boolean_min_max_agg() -> None:
+    np.random.seed(0)
+    idx = np.random.randint(0, 500, 1000)
+    c = np.random.randint(0, 500, 1000) > 250
+
+    df = pl.DataFrame({"idx": idx, "c": c})
+    aggs = [pl.col("c").min().alias("c_min"), pl.col("c").max().alias("c_max")]
+
+    result = df.group_by("idx").agg(aggs).sum()
+
+    schema = {"idx": pl.Int64, "c_min": pl.UInt32, "c_max": pl.UInt32}
+    expected = pl.DataFrame(
+        {
+            "idx": [107583],
+            "c_min": [120],
+            "c_max": [321],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(result, expected)
+
+    nulls = np.random.randint(0, 500, 1000) < 100
+
+    result = (
+        df.with_columns(c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c")))
+        .group_by("idx")
+        .agg(aggs)
+        .sum()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "idx": [107583],
+            "c_min": [133],
+            "c_max": [276],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_partitioned_group_by_chunked(partition_limit: int) -> None:
+    n = partition_limit
+    df1 = pl.DataFrame(np.random.randn(n, 2))
+    df2 = pl.DataFrame(np.random.randn(n, 2))
+    gps = pl.Series(name="oo", values=[0] * n + [1] * n)
+    df = pl.concat([df1, df2], rechunk=False)
+    assert_frame_equal(
+        df.group_by(gps).sum().sort("oo"),
+        df.rechunk().group_by(gps, maintain_order=True).sum(),
+    )

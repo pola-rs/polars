@@ -3,24 +3,14 @@ use polars_core::prelude::*;
 use crate::prelude::*;
 
 mod cache_states;
-#[cfg(feature = "cse")]
-mod cse;
 mod delay_rechunk;
-mod drop_nulls;
 
+mod cluster_with_columns;
+mod collapse_and_project;
 mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
-mod cse_expr;
-mod fast_projection;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv",
-    feature = "cse",
-    feature = "json"
-))]
-pub(crate) mod file_caching;
+mod cse;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
@@ -31,31 +21,32 @@ mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
-mod type_coercion;
 
+use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
-use drop_nulls::ReplaceDropNulls;
-use fast_projection::FastProjectionAndCollapse;
+use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
-pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+pub use crate::logical_plan::conversion::type_coercion::TypeCoercionRule;
 use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
+use crate::logical_plan::optimizer::cse::prune_unused_caches;
+#[cfg(feature = "cse")]
+use crate::logical_plan::optimizer::cse::CommonSubExprOptimizer;
 use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
 
 pub trait Optimize {
-    fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;
+    fn optimize(&self, logical_plan: DslPlan) -> PolarsResult<DslPlan>;
 }
 
 // arbitrary constant to reduce reallocation.
@@ -66,14 +57,17 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
 }
 
 pub fn optimize(
-    logical_plan: LogicalPlan,
+    logical_plan: DslPlan,
     opt_state: OptState,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     hive_partition_eval: HiveEval<'_>,
 ) -> PolarsResult<Node> {
+    #[allow(dead_code)]
+    let verbose = verbose();
     // get toggle values
+    let cluster_with_columns = opt_state.cluster_with_columns;
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
     let type_coercion = opt_state.type_coercion;
@@ -95,25 +89,45 @@ pub fn optimize(
     #[allow(unused_variables)]
     let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
 
-    // gradually fill the rules passed to the optimizer
+    // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-    // during debug we check if the optimizations have not modified the final schema
+    let mut lp_top = to_alp(
+        logical_plan,
+        expr_arena,
+        lp_arena,
+        simplify_expr,
+        type_coercion,
+    )?;
+    // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
-    let prev_schema = logical_plan.schema()?.into_owned();
-
-    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
+    let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
     // Collect members for optimizations that need it.
     let mut members = MemberCollector::new();
     if !eager && (comm_subexpr_elim || projection_pushdown) {
-        members.collect(lp_top, lp_arena)
+        members.collect(lp_top, lp_arena, expr_arena)
+    }
+
+    if simplify_expr {
+        #[cfg(feature = "fused")]
+        rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
     #[cfg(feature = "cse")]
-    let cse_plan_changed = if comm_subplan_elim {
-        let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+    let _cse_plan_changed = if comm_subplan_elim
+        && members.has_joins_or_unions
+        && members.has_duplicate_scans()
+        && !members.has_cache
+    {
+        if verbose {
+            eprintln!("found multiple sources; run comm_subplan_elim")
+        }
+        let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+
+        prune_unused_caches(lp_arena, cid2c);
+
         lp_top = lp;
         members.has_cache |= changed;
         changed
@@ -121,25 +135,14 @@ pub fn optimize(
         false
     };
     #[cfg(not(feature = "cse"))]
-    let cse_plan_changed = false;
+    let _cse_plan_changed = false;
 
-    // we do simplification
-    if simplify_expr {
-        rules.push(Box::new(SimplifyExprRule {}));
-        #[cfg(feature = "fused")]
-        rules.push(Box::new(fused::FusedArithmetic {}));
-    }
-
-    // should be run before predicate pushdown
+    // Should be run before predicate pushdown.
     if projection_pushdown {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-
-        if members.has_joins_or_unions && members.has_cache {
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
-        }
 
         if projection_pushdown_opt.is_count_star {
             let mut count_star_opt = CountStar::new();
@@ -154,9 +157,13 @@ pub fn optimize(
         lp_arena.replace(lp_top, alp);
     }
 
-    // make sure its before slice pushdown.
+    if cluster_with_columns {
+        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
+    }
+
+    // Make sure its before slice pushdown.
     if fast_projection {
-        rules.push(Box::new(FastProjectionAndCollapse::new(eager)));
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
     }
 
     if !eager {
@@ -170,67 +177,46 @@ pub fn optimize(
 
         lp_arena.replace(lp_top, alp);
 
-        // expressions use the stack optimizer
+        // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
     }
-    if type_coercion {
-        rules.push(Box::new(TypeCoercionRule {}))
-    }
-    // this optimization removes branches, so we must do it when type coercion
-    // is completed
+    // This optimization removes branches, so we must do it when type coercion
+    // is completed.
     if simplify_expr {
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
 
-    // make sure that we do that once slice pushdown
-    // and predicate pushdown are done. At that moment
-    // the file fingerprints are finished.
-    #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection || cse_plan_changed {
-        // we do this so that expressions are simplified created by the pushdown optimizations
-        // we must clean up the predicates, because the agg_scan_projection
-        // uses them in the hashtable to determine duplicates.
-        let simplify_bools = &mut [Box::new(SimplifyBooleanRule {}) as Box<dyn OptimizationRule>];
-        lp_top = opt.optimize_loop(simplify_bools, expr_arena, lp_arena, lp_top)?;
-
-        // scan the LP to aggregate all the column used in scans
-        // these columns will be added to the state of the AggScanProjection rule
-        let mut file_predicate_to_columns_and_count = PlHashMap::with_capacity(32);
-        find_column_union_and_fingerprints(
-            lp_top,
-            &mut file_predicate_to_columns_and_count,
-            lp_arena,
-            expr_arena,
-        );
-
-        let mut file_cacher = FileCacher::new(file_predicate_to_columns_and_count);
-        file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
-
-        #[cfg(feature = "cse")]
-        if cse_plan_changed {
-            // this must run after cse
-            cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
-        }
-    }
-
-    rules.push(Box::new(ReplaceDropNulls {}));
     if !eager {
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
+    if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
+        // We only want to run this on cse inserted caches
+        cache_states::set_cache_states(
+            lp_top,
+            lp_arena,
+            expr_arena,
+            scratch,
+            hive_partition_eval,
+            verbose,
+        )?;
+    }
+
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !members.has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
-        lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
-            alp_node.rewrite(&mut optimizer)
-        })?
-        .node()
+        let mut optimizer = CommonSubExprOptimizer::new();
+        let alp_node = IRNode::new(lp_top);
+
+        lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
+            let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
+            Ok(rewritten.node())
+        })?;
     }
 
-    // during debug we check if the optimizations have not modified the final schema
+    // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     {
         // only check by names because we may supercast types.

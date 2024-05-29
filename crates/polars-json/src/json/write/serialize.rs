@@ -5,7 +5,7 @@ use arrow::bitmap::utils::ZipValidity;
 use arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
 use arrow::io::iterator::BufStreamingIterator;
 use arrow::offset::Offset;
-#[cfg(feature = "chrono-tz")]
+#[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
     date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_s_to_duration,
@@ -176,23 +176,21 @@ fn struct_serializer<'a>(
         .map(|x| x.as_ref())
         .map(|arr| new_serializer(arr, offset, take))
         .collect::<Vec<_>>();
-    let names = array.fields().iter().map(|f| f.name.as_str());
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new_with_validity(0..array.len(), array.validity()),
         move |maybe, buf| {
             if maybe.is_some() {
-                let names = names.clone();
-                let mut record: Vec<(&str, &[u8])> = Default::default();
-                serializers
-                    .iter_mut()
-                    .zip(names)
-                    // `unwrap` is infalible because `array.len()` equals `len` on `Chunk`
-                    .for_each(|(iter, name)| {
-                        let item = iter.next().unwrap();
-                        record.push((name, item));
-                    });
-                serialize_item(buf, &record, true);
+                let names = array.fields().iter().map(|f| f.name.as_str());
+                serialize_item(
+                    buf,
+                    names.zip(
+                        serializers
+                            .iter_mut()
+                            .map(|serializer| serializer.next().unwrap()),
+                    ),
+                    true,
+                );
             } else {
                 serializers.iter_mut().for_each(|iter| {
                     let _ = iter.next();
@@ -357,7 +355,7 @@ fn timestamp_tz_serializer<'a>(
 
             materialize_serializer(f, array.iter(), offset, take)
         },
-        #[cfg(feature = "chrono-tz")]
+        #[cfg(feature = "timezones")]
         _ => match parse_offset_tz(tz) {
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
@@ -375,9 +373,9 @@ fn timestamp_tz_serializer<'a>(
                 panic!("Timezone {} is invalid or not supported", tz);
             },
         },
-        #[cfg(not(feature = "chrono-tz"))]
+        #[cfg(not(feature = "timezones"))]
         _ => {
-            panic!("Invalid Offset format (must be [-]00:00) or chrono-tz feature not active");
+            panic!("Invalid Offset format (must be [-]00:00) or timezones feature not active");
         },
     }
 }
@@ -495,7 +493,11 @@ pub(crate) fn new_serializer<'a>(
     }
 }
 
-fn serialize_item(buffer: &mut Vec<u8>, record: &[(&str, &[u8])], is_first_row: bool) {
+fn serialize_item<'a>(
+    buffer: &mut Vec<u8>,
+    record: impl Iterator<Item = (&'a str, &'a [u8])>,
+    is_first_row: bool,
+) {
     if !is_first_row {
         buffer.push(b',');
     }
@@ -508,7 +510,7 @@ fn serialize_item(buffer: &mut Vec<u8>, record: &[(&str, &[u8])], is_first_row: 
         first_item = false;
         utf8::write_str(buffer, key).unwrap();
         buffer.push(b':');
-        buffer.extend(*value);
+        buffer.extend(value);
     }
     buffer.push(b'}');
 }

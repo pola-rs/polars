@@ -901,7 +901,39 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
         iter: I,
     ) -> Result<Self, E> {
         let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
-        Ok(Self::arr_from_iter_with_dtype(dtype, iter_values))
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
+        }
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        Ok(builder
+            .finish(Some(&inner.underlying_physical_type()))
+            .unwrap())
+    }
+}
+
+impl<T: AsArray> ArrayFromIter<Option<T>> for ListArray<i64> {
+    fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let iter_values: Vec<Option<T>> = iter.into_iter().collect();
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
+        }
+        builder.finish(None).unwrap()
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
+        iter: I,
+    ) -> Result<Self, E> {
+        let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push_opt(arr.as_ref().map(|a| a.as_array()));
+        }
+        Ok(builder.finish(None).unwrap())
     }
 }
 

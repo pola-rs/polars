@@ -94,7 +94,7 @@ def test_replace_enum_to_new_enum() -> None:
     new_dtype = pl.Enum(["a", "b", "c", "d", "e"])
     new = pl.Series(["c", "e"], dtype=new_dtype)
 
-    result = s.replace(old, new)
+    result = s.replace(old, new, return_dtype=new_dtype)
 
     expected = pl.Series(["c", "e", "c"], dtype=new_dtype)
     assert_series_equal(result, expected)
@@ -275,7 +275,7 @@ def test_replace_str_to_int_fill_null() -> None:
         .fill_null(999)
     )
 
-    expected = pl.LazyFrame({"a": [1, 999]})
+    expected = pl.LazyFrame({"a": pl.Series([1, 999], dtype=pl.UInt32)})
     assert_frame_equal(result, expected)
 
 
@@ -472,14 +472,14 @@ def test_replace_fast_path_many_to_one() -> None:
 def test_replace_fast_path_many_to_one_default() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
     result = lf.select(pl.col("a").replace([2, 3], 100, default=-1))
-    expected = pl.LazyFrame({"a": [-1, 100, 100, 100]}, schema={"a": pl.Int32})
+    expected = pl.LazyFrame({"a": [-1, 100, 100, 100]}, schema={"a": pl.Int64})
     assert_frame_equal(result, expected)
 
 
 def test_replace_fast_path_many_to_one_null() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
     result = lf.select(pl.col("a").replace([2, 3], None, default=-1))
-    expected = pl.LazyFrame({"a": [-1, None, None, None]}, schema={"a": pl.Int32})
+    expected = pl.LazyFrame({"a": [-1, None, None, None]}, schema={"a": pl.Int64})
     assert_frame_equal(result, expected)
 
 

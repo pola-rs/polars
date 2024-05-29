@@ -308,7 +308,9 @@ def test_from_dicts() -> None:
 def test_from_dict_no_inference() -> None:
     schema = {"a": pl.String}
     data = [{"a": "aa"}]
-    pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+    df = pl.from_dicts(data, schema_overrides=schema, infer_schema_length=0)
+    assert df.schema == schema
+    assert df.to_dicts() == data
 
 
 def test_from_dicts_schema_override() -> None:
@@ -373,6 +375,20 @@ def test_from_records() -> None:
     df = pl.from_records(data, schema=["a", "b"])
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
+
+
+# https://github.com/pola-rs/polars/issues/15195
+@pytest.mark.parametrize(
+    "input",
+    [
+        pl.Series([1, 2]),
+        pl.Series([{"a": 1, "b": 2}]),
+        pl.DataFrame({"a": [1, 2], "b": [3, 4]}),
+    ],
+)
+def test_from_records_non_sequence_input(input: Any) -> None:
+    with pytest.raises(TypeError, match="expected data of type Sequence"):
+        pl.from_records(input)
 
 
 def test_from_arrow() -> None:
@@ -982,3 +998,70 @@ def test_from_avro_valid_time_zone_13032() -> None:
     result = cast(pl.Series, pl.from_arrow(arr))
     expected = pl.Series([datetime(2021, 1, 1)], dtype=pl.Datetime("ns", "UTC"))
     assert_series_equal(result, expected)
+
+
+def test_from_pandas_pyarrow_not_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False
+    )
+    monkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
+    data: dict[str, Any] = {
+        "a": [1, 2],
+        "b": ["one", "two"],
+        "c": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
+        "d": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[us]"),
+        "e": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ms]"),
+        "f": np.array([1, 2], dtype="timedelta64[ns]"),
+        "g": np.array([1, 2], dtype="timedelta64[us]"),
+        "h": np.array([1, 2], dtype="timedelta64[ms]"),
+        "i": [True, False],
+    }
+    result = pl.from_pandas(pd.DataFrame(data))
+    expected = pl.DataFrame(data)
+    assert_frame_equal(result, expected)
+    for col in data:
+        s_pd = pd.Series(data[col])
+        result_s = pl.from_pandas(s_pd)
+        expected_s = pl.Series(data[col])
+        assert_series_equal(result_s, expected_s)
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(pd.DataFrame({"a": [1, 2, 3]}, dtype="Int64"))
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(pd.Series([1, 2, 3], dtype="Int64"))
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(
+            pd.DataFrame({"a": pd.to_datetime(["2020-01-01T00:00+01:00"]).to_series()})
+        )
+    with pytest.raises(ImportError, match="pyarrow is required"):
+        pl.from_pandas(pd.DataFrame({"a": [None, "foo"]}))
+
+
+def test_from_numpy_different_resolution_15991() -> None:
+    result = pl.Series(
+        np.array(["2020-01-01"], dtype="datetime64[ns]"), dtype=pl.Datetime("us")
+    )
+    expected = pl.Series([datetime(2020, 1, 1)], dtype=pl.Datetime("us"))
+    assert_series_equal(result, expected)
+
+
+def test_from_numpy_different_resolution_invalid() -> None:
+    with pytest.raises(ValueError, match="Please cast"):
+        pl.Series(
+            np.array(["2020-01-01"], dtype="datetime64[s]"), dtype=pl.Datetime("us")
+        )
+
+
+def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "polars._utils.construction.dataframe._MIN_NUMPY_SIZE_FOR_MULTITHREADING", 2
+    )
+    df = pd.DataFrame(
+        {"a": [np.nan, 1.0, 2], "b": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}
+    )
+    result = pl.from_pandas(df, nan_to_null=True)
+    expected = pl.DataFrame(
+        {"a": [None, 1.0, 2], "b": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}
+    )
+    assert_frame_equal(result, expected)

@@ -5,6 +5,8 @@ mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
 mod arg_min_max;
+#[cfg(feature = "business")]
+mod business;
 mod clip;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
@@ -14,6 +16,8 @@ mod cut;
 mod diff;
 #[cfg(feature = "ewma")]
 mod ewm;
+#[cfg(feature = "ewma_by")]
+mod ewm_by;
 #[cfg(feature = "round_series")]
 mod floor_divide;
 #[cfg(feature = "fused")]
@@ -21,6 +25,8 @@ mod fused;
 mod horizontal;
 mod index;
 mod int_range;
+#[cfg(any(feature = "interpolate_by", feature = "interpolate"))]
+mod interpolation;
 #[cfg(feature = "is_between")]
 mod is_between;
 #[cfg(feature = "is_first_distinct")]
@@ -44,6 +50,7 @@ mod rank;
 mod reinterpret;
 #[cfg(feature = "replace")]
 mod replace;
+mod reshape;
 #[cfg(feature = "rle")]
 mod rle;
 #[cfg(feature = "rolling_window")]
@@ -65,6 +72,8 @@ pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
+#[cfg(feature = "business")]
+pub use business::*;
 pub use clip::*;
 #[cfg(feature = "cum_agg")]
 pub use cum_agg::*;
@@ -74,6 +83,8 @@ pub use cut::*;
 pub use diff::*;
 #[cfg(feature = "ewma")]
 pub use ewm::*;
+#[cfg(feature = "ewma_by")]
+pub use ewm_by::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
 #[cfg(feature = "fused")]
@@ -81,6 +92,12 @@ pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
 pub use int_range::*;
+#[cfg(feature = "interpolate")]
+pub use interpolation::interpolate::*;
+#[cfg(feature = "interpolate_by")]
+pub use interpolation::interpolate_by::*;
+#[cfg(any(feature = "interpolate", feature = "interpolate_by"))]
+pub use interpolation::*;
 #[cfg(feature = "is_between")]
 pub use is_between::*;
 #[cfg(feature = "is_first_distinct")]
@@ -121,6 +138,7 @@ pub use unique::*;
 pub use various::*;
 mod not;
 pub use not::*;
+pub use reshape::*;
 
 pub trait SeriesSealed {
     fn as_series(&self) -> &Series;

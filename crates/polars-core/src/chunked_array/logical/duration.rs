@@ -19,12 +19,12 @@ impl LogicalType for DurationChunked {
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         self.0
             .get_any_value(i)
-            .map(|av| av.into_duration(self.time_unit()))
+            .map(|av| av.as_duration(self.time_unit()))
     }
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         self.0
             .get_any_value_unchecked(i)
-            .into_duration(self.time_unit())
+            .as_duration(self.time_unit())
     }
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {

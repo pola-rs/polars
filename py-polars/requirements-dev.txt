@@ -9,6 +9,7 @@
 maturin
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
+pip
 
 # ------------
 # DEPENDENCIES
@@ -16,6 +17,7 @@ patchelf; platform_system == 'Linux'
 
 # Interoperability
 numpy
+numba; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
@@ -27,24 +29,21 @@ tzdata; platform_system == 'Windows'
 SQLAlchemy
 adbc_driver_manager; python_version >= '3.9' and platform_system != 'Windows'
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
-# TODO: Remove version constraint for connectorx when Python 3.12 is supported:
-# https://github.com/sfu-db/connector-x/issues/527
-connectorx; python_version <= '3.11'
+aiosqlite
+connectorx
 kuzu
 # Cloud
 cloudpickle
 fsspec
 s3fs[boto3]
 # Spreadsheet
-ezodf
 lxml
 fastexcel>=0.9
 openpyxl
 pyxlsb
 xlsx2csv
 XlsxWriter
-deltalake>=0.14.0
-pyiceberg>=0.5.0
+deltalake>=0.15.0
 # Csv
 zstandard
 # Plotting
@@ -52,15 +51,17 @@ hvplot>=0.9.1
 matplotlib
 # Other
 gevent
+nest_asyncio
 
 # -------
 # TOOLING
 # -------
 
-hypothesis==6.97.4
-pytest==8.0.0
-pytest-cov==4.1.0
-pytest-xdist==3.5.0
+hypothesis==6.100.4
+pytest==8.2.0
+pytest-codspeed==2.2.1
+pytest-cov==5.0.0
+pytest-xdist==3.6.1
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
 moto[s3]==5.0.0

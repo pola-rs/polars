@@ -14,14 +14,14 @@ impl OptimizationRule for CountStar {
     // Replace select count(*) from datasource with specialized map function.
     fn optimize_plan(
         &mut self,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<ALogicalPlan> {
+    ) -> Option<IR> {
         visit_logical_plan_for_scan_paths(node, lp_arena, expr_arena, false).map(
             |count_star_expr| {
                 // MapFunction needs a leaf node, hence we create a dummy placeholder node
-                let placeholder = ALogicalPlan::DataFrameScan {
+                let placeholder = IR::DataFrameScan {
                     df: Arc::new(Default::default()),
                     schema: Arc::new(Default::default()),
                     output_schema: None,
@@ -30,7 +30,7 @@ impl OptimizationRule for CountStar {
                 };
                 let placeholder_node = lp_arena.add(placeholder);
 
-                let alp = ALogicalPlan::MapFunction {
+                let alp = IR::MapFunction {
                     input: placeholder_node,
                     function: FunctionNode::Count {
                         paths: count_star_expr.paths,
@@ -61,12 +61,12 @@ struct CountStarExpr {
 // Return None if query is not a simple COUNT(*) FROM SOURCE
 fn visit_logical_plan_for_scan_paths(
     node: Node,
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     inside_union: bool, // Inside union's we do not check for COUNT(*) expression
 ) -> Option<CountStarExpr> {
     match lp_arena.get(node) {
-        ALogicalPlan::Union { inputs, .. } => {
+        IR::Union { inputs, .. } => {
             let mut scan_type: Option<FileScan> = None;
             let mut paths = Vec::with_capacity(inputs.len());
             for input in inputs {
@@ -95,7 +95,7 @@ fn visit_logical_plan_for_scan_paths(
                 alias: None,
             })
         },
-        ALogicalPlan::Scan {
+        IR::Scan {
             scan_type, paths, ..
         } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
             paths: paths.clone(),
@@ -103,9 +103,14 @@ fn visit_logical_plan_for_scan_paths(
             node,
             alias: None,
         }),
-        ALogicalPlan::Projection { input, expr, .. } => {
+        // A union can insert a simple projection to ensure all projections align.
+        // We can ignore that if we are inside a count star.
+        IR::SimpleProjection { input, .. } if inside_union => {
+            visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
+        },
+        IR::Select { input, expr, .. } => {
             if expr.len() == 1 {
-                let (valid, alias) = is_valid_count_expr(expr[0], expr_arena);
+                let (valid, alias) = is_valid_count_expr(&expr[0], expr_arena);
                 if valid || inside_union {
                     return visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, false)
                         .map(|mut expr| {
@@ -121,13 +126,9 @@ fn visit_logical_plan_for_scan_paths(
     }
 }
 
-fn is_valid_count_expr(node: Node, expr_arena: &Arena<AExpr>) -> (bool, Option<Arc<str>>) {
-    match expr_arena.get(node) {
-        AExpr::Alias(node, alias) => {
-            let (valid, _) = is_valid_count_expr(*node, expr_arena);
-            (valid, Some(alias.clone()))
-        },
-        AExpr::Len => (true, None),
+fn is_valid_count_expr(e: &ExprIR, expr_arena: &Arena<AExpr>) -> (bool, Option<Arc<str>>) {
+    match expr_arena.get(e.node()) {
+        AExpr::Len => (true, e.get_alias().cloned()),
         _ => (false, None),
     }
 }

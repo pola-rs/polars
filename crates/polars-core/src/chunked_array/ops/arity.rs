@@ -331,44 +331,6 @@ where
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
 }
 
-#[inline]
-pub fn try_binary_elementwise_values<T, U, V, F, K, E>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    mut op: F,
-) -> Result<ChunkedArray<V>, E>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    V: PolarsDataType,
-    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> Result<K, E>,
-    V::Array: ArrayFromIter<K>,
-{
-    if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
-        let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
-
-        return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
-    }
-
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    let iter = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| {
-            let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
-
-            let element_iter = lhs_arr
-                .values_iter()
-                .zip(rhs_arr.values_iter())
-                .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
-
-            let array: V::Array = element_iter.try_collect_arr()?;
-            Ok(array.with_validity_typed(validity))
-        });
-    ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
-}
-
 /// Applies a kernel that produces `Array` types.
 ///
 /// Intended for kernels that apply on values, this function will filter out any
@@ -738,40 +700,6 @@ where
             unary_elementwise_values(lhs, |a| op(a, b.clone()))
         },
         _ => binary_elementwise_values(lhs, rhs, op),
-    }
-}
-
-pub fn broadcast_try_binary_elementwise_values<T, U, V, F, K, E>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    mut op: F,
-) -> Result<ChunkedArray<V>, E>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    V: PolarsDataType,
-    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> Result<K, E>,
-    V::Array: ArrayFromIter<K>,
-{
-    if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
-        let min = lhs.len().min(rhs.len());
-        let max = lhs.len().max(rhs.len());
-        let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_dtype().to_arrow(true));
-
-        return Ok(ChunkedArray::with_chunk(lhs.name(), arr));
-    }
-
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.value_unchecked(0) };
-            Ok(try_unary_elementwise_values(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
-        },
-        (_, 1) => {
-            let b = unsafe { rhs.value_unchecked(0) };
-            try_unary_elementwise_values(lhs, |a| op(a, b.clone()))
-        },
-        _ => try_binary_elementwise_values(lhs, rhs, op),
     }
 }
 

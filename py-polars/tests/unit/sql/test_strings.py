@@ -46,7 +46,7 @@ def test_string_concat() -> None:
             "z": [1, 2, 3],
         }
     )
-    res = pl.SQLContext(data=lf).execute(
+    res = lf.sql(
         """
         SELECT
           ("x" || "x" || "y")           AS c0,
@@ -56,10 +56,10 @@ def test_string_concat() -> None:
           CONCAT("x", "y", ("z" * 2))   AS c4,
           CONCAT_WS(':', "x", "y", "z") AS c5,
           CONCAT_WS('', "y", "z", '!')  AS c6
-        FROM data
+        FROM self
         """,
-        eager=True,
-    )
+    ).collect()
+
     assert res.to_dict(as_series=False) == {
         "c0": ["aad", None, "ccf"],
         "c1": ["ad1", None, "cf3"],

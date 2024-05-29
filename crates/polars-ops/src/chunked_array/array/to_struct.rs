@@ -28,7 +28,7 @@ pub trait ToStruct: AsArray {
             (0..n_fields)
                 .into_par_iter()
                 .map(|i| {
-                    ca.array_get(&Int64Chunked::from_slice("", &[i as i64]))
+                    ca.array_get(&Int64Chunked::from_slice("", &[i as i64]), true)
                         .map(|mut s| {
                             s.rename(&name_generator(i));
                             s

@@ -12,3 +12,12 @@ Miscellaneous
     DataFrame.frame_equal
     DataFrame.lazy
     DataFrame.map_rows
+
+Serialization
+-------------
+
+.. autosummary::
+   :toctree: api/
+
+    DataFrame.deserialize
+    DataFrame.serialize

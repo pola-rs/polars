@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -1304,7 +1305,7 @@ class ExprStringNameSpace:
             dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
-    def json_path_match(self, json_path: str) -> Expr:
+    def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
         Extract the first match of JSON string with the provided JSONPath expression.
 
@@ -1345,6 +1346,7 @@ class ExprStringNameSpace:
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
         """
+        json_path = parse_as_expression(json_path, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
@@ -1668,15 +1670,15 @@ class ExprStringNameSpace:
         ...     ).with_columns(name=pl.col("captures").struct["1"].str.to_uppercase())
         ... )
         shape: (3, 3)
-        ┌───────────────────────────────────┬───────────────────────┬──────────┐
-        │ url                               ┆ captures              ┆ name     │
-        │ ---                               ┆ ---                   ┆ ---      │
-        │ str                               ┆ struct[2]             ┆ str      │
-        ╞═══════════════════════════════════╪═══════════════════════╪══════════╡
-        │ http://vote.com/ballon_dor?candi… ┆ {"messi","python"}    ┆ MESSI    │
-        │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
-        │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
-        └───────────────────────────────────┴───────────────────────┴──────────┘
+        ┌─────────────────────────────────┬───────────────────────┬──────────┐
+        │ url                             ┆ captures              ┆ name     │
+        │ ---                             ┆ ---                   ┆ ---      │
+        │ str                             ┆ struct[2]             ┆ str      │
+        ╞═════════════════════════════════╪═══════════════════════╪══════════╡
+        │ http://vote.com/ballon_dor?can… ┆ {"messi","python"}    ┆ MESSI    │
+        │ http://vote.com/ballon_dor?can… ┆ {"weghorst","polars"} ┆ WEGHORST │
+        │ http://vote.com/ballon_dor?err… ┆ {null,null}           ┆ null     │
+        └─────────────────────────────────┴───────────────────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
@@ -2205,9 +2207,168 @@ class ExprStringNameSpace:
         length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
+    def head(self, n: int | IntoExprColumn) -> Expr:
+        """
+        Return the first n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When the `n` input is negative, `head` returns characters up to the `n`th
+           from the end of the string. For example, if `n = -3`, then all characters
+           except the last three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the first 5 characters:
+
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_columns(pl.col("s").str.head(5).alias("s_head_5"))
+        shape: (4, 2)
+        ┌─────────────┬──────────┐
+        │ s           ┆ s_head_5 │
+        │ ---         ┆ ---      │
+        │ str         ┆ str      │
+        ╞═════════════╪══════════╡
+        │ pear        ┆ pear     │
+        │ null        ┆ null     │
+        │ papaya      ┆ papay    │
+        │ dragonfruit ┆ drago    │
+        └─────────────┴──────────┘
+
+        Return characters determined by column `n`:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["pear", None, "papaya", "dragonfruit"],
+        ...         "n": [3, 4, -2, -5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("s").str.head("n").alias("s_head_n"))
+        shape: (4, 3)
+        ┌─────────────┬─────┬──────────┐
+        │ s           ┆ n   ┆ s_head_n │
+        │ ---         ┆ --- ┆ ---      │
+        │ str         ┆ i64 ┆ str      │
+        ╞═════════════╪═════╪══════════╡
+        │ pear        ┆ 3   ┆ pea      │
+        │ null        ┆ 4   ┆ null     │
+        │ papaya      ┆ -2  ┆ papa     │
+        │ dragonfruit ┆ -5  ┆ dragon   │
+        └─────────────┴─────┴──────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.str_head(n))
+
+    def tail(self, n: int | IntoExprColumn) -> Expr:
+        """
+        Return the last n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When the `n` input is negative, `tail` returns characters starting from the
+           `n`th from the beginning of the string. For example, if `n = -3`, then all
+           characters except the first three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the last 5 characters:
+
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_columns(pl.col("s").str.tail(5).alias("s_tail_5"))
+        shape: (4, 2)
+        ┌─────────────┬──────────┐
+        │ s           ┆ s_tail_5 │
+        │ ---         ┆ ---      │
+        │ str         ┆ str      │
+        ╞═════════════╪══════════╡
+        │ pear        ┆ pear     │
+        │ null        ┆ null     │
+        │ papaya      ┆ apaya    │
+        │ dragonfruit ┆ fruit    │
+        └─────────────┴──────────┘
+
+        Return characters determined by column `n`:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["pear", None, "papaya", "dragonfruit"],
+        ...         "n": [3, 4, -2, -5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("s").str.tail("n").alias("s_tail_n"))
+        shape: (4, 3)
+        ┌─────────────┬─────┬──────────┐
+        │ s           ┆ n   ┆ s_tail_n │
+        │ ---         ┆ --- ┆ ---      │
+        │ str         ┆ i64 ┆ str      │
+        ╞═════════════╪═════╪══════════╡
+        │ pear        ┆ 3   ┆ ear      │
+        │ null        ┆ 4   ┆ null     │
+        │ papaya      ┆ -2  ┆ paya     │
+        │ dragonfruit ┆ -5  ┆ nfruit   │
+        └─────────────┴─────┴──────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.str_tail(n))
+
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -2217,7 +2378,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["foo", "bar"]})
-        >>> df.select(pl.col("a").str.explode())
+        >>> df.select(pl.col("a").str.explode())  # doctest: +SKIP
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -2232,16 +2393,20 @@ class ExprStringNameSpace:
         │ r   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.str_explode())
+        split = self.split("")
+        return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
+    def to_integer(
+        self, *, base: int | IntoExprColumn = 10, strict: bool = True
+    ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
 
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
+            Positive integer or expression which is the base of the string
+            we are parsing.
             Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
@@ -2282,6 +2447,7 @@ class ExprStringNameSpace:
         │ null ┆ null   │
         └──────┴────────┘
         """
+        base = parse_as_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
     @deprecate_renamed_function("to_integer", version="0.19.14")
@@ -2436,7 +2602,7 @@ class ExprStringNameSpace:
         """
         return self.pad_start(length, fill_char)
 
-    @deprecate_renamed_function("json_decode", version="0.19.12")
+    @deprecate_renamed_function("json_decode", version="0.19.15")
     def json_extract(
         self,
         dtype: PolarsDataType | None = None,

@@ -41,8 +41,8 @@ pub(crate) mod private {
     use ahash::RandomState;
 
     use super::*;
+    use crate::chunked_array::metadata::MetadataFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
-    use crate::chunked_array::Settings;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
@@ -74,9 +74,9 @@ pub(crate) mod private {
 
         fn compute_len(&mut self);
 
-        fn _get_flags(&self) -> Settings;
+        fn _get_flags(&self) -> MetadataFlags;
 
-        fn _set_flags(&mut self, flags: Settings);
+        fn _set_flags(&mut self, flags: MetadataFlags);
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(explode_by_offsets, self)
@@ -163,7 +163,12 @@ pub(crate) mod private {
             invalid_operation_panic!(zip_with_same_type, self)
         }
 
-        fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        #[allow(unused_variables)]
+        fn arg_sort_multiple(
+            &self,
+            by: &[Series],
+            _options: &SortMultipleOptions,
+        ) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
         }
     }
@@ -188,7 +193,7 @@ pub trait SeriesTrait:
     }
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> ChunkIdIter;
+    fn chunk_lengths(&self) -> ChunkLenIter;
 
     /// Name of series.
     fn name(&self) -> &str;
@@ -333,8 +338,8 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_unchecked, self)
     }
 
-    fn sort_with(&self, _options: SortOptions) -> Series {
-        invalid_operation_panic!(sort_with, self)
+    fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
+        polars_bail!(opq = sort_with, self._dtype());
     }
 
     /// Retrieve the indexes needed for a sort.
@@ -408,39 +413,39 @@ pub trait SeriesTrait:
     /// ```
     fn shift(&self, _periods: i64) -> Series;
 
-    /// Get the sum of the Series as a new Series of length 1.
+    /// Get the sum of the Series as a new Scalar.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = sum, self._dtype());
     }
     /// Get the max of the Series as a new Series of length 1.
-    fn max_as_series(&self) -> PolarsResult<Series> {
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = max, self._dtype());
     }
     /// Get the min of the Series as a new Series of length 1.
-    fn min_as_series(&self) -> PolarsResult<Series> {
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = min, self._dtype());
     }
     /// Get the median of the Series as a new Series of length 1.
-    fn median_as_series(&self) -> PolarsResult<Series> {
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
         polars_bail!(opq = median, self._dtype());
     }
     /// Get the variance of the Series as a new Series of length 1.
-    fn var_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
+    fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = var, self._dtype());
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
-    fn std_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
+    fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = std, self._dtype());
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_as_series(
+    fn quantile_reduce(
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
     }
 
@@ -493,9 +498,9 @@ pub trait SeriesTrait:
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {
-    pub fn unpack<N: 'static>(&self) -> PolarsResult<&ChunkedArray<N>>
+    pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
     where
-        N: PolarsDataType,
+        N: 'static + PolarsDataType,
     {
         polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())

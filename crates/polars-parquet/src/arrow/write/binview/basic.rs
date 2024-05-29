@@ -3,9 +3,7 @@ use polars_error::PolarsResult;
 
 use crate::parquet::encoding::delta_bitpacked;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{
-    serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
-};
+use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::read::schema::is_nullable;
 use crate::write::binary::{encode_non_null_values, ord_binary};
 use crate::write::utils::invalid_encoding;
@@ -84,7 +82,7 @@ pub(crate) fn build_statistics(
     array: &BinaryViewArray,
     primitive_type: PrimitiveType,
 ) -> ParquetStatistics {
-    let statistics = &BinaryStatistics {
+    BinaryStatistics {
         primitive_type,
         null_count: Some(array.null_count() as i64),
         distinct_count: None,
@@ -98,6 +96,6 @@ pub(crate) fn build_statistics(
             .flatten()
             .min_by(|x, y| ord_binary(x, y))
             .map(|x| x.to_vec()),
-    } as &dyn Statistics;
-    serialize_statistics(statistics)
+    }
+    .serialize()
 }

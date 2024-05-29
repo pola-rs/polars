@@ -18,6 +18,12 @@ impl ListNullChunkedBuilder {
         value_builder.extend_nulls(s.len());
         self.builder.try_push_valid().unwrap();
     }
+
+    pub(crate) fn append_with_len(&mut self, len: usize) {
+        let value_builder = self.builder.mut_values();
+        value_builder.extend_nulls(len);
+        self.builder.try_push_valid().unwrap();
+    }
 }
 
 impl ListBuilderTrait for ListNullChunkedBuilder {

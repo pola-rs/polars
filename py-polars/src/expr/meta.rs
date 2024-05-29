@@ -54,6 +54,13 @@ impl PyExpr {
         self.inner.clone().meta().is_regex_projection()
     }
 
+    fn meta_is_column_selection(&self, allow_aliasing: bool) -> bool {
+        self.inner
+            .clone()
+            .meta()
+            .is_column_selection(allow_aliasing)
+    }
+
     fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
         let out = self
             .inner
@@ -107,11 +114,11 @@ impl PyExpr {
             .unwrap();
 
         // SAFETY:
-        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // We skipped the serializing/deserializing of the static in lifetime in `DataType`
         // so we actually don't have a lifetime at all when serializing.
 
         // &str still has a lifetime. But it's ok, because we drop it immediately
-        // in this scope
+        // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let inner: polars_lazy::prelude::Expr = serde_json::from_str(json).map_err(|_| {

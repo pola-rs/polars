@@ -3,6 +3,7 @@ use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_utils::slice::GetSaferUnchecked;
 
 use crate::buffer::Buffer;
 pub use crate::types::Offset;
@@ -449,8 +450,8 @@ impl<O: Offset> OffsetsBuffer<O> {
     #[inline]
     pub unsafe fn start_end_unchecked(&self, index: usize) -> (usize, usize) {
         // soundness: the invariant of the function
-        let start = self.0.get_unchecked(index).to_usize();
-        let end = self.0.get_unchecked(index + 1).to_usize();
+        let start = self.0.get_unchecked_release(index).to_usize();
+        let end = self.0.get_unchecked_release(index + 1).to_usize();
         (start, end)
     }
 

@@ -14,7 +14,7 @@ impl Executor for UnionExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run UnionExec")
+                eprintln!("run UnionExec")
             }
         }
         // keep scans thread local if 'fetch' is used.
@@ -32,9 +32,9 @@ impl Executor for UnionExec {
         if !self.options.parallel || sliced_path {
             if state.verbose() {
                 if !self.options.parallel {
-                    println!("UNION: `parallel=false` union is run sequentially")
+                    eprintln!("UNION: `parallel=false` union is run sequentially")
                 } else {
-                    println!("UNION: `slice is set` union is run sequentially")
+                    eprintln!("UNION: `slice is set` union is run sequentially")
                 }
             }
 
@@ -80,7 +80,7 @@ impl Executor for UnionExec {
             concat_df(&dfs)
         } else {
             if state.verbose() {
-                println!("UNION: union is run in parallel")
+                eprintln!("UNION: union is run in parallel")
             }
 
             // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)

@@ -26,8 +26,8 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
 
 
 def assert_allow_copy_false_raises(s: pl.Series) -> None:
-    with pytest.raises(ValueError, match="cannot return a zero-copy array"):
-        s.to_numpy(use_pyarrow=False, allow_copy=False)
+    with pytest.raises(RuntimeError, match="copy not allowed"):
+        s.to_numpy(allow_copy=False)
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_series_to_numpy_numeric_zero_copy(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, 3]).cast(dtype)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == s.to_list()
@@ -75,7 +75,7 @@ def test_series_to_numpy_numeric_with_nulls(
     dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, None], dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist()[:-1] == s.to_list()[:-1]
     assert np.isnan(result[-1])
@@ -101,7 +101,7 @@ def test_series_to_numpy_temporal_zero_copy(
 ) -> None:
     values = [0, 2_000, 1_000_000]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     # NumPy tolist returns integers for ns precision
@@ -115,7 +115,7 @@ def test_series_to_numpy_temporal_zero_copy(
 def test_series_to_numpy_datetime_with_tz_zero_copy() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28)]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
 
     assert_zero_copy(s, result)
     assert result.tolist() == values
@@ -126,10 +126,11 @@ def test_series_to_numpy_date() -> None:
     values = [date(1970, 1, 1), date(2024, 2, 28)]
     s = pl.Series(values)
 
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.dtype("datetime64[D]")
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
 
@@ -151,7 +152,7 @@ def test_series_to_numpy_temporal_with_nulls(
 ) -> None:
     values = [0, 2_000, 1_000_000, None]
     s = pl.Series(values, dtype=dtype, strict=False)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     # NumPy tolist returns integers for ns precision
     if getattr(s.dtype, "time_unit", None) == "ns":
@@ -165,7 +166,7 @@ def test_series_to_numpy_temporal_with_nulls(
 def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
     values = [datetime(1970, 1, 1), datetime(2024, 2, 28), None]
     s = pl.Series(values).dt.convert_time_zone("Europe/Amsterdam")
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == values
     assert result.dtype == np.dtype("datetime64[us]")
@@ -182,9 +183,6 @@ def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
         (pl.Binary, [b"a", b"bc", b"def"]),
         (pl.Decimal, [D("1.234"), D("2.345"), D("-3.456")]),
         (pl.Object, [Path(), Path("abc")]),
-        # TODO: Implement for List types
-        # (pl.List, [[1], [2, 3]]),
-        # (pl.List, [["a"], ["b", "c"], []]),
     ],
 )
 @pytest.mark.parametrize("with_nulls", [False, True])
@@ -195,7 +193,7 @@ def test_to_numpy_object_dtypes(
         values.append(None)
 
     s = pl.Series(values, dtype=dtype)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == values
     assert result.dtype == np.object_
@@ -204,16 +202,17 @@ def test_to_numpy_object_dtypes(
 
 def test_series_to_numpy_bool() -> None:
     s = pl.Series([True, False])
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.bool_
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
 
 def test_series_to_numpy_bool_with_nulls() -> None:
     s = pl.Series([True, False, None])
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert s.to_list() == result.tolist()
     assert result.dtype == np.object_
@@ -221,30 +220,28 @@ def test_series_to_numpy_bool_with_nulls() -> None:
 
 
 def test_series_to_numpy_array_of_int() -> None:
-    values = [[1, 2], [3, 4], [5, 6]]
-    s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
-    result = s.to_numpy(use_pyarrow=False)
+    values = [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]]
+    s = pl.Series(values, dtype=pl.Array(pl.Array(pl.Int8, 3), 2))
+    result = s.to_numpy(allow_copy=False)
 
     expected = np.array(values)
     assert_array_equal(result, expected)
-    assert result.dtype == np.int64
+    assert result.dtype == np.int8
+    assert result.shape == (2, 2, 3)
 
 
 def test_series_to_numpy_array_of_str() -> None:
     values = [["1", "2", "3"], ["4", "5", "10000"]]
     s = pl.Series(values, dtype=pl.Array(pl.String, 3))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
     assert result.tolist() == values
     assert result.dtype == np.object_
 
 
-@pytest.mark.skip(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/14268"
-)
 def test_series_to_numpy_array_with_nulls() -> None:
     values = [[1, 2], [3, 4], None]
     s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     expected = np.array([[1.0, 2.0], [3.0, 4.0], [np.nan, np.nan]])
     assert_array_equal(result, expected)
@@ -252,9 +249,59 @@ def test_series_to_numpy_array_with_nulls() -> None:
     assert_allow_copy_false_raises(s)
 
 
+def test_series_to_numpy_array_with_nested_nulls() -> None:
+    values = [[None, 2], [3, 4], [5, None]]
+    s = pl.Series(values, dtype=pl.Array(pl.Int64, 2))
+    result = s.to_numpy()
+
+    expected = np.array([[np.nan, 2.0], [3.0, 4.0], [5.0, np.nan]])
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    assert_allow_copy_false_raises(s)
+
+
+def test_series_to_numpy_array_of_arrays() -> None:
+    values = [[[None, 2], [3, 4]], [None, [7, 8]]]
+    s = pl.Series(values, dtype=pl.Array(pl.Array(pl.Int64, 2), 2))
+    result = s.to_numpy()
+
+    expected = np.array([[[np.nan, 2], [3, 4]], [[np.nan, np.nan], [7, 8]]])
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    assert result.shape == (2, 2, 2)
+    assert_allow_copy_false_raises(s)
+
+
+@pytest.mark.parametrize("chunked", [True, False])
+def test_series_to_numpy_list(chunked: bool) -> None:
+    values = [[1, 2], [3, 4, 5], [6], []]
+    s = pl.Series(values)
+    if chunked:
+        s = pl.concat([s[:2], s[2:]])
+    result = s.to_numpy()
+
+    expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
+    for res, exp in zip(result, expected):
+        assert_array_equal(res, exp)
+        assert res.flags.writeable == chunked
+    assert result.dtype == expected.dtype
+    assert_allow_copy_false_raises(s)
+
+
+def test_series_to_numpy_struct_numeric_supertype() -> None:
+    values = [{"a": 1, "b": 2.0}, {"a": 3, "b": 4.0}, {"a": 5, "b": None}]
+    s = pl.Series(values)
+    result = s.to_numpy()
+
+    expected = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, np.nan]])
+    assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    assert_allow_copy_false_raises(s)
+
+
 def test_to_numpy_null() -> None:
     s = pl.Series([None, None], dtype=pl.Null)
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
     expected = np.array([np.nan, np.nan], dtype=np.float32)
     assert_array_equal(result, expected)
     assert result.dtype == np.float32
@@ -263,10 +310,17 @@ def test_to_numpy_null() -> None:
 
 def test_to_numpy_empty() -> None:
     s = pl.Series(dtype=pl.String)
-    result = s.to_numpy(use_pyarrow=False, allow_copy=False)
+    result = s.to_numpy(allow_copy=False)
     assert result.dtype == np.object_
     assert result.shape == (0,)
-    assert result.size == 0
+
+
+def test_to_numpy_empty_writable() -> None:
+    s = pl.Series(dtype=pl.Int64)
+    result = s.to_numpy(allow_copy=False, writable=True)
+    assert result.dtype == np.int64
+    assert result.shape == (0,)
+    assert result.flags.writeable is True
 
 
 def test_to_numpy_chunked() -> None:
@@ -274,10 +328,31 @@ def test_to_numpy_chunked() -> None:
     s2 = pl.Series([3, 4])
     s = pl.concat([s1, s2], rechunk=False)
 
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     assert result.tolist() == s.to_list()
     assert result.dtype == np.int64
+    assert result.flags.writeable is True
+    assert_allow_copy_false_raises(s)
+
+    # Check that writing to the array doesn't change the original data
+    result[0] = 10
+    assert result.tolist() == [10, 2, 3, 4]
+    assert s.to_list() == [1, 2, 3, 4]
+
+
+def test_to_numpy_chunked_temporal_nested() -> None:
+    dtype = pl.Array(pl.Datetime("us"), 1)
+    s1 = pl.Series([[datetime(2020, 1, 1)], [datetime(2021, 1, 1)]], dtype=dtype)
+    s2 = pl.Series([[datetime(2022, 1, 1)], [datetime(2023, 1, 1)]], dtype=dtype)
+    s = pl.concat([s1, s2], rechunk=False)
+
+    result = s.to_numpy()
+
+    assert result.tolist() == s.to_list()
+    assert result.dtype == np.dtype("datetime64[us]")
+    assert result.shape == (4, 1)
+    assert result.flags.writeable is True
     assert_allow_copy_false_raises(s)
 
 
@@ -317,18 +392,27 @@ def test_series_to_numpy_temporal() -> None:
 
 @given(
     s=series(
-        min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
+        min_size=1,
+        max_size=10,
+        excluded_dtypes=[
+            pl.Categorical,
+            pl.List,
+            pl.Struct,
+            pl.Datetime("ms"),
+            pl.Duration("ms"),
+        ],
+        allow_null=False,
+        allow_time_zones=False,  # NumPy does not support parsing time zone aware data
     ).filter(
         lambda s: (
-            getattr(s.dtype, "time_unit", None) != "ms"
-            and not (s.dtype == pl.String and s.str.contains("\x00").any())
+            not (s.dtype == pl.String and s.str.contains("\x00").any())
             and not (s.dtype == pl.Binary and s.bin.contains(b"\x00").any())
         )
     ),
 )
 @settings(max_examples=250)
 def test_series_to_numpy(s: pl.Series) -> None:
-    result = s.to_numpy(use_pyarrow=False)
+    result = s.to_numpy()
 
     values = s.to_list()
     dtype_map = {
@@ -336,8 +420,9 @@ def test_series_to_numpy(s: pl.Series) -> None:
         pl.Datetime("us"): "datetime64[us]",
         pl.Duration("ns"): "timedelta64[ns]",
         pl.Duration("us"): "timedelta64[us]",
+        pl.Null(): "float32",
     }
-    np_dtype = dtype_map.get(s.dtype)  # type: ignore[call-overload]
+    np_dtype = dtype_map.get(s.dtype)
     expected = np.array(values, dtype=np_dtype)
 
     assert_array_equal(result, expected)
@@ -388,7 +473,7 @@ def test_view() -> None:
 
 def test_view_nulls() -> None:
     s = pl.Series("b", [1, 2, None])
-    assert s.has_validity()
+    assert s.has_nulls()
     with pytest.deprecated_call(), pytest.raises(AssertionError):
         s.view()
 
@@ -399,7 +484,8 @@ def test_view_nulls_sliced() -> None:
     with pytest.deprecated_call():
         view = sliced.view()
     assert np.all(view == np.array([1, 2]))
-    assert not sliced.has_validity()
+    with pytest.deprecated_call():
+        assert not sliced.has_validity()
 
 
 def test_view_ub() -> None:

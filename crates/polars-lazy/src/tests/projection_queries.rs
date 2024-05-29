@@ -47,7 +47,7 @@ fn test_cross_join_pd() -> PolarsResult<()> {
         "price" => [5, 4]
     ]?;
 
-    let q = food.lazy().cross_join(drink.lazy()).select([
+    let q = food.lazy().cross_join(drink.lazy(), None).select([
         col("name").alias("food"),
         col("name_right").alias("beverage"),
         (col("price") + col("price_right")).alias("total"),

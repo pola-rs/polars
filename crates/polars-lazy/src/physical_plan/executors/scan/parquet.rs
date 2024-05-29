@@ -1,11 +1,14 @@
 use std::path::PathBuf;
 
-use polars_core::config::env_force_async;
+use polars_core::config;
 #[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::parquet::metadata::FileMetaDataRef;
+use polars_io::parquet::read::materialize_empty_df;
+use polars_io::utils::is_cloud_url;
+use polars_io::RowIndex;
 
 use super::*;
 
@@ -18,7 +21,7 @@ pub struct ParquetExec {
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
     #[allow(dead_code)]
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<FileMetaDataRef>,
 }
 
 impl ParquetExec {
@@ -29,7 +32,7 @@ impl ParquetExec {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     ) -> Self {
         ParquetExec {
             paths,
@@ -88,7 +91,12 @@ impl ParquetExec {
                     );
 
                     let mut reader = ParquetReader::new(file)
-                        .with_schema(self.file_info.reader_schema.clone())
+                        .with_schema(
+                            self.file_info
+                                .reader_schema
+                                .clone()
+                                .map(|either| either.unwrap_left()),
+                        )
                         .read_parallel(parallel)
                         .set_low_memory(self.options.low_memory)
                         .use_statistics(self.options.use_statistics)
@@ -160,7 +168,9 @@ impl ParquetExec {
             .file_info
             .reader_schema
             .as_ref()
-            .expect("should be set");
+            .expect("should be set")
+            .as_ref()
+            .unwrap_left();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
         let with_columns = self
@@ -340,13 +350,18 @@ impl ParquetExec {
                 );
                 return Ok(materialize_empty_df(
                     projection.as_deref(),
-                    self.file_info.reader_schema.as_ref().unwrap(),
+                    self.file_info
+                        .reader_schema
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap_left(),
                     hive_partitions.as_deref(),
                     self.file_options.row_index.as_ref(),
                 ));
             },
         };
-        let force_async = env_force_async();
+        let force_async = config::force_async();
 
         let out = if is_cloud || force_async {
             #[cfg(not(feature = "cloud"))]
@@ -356,6 +371,10 @@ impl ParquetExec {
 
             #[cfg(feature = "cloud")]
             {
+                if !is_cloud && config::verbose() {
+                    eprintln!("ASYNC READING FORCED");
+                }
+
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             }
         } else {
@@ -375,16 +394,6 @@ impl ParquetExec {
 
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let finger_print = FileFingerPrint {
-            paths: self.paths.clone(),
-            #[allow(clippy::useless_asref)]
-            predicate: self
-                .predicate
-                .as_ref()
-                .map(|ae| ae.as_expression().unwrap().clone()),
-            slice: (0, self.file_options.n_rows),
-        };
-
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![self.paths[0].to_string_lossy().into()];
             if self.predicate.is_some() {
@@ -396,15 +405,6 @@ impl Executor for ParquetExec {
             Cow::Borrowed("")
         };
 
-        state.record(
-            || {
-                state
-                    .file_cache
-                    .read(finger_print, self.file_options.file_counter, &mut || {
-                        self.read()
-                    })
-            },
-            profile_name,
-        )
+        state.record(|| self.read(), profile_name)
     }
 }

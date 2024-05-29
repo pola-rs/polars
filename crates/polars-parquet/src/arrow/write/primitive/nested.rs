@@ -9,7 +9,6 @@ use crate::arrow::write::Nested;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::serialize_statistics;
 use crate::parquet::types::NativeType;
 
 pub fn array_to_page<T, R>(
@@ -33,10 +32,7 @@ where
     let buffer = encode_plain(array, is_optional, buffer);
 
     let statistics = if options.write_statistics {
-        Some(serialize_statistics(&build_statistics(
-            array,
-            type_.clone(),
-        )))
+        Some(build_statistics(array, type_.clone()).serialize())
     } else {
         None
     };

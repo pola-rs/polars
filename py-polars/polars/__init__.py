@@ -80,6 +80,7 @@ from polars.exceptions import (
     ComputeError,
     DuplicateError,
     InvalidOperationError,
+    MapWithoutReturnDtypeWarning,
     NoDataError,
     OutOfBoundsError,
     PolarsError,
@@ -105,6 +106,7 @@ from polars.functions import (
     arctan2d,
     arg_sort_by,
     arg_where,
+    business_day_count,
     coalesce,
     col,
     collect_all,
@@ -133,6 +135,7 @@ from polars.functions import (
     duration,
     element,
     exclude,
+    field,
     first,
     fold,
     format,
@@ -156,6 +159,7 @@ from polars.functions import (
     min,
     min_horizontal,
     n_unique,
+    nth,
     ones,
     quantile,
     reduce,
@@ -179,6 +183,7 @@ from polars.functions import (
 )
 from polars.io import (
     read_avro,
+    read_clipboard,
     read_csv,
     read_csv_batched,
     read_database,
@@ -210,7 +215,7 @@ from polars.meta import (
     threadpool_size,
 )
 from polars.series import Series
-from polars.sql import SQLContext
+from polars.sql import SQLContext, sql
 from polars.string_cache import (
     StringCache,
     disable_string_cache,
@@ -244,6 +249,7 @@ __all__ = [
     "PolarsWarning",
     "CategoricalRemappingWarning",
     "ChronoFormatWarning",
+    "MapWithoutReturnDtypeWarning",
     "UnstableWarning",
     # core classes
     "DataFrame",
@@ -293,6 +299,7 @@ __all__ = [
     "PolarsDataType",
     # polars.io
     "read_avro",
+    "read_clipboard",
     "read_csv",
     "read_csv_batched",
     "read_database",
@@ -326,6 +333,7 @@ __all__ = [
     # polars.functions
     "align_frames",
     "arg_where",
+    "business_day_count",
     "concat",
     "date_range",
     "date_ranges",
@@ -378,6 +386,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "field",
     "first",
     "fold",
     "format",
@@ -395,6 +404,7 @@ __all__ = [
     "mean",
     "median",
     "n_unique",
+    "nth",
     "quantile",
     "reduce",
     "rolling_corr",
@@ -420,6 +430,7 @@ __all__ = [
     "from_repr",
     # polars.sql
     "SQLContext",
+    "sql",
     # polars.utils
     "build_info",
     "get_index_type",

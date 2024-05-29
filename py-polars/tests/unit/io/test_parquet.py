@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import io
+import os
+import sys
 from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -19,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.type_aliases import ParquetCompression
+    from tests.unit.conftest import MemoryUsage
 
 
 def test_round_trip(df: pl.DataFrame) -> None:
@@ -40,10 +44,12 @@ COMPRESSIONS = [
 
 
 @pytest.mark.write_disk()
-def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
+def test_write_parquet_using_pyarrow_9753(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
-        tmpdir / "test.parquet",
+        tmp_path / "test.parquet",
         compression="zstd",
         statistics=True,
         use_pyarrow=True,
@@ -87,15 +93,29 @@ def small_parquet_path(io_files_path: Path) -> Path:
 def test_to_from_buffer(
     df: pl.DataFrame, compression: ParquetCompression, use_pyarrow: bool
 ) -> None:
-    print(df)
     df = df[["list_str"]]
-    print(df)
     buf = io.BytesIO()
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-    print(read_df)
     assert_frame_equal(df, read_df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+def test_read_parquet_respects_rechunk_16416(
+    use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
+) -> None:
+    # Create a dataframe with 3 chunks:
+    df = pl.DataFrame({"a": [1]})
+    df = pl.concat([df, df, df])
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=1)
+    buf.seek(0)
+
+    rechunk, expected_chunks = rechunk_and_expected_chunks
+    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow, rechunk=rechunk)
+    assert result.n_chunks() == expected_chunks
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
@@ -679,6 +699,20 @@ def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
     assert_frame_equal(out, df)
 
 
+# https://github.com/pola-rs/polars/issues/15760
+@pytest.mark.write_disk()
+def test_read_parquet_binary_fsspec(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with fsspec.open(file_path) as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
 def test_read_parquet_binary_bytes_io() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     f = io.BytesIO()
@@ -775,12 +809,165 @@ def test_parquet_array_dtype() -> None:
 
 
 @pytest.mark.write_disk()
-def test_parquet_array_statistics() -> None:
+def test_parquet_array_statistics(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "b": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+
     df.with_columns(a=pl.col("a").list.to_array(3)).lazy().filter(
         pl.col("a") != [1, 2, 3]
     ).collect()
-    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().sink_parquet("test.parquet")
-    assert pl.scan_parquet("test.parquet").filter(
-        pl.col("a") != [1, 2, 3]
-    ).collect().to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
+    df.with_columns(a=pl.col("a").list.to_array(3)).lazy().sink_parquet(file_path)
+
+    result = pl.scan_parquet(file_path).filter(pl.col("a") != [1, 2, 3]).collect()
+    assert result.to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+def test_read_parquet_only_loads_selected_columns_15098(
+    memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
+) -> None:
+    """Only requested columns are loaded by ``read_parquet()``."""
+    tmp_path.mkdir(exist_ok=True)
+
+    # Each column will be about 8MB of RAM
+    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+
+    file_path = tmp_path / "multicolumn.parquet"
+    df = pl.DataFrame(
+        {
+            "a": series,
+            "b": series,
+        }
+    )
+    df.write_parquet(file_path)
+    del df, series
+
+    memory_usage_without_pyarrow.reset_tracking()
+
+    # Only load one column:
+    df = pl.read_parquet([file_path], columns=["b"], rechunk=False)
+    del df
+    # Only one column's worth of memory should be used; 2 columns would be
+    # 16_000_000 at least, but there's some overhead.
+    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+@pytest.mark.release()
+@pytest.mark.write_disk()
+def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
+    # this hits the maximal page size
+    # so the row group will be split into multiple pages
+    # the page statistics need to be correctly reduced
+    # for this query to make sense
+    n = 150_000
+
+    tmp_path.mkdir(exist_ok=True)
+
+    # int64 is important to hit the page size
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).alias("int").to_frame()
+    f = tmp_path / "tmp.parquet"
+    df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
+    result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()
+    expected = pl.DataFrame({"int": [149998, 149999]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows filenames cannot contain an asterisk"
+)
+def test_no_glob(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"foo": 1})
+
+    p1 = tmp_path / "*.parquet"
+    df.write_parquet(str(p1))
+    p2 = tmp_path / "*1.parquet"
+    df.write_parquet(str(p2))
+
+    assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
+def test_no_glob_windows(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"foo": 1})
+
+    p1 = tmp_path / "hello[.parquet"
+    df.write_parquet(str(p1))
+    p2 = tmp_path / "hello[2.parquet"
+    df.write_parquet(str(p2))
+
+    assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
+
+
+@pytest.mark.slow()
+def test_hybrid_rle() -> None:
+    # 10_007 elements to test if not a nice multiple of 8
+    n = 10_007
+    literal_literal = []
+    literal_rle = []
+    for i in range(500):
+        literal_literal.append(np.repeat(i, 5))
+        literal_literal.append(np.repeat(i + 2, 11))
+        literal_rle.append(np.repeat(i, 5))
+        literal_rle.append(np.repeat(i + 2, 15))
+    literal_literal.append(np.random.randint(0, 10, size=2007))
+    literal_rle.append(np.random.randint(0, 10, size=7))
+    literal_literal = np.concatenate(literal_literal)
+    literal_rle = np.concatenate(literal_rle)
+    df = pl.DataFrame(
+        {
+            # Primitive types
+            "i64": pl.Series([1, 2], dtype=pl.Int64).sample(n, with_replacement=True),
+            "u64": pl.Series([1, 2], dtype=pl.UInt64).sample(n, with_replacement=True),
+            "i8": pl.Series([1, 2], dtype=pl.Int8).sample(n, with_replacement=True),
+            "u8": pl.Series([1, 2], dtype=pl.UInt8).sample(n, with_replacement=True),
+            "string": pl.Series(["abc", "def"], dtype=pl.String).sample(
+                n, with_replacement=True
+            ),
+            "categorical": pl.Series(["aaa", "bbb"], dtype=pl.Categorical).sample(
+                n, with_replacement=True
+            ),
+            # Fill up bit-packing buffer in middle of consecutive run
+            "large_bit_pack": np.concatenate(
+                [np.repeat(i, 5) for i in range(2000)]
+                + [np.random.randint(0, 10, size=7)]
+            ),
+            # Literal run that is not a multiple of 8 followed by consecutive
+            # run initially long enough to RLE but not after padding literal
+            "literal_literal": literal_literal,
+            # Literal run that is not a multiple of 8 followed by consecutive
+            # run long enough to RLE even after padding literal
+            "literal_rle": literal_rle,
+            # Final run not long enough to RLE
+            "final_literal": np.concatenate(
+                [np.random.randint(0, 100, 10_000), np.repeat(-1, 7)]
+            ),
+            # Final run long enough to RLE
+            "final_rle": np.concatenate(
+                [np.random.randint(0, 100, 9_998), np.repeat(-1, 9)]
+            ),
+            # Test filling up bit-packing buffer for encode_bool,
+            # which is only used to encode validities
+            "large_bit_pack_validity": [0, None] * 4092
+            + [0] * 9
+            + [1] * 9
+            + [2] * 10
+            + [0] * 1795,
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    for column in pq.ParquetFile(f).metadata.to_dict()["row_groups"][0]["columns"]:
+        assert "RLE_DICTIONARY" in column["encodings"]
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)

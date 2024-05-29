@@ -35,7 +35,11 @@ impl NullChunked {
         }
     }
 }
-impl PrivateSeriesNumeric for NullChunked {}
+impl PrivateSeriesNumeric for NullChunked {
+    fn bit_repr_small(&self) -> UInt32Chunked {
+        UInt32Chunked::full_null(self.name.as_ref(), self.len())
+    }
+}
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
@@ -53,7 +57,7 @@ impl PrivateSeries for NullChunked {
     }
 
     #[allow(unused)]
-    fn _set_flags(&mut self, flags: Settings) {}
+    fn _set_flags(&mut self, flags: MetadataFlags) {}
 
     fn _dtype(&self) -> &DataType {
         &DataType::Null
@@ -106,8 +110,13 @@ impl PrivateSeries for NullChunked {
         })
     }
 
-    fn _get_flags(&self) -> Settings {
-        Settings::empty()
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        AggList::agg_list(self, groups)
+    }
+
+    fn _get_flags(&self) -> MetadataFlags {
+        MetadataFlags::empty()
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -151,7 +160,7 @@ impl SeriesTrait for NullChunked {
         &mut self.chunks
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         self.chunks.iter().map(|chunk| chunk.len())
     }
 
@@ -181,6 +190,10 @@ impl SeriesTrait for NullChunked {
 
     fn rechunk(&self) -> Series {
         NullChunked::new(self.name.clone(), self.len()).into_series()
+    }
+
+    fn drop_nulls(&self) -> Series {
+        NullChunked::new(self.name.clone(), 0).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {

@@ -5,7 +5,7 @@ Categorical data represents string data where the values in the column have a fi
 That is why Polars supports encoding string values in dictionary format. Working with categorical data in Polars can be done with two different DataTypes: `Enum`,`Categorical`. Both have their own use cases which we will explain further on this page.
 First we will look at what a categorical is in Polars.
 
-In Polars a categorical is a defined as a string column which is encoded by a dictionary. A string column would be split into two elements: encodings and the actual string values.
+In Polars a categorical is defined as a string column which is encoded by a dictionary. A string column would be split into two elements: encodings and the actual string values.
 
 <table>
 <tr><th>String Column </th><th>Categorical Column</th></tr>

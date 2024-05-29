@@ -65,6 +65,7 @@ Manipulation/selection
     DataFrame.shrink_to_fit
     DataFrame.slice
     DataFrame.sort
+    DataFrame.sql
     DataFrame.tail
     DataFrame.take_every
     DataFrame.to_dummies

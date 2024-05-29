@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import contextlib
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import polars._reexport as pl
 from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.various import normalize_filepath
+from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
+from polars.io._utils import parse_row_index_args
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
     from io import IOBase
-    from pathlib import Path
 
     from polars import DataFrame, LazyFrame
     from polars.type_aliases import SchemaDefinition
@@ -21,15 +28,15 @@ def read_ndjson(
     schema_overrides: SchemaDefinition | None = None,
     ignore_errors: bool = False,
 ) -> DataFrame:
-    """
+    r"""
     Read into a DataFrame from a newline delimited JSON file.
 
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -45,13 +52,35 @@ def read_ndjson(
         any dtypes inferred from the schema param will be overridden.
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
+
+    Examples
+    --------
+    >>> from io import StringIO
+    >>> json_str = '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
+    >>> pl.read_ndjson(StringIO(json_str))
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 6   │
+    │ 2   ┆ 7   │
+    │ 3   ┆ 8   │
+    └─────┴─────┘
     """
-    return pl.DataFrame._read_ndjson(
+    if isinstance(source, StringIO):
+        source = BytesIO(source.getvalue().encode())
+    elif isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+
+    pydf = PyDataFrame.read_ndjson(
         source,
+        ignore_errors=ignore_errors,
         schema=schema,
         schema_overrides=schema_overrides,
-        ignore_errors=ignore_errors,
     )
+    return wrap_df(pydf)
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -108,15 +137,23 @@ def scan_ndjson(
     ignore_errors
         Return `Null` if parsing fails because of schema mismatches.
     """
-    return pl.LazyFrame._scan_ndjson(
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+        sources = []
+    else:
+        sources = [normalize_filepath(source) for source in source]
+        source = None  # type: ignore[assignment]
+
+    pylf = PyLazyFrame.new_from_ndjson(
         source,
-        infer_schema_length=infer_schema_length,
-        schema=schema,
-        batch_size=batch_size,
-        n_rows=n_rows,
-        low_memory=low_memory,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        ignore_errors=ignore_errors,
+        sources,
+        infer_schema_length,
+        schema,
+        batch_size,
+        n_rows,
+        low_memory,
+        rechunk,
+        parse_row_index_args(row_index_name, row_index_offset),
+        ignore_errors,
     )
+    return wrap_ldf(pylf)

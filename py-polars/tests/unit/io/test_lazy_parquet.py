@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+from threading import Thread
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -56,6 +57,11 @@ def test_row_index(foods_parquet_path: Path) -> None:
     )
 
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
+
+
+def test_row_index_len_16543(foods_parquet_path: Path) -> None:
+    q = pl.scan_parquet(foods_parquet_path).with_row_index()
+    assert q.select(pl.all()).select(pl.len()).collect().item() == 27
 
 
 @pytest.mark.write_disk()
@@ -250,7 +256,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
     assert df.n_chunks("all") == [4, 4]
 
     file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False, row_group_size=50)
 
     for pred in [
         pl.col("idx") < 50,
@@ -407,3 +413,27 @@ def test_nested_slice_12480(tmp_path: Path) -> None:
     df.write_parquet(path, use_pyarrow=True, pyarrow_options={"data_page_size": 1})
 
     assert pl.scan_parquet(path).slice(0, 1).collect().height == 1
+
+
+@pytest.mark.write_disk()
+def test_scan_deadlock_rayon_spawn_from_async_15172(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    path = tmp_path / "data.parquet"
+
+    df = pl.Series("x", [1]).to_frame()
+    df.write_parquet(path)
+
+    results = [pl.DataFrame()]
+
+    def scan_collect() -> None:
+        results[0] = pl.collect_all([pl.scan_parquet(path)])[0]
+
+    # Make sure we don't sit there hanging forever on the broken case
+    t = Thread(target=scan_collect, daemon=True)
+    t.start()
+    t.join(5)
+
+    assert results[0].equals(df)

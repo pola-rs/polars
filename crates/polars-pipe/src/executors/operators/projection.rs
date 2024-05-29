@@ -9,12 +9,12 @@ use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub(crate) struct FastProjectionOperator {
+pub(crate) struct SimpleProjectionOperator {
     columns: Arc<[SmartString]>,
     input_schema: SchemaRef,
 }
 
-impl FastProjectionOperator {
+impl SimpleProjectionOperator {
     pub(crate) fn new(columns: Arc<[SmartString]>, input_schema: SchemaRef) -> Self {
         Self {
             columns,
@@ -23,7 +23,7 @@ impl FastProjectionOperator {
     }
 }
 
-impl Operator for FastProjectionOperator {
+impl Operator for SimpleProjectionOperator {
     fn execute(
         &mut self,
         _context: &PExecutionContext,
@@ -75,7 +75,7 @@ impl Operator for ProjectionOperator {
             .iter()
             .map(|e| {
                 #[allow(unused_mut)]
-                let mut s = e.evaluate(chunk, context.execution_state.as_any())?;
+                let mut s = e.evaluate(chunk, &context.execution_state)?;
 
                 has_literals |= s.len() == 1;
                 has_empty |= s.len() == 0;
@@ -146,7 +146,7 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
+            .map(|e| e.evaluate(chunk, &context.execution_state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let columns = chunk.data.get_columns()[..width].to_vec();

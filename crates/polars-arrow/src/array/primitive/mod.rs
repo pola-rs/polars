@@ -22,7 +22,7 @@ mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::index::{Bounded, Indexable, NullCount};
-use polars_utils::slice::SliceAble;
+use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -213,7 +213,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Caller must be sure that `i < self.len()`
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> T {
-        *self.values.get_unchecked(i)
+        *self.values.get_unchecked_release(i)
     }
 
     // /// Returns the element at index `i` or `None` if it is null

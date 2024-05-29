@@ -57,20 +57,6 @@ def test_implode() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("data", "repr_"),
-    [
-        ({}, "0 cols, {}"),
-        ({"a": [1]}, '1 col, {"a": Int64}'),
-        ({"a": [1], "b": ["B"]}, '2 cols, {"a": Int64, "b": String}'),
-        ({"a": [1], "b": ["B"], "c": [0.0]}, '3 cols, {"a": Int64 … "c": Float64}'),
-    ],
-)
-def test_repr(data: dict[str, list[Any]], repr_: str) -> None:
-    ldf = pl.LazyFrame(data)
-    assert repr(ldf).startswith(f"<LazyFrame [{repr_}] at ")
-
-
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
     assert "name" in ldf
@@ -95,7 +81,7 @@ def test_apply() -> None:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
                 pl.col("a")
-                .map_elements(lambda s: s * 2, strategy=strategy)  # type: ignore[arg-type]
+                .map_elements(lambda s: s * 2, strategy=strategy, return_dtype=pl.Int64)  # type: ignore[arg-type]
                 .alias("foo")
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
@@ -223,6 +209,28 @@ def test_filter_multiple_predicates() -> None:
         },
     )
     assert ldf.filter(predicate="==").select("description").collect().item() == "eq"
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        [pl.lit(True)],
+        iter([pl.lit(True)]),
+        [True, True, True],
+        iter([True, True, True]),
+        (p for p in (pl.col("c") < 9,)),
+        (p for p in (pl.col("a") > 0, pl.col("b") > 0)),
+    ],
+)
+def test_filter_seq_iterable_all_true(predicate: Any) -> None:
+    ldf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1],
+            "b": [1, 1, 2],
+            "c": [3, 1, 2],
+        }
+    )
+    assert_frame_equal(ldf, ldf.filter(predicate))
 
 
 def test_apply_custom_function() -> None:
@@ -873,25 +881,6 @@ def test_argminmax() -> None:
     assert out["min"][0] == 0
 
 
-def test_rename() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename({"a": "foo", "b": "bar"}).collect()
-    assert out.columns == ["foo", "bar", "c"]
-
-
-def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().rename({"A": "C"}).collect()
-    assert res.columns[0] == "C"
-
-
-def test_rename_lambda() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename(
-        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
-    ).collect()
-    assert out.columns == ["foo", "bar", "c"]
-
-
 def test_reverse() -> None:
     out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
     expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
@@ -1058,7 +1047,7 @@ def test_self_join() -> None:
                 pl.col("employee_name_right").alias("manager_name"),
             ]
         )
-        .fetch()
+        .collect()
     )
     assert set(out.rows()) == {
         (100, "James", None),
@@ -1110,30 +1099,16 @@ def test_quantile_filtered_agg() -> None:
 
 
 def test_lazy_schema() -> None:
-    ldf = pl.LazyFrame(
+    lf = pl.LazyFrame(
         {
             "foo": [1, 2, 3],
             "bar": [6.0, 7.0, 8.0],
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
+    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
 
-    ldf = pl.LazyFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6.0, 7.0, 8.0],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.String]
-
-    ldfe = ldf.clear()
-    assert ldfe.schema == ldf.schema
-
-    ldfe = ldf.clear(2)
-    assert ldfe.schema == ldf.schema
-    assert ldfe.collect().rows() == [(None, None, None), (None, None, None)]
+    assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
 
 
 def test_predicate_count_vstack() -> None:
@@ -1203,8 +1178,8 @@ def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
     assert_frame_equal(result, expected)
 
-    (out, _) = capfd.readouterr()
-    assert "CACHE HIT" in out
+    (_, err) = capfd.readouterr()
+    assert "CACHE HIT" in err
 
 
 def test_lazy_cache_parallel() -> None:
@@ -1388,6 +1363,7 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
     assert eager_result.shape == lazy_result.shape
 
 
+@pytest.mark.slow()
 @pytest.mark.parametrize(
     "dtype",
     [

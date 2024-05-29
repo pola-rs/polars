@@ -21,24 +21,22 @@ def test_any_all() -> None:
             "y": [1, 0, 0, 1, 2, 3],
         }
     )
-    res = pl.SQLContext(df=df).execute(
+    res = df.sql(
         """
         SELECT
-        x >= ALL(df.y) as 'All Geq',
-        x > ALL(df.y) as 'All G',
-        x < ALL(df.y) as 'All L',
-        x <= ALL(df.y) as 'All Leq',
-        x >= ANY(df.y) as 'Any Geq',
-        x > ANY(df.y) as 'Any G',
-        x < ANY(df.y) as 'Any L',
-        x <= ANY(df.y) as 'Any Leq',
-        x == ANY(df.y) as 'Any eq',
-        x != ANY(df.y) as 'Any Neq',
+          x >= ALL(df.y) AS "All Geq",
+          x  > ALL(df.y) AS "All G",
+          x  < ALL(df.y) AS "All L",
+          x <= ALL(df.y) AS "All Leq",
+          x >= ANY(df.y) AS "Any Geq",
+          x  > ANY(df.y) AS "Any G",
+          x  < ANY(df.y) AS "Any L",
+          x <= ANY(df.y) AS "Any Leq",
+          x == ANY(df.y) AS "Any eq",
+          x != ANY(df.y) AS "Any Neq",
         FROM df
         """,
-        eager=True,
     )
-
     assert res.to_dict(as_series=False) == {
         "All Geq": [0, 0, 0, 0, 1, 1],
         "All G": [0, 0, 0, 0, 0, 1],
@@ -88,16 +86,16 @@ def test_distinct() -> None:
 
 
 def test_in_no_ops_11946() -> None:
-    df = pl.LazyFrame(
+    lf = pl.LazyFrame(
         [
             {"i1": 1},
             {"i1": 2},
             {"i1": 3},
         ]
     )
-    ctx = pl.SQLContext(frame_data=df, eager_execution=False)
-    out = ctx.execute(
-        "SELECT * FROM frame_data WHERE i1 in (1, 3)", eager=False
+    out = lf.sql(
+        query="SELECT * FROM frame_data WHERE i1 in (1, 3)",
+        table_name="frame_data",
     ).collect()
     assert out.to_dict(as_series=False) == {"i1": [1, 3]}
 
@@ -182,7 +180,7 @@ def test_order_by(foods_ipc_path: Path) -> None:
         df.x,
         df.y as y_alias
         FROM df
-        ORDER BY y
+        ORDER BY y_alias
         """,
         eager=True,
     )

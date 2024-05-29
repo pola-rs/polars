@@ -8,34 +8,34 @@ use serde::{Deserialize, Serialize};
 pub use super::expr_dyn_fn::*;
 use crate::prelude::*;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AggExpr {
     Min {
-        input: Box<Expr>,
+        input: Arc<Expr>,
         propagate_nans: bool,
     },
     Max {
-        input: Box<Expr>,
+        input: Arc<Expr>,
         propagate_nans: bool,
     },
-    Median(Box<Expr>),
-    NUnique(Box<Expr>),
-    First(Box<Expr>),
-    Last(Box<Expr>),
-    Mean(Box<Expr>),
-    Implode(Box<Expr>),
+    Median(Arc<Expr>),
+    NUnique(Arc<Expr>),
+    First(Arc<Expr>),
+    Last(Arc<Expr>),
+    Mean(Arc<Expr>),
+    Implode(Arc<Expr>),
     // include_nulls
-    Count(Box<Expr>, bool),
+    Count(Arc<Expr>, bool),
     Quantile {
-        expr: Box<Expr>,
-        quantile: Box<Expr>,
+        expr: Arc<Expr>,
+        quantile: Arc<Expr>,
         interpol: QuantileInterpolOptions,
     },
-    Sum(Box<Expr>),
-    AggGroups(Box<Expr>),
-    Std(Box<Expr>, u8),
-    Var(Box<Expr>, u8),
+    Sum(Arc<Expr>),
+    AggGroups(Arc<Expr>),
+    Std(Arc<Expr>, u8),
+    Var(Arc<Expr>, u8),
 }
 
 impl AsRef<Expr> for AggExpr {
@@ -67,42 +67,43 @@ impl AsRef<Expr> for AggExpr {
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Box<Expr>, Arc<str>),
-    Column(Arc<str>),
-    Columns(Vec<String>),
+    Alias(Arc<Expr>, ColumnName),
+    Column(ColumnName),
+    Columns(Arc<[ColumnName]>),
     DtypeColumn(Vec<DataType>),
+    IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
     BinaryExpr {
-        left: Box<Expr>,
+        left: Arc<Expr>,
         op: Operator,
-        right: Box<Expr>,
+        right: Arc<Expr>,
     },
     Cast {
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
         data_type: DataType,
         strict: bool,
     },
     Sort {
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
         options: SortOptions,
     },
     Gather {
-        expr: Box<Expr>,
-        idx: Box<Expr>,
+        expr: Arc<Expr>,
+        idx: Arc<Expr>,
         returns_scalar: bool,
     },
     SortBy {
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
         by: Vec<Expr>,
-        descending: Vec<bool>,
+        sort_options: SortMultipleOptions,
     },
     Agg(AggExpr),
     /// A ternary operation
     /// if true then "foo" else "bar"
     Ternary {
-        predicate: Box<Expr>,
-        truthy: Box<Expr>,
-        falsy: Box<Expr>,
+        predicate: Arc<Expr>,
+        truthy: Arc<Expr>,
+        falsy: Arc<Expr>,
     },
     Function {
         /// function arguments
@@ -111,29 +112,29 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Explode(Box<Expr>),
+    Explode(Arc<Expr>),
     Filter {
-        input: Box<Expr>,
-        by: Box<Expr>,
+        input: Arc<Expr>,
+        by: Arc<Expr>,
     },
     /// See postgres window functions
     Window {
         /// Also has the input. i.e. avg("foo")
-        function: Box<Expr>,
+        function: Arc<Expr>,
         partition_by: Vec<Expr>,
         options: WindowType,
     },
     Wildcard,
     Slice {
-        input: Box<Expr>,
+        input: Arc<Expr>,
         /// length is not yet known so we accept negative offsets
-        offset: Box<Expr>,
-        length: Box<Expr>,
+        offset: Arc<Expr>,
+        length: Arc<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    Exclude(Box<Expr>, Vec<Excluded>),
+    Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
-    KeepName(Box<Expr>),
+    KeepName(Arc<Expr>),
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
@@ -141,8 +142,10 @@ pub enum Expr {
     #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
-        expr: Box<Expr>,
+        expr: Arc<Expr>,
     },
+    #[cfg(feature = "dtype-struct")]
+    Field(Arc<[ColumnName]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
@@ -153,7 +156,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
+    SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`
@@ -172,6 +175,7 @@ impl Hash for Expr {
             Expr::Column(name) => name.hash(state),
             Expr::Columns(names) => names.hash(state),
             Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            Expr::IndexColumn(indices) => indices.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             Expr::Nth(v) => v.hash(state),
@@ -220,22 +224,63 @@ impl Hash for Expr {
                 std::mem::discriminant(function).hash(state);
                 options.hash(state);
             },
+            Expr::Gather {
+                expr,
+                idx,
+                returns_scalar,
+            } => {
+                expr.hash(state);
+                idx.hash(state);
+                returns_scalar.hash(state);
+            },
             // already hashed by discriminant
             Expr::Wildcard | Expr::Len => {},
-            #[allow(unreachable_code)]
-            _ => {
-                // the panic checks if we hit this
-                #[cfg(debug_assertions)]
-                {
-                    todo!("IMPLEMENT")
-                }
-                // TODO! derive. This is only a temporary fix
-                // Because PartialEq will have a lot of `false`, e.g. on Function
-                // Types, this may lead to many file reads, as we use predicate comparison
-                // to check if we can cache a file
-                let s = format!("{self:?}");
-                s.hash(state)
+            Expr::SortBy {
+                expr,
+                by,
+                sort_options,
+            } => {
+                expr.hash(state);
+                by.hash(state);
+                sort_options.hash(state);
             },
+            Expr::Agg(input) => input.hash(state),
+            Expr::Explode(input) => input.hash(state),
+            Expr::Window {
+                function,
+                partition_by,
+                options,
+            } => {
+                function.hash(state);
+                partition_by.hash(state);
+                options.hash(state);
+            },
+            Expr::Slice {
+                input,
+                offset,
+                length,
+            } => {
+                input.hash(state);
+                offset.hash(state);
+                length.hash(state);
+            },
+            Expr::Exclude(input, excl) => {
+                input.hash(state);
+                excl.hash(state);
+            },
+            Expr::RenameAlias { function: _, expr } => expr.hash(state),
+            Expr::AnonymousFunction {
+                input,
+                function: _,
+                output_type: _,
+                options,
+            } => {
+                input.hash(state);
+                options.hash(state);
+            },
+            Expr::SubPlan(_, names) => names.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(names) => names.hash(state),
         }
     }
 }
@@ -252,14 +297,14 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(Arc<str>),
+    Name(ColumnName),
     Dtype(DataType),
 }
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
-        // this is not called much and th expression depth is typically shallow
+        // this is not called much and the expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
         self.to_field_amortized(schema, ctxt, &mut arena)
     }

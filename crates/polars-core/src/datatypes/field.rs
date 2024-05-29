@@ -3,7 +3,7 @@ use smartstring::alias::String as SmartString;
 use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)
@@ -114,6 +114,18 @@ impl Field {
     }
 }
 
+impl AsRef<DataType> for Field {
+    fn as_ref(&self) -> &DataType {
+        &self.dtype
+    }
+}
+
+impl AsRef<DataType> for DataType {
+    fn as_ref(&self) -> &DataType {
+        self
+    }
+}
+
 impl DataType {
     pub fn boxed(self) -> Box<DataType> {
         Box::new(self)
@@ -173,6 +185,7 @@ impl DataType {
                     DataType::BinaryOffset
                 }
             },
+            ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
     }

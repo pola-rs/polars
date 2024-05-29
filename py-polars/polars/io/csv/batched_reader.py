@@ -4,13 +4,12 @@ import contextlib
 from typing import TYPE_CHECKING, Sequence
 
 from polars._utils.various import (
-    _prepare_row_index_args,
     _process_null_values,
-    handle_projection_columns,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df
 from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
+from polars.io._utils import parse_columns_arg, parse_row_index_args
 from polars.io.csv._utils import _update_columns
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -56,6 +55,7 @@ class BatchedCsvReader:
         new_columns: Sequence[str] | None = None,
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
+        decimal_comma: bool = False,
     ):
         path = normalize_filepath(source)
 
@@ -73,7 +73,7 @@ class BatchedCsvReader:
                 raise TypeError(msg)
 
         processed_null_values = _process_null_values(null_values)
-        projection, columns = handle_projection_columns(columns)
+        projection, columns = parse_columns_arg(columns)
 
         self._reader = PyBatchedCsv.new(
             infer_schema_length=infer_schema_length,
@@ -98,11 +98,12 @@ class BatchedCsvReader:
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
-            row_index=_prepare_row_index_args(row_index_name, row_index_offset),
+            row_index=parse_row_index_args(row_index_name, row_index_offset),
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
         )
         self.new_columns = new_columns
 

@@ -1,7 +1,6 @@
 //! Special list utility methods
 pub(super) mod iterator;
 
-use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl ListChunked {
@@ -19,14 +18,14 @@ impl ListChunked {
         field.coerce(DataType::List(Box::new(dtype)));
     }
     pub fn set_fast_explode(&mut self) {
-        self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(true);
     }
     pub(crate) fn unset_fast_explode(&mut self) {
-        self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(false);
     }
 
     pub fn _can_fast_explode(&self) -> bool {
-        self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
+        self.effective_metadata().get_fast_explode_list()
     }
 
     /// Set the logical type of the [`ListChunked`].
@@ -41,16 +40,28 @@ impl ListChunked {
 
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
-        let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
-        // SAFETY:
-        // Inner dtype is passed correctly
-        unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                self.name(),
-                vec![arr.values().clone()],
-                &ca.inner_dtype(),
-            )
+        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
+
+        // SAFETY: Data type of arrays matches because they are chunks from the same array.
+        unsafe { Series::from_chunks_and_dtype_unchecked(self.name(), chunks, &self.inner_dtype()) }
+    }
+
+    /// Returns an iterator over the offsets of this chunked array.
+    ///
+    /// The offsets are returned as though the array consisted of a single chunk.
+    pub fn iter_offsets(&self) -> impl Iterator<Item = i64> + '_ {
+        let mut offsets = self.downcast_iter().map(|arr| arr.offsets().iter());
+        let first_iter = offsets.next().unwrap();
+
+        // The first offset doesn't have to be 0, it can be sliced to `n` in the array.
+        // So we must correct for this.
+        let correction = first_iter.clone().next().unwrap();
+
+        OffsetsIterator {
+            current_offsets_iter: first_iter,
+            current_adjusted_offset: 0,
+            offset_adjustment: -correction,
+            offsets_iters: offsets,
         }
     }
 
@@ -98,5 +109,34 @@ impl ListChunked {
                 DataType::List(Box::new(out.dtype().clone())),
             )
         })
+    }
+}
+
+pub struct OffsetsIterator<'a, N>
+where
+    N: Iterator<Item = std::slice::Iter<'a, i64>>,
+{
+    offsets_iters: N,
+    current_offsets_iter: std::slice::Iter<'a, i64>,
+    current_adjusted_offset: i64,
+    offset_adjustment: i64,
+}
+
+impl<'a, N> Iterator for OffsetsIterator<'a, N>
+where
+    N: Iterator<Item = std::slice::Iter<'a, i64>>,
+{
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(offset) = self.current_offsets_iter.next() {
+            self.current_adjusted_offset = offset + self.offset_adjustment;
+            Some(self.current_adjusted_offset)
+        } else {
+            self.current_offsets_iter = self.offsets_iters.next()?;
+            let first = self.current_offsets_iter.next().unwrap();
+            self.offset_adjustment = self.current_adjusted_offset - first;
+            self.next()
+        }
     }
 }

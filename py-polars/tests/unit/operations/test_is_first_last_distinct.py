@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import datetime
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -39,11 +44,45 @@ def test_is_first_distinct_struct() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_is_first_distinct_list() -> None:
-    lf = pl.LazyFrame({"a": [[1, 2], [3], [1, 2], [4, 5], [4, 5]]})
-    result = lf.select(pl.col("a").is_first_distinct())
-    expected = pl.LazyFrame({"a": [True, True, False, True, False]})
+@pytest.mark.parametrize(
+    "data",
+    [
+        [[1, 2], [3], [1, 2], [4, None], [4, None], [], []],
+        [[True, None], [True], [True, None], [False], [False], [], []],
+        [[b"1", b"2"], [b"3"], [b"1", b"2"], [b"4", None], [b"4", None], [], []],
+        [["a", "b"], ["&"], ["a", "b"], ["...", None], ["...", None], [], []],
+        [
+            [datetime.date(2000, 10, 1), datetime.date(2001, 1, 30)],
+            [datetime.date(1949, 10, 1)],
+            [datetime.date(2000, 10, 1), datetime.date(2001, 1, 30)],
+            [datetime.date(1998, 7, 1), None],
+            [datetime.date(1998, 7, 1), None],
+            [],
+            [],
+        ],
+    ],
+)
+def test_is_first_last_distinct_list(data: list[list[Any] | None]) -> None:
+    lf = pl.LazyFrame({"a": data})
+    result = lf.select(
+        first=pl.col("a").is_first_distinct(), last=pl.col("a").is_last_distinct()
+    )
+    expected = pl.LazyFrame(
+        {
+            "first": [True, True, False, True, False, True, False],
+            "last": [False, True, True, False, True, False, True],
+        }
+    )
     assert_frame_equal(result, expected)
+
+
+def test_is_first_last_distinct_list_inner_nested() -> None:
+    df = pl.DataFrame({"a": [[[1, 2]], [[1, 2]]]})
+    err_msg = "only allowed if the inner type is not nested"
+    with pytest.raises(pl.InvalidOperationError, match=err_msg):
+        df.select(pl.col("a").is_first_distinct())
+    with pytest.raises(pl.InvalidOperationError, match=err_msg):
+        df.select(pl.col("a").is_last_distinct())
 
 
 def test_is_first_distinct_various() -> None:
@@ -104,10 +143,6 @@ def test_is_last_distinct() -> None:
             {"x": 3, "y": 2},
         ]
     )
-    expected = [False, True, False, True, True, False, True]
-    assert s.is_last_distinct().to_list() == expected
-    # list
-    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
     expected = [False, True, False, True, True, False, True]
     assert s.is_last_distinct().to_list() == expected
 

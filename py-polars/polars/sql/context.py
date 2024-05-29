@@ -64,6 +64,16 @@ class SQLContext(Generic[FrameType]):
         **named_frames: DataFrame | LazyFrame | None,
     ) -> None: ...
 
+    @overload
+    def __init__(
+        self: SQLContext[DataFrame],
+        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
+        *,
+        register_globals: bool | int = ...,
+        eager_execution: bool,
+        **named_frames: DataFrame | LazyFrame | None,
+    ) -> None: ...
+
     def __init__(
         self,
         frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
@@ -125,7 +135,8 @@ class SQLContext(Generic[FrameType]):
                     named_frames[name] = obj
 
         if frames or named_frames:
-            self.register_many(frames, **named_frames)
+            frames.update(named_frames)
+            self.register_many(frames)
 
     def __enter__(self) -> SQLContext[FrameType]:
         """Track currently registered tables on scope entry; supports nested scopes."""

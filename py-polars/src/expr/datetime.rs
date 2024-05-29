@@ -6,6 +6,20 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    fn dt_add_business_days(
+        &self,
+        n: PyExpr,
+        week_mask: [bool; 7],
+        holidays: Vec<i32>,
+        roll: Wrap<Roll>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .add_business_days(n.inner, week_mask, holidays, roll.0)
+            .into()
+    }
+
     fn dt_to_string(&self, format: &str) -> Self {
         self.inner.clone().dt().to_string(format).into()
     }
@@ -76,8 +90,8 @@ impl PyExpr {
         self.inner.clone().dt().dst_offset().into()
     }
 
-    fn dt_round(&self, every: &str, offset: &str) -> Self {
-        self.inner.clone().dt().round(every, offset).into()
+    fn dt_round(&self, every: Self, offset: &str) -> Self {
+        self.inner.clone().dt().round(every.inner, offset).into()
     }
 
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {

@@ -131,11 +131,13 @@ def test_list_empty_group_by_result_3521() -> None:
 
     # Calculate n_unique after dropping nulls
     # This will panic on polars version 0.13.38 and 0.13.39
-    assert (
+    result = (
         left.join(right, on="join_column", how="left")
         .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(as_series=False) == {"group_by_column": [1], "n_unique_column": [[]]}
+    )
+    expected = {"group_by_column": [1], "n_unique_column": [[]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_fill_null() -> None:
@@ -441,6 +443,16 @@ def test_list_min_max() -> None:
     assert df.select(pl.col("a").list.max()).to_dict(as_series=False) == {
         "a": [1, 5, 4, 5, None]
     }
+
+
+def test_list_mean_fast_path_empty() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[], [1, 2, 3]],
+        }
+    )
+    output = df.select(pl.col("a").list.mean())
+    assert output.to_dict(as_series=False) == {"a": [None, 2.0]}
 
 
 def test_list_min_max_13978() -> None:
@@ -781,7 +793,7 @@ def test_list_gather_null_struct_14927() -> None:
         {"index": [1], "col_0": [None], "field_0": [None]},
         schema={**df.schema, "field_0": pl.Float64},
     )
-    expr = pl.col("col_0").list.get(0).struct.field("field_0")
+    expr = pl.col("col_0").list.get(0, null_on_oob=True).struct.field("field_0")
     out = df.filter(pl.col("index") > 0).with_columns(expr)
     assert_frame_equal(out, expected)
 
@@ -790,3 +802,44 @@ def test_list_of_series_with_nulls() -> None:
     inner_series = pl.Series("inner", [1, 2, 3])
     s = pl.Series("a", [inner_series, None])
     assert_series_equal(s, pl.Series("a", [[1, 2, 3], None]))
+
+
+def test_take_list_15719() -> None:
+    schema = pl.List(pl.List(pl.Int64))
+    df = pl.DataFrame(
+        {"a": [None, None], "b": [None, [[1, 2]]]}, schema={"a": schema, "b": schema}
+    )
+    df = df.select(
+        a_explode=pl.col("a").explode(),
+        a_get=pl.col("a").list.get(0),
+        b_explode=pl.col("b").explode(),
+        b_get=pl.col("b").list.get(0),
+    )
+
+    expected_schema = pl.List(pl.Int64)
+    expected = pl.DataFrame(
+        {
+            "a_explode": [None, None],
+            "a_get": [None, None],
+            "b_explode": [None, [1, 2]],
+            "b_get": [None, [1, 2]],
+        },
+        schema={
+            "a_explode": expected_schema,
+            "a_get": expected_schema,
+            "b_explode": expected_schema,
+            "b_get": expected_schema,
+        },
+    )
+
+    assert_frame_equal(df, expected)
+
+
+def test_list_str_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series(["foo", "bar"]).sum()
+
+
+def test_list_list_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([[1], [2]]).sum()

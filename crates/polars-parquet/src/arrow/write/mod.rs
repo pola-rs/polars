@@ -45,8 +45,8 @@ pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
 };
 pub use crate::parquet::write::{
-    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator, RowGroupIter,
-    Version,
+    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator,
+    RowGroupIterColumns, Version,
 };
 pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
 
@@ -66,7 +66,7 @@ pub struct WriteOptions {
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{array_to_columns, Nested};
+pub use pages::{array_to_columns, arrays_to_columns, Nested};
 use polars_error::{polars_bail, PolarsResult};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
@@ -219,7 +219,7 @@ pub fn array_to_pages(
         // Only take this path for primitive columns
         if matches!(nested.first(), Some(Nested::Primitive(_, _, _))) {
             if let Some(result) =
-                encode_as_dictionary_optional(primitive_array, type_.clone(), options)
+                encode_as_dictionary_optional(primitive_array, nested, type_.clone(), options)
             {
                 return result;
             }

@@ -1,5 +1,13 @@
+use std::hash::{Hash, Hasher};
+
+#[cfg(feature = "csv")]
+use polars_io::csv::read::CsvReadOptions;
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
-use polars_parquet::write::FileMetaData;
+use polars_io::parquet::metadata::FileMetaDataRef;
+#[cfg(feature = "parquet")]
+use polars_io::parquet::read::ParquetOptions;
 
 use super::*;
 
@@ -7,18 +15,17 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FileScan {
     #[cfg(feature = "csv")]
-    Csv { options: CsvParserOptions },
+    Csv { options: CsvReadOptions },
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
-        metadata: Option<Arc<FileMetaData>>,
+        metadata: Option<FileMetaDataRef>,
     },
     #[cfg(feature = "ipc")]
     Ipc {
         options: IpcScanOptions,
-        #[cfg(feature = "cloud")]
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<arrow::io::ipc::read::FileMetadata>,
@@ -52,27 +59,47 @@ impl PartialEq for FileScan {
             (
                 FileScan::Ipc {
                     options: l,
-                    #[cfg(feature = "cloud")]
-                        cloud_options: c_l,
+                    cloud_options: c_l,
                     ..
                 },
                 FileScan::Ipc {
                     options: r,
-                    #[cfg(feature = "cloud")]
-                        cloud_options: c_r,
+                    cloud_options: c_r,
                     ..
                 },
-            ) => {
-                #[cfg(not(feature = "cloud"))]
-                {
-                    l == r
-                }
-                #[cfg(feature = "cloud")]
-                {
-                    l == r && c_l == c_r
-                }
-            },
+            ) => l == r && c_l == c_r,
             _ => false,
+        }
+    }
+}
+
+impl Eq for FileScan {}
+
+impl Hash for FileScan {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "csv")]
+            FileScan::Csv { options } => options.hash(state),
+            #[cfg(feature = "parquet")]
+            FileScan::Parquet {
+                options,
+                cloud_options,
+                metadata: _,
+            } => {
+                options.hash(state);
+                cloud_options.hash(state)
+            },
+            #[cfg(feature = "ipc")]
+            FileScan::Ipc {
+                options,
+                cloud_options,
+                metadata: _,
+            } => {
+                options.hash(state);
+                cloud_options.hash(state);
+            },
+            FileScan::Anonymous { options, .. } => options.hash(state),
         }
     }
 }
@@ -85,16 +112,6 @@ impl FileScan {
                 *metadata = None;
             },
             _ => {},
-        }
-    }
-
-    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
-    pub(crate) fn skip_rows(&self) -> usize {
-        #[allow(unreachable_patterns)]
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => options.skip_rows,
-            _ => 0,
         }
     }
 

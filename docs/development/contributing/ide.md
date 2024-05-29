@@ -122,7 +122,7 @@ At this point, a second (Rust) debugger is attached to the Python debugger.
 The result is two simultaneous debuggers operating on the same running instance.
 Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
 
-## PyCharm / RustRover / CLion
+## JetBrains (PyCharm, RustRover, CLion)
 
 !!! info
 

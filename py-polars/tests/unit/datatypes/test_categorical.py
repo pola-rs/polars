@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 @StringCache()
-def test_categorical_outer_join() -> None:
+def test_categorical_full_outer_join() -> None:
     df1 = pl.DataFrame(
         [
             pl.Series("key1", [42]),
@@ -49,7 +49,7 @@ def test_categorical_outer_join() -> None:
         schema_overrides={"key2": pl.Categorical, "key2_right": pl.Categorical},
     )
 
-    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
+    out = df1.join(df2, on=["key1", "key2"], how="full").collect()
     assert_frame_equal(out, expected)
 
     dfa = pl.DataFrame(
@@ -65,7 +65,7 @@ def test_categorical_outer_join() -> None:
         ]
     )
 
-    df = dfa.join(dfb, on="key", how="outer")
+    df = dfa.join(dfb, on="key", how="full")
     # the cast is important to test the rev map
     assert df["key"].cast(pl.String).to_list() == ["bar", None, "foo"]
     assert df["key_right"].cast(pl.String).to_list() == ["bar", "baz", None]
@@ -812,3 +812,26 @@ def test_cast_from_cat_to_numeric() -> None:
 
     s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
     assert s.cast(pl.UInt8).sum() == 6
+
+
+def test_cat_preserve_lexical_ordering_on_clear() -> None:
+    s = pl.Series("a", ["a", "b"], dtype=pl.Categorical(ordering="lexical"))
+    s2 = s.clear()
+    assert s.dtype == s2.dtype
+
+
+def test_cat_preserve_lexical_ordering_on_concat() -> None:
+    dtype = pl.Categorical(ordering="lexical")
+
+    df = pl.DataFrame({"x": ["b", "a", "c"]}).with_columns(pl.col("x").cast(dtype))
+    df2 = pl.concat([df, df])
+    assert df2["x"].dtype == dtype
+
+
+def test_cat_append_lexical_sorted_flag() -> None:
+    df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
+        pl.col("y").cast(pl.Categorical(ordering="lexical"))
+    )
+    df2 = pl.concat([part.sort("y") for part in df.partition_by("x")])
+
+    assert not (df2["y"].is_sorted())

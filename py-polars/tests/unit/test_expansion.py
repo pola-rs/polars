@@ -1,5 +1,10 @@
+from typing import Any
+
+import pytest
+
 import polars as pl
 from polars import NUMERIC_DTYPES
+from polars.testing import assert_frame_equal
 
 
 def test_regex_exclude() -> None:
@@ -50,3 +55,109 @@ def test_exclude_selection() -> None:
     assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
     assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
     assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
+
+
+def test_struct_name_resolving_15430() -> None:
+    q = pl.LazyFrame([{"a": {"b": "c"}}])
+    a = (
+        q.with_columns(pl.col("a").struct.field("b"))
+        .drop("a")
+        .collect(projection_pushdown=True)
+    )
+
+    b = (
+        q.with_columns(pl.col("a").struct[0])
+        .drop("a")
+        .collect(projection_pushdown=True)
+    )
+
+    assert a["b"].item() == "c"
+    assert b["b"].item() == "c"
+    assert a.columns == ["b"]
+    assert b.columns == ["b"]
+
+
+def test_exclude_keys_in_aggregation_16170() -> None:
+    df = pl.DataFrame({"A": [4, 4, 3], "B": [1, 2, 3], "C": [5, 6, 7]})
+
+    # wildcard excludes aggregation column
+    assert df.lazy().group_by("A").agg(pl.all().name.prefix("agg_")).columns == [
+        "A",
+        "agg_B",
+        "agg_C",
+    ]
+
+    # specifically named columns are not excluded
+    assert df.lazy().group_by("A").agg(
+        pl.col("B", "C").name.prefix("agg_")
+    ).columns == ["A", "agg_B", "agg_C"]
+
+    assert df.lazy().group_by("A").agg(
+        pl.col("A", "C").name.prefix("agg_")
+    ).columns == ["A", "agg_A", "agg_C"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        ["aaa", "ccc"],
+        [["aaa", "ccc"]],
+        [["aaa"], "ccc"],
+        [["^aa.+|cc.+$"]],
+    ],
+)
+def test_struct_field_expand(field: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "aaa": [1, 2],
+            "bbb": ["ab", "cd"],
+            "ccc": [True, None],
+            "ddd": [[1, 2], [3]],
+        }
+    )
+    struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+    res_df = struct_df.select(pl.col("struct_col").struct.field(*field))
+    assert_frame_equal(res_df, df.select("aaa", "ccc"))
+
+
+def test_struct_field_expand_star() -> None:
+    df = pl.DataFrame(
+        {
+            "aaa": [1, 2],
+            "bbb": ["ab", "cd"],
+            "ccc": [True, None],
+            "ddd": [[1, 2], [3]],
+        }
+    )
+    struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+    assert_frame_equal(struct_df.select(pl.col("struct_col").struct.field("*")), df)
+
+
+def test_struct_field_expand_rewrite() -> None:
+    df = pl.DataFrame({"A": [1], "B": [2]})
+    assert df.select(
+        pl.struct(["A", "B"]).struct.field("*").name.prefix("foo_")
+    ).to_dict(as_series=False) == {"foo_A": [1], "foo_B": [2]}
+
+
+def test_struct_field_expansion_16410() -> None:
+    q = pl.LazyFrame({"coords": [{"x": 4, "y": 4}]})
+
+    assert q.with_columns(
+        pl.col("coords").struct.with_fields(pl.field("x").sqrt()).struct.field("*")
+    ).collect().to_dict(as_series=False) == {
+        "coords": [{"x": 4, "y": 4}],
+        "x": [2.0],
+        "y": [4],
+    }
+
+
+def test_field_and_column_expansion() -> None:
+    df = pl.DataFrame({"a": [{"x": 1, "y": 2}], "b": [{"i": 3, "j": 4}]})
+
+    assert df.select(pl.col("a", "b").struct.field("*")).to_dict(as_series=False) == {
+        "x": [1],
+        "y": [2],
+        "i": [3],
+        "j": [4],
+    }

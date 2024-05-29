@@ -1,7 +1,6 @@
 use arrow::array::{Array, BinaryViewArray, DictionaryArray, DictionaryKey, Utf8ViewArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, IntegerType};
-use num_traits::ToPrimitive;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::binary::{
@@ -16,23 +15,19 @@ use super::primitive::{
 use super::{binview, nested, Nested, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
-use crate::parquet::encoding::hybrid_rle::encode_u32;
+use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{serialize_statistics, ParquetStatistics};
-use crate::write::{to_nested, DynIter, ParquetType};
+use crate::parquet::statistics::ParquetStatistics;
+use crate::write::DynIter;
 
 pub(crate) fn encode_as_dictionary_optional(
     array: &dyn Array,
+    nested: &[Nested],
     type_: PrimitiveType,
     options: WriteOptions,
 ) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page>>>> {
-    let nested = to_nested(array, &ParquetType::PrimitiveType(type_.clone()))
-        .ok()?
-        .pop()
-        .unwrap();
-
     let dtype = Box::new(array.data_type().clone());
 
     let len_before = array.len();
@@ -52,35 +47,11 @@ pub(crate) fn encode_as_dictionary_optional(
     if (array.values().len() as f64) / (len_before as f64) > 0.75 {
         return None;
     }
-    if array.values().len().to_u16().is_some() {
-        let array = arrow::compute::cast::cast(
-            array,
-            &ArrowDataType::Dictionary(
-                IntegerType::UInt16,
-                Box::new(array.values().data_type().clone()),
-                false,
-            ),
-            Default::default(),
-        )
-        .unwrap();
-
-        let array = array
-            .as_any()
-            .downcast_ref::<DictionaryArray<u16>>()
-            .unwrap();
-        return Some(array_to_pages(
-            array,
-            type_,
-            &nested,
-            options,
-            Encoding::RleDictionary,
-        ));
-    }
 
     Some(array_to_pages(
         array,
         type_,
-        &nested,
+        nested,
         options,
         Encoding::RleDictionary,
     ))
@@ -116,7 +87,7 @@ fn serialize_keys_values<K: DictionaryKey>(
         buffer.push(num_bits as u8);
 
         // followed by the encoded indices.
-        Ok(encode_u32(buffer, keys, num_bits)?)
+        Ok(encode::<u32, _, _>(buffer, keys, num_bits)?)
     } else {
         let num_bits = utils::get_bit_width(keys.clone().max().unwrap_or(0) as u64);
 
@@ -124,7 +95,7 @@ fn serialize_keys_values<K: DictionaryKey>(
         buffer.push(num_bits as u8);
 
         // followed by the encoded indices.
-        Ok(encode_u32(buffer, keys, num_bits)?)
+        Ok(encode::<u32, _, _>(buffer, keys, num_bits)?)
     }
 }
 
@@ -222,8 +193,7 @@ macro_rules! dyn_prim {
         let stats: Option<ParquetStatistics> = if $options.write_statistics {
             let mut stats = primitive_build_statistics::<$from, $to>(values, $type_.clone());
             stats.null_count = Some($array.null_count() as i64);
-            let stats = serialize_statistics(&stats);
-            Some(stats)
+            Some(stats.serialize())
         } else {
             None
         };
@@ -328,7 +298,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                         fixed_binary_encode_plain(array, false, &mut buffer);
                         let stats = if options.write_statistics {
                             let stats = fixed_binary_build_statistics(array, type_.clone());
-                            Some(serialize_statistics(&stats))
+                            Some(stats.serialize())
                         } else {
                             None
                         };

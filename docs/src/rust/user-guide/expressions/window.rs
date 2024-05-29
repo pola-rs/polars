@@ -10,8 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bytes()
         .collect();
 
-    let df = CsvReader::new(std::io::Cursor::new(data))
-        .has_header(true)
+    let file = std::io::Cursor::new(data);
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()?;
 
     println!("{}", df);
@@ -54,7 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = filtered
         .lazy()
         .with_columns([cols(["Name", "Speed"])
-            .sort_by(["Speed"], [true])
+            .sort_by(
+                ["Speed"],
+                SortMultipleOptions::default().with_order_descending(true),
+            )
             .over(["Type 1"])])
         .collect()?;
     println!("{}", out);
@@ -94,19 +99,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             col("Type 1").head(Some(3)).over(["Type 1"]).flatten(),
             col("Name")
-                .sort_by(["Speed"], [true])
+                .sort_by(
+                    ["Speed"],
+                    SortMultipleOptions::default().with_order_descending(true),
+                )
                 .head(Some(3))
                 .over(["Type 1"])
                 .flatten()
                 .alias("fastest/group"),
             col("Name")
-                .sort_by(["Attack"], [true])
+                .sort_by(
+                    ["Attack"],
+                    SortMultipleOptions::default().with_order_descending(true),
+                )
                 .head(Some(3))
                 .over(["Type 1"])
                 .flatten()
                 .alias("strongest/group"),
             col("Name")
-                .sort(false)
+                .sort(Default::default())
                 .head(Some(3))
                 .over(["Type 1"])
                 .flatten()

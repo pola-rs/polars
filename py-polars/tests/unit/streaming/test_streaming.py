@@ -115,42 +115,6 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
-def test_tree_validation_streaming() -> None:
-    # this query leads to a tree collection with an invalid branch
-    # this test triggers the tree validation function.
-    df_1 = pl.DataFrame(
-        {
-            "a": [22, 1, 1],
-            "b": [500, 37, 20],
-        },
-    ).lazy()
-
-    df_2 = pl.DataFrame(
-        {"a": [23, 4, 20, 28, 3]},
-    ).lazy()
-
-    dfs = [df_2]
-    cat = pl.concat(dfs, how="vertical")
-
-    df_3 = df_1.select(
-        [
-            "a",
-            # this expression is not allowed streaming, so it invalidates a branch
-            pl.col("b")
-            .filter(pl.col("a").min() > pl.col("a").rank())
-            .alias("b_not_streaming"),
-        ]
-    ).join(
-        cat,
-        on=[
-            "a",
-        ],
-    )
-
-    out = df_1.join(df_3, on="a", how="left")
-    assert out.collect(streaming=True).shape == (3, 3)
-
-
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -174,7 +138,7 @@ def test_streaming_ternary() -> None:
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
         .explain(streaming=True)
-        .startswith("--- STREAMING")
+        .startswith("STREAMING")
     )
 
 
@@ -393,7 +357,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     for i, line in enumerate(plan_lines):
         if line.startswith("PLAN"):
             assert plan_lines[i + 1].startswith(
-                "--- STREAMING"
+                "STREAMING"
             ), f"{line} does not contain a streaming section"
 
     result = query.collect(streaming=True)

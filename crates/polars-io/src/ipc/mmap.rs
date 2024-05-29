@@ -1,17 +1,61 @@
-use arrow::chunk::Chunk;
 use arrow::io::ipc::read;
 use arrow::io::ipc::read::{Dictionaries, FileMetadata};
 use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
-use memmap::Mmap;
+use arrow::record_batch::RecordBatch;
+use polars_core::prelude::*;
 
-use super::*;
-use crate::mmap::MmapBytesReader;
+use super::ipc_file::IpcReader;
+use crate::mmap::{MMapSemaphore, MmapBytesReader};
+use crate::predicates::PhysicalIoExpr;
+use crate::shared::{finish_reader, ArrowReader};
 use crate::utils::{apply_projection, columns_to_projection};
+
+impl<R: MmapBytesReader> IpcReader<R> {
+    pub(super) fn finish_memmapped(
+        &mut self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    ) -> PolarsResult<DataFrame> {
+        match self.reader.to_file() {
+            Some(file) => {
+                let mmap = unsafe { memmap::Mmap::map(file).unwrap() };
+                let mmap_key = self.memory_map.take().unwrap();
+                let semaphore = MMapSemaphore::new(mmap_key, mmap);
+                let metadata =
+                    read::read_file_metadata(&mut std::io::Cursor::new(semaphore.as_ref()))?;
+
+                if let Some(columns) = &self.columns {
+                    let schema = &metadata.schema;
+                    let prj = columns_to_projection(columns, schema)?;
+                    self.projection = Some(prj);
+                }
+
+                let schema = if let Some(projection) = &self.projection {
+                    Arc::new(apply_projection(&metadata.schema, projection))
+                } else {
+                    metadata.schema.clone()
+                };
+
+                let reader = MMapChunkIter::new(Arc::new(semaphore), metadata, &self.projection)?;
+
+                finish_reader(
+                    reader,
+                    // don't rechunk, that would trigger a read.
+                    false,
+                    self.n_rows,
+                    predicate,
+                    &schema,
+                    self.row_index.clone(),
+                )
+            },
+            None => polars_bail!(ComputeError: "cannot memory-map, you must provide a file"),
+        }
+    }
+}
 
 struct MMapChunkIter<'a> {
     dictionaries: Dictionaries,
     metadata: FileMetadata,
-    mmap: Arc<Mmap>,
+    mmap: Arc<MMapSemaphore>,
     idx: usize,
     end: usize,
     projection: &'a Option<Vec<usize>>,
@@ -19,12 +63,10 @@ struct MMapChunkIter<'a> {
 
 impl<'a> MMapChunkIter<'a> {
     fn new(
-        mmap: Mmap,
+        mmap: Arc<MMapSemaphore>,
         metadata: FileMetadata,
         projection: &'a Option<Vec<usize>>,
     ) -> PolarsResult<Self> {
-        let mmap = Arc::new(mmap);
-
         let end = metadata.blocks.len();
         // mmap the dictionaries
         let dictionaries = unsafe { mmap_dictionaries_unchecked(&metadata, mmap.clone())? };
@@ -41,7 +83,7 @@ impl<'a> MMapChunkIter<'a> {
 }
 
 impl ArrowReader for MMapChunkIter<'_> {
-    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<RecordBatch>> {
         if self.idx < self.end {
             let chunk = unsafe {
                 mmap_unchecked(
@@ -57,52 +99,12 @@ impl ArrowReader for MMapChunkIter<'_> {
                 Some(proj) => {
                     let cols = chunk.into_arrays();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
-                    Chunk::new(arrays)
+                    RecordBatch::new(arrays)
                 },
             };
             Ok(Some(chunk))
         } else {
             Ok(None)
-        }
-    }
-}
-
-#[cfg(feature = "ipc")]
-impl<R: MmapBytesReader> IpcReader<R> {
-    pub(super) fn finish_memmapped(
-        &mut self,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    ) -> PolarsResult<DataFrame> {
-        match self.reader.to_file() {
-            Some(file) => {
-                let mmap = unsafe { memmap::Mmap::map(file).unwrap() };
-                let metadata = read::read_file_metadata(&mut std::io::Cursor::new(mmap.as_ref()))?;
-
-                if let Some(columns) = &self.columns {
-                    let schema = &metadata.schema;
-                    let prj = columns_to_projection(columns, schema)?;
-                    self.projection = Some(prj);
-                }
-
-                let schema = if let Some(projection) = &self.projection {
-                    Arc::new(apply_projection(&metadata.schema, projection))
-                } else {
-                    metadata.schema.clone()
-                };
-
-                let reader = MMapChunkIter::new(mmap, metadata, &self.projection)?;
-
-                finish_reader(
-                    reader,
-                    // don't rechunk, that would trigger a read.
-                    false,
-                    self.n_rows,
-                    predicate,
-                    &schema,
-                    self.row_index.clone(),
-                )
-            },
-            None => polars_bail!(ComputeError: "cannot memory-map, you must provide a file"),
         }
     }
 }

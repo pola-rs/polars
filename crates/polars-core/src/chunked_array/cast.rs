@@ -136,9 +136,6 @@ where
                         polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
                     }
                 }
-                // SAFETY:
-                // we are guarded by the type system
-                let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
                 // SAFETY: indices are in bound
                 unsafe {
                     Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -303,13 +300,19 @@ impl ChunkCast for StringChunked {
 impl BinaryChunked {
     /// # Safety
     /// String is not validated
-    pub unsafe fn to_string(&self) -> StringChunked {
+    pub unsafe fn to_string_unchecked(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
-        StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+        StringChunked::from_chunks_and_metadata(
+            chunks,
+            field,
+            Arc::new(self.effective_metadata().cast()),
+            true,
+            true,
+        )
     }
 }
 
@@ -321,7 +324,13 @@ impl StringChunked {
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
         unsafe {
-            BinaryChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+            BinaryChunked::from_chunks_and_metadata(
+                chunks,
+                field,
+                Arc::new(self.effective_metadata().cast()),
+                true,
+                true,
+            )
         }
     }
 }
@@ -337,7 +346,7 @@ impl ChunkCast for BinaryChunked {
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::String => unsafe { Ok(self.to_string().into_series()) },
+            DataType::String => unsafe { Ok(self.to_string_unchecked().into_series()) },
             _ => self.cast(data_type),
         }
     }

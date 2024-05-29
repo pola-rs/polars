@@ -6,7 +6,7 @@ pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         matches!(
             lp,
             Scan {
@@ -25,7 +25,7 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         matches!(
             lp,
             DataFrameScan {
@@ -44,7 +44,7 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         matches!(
             lp,
             DataFrameScan {
@@ -64,7 +64,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     matches!(
         lp_arena.get(lp),
-        ALogicalPlan::MapFunction {
+        IR::MapFunction {
             function: FunctionNode::Pipeline { .. },
             ..
         }
@@ -78,7 +78,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         matches!(
             lp,
-            ALogicalPlan::MapFunction {
+            IR::MapFunction {
                 function: FunctionNode::Pipeline { .. },
                 ..
             }
@@ -91,7 +91,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
             Scan { file_options, .. } => file_options.n_rows.is_some(),
             _ => false,
@@ -111,7 +111,7 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     assert!(predicate_at_scan(q));
 
-    // check if we understand that we can unwrap the alias
+    // Check if we understand that we can unwrap the alias.
     let q = df
         .clone()
         .lazy()
@@ -120,7 +120,7 @@ fn test_pred_pd_1() -> PolarsResult<()> {
 
     assert!(predicate_at_scan(q));
 
-    // check if we pass hstack
+    // Check if we pass hstack.
     let q = df
         .clone()
         .lazy()
@@ -213,7 +213,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
             Join { options, .. } => options.args.slice == Some((1, 3)),
             Slice { .. } => false,
@@ -243,9 +243,9 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
-            Aggregate { options, .. } => options.slice == Some((1, 3)),
+            GroupBy { options, .. } => options.slice == Some((1, 3)),
             Slice { .. } => false,
             _ => true,
         }
@@ -262,7 +262,9 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
 
-    let q = q.sort("category", SortOptions::default()).slice(1, 3);
+    let q = q
+        .sort(["category"], SortMultipleOptions::default())
+        .slice(1, 3);
 
     // test if optimization continued beyond the sort node
     assert!(slice_at_scan(q.clone()));
@@ -270,9 +272,9 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
-            Sort { args, .. } => args.slice == Some((1, 3)),
+            Sort { slice, .. } => *slice == Some((1, 3)),
             Slice { .. } => false,
             _ => true,
         }
@@ -293,12 +295,12 @@ pub fn test_predicate_block_cast() -> PolarsResult<()> {
     let lf1 = df
         .clone()
         .lazy()
-        .with_column(col("value").cast(DataType::Int16) * lit(0.1f32))
+        .with_column(col("value").cast(DataType::Int16) * lit(0.1).cast(DataType::Float32))
         .filter(col("value").lt(lit(2.5f32)));
 
     let lf2 = df
         .lazy()
-        .select([col("value").cast(DataType::Int16) * lit(0.1f32)])
+        .select([col("value").cast(DataType::Int16) * lit(0.1).cast(DataType::Float32)])
         .filter(col("value").lt(lit(2.5f32)));
 
     for lf in [lf1, lf2] {
@@ -434,8 +436,8 @@ fn test_string_addition_to_concat_str() -> PolarsResult<()> {
     let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     let lp = lp_arena.get(root);
     let mut exprs = lp.get_exprs();
-    let expr_node = exprs.pop().unwrap();
-    if let AExpr::Function { input, .. } = expr_arena.get(expr_node) {
+    let e = exprs.pop().unwrap();
+    if let AExpr::Function { input, .. } = expr_arena.get(e.node()) {
         // the concat_str has the 4 expressions as input
         assert_eq!(input.len(), 4);
     } else {
@@ -466,7 +468,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
         .select([col("c1"), col("c4")]);
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     (&lp_arena).iter(lp).for_each(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
         match lp {
             DataFrameScan { projection, .. } => {
                 let projection = projection.as_ref().unwrap();
@@ -483,21 +485,15 @@ fn test_with_column_prune() -> PolarsResult<()> {
     });
 
     // whole `with_columns` pruned
-    let q = df.lazy().with_column(col("c0")).select([col("c1")]);
+    let mut q = df.lazy().with_column(col("c0")).select([col("c1")]);
 
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     // check if with_column is pruned
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
-        use ALogicalPlan::*;
+        use IR::*;
 
-        matches!(
-            lp,
-            ALogicalPlan::MapFunction {
-                function: FunctionNode::FastProjection { .. },
-                ..
-            } | DataFrameScan { .. }
-        )
+        matches!(lp, IR::SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
@@ -544,11 +540,155 @@ fn test_flatten_unions() -> PolarsResult<()> {
     let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     let lp = lp_arena.get(root);
     match lp {
-        ALogicalPlan::Union { inputs, .. } => {
+        IR::Union { inputs, .. } => {
             // we make sure that the nested unions are flattened into a single union
             assert_eq!(inputs.len(), 5);
         },
         _ => panic!(),
     }
+    Ok(())
+}
+
+fn num_occurrences(s: &str, needle: &str) -> usize {
+    let mut i = 0;
+    let mut num = 0;
+
+    while let Some(n) = s[i..].find(needle) {
+        i += n + 1;
+        num += 1;
+    }
+
+    num
+}
+
+#[test]
+fn test_cluster_with_columns() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo") * lit(2.0)])
+        .with_columns([col("bar") / lit(1.5)]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 2);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 1);
+
+    Ok(())
+}
+
+#[test]
+fn test_cluster_with_columns_dependency() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo").alias("buzz")])
+        .with_columns([col("buzz")]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 2);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 2);
+
+    Ok(())
+}
+
+#[test]
+fn test_cluster_with_columns_partial() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo").alias("buzz")])
+        .with_columns([col("buzz"), col("foo") * lit(2.0)]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert!(unoptimized.contains(r#"[col("buzz"), [(col("foo")) * (2.0)]]"#));
+    assert!(unoptimized.contains(r#"[col("foo").alias("buzz")]"#));
+    assert!(optimized.contains(r#"[col("buzz")]"#));
+    assert!(optimized.contains(r#"[col("foo").alias("buzz"), [(col("foo")) * (2.0)]]"#));
+
+    Ok(())
+}
+
+#[test]
+fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
+    use polars_core::prelude::*;
+
+    let df = df!("foo" => &[0.5, 1.7, 3.2],
+                 "bar" => &[4.1, 1.5, 9.2])?;
+
+    let df = df
+        .lazy()
+        .without_optimizations()
+        .with_cluster_with_columns(true)
+        .with_columns([col("foo").alias("foo1")])
+        .with_columns([col("foo").alias("foo2")])
+        .with_columns([col("foo").alias("foo3")])
+        .with_columns([col("foo").alias("foo4")]);
+
+    let unoptimized = df.clone().to_alp().unwrap();
+    let optimized = df.clone().to_alp_optimized().unwrap();
+
+    let unoptimized = unoptimized.describe();
+    let optimized = optimized.describe();
+
+    println!("\n---\n");
+
+    println!("Unoptimized:\n{unoptimized}",);
+    println!("\n---\n");
+    println!("Optimized:\n{optimized}");
+
+    assert_eq!(num_occurrences(&unoptimized, "WITH_COLUMNS"), 4);
+    assert_eq!(num_occurrences(&optimized, "WITH_COLUMNS"), 1);
+
     Ok(())
 }

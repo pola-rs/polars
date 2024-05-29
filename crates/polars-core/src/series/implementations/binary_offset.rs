@@ -3,6 +3,7 @@ use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
+use crate::series::private::PrivateSeries;
 
 impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
     fn compute_len(&mut self) {
@@ -14,10 +15,10 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -47,8 +48,12 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(options)
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, options)
     }
 }
 
@@ -57,8 +62,8 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -115,6 +120,12 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         self.0.len()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        // Only used by multi-key join validation, doesn't have to be optimal
+        self.group_tuples(true, false).map(|g| g.len())
+    }
+
     fn rechunk(&self) -> Series {
         self.0.rechunk().into_series()
     }
@@ -136,8 +147,8 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        ChunkSort::sort_with(&self.0, options).into_series()
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(ChunkSort::sort_with(&self.0, options).into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

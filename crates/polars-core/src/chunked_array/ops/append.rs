@@ -72,9 +72,6 @@ where
                 let l_idx = ca.last_non_null().unwrap();
                 let r_idx = other.first_non_null().unwrap();
 
-                let l_val = unsafe { ca.value_unchecked(l_idx) };
-                let r_val = unsafe { other.value_unchecked(r_idx) };
-
                 let null_pos_check =
                     // check null positions
                     // lhs does not end in nulls
@@ -90,34 +87,36 @@ where
                     #[allow(unused_assignments)]
                     let mut out = IsSorted::Not;
 
-                    #[allow(clippy::never_loop)]
-                    loop {
-                        match (
-                            ca.len() - ca.null_count() == 1,
-                            other.len() - other.null_count() == 1,
-                        ) {
-                            (true, true) => {
-                                out = [IsSorted::Descending, IsSorted::Ascending]
-                                    [l_val.tot_le(&r_val) as usize];
-                                break;
-                            },
-                            (true, false) => out = other.is_sorted_flag(),
-                            _ => out = ca.is_sorted_flag(),
-                        }
+                    // This can be relatively expensive because of chunks, so delay as much as possible.
+                    let l_val = unsafe { ca.value_unchecked(l_idx) };
+                    let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                        debug_assert!(!matches!(out, IsSorted::Not));
+                    match (
+                        ca.len() - ca.null_count() == 1,
+                        other.len() - other.null_count() == 1,
+                    ) {
+                        (true, true) => {
+                            out = [IsSorted::Descending, IsSorted::Ascending]
+                                [l_val.tot_le(&r_val) as usize];
+                            drop(l_val);
+                            drop(r_val);
+                            ca.set_sorted_flag(out);
+                            return;
+                        },
+                        (true, false) => out = other.is_sorted_flag(),
+                        _ => out = ca.is_sorted_flag(),
+                    }
 
-                        let check = if matches!(out, IsSorted::Ascending) {
-                            l_val.tot_le(&r_val)
-                        } else {
-                            l_val.tot_ge(&r_val)
-                        };
+                    debug_assert!(!matches!(out, IsSorted::Not));
 
-                        if !check {
-                            out = IsSorted::Not
-                        }
+                    let check = if matches!(out, IsSorted::Ascending) {
+                        l_val.tot_le(&r_val)
+                    } else {
+                        l_val.tot_ge(&r_val)
+                    };
 
-                        break;
+                    if !check {
+                        out = IsSorted::Not
                     }
 
                     out
@@ -131,7 +130,7 @@ where
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarsDataType<Structure = Flat>,
+    T: PolarsDataType<IsNested = FalseT>,
     for<'a> T::Physical<'a>: TotalOrd,
 {
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
@@ -172,8 +171,10 @@ impl ArrayChunked {
         self.field = Arc::new(Field::new(self.name(), dtype));
 
         let len = self.len();
+
         self.length += other.length;
         self.null_count += other.null_count;
+
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         Ok(())

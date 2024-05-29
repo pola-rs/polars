@@ -2,13 +2,13 @@ use std::sync::Mutex;
 
 use arrow::array::ValueSize;
 use arrow::legacy::utils::CustomIterTools;
+use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::dsl::*;
 use rayon::prelude::*;
 
 use crate::physical_plan::exotic::prepare_expression_for_context;
-use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub trait IntoListNameSpace {
@@ -72,7 +72,7 @@ fn run_per_sublist(
                     }
                 })
             })
-            .collect();
+            .collect_ca_with_dtype("", output_field.dtype.clone());
         err = m_err.into_inner().unwrap();
         ca
     } else {

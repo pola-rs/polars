@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
@@ -730,7 +731,7 @@ class StringNameSpace:
         ]
         """
 
-    def json_path_match(self, json_path: str) -> Series:
+    def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
         Extract the first match of json string with provided JSONPath expression.
 
@@ -1216,7 +1217,7 @@ class StringNameSpace:
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         r"""
-        Replace first matching regex/literal substring with a new string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -1227,12 +1228,10 @@ class StringNameSpace:
             String that will replace the matched substring.
         literal
             Treat `pattern` as a literal string.
-        n
-            Number of matches to replace.
 
         See Also
         --------
-        replace_all
+        replace
 
         Notes
         -----
@@ -1582,8 +1581,8 @@ class StringNameSpace:
         shape: (2,)
         Series: 'sing' [str]
         [
-            "Welcome To My …
-            "There's No Tur…
+            "Welcome To My World"
+            "There's No Turning Back"
         ]
         """
 
@@ -1658,9 +1657,142 @@ class StringNameSpace:
         ]
         """
 
+    def head(self, n: int | IntoExprColumn) -> Series:
+        """
+        Return the first n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When `n` is negative, `head` returns characters up to the `n`th from the end
+           of the string. For example, if `n = -3`, then all characters except the last
+           three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the first 5 characters.
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.head(5)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "pear"
+            null
+            "papay"
+            "drago"
+        ]
+
+        Return up to the 3rd character from the end.
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.head(-3)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "p"
+            null
+            "pap"
+            "dragonfr"
+        ]
+        """
+
+    def tail(self, n: int | IntoExprColumn) -> Series:
+        """
+        Return the last n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When `n` is negative, `tail` returns characters starting from the `n`th from
+           the beginning of the string. For example, if `n = -3`, then all characters
+           except the first three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the last 5 characters:
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.tail(5)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "pear"
+            null
+            "apaya"
+            "fruit"
+        ]
+
+        Return from the 3rd character to the end:
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.tail(-3)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "r"
+            null
+            "aya"
+            "gonfruit"
+        ]
+        """
+
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -1670,7 +1802,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", ["foo", "bar"])
-        >>> s.str.explode()
+        >>> s.str.explode()  # doctest: +SKIP
         shape: (6,)
         Series: 'a' [str]
         [
@@ -1690,7 +1822,8 @@ class StringNameSpace:
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
+            Positive integer or expression which is the base of the string
+            we are parsing.
             Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.

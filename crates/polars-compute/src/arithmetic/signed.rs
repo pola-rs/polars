@@ -12,6 +12,10 @@ macro_rules! impl_signed_arith_kernel {
         impl PrimitiveArithmeticKernelImpl for $T {
             type TrueDivT = f64;
 
+            fn prim_wrapping_abs(lhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(lhs, |x| x.wrapping_abs())
+            }
+
             fn prim_wrapping_neg(lhs: PArr<$T>) -> PArr<$T> {
                 prim_unary_values(lhs, |x| x.wrapping_neg())
             }

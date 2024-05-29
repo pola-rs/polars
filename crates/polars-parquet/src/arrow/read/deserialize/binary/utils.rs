@@ -54,6 +54,7 @@ impl<O: Offset> Binary<O> {
 }
 
 impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {
+    type Freeze = ();
     #[inline]
     fn reserve(&mut self, additional: usize) {
         let avg_len = self.values.len() / std::cmp::max(self.offsets.last().to_usize(), 1);
@@ -84,6 +85,9 @@ impl<'a, O: Offset> Pushable<&'a [u8]> for Binary<O> {
     #[inline]
     fn extend_null_constant(&mut self, additional: usize) {
         self.extend_constant(additional)
+    }
+    fn freeze(self) -> Self::Freeze {
+        unimplemented!()
     }
 }
 

@@ -133,3 +133,8 @@ def test_empty_is_in() -> None:
     assert_series_equal(
         pl.Series("a", [1, 2, 3]).is_in([]), pl.Series("a", [False] * 3)
     )
+
+
+@pytest.mark.parametrize("method", ["drop_nulls", "unique"])
+def test_empty_to_empty(method: str) -> None:
+    assert getattr(pl.DataFrame(), method)().shape == (0, 0)
