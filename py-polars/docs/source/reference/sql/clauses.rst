@@ -35,9 +35,26 @@ Select the columns to be returned by the query.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT column_1, column_2 FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "a": [1, 2, 3],
+        "b": ["zz", "yy", "xx"],
+      }
+    )
+    >>> df.sql("SELECT a, b FROM self")
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ str │
+    ╞═════╪═════╡
+    │ 1   ┆ zz  │
+    │ 2   ┆ yy  │
+    │ 3   ┆ xx  │
+    └─────┴─────┘
+
 .. _from:
 
 FROM
@@ -46,9 +63,25 @@ Specifies the table(s) from which to retrieve or delete data.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT * FROM df
+    >>> df = pl.DataFrame(
+      {
+        "a": [1, 2, 3],
+        "b": ["zz", "yy", "xx"],
+      }
+    )
+    >>> df.sql("SELECT * FROM self")
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ str │
+    ╞═════╪═════╡
+    │ 1   ┆ zz  │
+    │ 2   ┆ yy  │
+    │ 3   ┆ xx  │
+    └─────┴─────┘
 
 .. _join:
 
@@ -69,9 +102,32 @@ Combines rows from two or more tables based on a related column.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT product_id FROM df_product LEFT JOIN df_categories USING (product_id)
+    >>> df = pl.DataFrame(
+          {
+              "foo": [1, 2, 3],
+              "ham": ["a", "b", "c"],
+          }
+      )
+    >>> other_df = pl.DataFrame(
+          {
+              "apple": ["x", "y", "z"],
+              "ham": ["a", "b", "d"],
+          }
+      )
+    >>> df.sql("SELECT * FROM self FULL JOIN other_df USING (ham)")
+        shape: (4, 4)
+        ┌──────┬──────┬───────┬───────────┐
+        │ foo  ┆ ham  ┆ apple ┆ ham_right │
+        │ ---  ┆ ---  ┆ ---   ┆ ---       │
+        │ i64  ┆ str  ┆ str   ┆ str       │
+        ╞══════╪══════╪═══════╪═══════════╡
+        │ 1    ┆ a    ┆ x     ┆ a         │
+        │ 2    ┆ b    ┆ y     ┆ b         │
+        │ null ┆ null ┆ z     ┆ d         │
+        │ 3    ┆ c    ┆ null  ┆ null      │
+        └──────┴──────┴───────┴───────────┘
 
 .. _where:
 
@@ -79,6 +135,24 @@ WHERE
 -----
 
 Filter rows returned from the query based on specific condition(s).
+
+.. code-block:: python
+
+    >>> df = pl.DataFrame(
+          {
+              "foo": [30, 40, 50],
+              "ham": ["a", "b", "c"],
+          }
+      )
+    >>> df.sql("SELECT * FROM self WHERE foo > 42")
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ foo ┆ ham │
+    │ --- ┆ --- │
+    │ i64 ┆ str │
+    ╞═════╪═════╡
+    │ 50  ┆ c   │
+    └─────┴─────┘
 
 .. _group_by:
 
@@ -88,9 +162,24 @@ Group rows that have the same values in specified columns into summary rows.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT column_1, SUM(column_2) FROM df GROUP BY column_1
+    >>> df = pl.DataFrame(
+        {
+          "foo": ["a", "b", "b"], 
+          "bar": [10, 20, 30]
+        }
+      )
+    >>> df.sql("SELECT foo, SUM(bar) FROM self GROUP BY foo")
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ b   ┆ 50  │
+    │ a   ┆ 10  │
+    └─────┴─────┘
 
 .. _having:
 
@@ -98,6 +187,24 @@ HAVING
 ------
 Filter groups in a `GROUP BY` based on specific condition(s).
 
+.. code-block:: python
+
+    >>> df = pl.DataFrame(
+          {
+          "foo": ["a", "b", "b", "c"], 
+          "bar": [10, 20, 30, 40]
+        }
+      )
+    >>> df.sql("SELECT foo, SUM(bar) FROM self GROUP BY foo HAVING bar >= 40")
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ c   ┆ 40  │
+    │ b   ┆ 50  │
+    └─────┴─────┘
 
 .. _order_by:
 
@@ -107,9 +214,25 @@ Sort the query result based on one or more specified columns.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT * FROM df ORDER BY column_1 ASC, column_2 DESC
+.. code-block:: python
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"], 
+        "bar": [20, 10, 40, 30]
+      }
+    )
+    >>> df.sql("SELECT foo, bar FROM self ORDER BY bar")
+    shape: (4, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ a   ┆ 10  │
+    │ b   ┆ 20  │
+    │ b   ┆ 30  │
+    │ c   ┆ 40  │
+    └─────┴─────┘
 
 .. _limit:
 
@@ -119,9 +242,24 @@ Limit the number of rows returned by the query.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT column_1, column_2 FROM df LIMIT 10
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"], 
+        "bar": [20, 10, 40, 30]
+      }
+    )
+    >>> df.sql("SELECT foo, bar FROM self LIMIT 2")
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ b   ┆ 20  │
+    │ a   ┆ 10  │
+    └─────┴─────┘
 
 .. _offset:
 
@@ -131,6 +269,21 @@ Skip a number of rows before starting to return rows from the query.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT column_1, column_2 FROM df LIMIT 10 OFFSET 5
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "c", "b"], 
+        "bar": [20, 10, 40, 30]
+      }
+    )
+    >>> df.sql("SELECT foo, bar FROM self LIMIT 2 OFFSET 2")
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ c   ┆ 40  │
+    │ b   ┆ 30  │
+    └─────┴─────┘
