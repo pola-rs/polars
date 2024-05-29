@@ -6569,6 +6569,7 @@ class DataFrame:
             Join on null values. By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of join columns).
+
             - None: -> join specific.
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
@@ -9447,7 +9448,7 @@ class DataFrame:
         This method operates at the `DataFrame` level; to operate on subsets at the
         expression level you can make use of struct-packing instead, for example:
 
-        >>> expr_unique_subset = pl.struct(["a", "b"]).n_unique()
+        >>> expr_unique_subset = pl.struct("a", "b").n_unique()
 
         If instead you want to count the number of unique values per-column, you can
         also use expression-level syntax to return a new frame containing that result:
@@ -9458,7 +9459,7 @@ class DataFrame:
         In aggregate context there is also an equivalent method for returning the
         unique values per-group:
 
-        >>> df_agg_nunique = df.group_by(["a"]).n_unique()
+        >>> df_agg_nunique = df.group_by("a").n_unique()
 
         Examples
         --------
