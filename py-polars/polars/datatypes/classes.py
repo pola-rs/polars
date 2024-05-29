@@ -754,7 +754,7 @@ class Array(NestedType):
             )
             shape = width
         elif shape is None:
-            msg = "Array is missing the required argument `shape`."
+            msg = "Array constructor is missing the required argument `shape`"
             raise TypeError(msg)
 
         inner_parsed = polars.datatypes.py_type_to_dtype(inner)

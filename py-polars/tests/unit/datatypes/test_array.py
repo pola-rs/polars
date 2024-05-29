@@ -323,3 +323,8 @@ def test_array_inner_recursive() -> None:
 def test_array_inner_recursive_python_dtype() -> None:
     dtype = pl.Array(int, shape=(2, 3))
     assert dtype.inner.inner == pl.Int64  # type: ignore[union-attr]
+
+
+def test_array_missing_shape() -> None:
+    with pytest.raises(TypeError):
+        pl.Array(pl.Int8)
