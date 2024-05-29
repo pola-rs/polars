@@ -1059,3 +1059,15 @@ def test_boolean_min_max_agg() -> None:
         schema=schema,
     )
     assert_frame_equal(result, expected)
+
+
+def test_partitioned_group_by_chunked(partition_limit: int) -> None:
+    n = partition_limit
+    df1 = pl.DataFrame(np.random.randn(n, 2))
+    df2 = pl.DataFrame(np.random.randn(n, 2))
+    gps = pl.Series(name="oo", values=[0] * n + [1] * n)
+    df = pl.concat([df1, df2], rechunk=False)
+    assert_frame_equal(
+        df.group_by(gps).sum().sort("oo"),
+        df.rechunk().group_by(gps, maintain_order=True).sum(),
+    )

@@ -71,13 +71,13 @@ fn run_partitions(
     // We do a partitioned group_by.
     // Meaning that we first do the group_by operation arbitrarily
     // split on several threads. Than the final result we apply the same group_by again.
-    let dfs = split_df(df, n_threads);
+    let dfs = split_df(df, n_threads, true);
 
     let phys_aggs = &exec.phys_aggs;
     let keys = &exec.phys_keys;
 
     let mut keys = DataFrame::from_iter(compute_keys(keys, df, state)?);
-    let splitted_keys = split_df(&mut keys, n_threads);
+    let splitted_keys = split_df(&mut keys, n_threads, true);
 
     POOL.install(|| {
         dfs.into_par_iter()

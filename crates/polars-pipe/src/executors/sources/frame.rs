@@ -18,7 +18,7 @@ pub struct DataFrameSource {
 impl DataFrameSource {
     pub(crate) fn from_df(mut df: DataFrame) -> Self {
         let n_threads = POOL.current_num_threads();
-        let dfs = split_df(&mut df, n_threads);
+        let dfs = split_df(&mut df, n_threads, false);
         let dfs = dfs.into_iter().enumerate();
         Self { dfs, n_threads }
     }

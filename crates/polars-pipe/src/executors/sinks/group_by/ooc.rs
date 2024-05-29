@@ -99,7 +99,7 @@ impl Source for GroupBySource {
                             }
                         }
 
-                        let dfs = split_df(&mut df, self.morsels_per_sink);
+                        let dfs = split_df(&mut df, self.morsels_per_sink, false);
                         let chunks = dfs
                             .into_iter()
                             .map(|data| {
