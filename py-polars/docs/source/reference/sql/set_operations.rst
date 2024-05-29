@@ -28,11 +28,36 @@ The final result set will have no duplicate rows.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT name, city FROM df.customers
-    UNION
-    SELECT name, city FROM df.suppliers
+    >>> df = pl.DataFrame(
+          {
+              "foo": [1, 2, 3],
+              "ham": ["a", "a", "c"],
+          }
+      )
+    >>> other_df = pl.DataFrame(
+          {
+              "apple": ["x", "y", "z"],
+              "ham": ["a", "b", "b"],
+          }
+      )
+    >>> df.sql("""
+        SELECT ham FROM df
+        UNION
+        SELECT ham FROM other_df
+        """
+      )
+    shape: (3, 1)
+    ┌─────┐
+    │ ham │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ c   │
+    │ b   │
+    │ a   │
+    └─────┘
 
 .. _union_all:
 
@@ -43,11 +68,39 @@ The final result set will be composed of all rows from each query.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT name, city FROM df.customers
-    UNION ALL
-    SELECT name, city FROM df.suppliers
+    >>> df = pl.DataFrame(
+          {
+              "foo": [1, 2, 3],
+              "ham": ["a", "b", "c"],
+          }
+      )
+    >>> other_df = pl.DataFrame(
+          {
+              "apple": ["x", "y", "z"],
+              "ham": ["a", "b", "d"],
+          }
+      )
+    >>> df.sql("""
+        SELECT ham FROM df
+        UNION ALL
+        SELECT ham FROM other_df
+        """
+      )
+    shape: (6, 1)
+    ┌─────┐
+    │ ham │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ a   │
+    │ b   │
+    │ c   │
+    │ a   │
+    │ b   │
+    │ d   │
+    └─────┘
 
 .. _union_by_name:
 
@@ -59,8 +112,36 @@ no duplicate rows.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT name, city FROM df.customers
-    UNION BY NAME
-    SELECT city, name FROM df.suppliers
+    >>> df = pl.DataFrame(
+          {
+              "foo": [1, 2, 3],
+              "ham": ["a", "a", "c"],
+          }
+      )
+    >>> other_df = pl.DataFrame(
+          {
+              "apple": ["x", "y", "z"],
+              "ham": ["a", "b", "c"],
+          }
+      )
+    >>> df.sql("""
+        SELECT ham FROM df
+        UNION BY NAME
+        SELECT ham FROM other_df
+        """
+      )
+    shape: (6, 2)
+    ┌──────┬──────┐
+    │ foo  ┆ ham  │
+    │ ---  ┆ ---  │
+    │ i64  ┆ str  │
+    ╞══════╪══════╡
+    │ null ┆ c    │
+    │ 2    ┆ null │
+    │ 1    ┆ null │
+    │ 3    ┆ null │
+    │ null ┆ b    │
+    │ null ┆ a    │
+    └──────┴──────┘
