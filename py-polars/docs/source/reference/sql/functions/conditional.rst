@@ -28,9 +28,26 @@ Returns the first non-null value in the provided values/columns.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT COALESCE(column_1, ...) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": [1, None, None, None],
+        "bar": [1, 2, None, None],
+      }
+    )
+    >>> df.sql("SELECT COALESCE(foo, bar) FROM self")
+    shape: (4, 1)
+    ┌──────┐
+    │ foo  │
+    │ ---  │
+    │ i64  │
+    ╞══════╡
+    │ 1    │
+    │ 2    │
+    │ null │
+    │ null │
+    └──────┘
 
 .. _greatest:
 
@@ -40,9 +57,26 @@ Returns the greatest value in the list of expressions.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT GREATEST(column_1, column_2, ...) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": [100, 200, 300, 400], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT GREATEST(foo, bar) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 100 │
+    │ 200 │
+    │ 300 │
+    │ 400 │
+    └─────┘
 
 .. _if:
 
@@ -52,9 +86,26 @@ Returns expr1 if the boolean condition provided as the first parameter evaluates
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT IF(column < 0, expr1, expr2) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": [100, 200, 300, 400], 
+        "bar": [10, 20, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT IF(foo < 250, 1111, 9999) FROM self")
+    shape: (4, 1)
+    ┌─────────┐
+    │ literal │
+    │ ---     │
+    │ i32     │
+    ╞═════════╡
+    │ 1111    │
+    │ 1111    │
+    │ 9999    │
+    │ 9999    │
+    └─────────┘
 
 .. _ifnull:
 
@@ -64,9 +115,26 @@ If an expression value is NULL, return an alternative value.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT IFNULL(string_col, 'n/a') FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["a", None, None, None],
+        "bar": [1, 2, 3, 4],
+      }
+    )
+    >>> df.sql("SELECT IFNULL(foo, 'n/a') FROM df;")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ a   │
+    │ n/a │
+    │ n/a │
+    │ n/a │
+    └─────┘
 
 .. _least:
 
@@ -76,9 +144,26 @@ Returns the smallest value in the list of expressions.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT LEAST(column_1, column_2, ...) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": [100, 200, 300, 400], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT LEAST(foo, bar) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 20  │
+    │ 10  │
+    │ 30  │
+    │ 40  │
+    └─────┘
 
 .. _nullif:
 
@@ -88,6 +173,23 @@ Returns NULL if two expressions are equal, otherwise returns the first.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT NULLIF(column_1, column_2) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": [100, 200, 300, 400], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT NULLIF(foo, bar) FROM self")
+    shape: (4, 1)
+    ┌─────────┐
+    │ literal │
+    │ ---     │
+    │ i64     │
+    ╞═════════╡
+    │ null    │
+    │ 200     │
+    │ null    │
+    │ null    │
+    └─────────┘
