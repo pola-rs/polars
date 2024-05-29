@@ -257,8 +257,15 @@ def test_join_misc_13618() -> None:
         }
     )
     res = (
-        pl.SQLContext(t=df, t1=df, eager=True)
-        .execute("SELECT t.A, t.fruits, t1.B, t1.cars FROM t JOIN t1 ON t.A=t1.B")
+        pl.SQLContext(t=df, t1=df, eager_execution=True)
+        .execute(
+            """
+            SELECT t.A, t.fruits, t1.B, t1.cars
+            FROM t
+            JOIN t1 ON t.A = t1.B
+            ORDER BY t.A DESC
+            """
+        )
         .to_dict(as_series=False)
     )
     assert res == {

@@ -34,7 +34,7 @@ def test_any_all() -> None:
           x <= ANY(df.y) AS "Any Leq",
           x == ANY(df.y) AS "Any eq",
           x != ANY(df.y) AS "Any Neq",
-        FROM df
+        FROM self
         """,
     ).collect()
 
@@ -257,6 +257,27 @@ def test_order_by(foods_ipc_path: Path) -> None:
     )
     assert order_by_expression_res.to_dict(as_series=False) == {
         "modded": [1, 1, 2],
+    }
+
+
+def test_order_by_misc() -> None:
+    res = pl.DataFrame(
+        {
+            "x": ["apple", "orange"],
+            "y": ["sheep", "alligator"],
+            "z": ["hello", "world"],
+        }
+    ).sql(
+        """
+        SELECT z, y, x
+        FROM self ORDER BY y DESC
+        """
+    )
+    assert res.columns == ["z", "y", "x"]
+    assert res.to_dict(as_series=False) == {
+        "z": ["hello", "world"],
+        "y": ["sheep", "alligator"],
+        "x": ["apple", "orange"],
     }
 
 
