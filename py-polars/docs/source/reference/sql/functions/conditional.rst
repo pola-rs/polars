@@ -36,10 +36,10 @@ Returns the first non-null value in the provided values/columns.
         "bar": [1, 2, None, None],
       }
     )
-    >>> df.sql("SELECT COALESCE(foo, bar) FROM self")
+    >>> df.sql("SELECT COALESCE(foo, bar) AS baz FROM self")
     shape: (4, 1)
     ┌──────┐
-    │ foo  │
+    │ baz  │
     │ ---  │
     │ i64  │
     ╞══════╡
@@ -65,10 +65,10 @@ Returns the greatest value in the list of expressions.
         "bar": [20, 10, 30, 40]
       }
     )
-    >>> df.sql("SELECT GREATEST(foo, bar) FROM self")
+    >>> df.sql("SELECT GREATEST(foo, bar) AS baz FROM self")
     shape: (4, 1)
     ┌─────┐
-    │ foo │
+    │ baz │
     │ --- │
     │ i64 │
     ╞═════╡
@@ -90,22 +90,22 @@ Returns expr1 if the boolean condition provided as the first parameter evaluates
 
     >>> df = pl.DataFrame(
       {
-        "foo": [100, 200, 300, 400], 
+        "foo": [100, 200, 300, 400],
         "bar": [10, 20, 30, 40]
       }
     )
-    >>> df.sql("SELECT IF(foo < 250, 1111, 9999) FROM self")
+    >>> df.sql("SELECT IF(foo < 250, 111, 999) AS baz FROM self")
     shape: (4, 1)
-    ┌─────────┐
-    │ literal │
-    │ ---     │
-    │ i32     │
-    ╞═════════╡
-    │ 1111    │
-    │ 1111    │
-    │ 9999    │
-    │ 9999    │
-    └─────────┘
+    ┌─────┐
+    │ baz │
+    │ --- │
+    │ i32 │
+    ╞═════╡
+    │ 111 │
+    │ 111 │
+    │ 999 │
+    │ 999 │
+    └─────┘
 
 .. _ifnull:
 
@@ -119,21 +119,21 @@ If an expression value is NULL, return an alternative value.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["a", None, None, None],
+        "foo": ["a", None, None, "d"],
         "bar": [1, 2, 3, 4],
       }
     )
-    >>> df.sql("SELECT IFNULL(foo, 'n/a') FROM df;")
+    >>> df.sql("SELECT IFNULL(foo, 'n/a') AS baz FROM self")
     shape: (4, 1)
     ┌─────┐
-    │ foo │
+    │ baz │
     │ --- │
     │ str │
     ╞═════╡
     │ a   │
     │ n/a │
     │ n/a │
-    │ n/a │
+    │ d   │
     └─────┘
 
 .. _least:
@@ -148,14 +148,14 @@ Returns the smallest value in the list of expressions.
 
     >>> df = pl.DataFrame(
       {
-        "foo": [100, 200, 300, 400], 
+        "foo": [100, 200, 300, 400],
         "bar": [20, 10, 30, 40]
       }
     )
-    >>> df.sql("SELECT LEAST(foo, bar) FROM self")
+    >>> df.sql("SELECT LEAST(foo, bar) AS baz FROM self")
     shape: (4, 1)
     ┌─────┐
-    │ foo │
+    │ baz │
     │ --- │
     │ i64 │
     ╞═════╡
@@ -177,19 +177,19 @@ Returns NULL if two expressions are equal, otherwise returns the first.
 
     >>> df = pl.DataFrame(
       {
-        "foo": [100, 200, 300, 400], 
+        "foo": [100, 200, 300, 400],
         "bar": [20, 10, 30, 40]
       }
     )
-    >>> df.sql("SELECT NULLIF(foo, bar) FROM self")
+    >>> df.sql("SELECT NULLIF(foo, bar) AS baz FROM self")
     shape: (4, 1)
-    ┌─────────┐
-    │ literal │
-    │ ---     │
-    │ i64     │
-    ╞═════════╡
-    │ null    │
-    │ 200     │
-    │ null    │
-    │ null    │
-    └─────────┘
+    ┌─────┐
+    │ baz │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 100 │
+    │ 200 │
+    │ 300 │
+    │ 400 │
+    └─────┘

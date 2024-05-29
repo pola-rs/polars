@@ -144,16 +144,21 @@ Returns the mean of all values in an array.
         "bar": [[6, 7], [8, 9, 10]]
       }
     )
-    >>> df.sql("SELECT ARRAY_MEAN(foo), ARRAY_MEAN(bar) FROM self")
+    >>> df.sql("""
+      SELECT
+        ARRAY_MEAN(foo) AS foo_mean,
+        ARRAY_MEAN(bar) AS bar_mean
+      FROM self
+    """)
     shape: (2, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ f64 ┆ f64 │
-    ╞═════╪═════╡
-    │ 1.5 ┆ 6.5 │
-    │ 2.0 ┆ 9.0 │
-    └─────┴─────┘
+    ┌──────────┬──────────┐
+    │ foo_mean ┆ bar_mean │
+    │ ---      ┆ ---      │
+    │ f64      ┆ f64      │
+    ╞══════════╪══════════╡
+    │ 1.5      ┆ 6.5      │
+    │ 2.0      ┆ 9.0      │
+    └──────────┴──────────┘
 
 .. _array_reverse:
 
@@ -171,10 +176,15 @@ Returns the array with the elements in reverse order.
         "bar": [[6, 7], [8, 9, 10]]
       }
     )
-    >>> df.sql("SELECT ARRAY_REVERSE(foo), ARRAY_REVERSE(bar) FROM self")
+    >>> df.sql("""
+      SELECT
+        ARRAY_REVERSE(foo) AS oof,
+        ARRAY_REVERSE(bar) AS rab
+      FROM self
+    """)
     shape: (2, 2)
     ┌───────────┬────────────┐
-    │ foo       ┆ bar        │
+    │ oof       ┆ rab        │
     │ ---       ┆ ---        │
     │ list[i64] ┆ list[i64]  │
     ╞═══════════╪════════════╡
@@ -198,16 +208,21 @@ Returns the sum of all values in an array.
         "bar": [[-6, 7], [8, -9, 10]]
       }
     )
-    >>> df.sql("SELECT ARRAY_SUM(foo), ARRAY_SUM(bar) FROM self")
+    >>> df.sql("""
+      SELECT
+        ARRAY_SUM(foo) AS foo_sum,
+        ARRAY_SUM(bar) AS bar_sum
+      FROM self
+    """)
     shape: (2, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ i64 ┆ i64 │
-    ╞═════╪═════╡
-    │ -1  ┆ 1   │
-    │ -3  ┆ 9   │
-    └─────┴─────┘
+    ┌─────────┬─────────┐
+    │ foo_sum ┆ bar_sum │
+    │ ---     ┆ ---     │
+    │ i64     ┆ i64     │
+    ╞═════════╪═════════╡
+    │ -1      ┆ 1       │
+    │ -3      ┆ 9       │
+    └─────────┴─────────┘
 
 .. _array_to_string:
 
@@ -220,16 +235,16 @@ Takes all elements of the array and joins them into one string.
 .. code-block:: python
 
     >>> df = pl.DataFrame({"foo": [["a", "b"], ["c", "d", "e"]]})
-    >>> df.sql("SELECT ARRAY_TO_STRING(foo,',') FROM self")
+    >>> df.sql("SELECT ARRAY_TO_STRING(foo,',') AS foo_str FROM self")
     shape: (2, 1)
-    ┌───────┐
-    │ foo   │
-    │ ---   │
-    │ str   │
-    ╞═══════╡
-    │ a,b   │
-    │ c,d,e │
-    └───────┘
+    ┌─────────┐
+    │ foo_str │
+    │ ---     │
+    │ str     │
+    ╞═════════╡
+    │ a,b     │
+    │ c,d,e   │
+    └─────────┘
 
 .. _array_unique:
 
@@ -241,16 +256,16 @@ Returns the array with the unique elements.
 
 .. code-block:: python
 
-   >>> df = pl.DataFrame({"foo": [["a", "b"], ["b", "b", "e"]]})
-    >>> df.sql("SELECT ARRAY_UNIQUE(foo) FROM self")
+    >>> df = pl.DataFrame({"foo": [["a", "b"], ["b", "b", "e"]]})
+    >>> df.sql("SELECT ARRAY_UNIQUE(foo) AS foo_unique FROM self")
     shape: (2, 1)
     ┌────────────┐
-    │ foo        │
+    │ foo_unique │
     │ ---        │
     │ list[str]  │
     ╞════════════╡
-    │ ["b", "a"] │
-    │ ["b", "e"] │
+    │ ["a", "b"] │
+    │ ["e", "b"] │
     └────────────┘
 
 .. _array_upper:
@@ -269,16 +284,21 @@ Returns the upper bound (max value) in an array.
         "bar": [[6, 7], [8, 9, 10]]
       }
     )
-    >>> df.sql("SELECT ARRAY_UPPER(foo), ARRAY_UPPER(bar) FROM self")
+    >>> df.sql("""
+      SELECT
+        ARRAY_UPPER(foo) AS foo_max,
+        ARRAY_UPPER(bar) AS bar_max
+      FROM self
+    """)
     shape: (2, 2)
-    ┌─────┬─────┐
-    │ foo ┆ bar │
-    │ --- ┆ --- │
-    │ i64 ┆ i64 │
-    ╞═════╪═════╡
-    │ 2   ┆ 7   │
-    │ 4   ┆ 10  │
-    └─────┴─────┘
+    ┌─────────┬─────────┐
+    │ foo_max ┆ bar_max │
+    │ ---     ┆ ---     │
+    │ i64     ┆ i64     │
+    ╞═════════╪═════════╡
+    │ 2       ┆ 7       │
+    │ 4       ┆ 10      │
+    └─────────┴─────────┘
 
 .. _unnest:
 
@@ -296,10 +316,15 @@ Unnest/explode an array column into multiple rows.
         "bar": [[6, 7, 8], [9, 10]]
       }
     )
-    >>> df.sql("SELECT UNNEST(foo), UNNEST(bar) FROM self")
+    >>> df.sql("""
+      SELECT
+        UNNEST(foo) AS f,
+        UNNEST(bar) AS b
+      FROM self
+    """)
     shape: (5, 2)
     ┌─────┬─────┐
-    │ foo ┆ bar │
+    │ f   ┆ b   │
     │ --- ┆ --- │
     │ str ┆ i64 │
     ╞═════╪═════╡
