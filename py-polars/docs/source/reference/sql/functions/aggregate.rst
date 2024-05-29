@@ -36,9 +36,23 @@ Returns the average (mean) of all the elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT AVG(column_1) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT AVG(bar) FROM self")
+    shape: (1, 1)
+    ┌──────┐
+    │ bar  │
+    │ ---  │
+    │ f64  │
+    ╞══════╡
+    │ 25.0 │
+    └──────┘
 
 .. _count:
 
@@ -48,12 +62,33 @@ Returns the amount of elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT COUNT(column_1) FROM df;
-    SELECT COUNT(*) FROM df;
-    SELECT COUNT(DISTINCT column_1) FROM df;
-    SELECT COUNT(DISTINCT *) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT COUNT(bar) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 4   │
+    └─────┘
+
+    >>> df.sql("SELECT COUNT(DISTINCT foo) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 3   │
+    └─────┘
 
 .. _first:
 
@@ -63,9 +98,23 @@ Returns the first element of the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT FIRST(column_1) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT FIRST(foo) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ b   │
+    └─────┘
 
 .. _last:
 
@@ -75,9 +124,23 @@ Returns the last element of the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT LAST(column_1) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT LAST(foo) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ c   │
+    └─────┘
 
 .. _max:
 
@@ -87,9 +150,23 @@ Returns the greatest (maximum) of all the elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT MAX(column_1) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT MAX(bar) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 40  │
+    └─────┘
 
 .. _median:
 
@@ -99,9 +176,23 @@ Returns the median element from the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT MEDIAN(column_1) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT MEDIAN(bar) FROM self")
+    shape: (1, 1)
+    ┌──────┐
+    │ bar  │
+    │ ---  │
+    │ f64  │
+    ╞══════╡
+    │ 25.0 │
+    └──────┘
 
 .. _min:
 
@@ -111,9 +202,23 @@ Returns the smallest (minimum) of all the elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT MIN(column_1) FROM df;
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["b", "a", "b", "c"], 
+        "bar": [20, 10, 30, 40]
+      }
+    )
+    >>> df.sql("SELECT MIN(bar) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 10  │
+    └─────┘
 
 .. _stddev:
 
@@ -123,9 +228,24 @@ Returns the standard deviation of all the elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT STDDEV(column_1) FROM df;
+    >>> df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    >>> df.sql("SELECT STDDEV(foo), STDDEV(bar) FROM self")
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ bar ┆ foo │
+    │ --- ┆ --- │
+    │ f64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 1.0 ┆ 1.0 │
+    └─────┴─────┘
 
 .. _sum:
 
@@ -135,9 +255,24 @@ Returns the sum of all the elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT SUM(column_1) FROM df;
+    >>> df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    >>> df.sql("SELECT SUM(foo), SUM(bar) FROM self")
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ bar ┆ foo │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 21  ┆ 6   │
+    └─────┴─────┘
 
 .. _variance:
 
@@ -147,7 +282,21 @@ Returns the variance of all the elements in the grouping.
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
 
-    SELECT VARIANCE(column_1) FROM df;
-
+    >>> df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    >>> df.sql("SELECT VARIANCE(foo) FROM self")
+    shape: (1, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 1.0 │
+    └─────┘

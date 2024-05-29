@@ -215,6 +215,7 @@ Sort the query result based on one or more specified columns.
 **Example:**
 
 .. code-block:: python
+  
     >>> df = pl.DataFrame(
       {
         "foo": ["b", "a", "c", "b"], 
