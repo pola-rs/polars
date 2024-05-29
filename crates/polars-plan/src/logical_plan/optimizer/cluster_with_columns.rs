@@ -29,6 +29,59 @@ fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column
         });
 }
 
+/// Perform a inplace `filtermap` over two vectors at the same time.
+fn inplace_zip_filtermap<T, U>(
+    x: &mut Vec<T>,
+    y: &mut Vec<U>,
+    mut f: impl FnMut(&mut T, &mut U) -> bool,
+) {
+    assert_eq!(x.len(), y.len());
+
+    let mut num_deleted = 0;
+
+    let x_ptr = x.as_mut_ptr();
+    let y_ptr = y.as_mut_ptr();
+
+    // SAFETY:
+    //
+    // We know we have a exclusive reference to x and y.
+    //
+    // We know that `i` is always smaller than `x.len()` and `y.len()`. Furthermore, we also know
+    // that `i - num_deleted > 0`.
+    //
+    // We know we don't have ownership of any element in x or y when we call `f`, so it is safe to
+    // panic.
+    //
+    // Items that are deleted are also dropped.
+    for i in 0..x.len() {
+        let xi = unsafe { x_ptr.wrapping_add(i).as_mut().unwrap_unchecked() };
+        let yi = unsafe { y_ptr.wrapping_add(i).as_mut().unwrap_unchecked() };
+
+        // We cannot just give `f` ownership over x[i] and y[i], because a panic would then mean
+        // that x[i] and y[i] are dropped twice.
+        let do_use = f(xi, yi);
+
+        // Now we take ownership of x[i] and y[i]
+        let xi = unsafe { x_ptr.wrapping_add(i).read() };
+        let yi = unsafe { y_ptr.wrapping_add(i).read() };
+
+        if do_use {
+            unsafe {
+                x_ptr.wrapping_add(i - num_deleted).write(xi);
+                y_ptr.wrapping_add(i - num_deleted).write(yi);
+            }
+        } else {
+            // Here we drop x[i] and y[i] which is intentional
+            num_deleted += 1;
+        }
+    }
+
+    unsafe {
+        x.set_len(x.len() - num_deleted);
+        y.set_len(y.len() - num_deleted);
+    }
+}
+
 pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>) {
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
@@ -116,15 +169,15 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
         // down or pruned.
-        *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
-            .into_iter()
-            .zip(current_expr_livesets.iter_mut())
-            .filter_map(|(mut expr, liveset)| {
+        inplace_zip_filtermap(
+            current_exprs.exprs_mut(),
+            &mut current_expr_livesets,
+            |expr, liveset| {
                 let does_input_assign_column_that_expr_used = input_genset.intersects_with(liveset);
 
                 if does_input_assign_column_that_expr_used {
                     pushable.push(false);
-                    return Some(expr);
+                    return true;
                 }
 
                 let column_name = expr.output_name_arc();
@@ -154,8 +207,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                         // @NOTE
                         // Since we are reassigning a column and we are pushing to the input, we do
                         // not need to change the schema of the current or input nodes.
-                        std::mem::swap(&mut expr, input_expr);
-                        return None;
+                        std::mem::swap(expr, input_expr);
+                        return false;
                     }
 
                     // We cannot have multiple assignments to the same column in one WITH_COLUMNS
@@ -167,7 +220,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     if !does_input_alias_also_expr && is_alias_live_in_current {
                         potential_pushable.push(pushable.len());
                         pushable.push(false);
-                        return Some(expr);
+                        return true;
                     }
 
                     !does_input_alias_also_expr && !is_alias_live_in_current
@@ -176,9 +229,9 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 };
 
                 pushable.push(is_pushable);
-                Some(expr)
-            })
-            .collect();
+                true
+            },
+        );
 
         debug_assert_eq!(pushable.len(), current_exprs.len());
 

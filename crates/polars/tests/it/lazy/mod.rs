@@ -1,6 +1,7 @@
 mod aggregation;
 #[cfg(feature = "cse")]
 mod cse;
+mod cwc;
 mod explodes;
 mod expressions;
 mod folds;
