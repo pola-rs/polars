@@ -197,6 +197,26 @@ Returns the value to the power of the given exponent.
 
     SELECT POW(column_1, 2) FROM df;
 
+ROUND
+-----
+Round a number to `x` decimals (default: 0) away from zero.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT ROUND(column_1, 3) FROM df;
+
+SIGN
+----
+Returns the sign of the argument as -1, 0, or +1.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT SIGN(column_1) FROM df;
+
 .. _sqrt:
 
 SQRT
@@ -211,24 +231,4 @@ Returns the square root (√) of a number.
 
 .. _round:
 
-ROUND
------
-Round a number to `x` decimals (default: 0) away from zero.
-
-**Example:**
-
-.. code-block:: sql
-
-    SELECT ROUND(column_1, 3) FROM df;
-
 .. _sign:
-
-SIGN
-----
-Returns the sign of the argument as -1, 0, or +1.
-
-**Example:**
-
-.. code-block:: sql
-
-    SELECT SIGN(column_1) FROM df;
