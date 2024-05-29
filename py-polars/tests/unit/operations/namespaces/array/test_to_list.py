@@ -17,7 +17,7 @@ def test_arr_to_list() -> None:
     df = pl.DataFrame(
         data,
         schema={
-            "duration": pl.Array(pl.Datetime, width=2),
+            "duration": pl.Array(pl.Datetime, shape=2),
         },
     ).with_columns(pl.col("duration").arr.to_list())
 

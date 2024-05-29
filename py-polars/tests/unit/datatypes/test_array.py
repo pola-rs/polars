@@ -166,7 +166,7 @@ def test_array_data_type_equality() -> None:
 def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = pl.Series(data, dtype=pl.List(inner_type))
     s = s.cast(pl.Array(inner_type, 2))
-    assert s.dtype == pl.Array(inner_type, width=2)
+    assert s.dtype == pl.Array(inner_type, shape=2)
     assert s.to_list() == data
 
 
@@ -259,7 +259,7 @@ def test_arr_median(data_dispersion: pl.DataFrame) -> None:
 
 
 def test_array_repeat() -> None:
-    dtype = pl.Array(pl.UInt8, width=1)
+    dtype = pl.Array(pl.UInt8, shape=1)
     s = pl.repeat([42], n=3, dtype=dtype, eager=True)
     expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
     assert s.dtype == dtype
