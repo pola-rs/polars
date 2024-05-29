@@ -89,17 +89,16 @@ def test_join_cross() -> None:
         ]
 
 
-def test_join_cross_13618() -> None:
+def test_join_cross_11927() -> None:
     df1 = pl.DataFrame({"id": [1, 2, 3]})
     df2 = pl.DataFrame({"id": [3, 4, 5]})  # noqa: F841
-    res = df1.sql(
-        """
-        SELECT df2.id
-        FROM self CROSS JOIN df2
-        WHERE self.id = df2.id
-        """,
-    )
+    df3 = pl.DataFrame({"id": [4, 5, 6]})  # noqa: F841
+
+    res = df1.sql("SELECT df2.id FROM self CROSS JOIN df2 WHERE self.id = df2.id")
     assert_frame_equal(res, pl.DataFrame({"id": [3]}))
+
+    res = df1.sql("SELECT * FROM self CROSS JOIN df3 WHERE self.id = df3.id")
+    assert res.is_empty()
 
 
 @pytest.mark.parametrize(
@@ -162,6 +161,31 @@ def test_join_inner_multi(join_clause: str) -> None:
                 f"SELECT {select_cols} FROM tbl_a {join_clause} ORDER BY a DESC"
             )
             assert out.collect().rows() == [(1, 4, "z", 25.5)]
+
+
+def test_join_inner_15663() -> None:
+    df_a = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [0.1, 0.2, 0.3]})  # noqa: F841
+    df_b = pl.DataFrame({"LOCID": [1, 2, 3], "VALUE": [25.6, 53.4, 12.7]})  # noqa: F841
+    expected = pl.DataFrame(
+        {
+            "LOCID": [1, 2, 3],
+            "VALUE_A": [0.1, 0.2, 0.3],
+            "VALUE_B": [25.6, 53.4, 12.7],
+        }
+    )
+    with pl.SQLContext(register_globals=True, eager_execution=True) as ctx:
+        query = """
+        SELECT
+            a.LOCID,
+            a.VALUE AS VALUE_A,
+            b.VALUE AS VALUE_B
+        FROM df_a AS a
+        INNER JOIN df_b AS b
+        USING (LOCID)
+        ORDER BY LOCID
+        """
+        actual = ctx.execute(query)
+        assert_frame_equal(expected, actual)
 
 
 @pytest.mark.parametrize(

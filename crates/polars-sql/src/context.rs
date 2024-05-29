@@ -561,9 +561,9 @@ impl SQLContext {
 
                 lf = lf.with_columns(projections);
                 lf = self.process_order_by(lf, &query.order_by)?;
+
                 column_names.retain(|&name| !retained_names.contains(name));
                 lf.drop(column_names)
-
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
                 let exclude_expr = projections.iter().find(|expr| {
