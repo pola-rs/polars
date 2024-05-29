@@ -452,9 +452,10 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        if self.columns.iter().any(|s| s.n_chunks() > 1) {
-            self.columns = self._apply_columns_par(&|s| s.rechunk());
-        }
+        self.as_single_chunk();
+        // if self.columns.iter().any(|s| s.n_chunks() > 1) {
+        //     self.columns = self._apply_columns_par(&|s| s.rechunk());
+        // }
         self
     }
 

@@ -29,18 +29,7 @@ impl DataFrame {
             let columns = self
                 .get_columns()
                 .iter()
-                .map(|s| match s.dtype() {
-                    #[cfg(feature = "dtype-struct")]
-                    DataType::Struct(_) => {
-                        let mut ca = s.struct_().unwrap().clone();
-                        for field in ca.fields_mut().iter_mut() {
-                            *field = field.replace_with_chunk(field.chunks()[i].clone())
-                        }
-                        ca.update_chunks(0);
-                        ca.into_series()
-                    },
-                    _ => s.replace_with_chunk(s.chunks()[i].clone()),
-                })
+                .map(|s| s.select_chunk(i))
                 .collect::<Vec<_>>();
 
             DataFrame::new_no_checks(columns)

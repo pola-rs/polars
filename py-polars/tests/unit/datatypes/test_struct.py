@@ -927,3 +927,10 @@ def test_struct_filter_chunked_16498() -> None:
 
 def test_struct_field_dynint_nullable_16243() -> None:
     pl.select(pl.lit(None).fill_null(pl.struct(42)))
+
+
+def test_struct_split_16536() -> None:
+    df = pl.DataFrame({"struct": [{"a": {"a": {"a": 1}}}], "list": [[1]], "int": [1]})
+
+    df = pl.concat([df, df, df, df], rechunk=False)
+    assert df.filter(pl.col("int") == 1).shape == (4, 3)
