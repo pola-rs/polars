@@ -800,17 +800,13 @@ class Array(NestedType):
         return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
+        # Get leaf type
+        dtype = self.inner
+        while isinstance(dtype, Array):
+            dtype = dtype.inner
+
         class_name = self.__class__.__name__
-
-        if len(self.shape) == 1:
-            return f"{class_name}({self.inner!r}, size={self.size})"
-        else:
-            # Get leaf type
-            dtype = self.inner
-            while isinstance(dtype, Array):
-                dtype = dtype.inner
-
-            return f"{class_name}({dtype!r}, shape={self.shape})"
+        return f"{class_name}({dtype!r}, shape={self.shape})"
 
     @property
     def width(self) -> int:

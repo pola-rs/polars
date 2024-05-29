@@ -291,7 +291,7 @@ def test_array_ndarray_reshape() -> None:
 
 def test_recursive_array_dtype() -> None:
     assert str(pl.Array(pl.Int64, (2, 3))) == "Array(Int64, shape=(2, 3))"
-    assert str(pl.Array(pl.Int64, 3)) == "Array(Int64, size=3)"
+    assert str(pl.Array(pl.Int64, 3)) == "Array(Int64, shape=(3,))"
     dtype = pl.Array(pl.Int64, 3)
     s = pl.Series(np.arange(6).reshape((2, 3)), dtype=dtype)
     assert s.dtype == dtype
