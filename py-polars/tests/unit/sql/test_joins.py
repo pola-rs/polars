@@ -73,14 +73,15 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     foods1 = pl.scan_ipc(foods_ipc_path)
     foods2 = foods1  # noqa: F841
 
-    out = foods1.sql(
+    out = pl.sql(
         f"""
         SELECT *
         FROM foods1
         INNER JOIN foods2 {join_clause}
         LIMIT 2
-        """
-    ).collect()
+        """,
+        eager=True,
+    )
 
     assert out.to_dict(as_series=False) == {
         "category": ["vegetables", "vegetables"],

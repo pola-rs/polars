@@ -29,7 +29,7 @@ def test_modulo() -> None:
           b % 3 AS b3,
           MOD(c, 4) AS c4,
           MOD(d, 5.5) AS d55
-        FROM df
+        FROM self
         """
     )
 
