@@ -52,9 +52,26 @@ Returns the length of the input string in bits.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT BIT_LENGTH(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+            "foo": ["aa", "b", "c", "dd"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT BIT_LENGTH(foo) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 16  │
+    │ 8   │
+    │ 8   │
+    │ 16  │
+    └─────┘
 
 .. _concat:
 
@@ -64,9 +81,26 @@ Returns all input expressions concatenated together as a string.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT CONCAT(column_1, column_2) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["aa", "b", "c", "dd"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT CONCAT(foo, bar) FROM self")
+    shape: (4, 1)
+    ┌──────┐
+    │ foo  │
+    │ ---  │
+    │ str  │
+    ╞══════╡
+    │ aazz │
+    │ byy  │
+    │ cxx  │
+    │ ddww │
+    └──────┘
 
 .. _concat_ws:
 
@@ -76,9 +110,27 @@ Returns all input expressions concatenated together (and interleaved with a sepa
 
 **Example:**
 
-.. code-block:: sql
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["aa", "b", "c", "dd"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT CONCAT_WS(',', foo, bar) FROM self")
+    shape: (4, 1)
+    ┌───────┐
+    │ foo   │
+    │ ---   │
+    │ str   │
+    ╞═══════╡
+    │ aa:zz │
+    │ b:yy  │
+    │ c:xx  │
+    │ dd:ww │
+    └───────┘
 
-    SELECT CONCAT_WS(':', column_1, column_2, column_3) FROM df;
 .. _ends_with:
 
 ENDS_WITH
@@ -87,10 +139,26 @@ Returns True if the value ends with the second argument.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT ENDS_WITH(column_1, 'a') FROM df;
-    SELECT column_2 FROM df WHERE ENDS_WITH(column_1, 'a');
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["aa", "b", "c", "dd"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql(""SELECT ENDS_WITH(foo, 'a') FROM self"")
+    shape: (4, 1)
+    ┌───────┐
+    │ foo   │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ true  │
+    │ false │
+    │ false │
+    │ false │
+    └───────┘
 
 .. _initcap:
 
@@ -100,9 +168,26 @@ Returns the value with the first letter capitalized.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT INITCAP(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["aa", "b", "c", "dd"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT INITCAP(bar) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ Zz  │
+    │ Yy  │
+    │ Xx  │
+    │ Ww  │
+    └─────┘
 
 .. _left:
 
@@ -112,9 +197,26 @@ Returns the first (leftmost) `n` characters.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT LEFT(column_1, 3) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["abcd", "efgh", "ijkl", "mnop"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT LEFT(foo, 2) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ ab  │
+    │ ef  │
+    │ ij  │
+    │ mn  │
+    └─────┘
 
 .. _length:
 
@@ -124,9 +226,26 @@ Returns the character length of the string.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT LENGTH(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["ab", "efg", "i", "mnop"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT LENGTH(foo) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    │ 3   │
+    │ 1   │
+    │ 4   │
+    └─────┘
 
 .. _lower:
 
@@ -136,9 +255,26 @@ Returns a lowercased column.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT LOWER(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["AA", "BB", "CC", "DD"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT LOWER(foo) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ aa  │
+    │ bb  │
+    │ cc  │
+    │ dd  │
+    └─────┘
 
 .. _ltrim:
 
@@ -148,9 +284,26 @@ Strips whitespaces from the left.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT LTRIM(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["   AA", " BB", "CC", "  DD"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT LTRIM(foo) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ AA  │
+    │ BB  │
+    │ CC  │
+    │ DD  │
+    └─────┘
 
 .. _octet_length:
 
@@ -160,9 +313,26 @@ Returns the length of a given string in bytes.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT OCTET_LENGTH(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["AAa", "BB", "CCc", "DD"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT OCTET_LENGTH(foo) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 3   │
+    │ 2   │
+    │ 3   │
+    │ 2   │
+    └─────┘
 
 .. _regexp_like:
 
@@ -172,9 +342,26 @@ Returns True if `pattern` matches the value (optional: `flags`).
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT REGEXP_LIKE(column_1, 'xyz', 'i') FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["AA", "BB", "CC", "DD"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT REGEXP_LIKE(foo, 'BB') FROM self")
+    shape: (4, 1)
+    ┌───────┐
+    │ foo   │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ false │
+    │ true  │
+    │ false │
+    │ false │
+    └───────┘
 
 .. _replace:
 
@@ -184,9 +371,26 @@ Replaces a given substring with another string.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT REPLACE(column_1, 'old', 'new') FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["AA", "BB", "CC", "DD"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT REPLACE(foo, 'BB', 'new_value') FROM self")
+    shape: (4, 1)
+    ┌───────────┐
+    │ foo       │
+    │ ---       │
+    │ str       │
+    ╞═══════════╡
+    │ AA        │
+    │ new_value │
+    │ CC        │
+    │ DD        │
+    └───────────┘
 
 .. _reverse:
 
@@ -196,9 +400,26 @@ Returns the reversed string.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT REVERSE(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["apple", "banana", "orange", "grape"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT REVERSE(foo) FROM self")
+    shape: (4, 1)
+    ┌────────┐
+    │ foo    │
+    │ ---    │
+    │ str    │
+    ╞════════╡
+    │ elppa  │
+    │ ananab │
+    │ egnaro │
+    │ eparg  │
+    └────────┘
 
 .. _right:
 
@@ -208,9 +429,26 @@ Returns the last (rightmost) `n` characters.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT RIGHT(column_1, 3) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["abcd", "efgh", "ijkl", "mnop"],
+		    "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT RIGHT(foo, 2) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ cd  │
+    │ gh  │
+    │ kl  │
+    │ op  │
+    └─────┘
 
 .. _rtrim:
 
@@ -220,9 +458,26 @@ Strips whitespaces from the right.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT RTRIM(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["abcd", "efgh", "ijkl", "mnop"],
+		    "bar": ["zz    ", "yy  ", "xx ", "ww   "]
+      }
+    )
+    >>> df.sql("SELECT RTRIM(bar) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ zz  │
+    │ yy  │
+    │ xx  │
+    │ ww  │
+    └─────┘
 
 .. _starts_with:
 
@@ -232,10 +487,26 @@ Returns True if the value starts with the second argument.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT STARTS_WITH(column_1, 'a') FROM df;
-    SELECT column_2 FROM df WHERE STARTS_WITH(column_1, 'a');
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["apple", "banana", "orange", "grape"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT STARTS_WITH(foo, 'a') FROM self")
+    shape: (4, 1)
+    ┌───────┐
+    │ foo   │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ true  │
+    │ false │
+    │ false │
+    │ false │
+    └───────┘
 
 .. _strpos:
 
@@ -245,9 +516,26 @@ Returns the index of the given substring in the target string.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT STRPOS(column_1, 'xyz') FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["apple", "banana", "orange", "grape"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT STRPOS(foo, 'a') FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 1   │
+    │ 2   │
+    │ 3   │
+    │ 3   │
+    └─────┘
 
 .. _substring:
 
@@ -257,9 +545,26 @@ Returns a portion of the data (first character = 0) in the range [start, start +
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT SUBSTR(column_1, 3, 5) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["apple", "banana", "orange", "grape"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT SUBSTR(foo, 1, 3) FROM self")
+    shape: (4, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ app │
+    │ ban │
+    │ ora │
+    │ gra │
+    └─────┘
 
 .. _upper:
 
@@ -269,7 +574,24 @@ Returns an uppercased column.
 
 **Example:**
 
-.. code-block:: sql
-
-    SELECT UPPER(column_1) FROM df;
+.. code-block:: python
+  
+    >>> df = pl.DataFrame(
+      {
+        "foo": ["apple", "banana", "orange", "grape"],
+        "bar": ["zz", "yy", "xx", "ww"]
+      }
+    )
+    >>> df.sql("SELECT UPPER(foo) FROM self")
+    shape: (4, 1)
+    ┌────────┐
+    │ foo    │
+    │ ---    │
+    │ str    │
+    ╞════════╡
+    │ APPLE  │
+    │ BANANA │
+    │ ORANGE │
+    │ GRAPE  │
+    └────────┘
 
