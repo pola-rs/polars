@@ -7,10 +7,10 @@ Table Operations
 
    * - Function
      - Description
-   * - :ref:`CREATE TABLES <create_tables>`
+   * - :ref:`CREATE TABLE <create_table>`
      - Define a new table and its columns in the context.
    * - :ref:`DROP TABLES <drop_tables>`
-     - Delete a specified table and related data from the context.
+     - Delete a specified table and related data.
    * - :ref:`EXPLAIN <explain>`
      - Returns logical plan of the query.
    * - :ref:`SHOW TABLES <show_tables>`
@@ -18,25 +18,23 @@ Table Operations
    * - :ref:`TRUNCATE <truncate>`
      - Remove rows from table without deleting the table from context.
 
-.. _create_tables:
+.. _create_table:
 
-CREATE TABLES
--------------
-Create a new table and its columns in the context.
+CREATE TABLE
+------------
+Create a new table and its columns.
 
 **Example:**
 
 .. code-block:: sql
 
-    CREATE TABLE new_table
-    AS
-    SELECT * FROM df WHERE value > 42
+    CREATE TABLE new_table AS SELECT * FROM df WHERE value > 42
 
 .. _drop_tables:
 
 DROP TABLES
 -----------
-Delete a specified table and related data from the context.
+Delete a specified table and related data.
 
 **Example:**
 

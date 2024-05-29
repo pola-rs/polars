@@ -94,9 +94,9 @@ Combines rows from two or more tables based on a related column.
 * `CROSS JOIN`
 * `FULL JOIN`
 * `INNER JOIN`
-* `LEFT ANTI JOIN`
 * `LEFT JOIN`
-* `LEFT SEMI JOIN`
+* `[LEFT] ANTI JOIN`
+* `[LEFT] SEMI JOIN`
 * `RIGHT ANTI JOIN`
 * `RIGHT SEMI JOIN`
 
@@ -104,30 +104,37 @@ Combines rows from two or more tables based on a related column.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    >>> df1 = pl.DataFrame(
           {
               "foo": [1, 2, 3],
               "ham": ["a", "b", "c"],
           }
       )
-    >>> other_df = pl.DataFrame(
+    >>> df2 = pl.DataFrame(
           {
               "apple": ["x", "y", "z"],
               "ham": ["a", "b", "d"],
           }
       )
-    >>> df.sql("SELECT * FROM self FULL JOIN other_df USING (ham)")
-        shape: (4, 4)
-        ┌──────┬──────┬───────┬───────────┐
-        │ foo  ┆ ham  ┆ apple ┆ ham_right │
-        │ ---  ┆ ---  ┆ ---   ┆ ---       │
-        │ i64  ┆ str  ┆ str   ┆ str       │
-        ╞══════╪══════╪═══════╪═══════════╡
-        │ 1    ┆ a    ┆ x     ┆ a         │
-        │ 2    ┆ b    ┆ y     ┆ b         │
-        │ null ┆ null ┆ z     ┆ d         │
-        │ 3    ┆ c    ┆ null  ┆ null      │
-        └──────┴──────┴───────┴───────────┘
+    >>> pl.sql("""
+      SELECT
+        foo,
+        apple,
+        COALESCE(df1.ham, df2.ham) AS ham
+      FROM df1 FULL JOIN df2
+      USING (ham)
+    """).collect()
+    shape: (4, 3)
+    ┌──────┬───────┬─────┐
+    │ foo  ┆ apple ┆ ham │
+    │ ---  ┆ ---   ┆ --- │
+    │ i64  ┆ str   ┆ str │
+    ╞══════╪═══════╪═════╡
+    │ 1    ┆ x     ┆ a   │
+    │ 2    ┆ y     ┆ b   │
+    │ null ┆ z     ┆ d   │
+    │ 3    ┆ null  ┆ c   │
+    └──────┴───────┴─────┘
 
 .. _where:
 
@@ -166,8 +173,8 @@ Group rows that have the same values in specified columns into summary rows.
 
     >>> df = pl.DataFrame(
         {
-          "foo": ["a", "b", "b"], 
-          "bar": [10, 20, 30]
+          "foo": ["a", "b", "b"],
+          "bar": [10, 20, 30],
         }
       )
     >>> df.sql("SELECT foo, SUM(bar) FROM self GROUP BY foo")
@@ -191,8 +198,8 @@ Filter groups in a `GROUP BY` based on specific condition(s).
 
     >>> df = pl.DataFrame(
           {
-          "foo": ["a", "b", "b", "c"], 
-          "bar": [10, 20, 30, 40]
+          "foo": ["a", "b", "b", "c"],
+          "bar": [10, 20, 30, 40],
         }
       )
     >>> df.sql("SELECT foo, SUM(bar) FROM self GROUP BY foo HAVING bar >= 40")
@@ -215,24 +222,24 @@ Sort the query result based on one or more specified columns.
 **Example:**
 
 .. code-block:: python
-  
+
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "c", "b"], 
-        "bar": [20, 10, 40, 30]
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
       }
     )
-    >>> df.sql("SELECT foo, bar FROM self ORDER BY bar")
+    >>> df.sql("SELECT foo, bar FROM self ORDER BY bar DESC")
     shape: (4, 2)
     ┌─────┬─────┐
     │ foo ┆ bar │
     │ --- ┆ --- │
     │ str ┆ i64 │
     ╞═════╪═════╡
-    │ a   ┆ 10  │
-    │ b   ┆ 20  │
-    │ b   ┆ 30  │
     │ c   ┆ 40  │
+    │ b   ┆ 30  │
+    │ b   ┆ 20  │
+    │ a   ┆ 10  │
     └─────┴─────┘
 
 .. _limit:
@@ -247,8 +254,8 @@ Limit the number of rows returned by the query.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "c", "b"], 
-        "bar": [20, 10, 40, 30]
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
       }
     )
     >>> df.sql("SELECT foo, bar FROM self LIMIT 2")
@@ -274,8 +281,8 @@ Skip a number of rows before starting to return rows from the query.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "c", "b"], 
-        "bar": [20, 10, 40, 30]
+        "foo": ["b", "a", "c", "b"],
+        "bar": [20, 10, 40, 30],
       }
     )
     >>> df.sql("SELECT foo, bar FROM self LIMIT 2 OFFSET 2")
