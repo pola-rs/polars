@@ -766,8 +766,7 @@ class Array(NestedType):
 
         elif isinstance(shape, tuple):
             if len(shape) > 1:
-                for dim in shape[1:]:  # TODO: Wrong order??
-                    inner = Array(inner, dim)
+                inner = Array(inner, shape[1:])
 
             self.inner = inner
             self.size = shape[0]

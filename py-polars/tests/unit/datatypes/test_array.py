@@ -310,3 +310,16 @@ def test_array_width_deprecated() -> None:
         dtype = pl.Array(pl.Int8, width=2)
     with pytest.deprecated_call():
         assert dtype.width == 2
+
+
+def test_array_inner_recursive() -> None:
+    shape = (2, 3, 4, 5)
+    dtype = pl.Array(int, shape=shape)
+    for dim in shape:
+        assert dtype.size == dim
+        dtype = dtype.inner
+
+
+def test_array_inner_recursive_python_dtype() -> None:
+    dtype = pl.Array(int, shape=(2, 3))
+    assert dtype.inner.inner == pl.Int64
