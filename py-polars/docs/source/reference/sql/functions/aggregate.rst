@@ -40,7 +40,7 @@ Returns the average (mean) of all the elements in the grouping.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "b", "c"], 
+        "foo": ["b", "a", "b", "c"],
         "bar": [20, 10, 30, 40]
       }
     )
@@ -66,7 +66,7 @@ Returns the amount of elements in the grouping.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "b", "c"], 
+        "foo": ["b", "a", "b", "c"],
         "bar": [20, 10, 30, 40]
       }
     )
@@ -102,7 +102,7 @@ Returns the first element of the grouping.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "b", "c"], 
+        "foo": ["b", "a", "b", "c"],
         "bar": [20, 10, 30, 40]
       }
     )
@@ -128,7 +128,7 @@ Returns the last element of the grouping.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "b", "c"], 
+        "foo": ["b", "a", "b", "c"],
         "bar": [20, 10, 30, 40]
       }
     )
@@ -154,7 +154,7 @@ Returns the greatest (maximum) of all the elements in the grouping.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "b", "c"], 
+        "foo": ["b", "a", "b", "c"],
         "bar": [20, 10, 30, 40]
       }
     )
@@ -206,7 +206,7 @@ Returns the smallest (minimum) of all the elements in the grouping.
 
     >>> df = pl.DataFrame(
       {
-        "foo": ["b", "a", "b", "c"], 
+        "foo": ["b", "a", "b", "c"],
         "bar": [20, 10, 30, 40]
       }
     )

@@ -50,15 +50,11 @@ Returns the absolute value of the input column.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-        "a": [-1.0, 0.0, 1.0, 2.0],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [-1.0, 0.0, 1.0, -2.0]})
     >>> df.sql("SELECT ABS(a) FROM self")
     shape: (4, 1)
     ┌─────┐
-    │ A   │
+    │ a   │
     │ --- │
     │ f64 │
     ╞═════╡
@@ -78,11 +74,7 @@ Returns the cube root (∛) of a number.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-        "a": [1.0, 2.0, 4.0],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1.0, 2.0, 4.0]})
     >>> df.sql("SELECT CBRT(a) FROM self")
     shape: (3, 1)
     ┌──────────┐
@@ -105,11 +97,7 @@ Returns the nearest integer closest from zero.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-        "a": [0.1, 2.8, 4.30],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [0.1, 2.8, 4.30]})
     >>> df.sql("SELECT CEIL(a) FROM self")
     shape: (3, 1)
     ┌─────┐
@@ -132,11 +120,7 @@ Computes the exponential of the given value.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [1, 2, 4],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1, 2, 4]})
     >>> df.sql("SELECT EXP(a) FROM self")
     shape: (3, 1)
     ┌──────────┐
@@ -159,11 +143,7 @@ Returns the nearest integer away from zero.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [0.1, 2.8, 4.30],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [0.1, 2.8, 4.30]})
     >>> df.sql("SELECT FLOOR(a) FROM self")
     shape: (3, 1)
     ┌─────┐
@@ -176,7 +156,6 @@ Returns the nearest integer away from zero.
     │ 4.0 │
     └─────┘
 
-
 .. _ln:
 
 LN
@@ -187,11 +166,7 @@ Computes the natural logarithm of the given value.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [1, 2, 4],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1, 2, 4]})
     >>> df.sql("SELECT LN(a) FROM self")
     shape: (3, 1)
     ┌──────────┐
@@ -214,11 +189,7 @@ Computes the `base` logarithm of the given value.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [1, 2, 4],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1, 2, 4]})
     >>> df.sql("SELECT LOG(a, 10) FROM self")
     shape: (3, 1)
     ┌─────────┐
@@ -241,11 +212,7 @@ Computes the logarithm of the given value in base 2.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [1, 2, 4],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1, 2, 4]})
     >>> df.sql("SELECT LOG2(a) FROM self")
     shape: (3, 1)
     ┌─────┐
@@ -268,11 +235,7 @@ Computes the logarithm of the given value in base 10.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [1, 2, 4],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1, 2, 4]})
     >>> df.sql("SELECT LOG10(a) FROM self")
     shape: (3, 1)
     ┌─────────┐
@@ -295,11 +258,7 @@ Computes the natural logarithm of "given value plus one".
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "a": [1, 2, 4],
-      }
-    )
+    >>> df = pl.DataFrame({"a": [1, 2, 4]})
     >>> df.sql("SELECT LOG1P(a) FROM self")
     shape: (3, 1)
     ┌──────────┐
@@ -322,11 +281,7 @@ Returns the remainder of a numeric expression divided by another numeric express
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "x": [0, 1, 2, 3, 4]
-      }
-    )
+    >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
     >>> df.sql("SELECT MOD(x, 2) FROM self")
     shape: (5, 1)
     ┌─────┐
@@ -340,7 +295,7 @@ Returns the remainder of a numeric expression divided by another numeric express
     │ 1   │
     │ 0   │
     └─────┘
-    
+
 .. _pi:
 
 PI
@@ -351,7 +306,7 @@ Returns a (very good) approximation of 𝜋.
 
 .. code-block:: python
 
-    >>> df.sql("SELECT PI() from self")
+    >>> df.sql("SELECT PI() FROM self")
     shape: (1, 1)
     ┌──────────┐
     │ literal  │
@@ -371,12 +326,8 @@ Returns the value to the power of the given exponent.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "x": [0, 1, 2, 3, 4]
-      }
-    )
-    >>> df.sql("SELECT POW(x, 2) from self")
+    >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+    >>> df.sql("SELECT POW(x, 2) FROM self")
     shape: (5, 1)
     ┌─────┐
     │ x   │
@@ -400,12 +351,8 @@ Round a number to `x` decimals (default: 0) away from zero.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "x": [0.4, 1.8, 2.2, 3.6, 4.1]
-      }
-    )
-    >>> df.sql("SELECT ROUND(x) from self")
+    >>> df = pl.DataFrame({"x": [0.4, 1.8, 2.2, 3.6, 4.1]})
+    >>> df.sql("SELECT ROUND(x) FROM self")
     shape: (5, 1)
     ┌─────┐
     │ x   │
@@ -429,12 +376,8 @@ Returns the sign of the argument as -1, 0, or +1.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "x": [0.4, -1, -2, 3, 4]
-      }
-    )
-    >>> df.sql("SELECT SIGN(x) from self")
+    >>> df = pl.DataFrame({"x": [0.4, -1, 0, -2, 4]})
+    >>> df.sql("SELECT SIGN(x) FROM self")
     shape: (5, 1)
     ┌─────┐
     │ x   │
@@ -443,11 +386,11 @@ Returns the sign of the argument as -1, 0, or +1.
     ╞═════╡
     │ 1   │
     │ -1  │
+    │ 0   │
     │ -1  │
     │ 1   │
-    │ 1   │
     └─────┘
-    
+
 .. _sqrt:
 
 SQRT
@@ -458,12 +401,8 @@ Returns the square root (√) of a number.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-      {
-		    "x": [2, 4, 49, 64]
-      }
-    )
-    >>> df.sql("SELECT SQRT(x) from self")
+    >>> df = pl.DataFrame({"x": [2, 4, 49, 64]})
+    >>> df.sql("SELECT SQRT(x) FROM self")
     shape: (4, 1)
     ┌──────────┐
     │ x        │
