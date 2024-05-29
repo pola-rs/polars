@@ -26,6 +26,7 @@ polars/vendor
 .venv*/
 __pycache__/
 .coverage
+*.pyd
 
 # Rust
 .cargo/
