@@ -743,10 +743,18 @@ class Array(NestedType):
         self,
         inner: PolarsDataType | PythonDataType,
         shape: int | tuple[int, ...] | None = None,
+        *,
         width: int | None = None,
     ):
         if width is not None:
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                version="0.20.31",
+            )
             shape = width
+
         elif isinstance(shape, tuple):
             if len(shape) > 1:
                 self.shape = shape
