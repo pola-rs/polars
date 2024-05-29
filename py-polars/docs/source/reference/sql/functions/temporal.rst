@@ -25,18 +25,20 @@ unless a strftime-compatible formatting string is provided as the second paramet
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame({"str_date": ["1969.10.30", "2024.07.05", "2077.02.28"]})
-    >>> df.sql("SELECT str_date, DATE(str_date, '%Y.%m.%d') AS date FROM self")
-    shape: (3, 2)
-    ┌────────────┬────────────┐
-    │ str_date   ┆ date       │
-    │ ---        ┆ ---        │
-    │ str        ┆ date       │
-    ╞════════════╪════════════╡
-    │ 1969.10.30 ┆ 1969-10-30 │
-    │ 2024.07.05 ┆ 2024-07-05 │
-    │ 2077.02.28 ┆ 2077-02-28 │
-    └────────────┴────────────┘
+    df = pl.DataFrame({"str_date": ["1969.10.30", "2024.07.05", "2077.02.28"]})
+    df.sql("""
+      SELECT str_date, DATE(str_date, '%Y.%m.%d') AS date FROM self
+    """)
+    # shape: (3, 2)
+    # ┌────────────┬────────────┐
+    # │ str_date   ┆ date       │
+    # │ ---        ┆ ---        │
+    # │ str        ┆ date       │
+    # ╞════════════╪════════════╡
+    # │ 1969.10.30 ┆ 1969-10-30 │
+    # │ 2024.07.05 ┆ 2024-07-05 │
+    # │ 2077.02.28 ┆ 2077-02-28 │
+    # └────────────┴────────────┘
 
 .. _date_part:
 
@@ -68,7 +70,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
           "dt": [
               date(1969, 12, 31),
@@ -77,7 +79,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
           ]
       }
     )
-    >>> df.sql("""
+    df.sql("""
       SELECT
         dt,
         DATE_PART(dt, 'year') AS year,
@@ -85,16 +87,17 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
         DATE_PART(dt, 'day') AS day
       FROM self
     """)
-    shape: (3, 4)
-    ┌────────────┬──────┬───────┬─────┐
-    │ dt         ┆ year ┆ month ┆ day │
-    │ ---        ┆ ---  ┆ ---   ┆ --- │
-    │ date       ┆ i32  ┆ i8    ┆ i8  │
-    ╞════════════╪══════╪═══════╪═════╡
-    │ 1969-12-31 ┆ 1969 ┆ 12    ┆ 31  │
-    │ 2026-08-22 ┆ 2026 ┆ 8     ┆ 22  │
-    │ 2077-02-10 ┆ 2077 ┆ 2     ┆ 10  │
-    └────────────┴──────┴───────┴─────┘
+
+    # shape: (3, 4)
+    # ┌────────────┬──────┬───────┬─────┐
+    # │ dt         ┆ year ┆ month ┆ day │
+    # │ ---        ┆ ---  ┆ ---   ┆ --- │
+    # │ date       ┆ i32  ┆ i8    ┆ i8  │
+    # ╞════════════╪══════╪═══════╪═════╡
+    # │ 1969-12-31 ┆ 1969 ┆ 12    ┆ 31  │
+    # │ 2026-08-22 ┆ 2026 ┆ 8     ┆ 22  │
+    # │ 2077-02-10 ┆ 2077 ┆ 2     ┆ 10  │
+    # └────────────┴──────┴───────┴─────┘
 
 .. _extract:
 
@@ -125,7 +128,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
           "dt": [
               date(1969, 12, 31),
@@ -134,7 +137,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
           ]
       }
     )
-    >>> df.sql("""
+    df.sql("""
       SELECT
         dt,
         EXTRACT(decade FROM dt) AS decade,
@@ -142,13 +145,14 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
         EXTRACT(quarter FROM dt) AS quarter,
       FROM self
     """)
-    shape: (3, 4)
-    ┌────────────┬────────┬──────┬─────────┐
-    │ dt         ┆ decade ┆ year ┆ quarter │
-    │ ---        ┆ ---    ┆ ---  ┆ ---     │
-    │ date       ┆ i32    ┆ i32  ┆ i8      │
-    ╞════════════╪════════╪══════╪═════════╡
-    │ 1969-12-31 ┆ 196    ┆ 1969 ┆ 4       │
-    │ 2026-08-22 ┆ 202    ┆ 2026 ┆ 3       │
-    │ 2077-02-10 ┆ 207    ┆ 2077 ┆ 1       │
-    └────────────┴────────┴──────┴─────────┘
+
+    # shape: (3, 4)
+    # ┌────────────┬────────┬──────┬─────────┐
+    # │ dt         ┆ decade ┆ year ┆ quarter │
+    # │ ---        ┆ ---    ┆ ---  ┆ ---     │
+    # │ date       ┆ i32    ┆ i32  ┆ i8      │
+    # ╞════════════╪════════╪══════╪═════════╡
+    # │ 1969-12-31 ┆ 196    ┆ 1969 ┆ 4       │
+    # │ 2026-08-22 ┆ 202    ┆ 2026 ┆ 3       │
+    # │ 2077-02-10 ┆ 207    ┆ 2077 ┆ 1       │
+    # └────────────┴────────┴──────┴─────────┘

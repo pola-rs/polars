@@ -30,24 +30,26 @@ Returns the first non-null value in the provided values/columns.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
-        "foo": [1, None, None, None],
-        "bar": [1, 2, None, None],
+        "foo": [1, None, 3, None],
+        "bar": [1, 2, None, 4],
       }
     )
-    >>> df.sql("SELECT COALESCE(foo, bar) AS baz FROM self")
-    shape: (4, 1)
-    ┌──────┐
-    │ baz  │
-    │ ---  │
-    │ i64  │
-    ╞══════╡
-    │ 1    │
-    │ 2    │
-    │ null │
-    │ null │
-    └──────┘
+    df.sql("""
+      SELECT foo, bar, COALESCE(foo, bar) AS baz FROM self
+    """)
+    # shape: (4, 3)
+    # ┌──────┬──────┬─────┐
+    # │ foo  ┆ bar  ┆ baz │
+    # │ ---  ┆ ---  ┆ --- │
+    # │ i64  ┆ i64  ┆ i64 │
+    # ╞══════╪══════╪═════╡
+    # │ 1    ┆ 1    ┆ 1   │
+    # │ null ┆ 2    ┆ 2   │
+    # │ 3    ┆ null ┆ 3   │
+    # │ null ┆ 4    ┆ 4   │
+    # └──────┴──────┴─────┘
 
 .. _greatest:
 
@@ -59,24 +61,26 @@ Returns the greatest value in the list of expressions.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
         "foo": [100, 200, 300, 400], 
         "bar": [20, 10, 30, 40]
       }
     )
-    >>> df.sql("SELECT GREATEST(foo, bar) AS baz FROM self")
-    shape: (4, 1)
-    ┌─────┐
-    │ baz │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 100 │
-    │ 200 │
-    │ 300 │
-    │ 400 │
-    └─────┘
+    df.sql("""
+      SELECT GREATEST(foo, bar) AS baz FROM self
+    """)
+    # shape: (4, 1)
+    # ┌─────┐
+    # │ baz │
+    # │ --- │
+    # │ i64 │
+    # ╞═════╡
+    # │ 100 │
+    # │ 200 │
+    # │ 300 │
+    # │ 400 │
+    # └─────┘
 
 .. _if:
 
@@ -88,24 +92,26 @@ Returns expr1 if the boolean condition provided as the first parameter evaluates
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
         "foo": [100, 200, 300, 400],
         "bar": [10, 20, 30, 40]
       }
     )
-    >>> df.sql("SELECT IF(foo < 250, 111, 999) AS baz FROM self")
-    shape: (4, 1)
-    ┌─────┐
-    │ baz │
-    │ --- │
-    │ i32 │
-    ╞═════╡
-    │ 111 │
-    │ 111 │
-    │ 999 │
-    │ 999 │
-    └─────┘
+    df.sql("""
+      SELECT IF(foo < 250, 111, 999) AS baz FROM self
+    """)
+    # shape: (4, 1)
+    # ┌─────┐
+    # │ baz │
+    # │ --- │
+    # │ i32 │
+    # ╞═════╡
+    # │ 111 │
+    # │ 111 │
+    # │ 999 │
+    # │ 999 │
+    # └─────┘
 
 .. _ifnull:
 
@@ -117,24 +123,26 @@ If an expression value is NULL, return an alternative value.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
         "foo": ["a", None, None, "d"],
         "bar": [1, 2, 3, 4],
       }
     )
-    >>> df.sql("SELECT IFNULL(foo, 'n/a') AS baz FROM self")
-    shape: (4, 1)
-    ┌─────┐
-    │ baz │
-    │ --- │
-    │ str │
-    ╞═════╡
-    │ a   │
-    │ n/a │
-    │ n/a │
-    │ d   │
-    └─────┘
+    df.sql("""
+      SELECT IFNULL(foo, 'n/a') AS baz FROM self
+    """)
+    # shape: (4, 1)
+    # ┌─────┐
+    # │ baz │
+    # │ --- │
+    # │ str │
+    # ╞═════╡
+    # │ a   │
+    # │ n/a │
+    # │ n/a │
+    # │ d   │
+    # └─────┘
 
 .. _least:
 
@@ -146,24 +154,26 @@ Returns the smallest value in the list of expressions.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
         "foo": [100, 200, 300, 400],
         "bar": [20, 10, 30, 40]
       }
     )
-    >>> df.sql("SELECT LEAST(foo, bar) AS baz FROM self")
-    shape: (4, 1)
-    ┌─────┐
-    │ baz │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 20  │
-    │ 10  │
-    │ 30  │
-    │ 40  │
-    └─────┘
+    df.sql("""
+      SELECT LEAST(foo, bar) AS baz FROM self
+    """)
+    # shape: (4, 1)
+    # ┌─────┐
+    # │ baz │
+    # │ --- │
+    # │ i64 │
+    # ╞═════╡
+    # │ 20  │
+    # │ 10  │
+    # │ 30  │
+    # │ 40  │
+    # └─────┘
 
 .. _nullif:
 
@@ -175,21 +185,23 @@ Returns NULL if two expressions are equal, otherwise returns the first.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
+    df = pl.DataFrame(
       {
         "foo": [100, 200, 300, 400],
         "bar": [20, 10, 30, 40]
       }
     )
-    >>> df.sql("SELECT NULLIF(foo, bar) AS baz FROM self")
-    shape: (4, 1)
-    ┌─────┐
-    │ baz │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 100 │
-    │ 200 │
-    │ 300 │
-    │ 400 │
-    └─────┘
+    df.sql("""
+      SELECT NULLIF(foo, bar) AS baz FROM self
+    """)
+    # shape: (4, 1)
+    # ┌─────┐
+    # │ baz │
+    # │ --- │
+    # │ i64 │
+    # ╞═════╡
+    # │ 100 │
+    # │ 200 │
+    # │ 300 │
+    # │ 400 │
+    # └─────┘

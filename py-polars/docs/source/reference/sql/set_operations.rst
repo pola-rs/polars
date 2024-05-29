@@ -30,32 +30,32 @@ The final result set will have no duplicate rows.
 
 .. code-block:: python
 
-    >>> lf1 = pl.LazyFrame({
-    ...     "id": [1, 2, 3],
-    ...     "name": ["Alice", "Bob", "Charlie"],
-    ... })
-    >>> lf2 = pl.LazyFrame({
-    ...     "id": [2, 3, 4],
-    ...     "age": [30, 25, 45],
-    ...     "name": ["Bob", "Charlie", "David"],
-    ... })
-    >>> lf_union = pl.sql("""
-    ...     SELECT id, name FROM df1
-    ...     UNION
-    ...     SELECT id, name FROM df2
-    ... """)
-    >>> lf_union.sort(by="id").collect()
-    shape: (4, 2)
-    ┌─────┬─────────┐
-    │ id  ┆ name    │
-    │ --- ┆ ---     │
-    │ i64 ┆ str     │
-    ╞═════╪═════════╡
-    │ 1   ┆ Alice   │
-    │ 2   ┆ Bob     │
-    │ 3   ┆ Charlie │
-    │ 4   ┆ David   │
-    └─────┴─────────┘
+    lf1 = pl.LazyFrame({
+        "id": [1, 2, 3],
+        "name": ["Alice", "Bob", "Charlie"],
+    })
+    lf2 = pl.LazyFrame({
+        "id": [2, 3, 4],
+        "age": [30, 25, 45],
+        "name": ["Bob", "Charlie", "David"],
+    })
+    lf_union = pl.sql("""
+        SELECT id, name FROM df1
+        UNION
+        SELECT id, name FROM df2
+    """).sort(by="id").collect()
+
+    # shape: (4, 2)
+    # ┌─────┬─────────┐
+    # │ id  ┆ name    │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ str     │
+    # ╞═════╪═════════╡
+    # │ 1   ┆ Alice   │
+    # │ 2   ┆ Bob     │
+    # │ 3   ┆ Charlie │
+    # │ 4   ┆ David   │
+    # └─────┴─────────┘
 
 .. _union_all:
 
@@ -68,25 +68,25 @@ The final result set will be composed of all rows from each query.
 
 .. code-block:: python
 
-    >>> lf_union_all = pl.sql("""
-    ...     SELECT id, name FROM df1
-    ...     UNION ALL
-    ...     SELECT id, name FROM df2
-    ... """)
-    >>> lf_union_all.sort(by="id").collect()
-    shape: (6, 2)
-    ┌─────┬─────────┐
-    │ id  ┆ name    │
-    │ --- ┆ ---     │
-    │ i64 ┆ str     │
-    ╞═════╪═════════╡
-    │ 1   ┆ Alice   │
-    │ 2   ┆ Bob     │
-    │ 2   ┆ Bob     │
-    │ 3   ┆ Charlie │
-    │ 3   ┆ Charlie │
-    │ 4   ┆ David   │
-    └─────┴─────────┘
+    lf_union_all = pl.sql("""
+        SELECT id, name FROM df1
+        UNION ALL
+        SELECT id, name FROM df2
+    """).sort(by="id").collect()
+
+    # shape: (6, 2)
+    # ┌─────┬─────────┐
+    # │ id  ┆ name    │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ str     │
+    # ╞═════╪═════════╡
+    # │ 1   ┆ Alice   │
+    # │ 2   ┆ Bob     │
+    # │ 2   ┆ Bob     │
+    # │ 3   ┆ Charlie │
+    # │ 3   ┆ Charlie │
+    # │ 4   ┆ David   │
+    # └─────┴─────────┘
 
 .. _union_by_name:
 
@@ -100,22 +100,22 @@ will have no duplicate rows. This also combines columns from both datasets.
 
 .. code-block:: python
 
-    >>> lf_union_by_name = pl.sql("""
-    ...     SELECT * FROM df1
-    ...     UNION BY NAME
-    ...     SELECT * FROM df2
-    ... """)
-    >>> lf_union_all.sort(by="id").collect()
-    shape: (6, 3)
-    ┌─────┬─────────┬──────┐
-    │ id  ┆ name    ┆ age  │
-    │ --- ┆ ---     ┆ ---  │
-    │ i64 ┆ str     ┆ i64  │
-    ╞═════╪═════════╪══════╡
-    │ 1   ┆ Alice   ┆ null │
-    │ 2   ┆ Bob     ┆ null │
-    │ 2   ┆ Bob     ┆ 30   │
-    │ 3   ┆ Charlie ┆ 25   │
-    │ 3   ┆ Charlie ┆ null │
-    │ 4   ┆ David   ┆ 45   │
-    └─────┴─────────┴──────┘
+    lf_union_by_name = pl.sql("""
+        SELECT * FROM df1
+        UNION BY NAME
+        SELECT * FROM df2
+    """).sort(by="id").collect()
+
+    # shape: (6, 3)
+    # ┌─────┬─────────┬──────┐
+    # │ id  ┆ name    ┆ age  │
+    # │ --- ┆ ---     ┆ ---  │
+    # │ i64 ┆ str     ┆ i64  │
+    # ╞═════╪═════════╪══════╡
+    # │ 1   ┆ Alice   ┆ null │
+    # │ 2   ┆ Bob     ┆ null │
+    # │ 2   ┆ Bob     ┆ 30   │
+    # │ 3   ┆ Charlie ┆ 25   │
+    # │ 3   ┆ Charlie ┆ null │
+    # │ 4   ┆ David   ┆ 45   │
+    # └─────┴─────────┴──────┘
