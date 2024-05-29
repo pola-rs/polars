@@ -453,3 +453,50 @@ def test_non_coalesce_join_projection_pushdown_16515(
         .item()
         == 1
     )
+
+
+@pytest.mark.parametrize("join_type", ["inner", "left", "full"])
+def test_non_coalesce_multi_key_join_projection_pushdown_16554(
+    join_type: Literal["inner", "left", "full"],
+) -> None:
+    lf1 = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, 4, 5],
+        }
+    )
+    lf2 = pl.LazyFrame(
+        {
+            "a": [0, 2, 3, 4, 5],
+            "b": [1, 2, 3, 5, 6],
+            "c": [7, 5, 3, 5, 7],
+        }
+    )
+
+    expect = (
+        lf1.with_columns(a2="a")
+        .join(
+            other=lf2,
+            how=join_type,
+            left_on=["a", "a2"],
+            right_on=["b", "c"],
+            coalesce=False,
+        )
+        .select("a", "b", "c")
+        .sort("a")
+        .collect()
+    )
+
+    out = (
+        lf1.join(
+            other=lf2,
+            how=join_type,
+            left_on=["a", "a"],
+            right_on=["b", "c"],
+            coalesce=False,
+        )
+        .select("a", "b", "c")
+        .collect()
+    )
+
+    assert_frame_equal(out.sort("a"), expect)
