@@ -317,9 +317,9 @@ def test_array_inner_recursive() -> None:
     dtype = pl.Array(int, shape=shape)
     for dim in shape:
         assert dtype.size == dim
-        dtype = dtype.inner
+        dtype = dtype.inner  # type: ignore[assignment]
 
 
 def test_array_inner_recursive_python_dtype() -> None:
     dtype = pl.Array(int, shape=(2, 3))
-    assert dtype.inner.inner == pl.Int64
+    assert dtype.inner.inner == pl.Int64  # type: ignore[union-attr]

@@ -757,18 +757,18 @@ class Array(NestedType):
             msg = "Array is missing the required argument `shape`."
             raise TypeError(msg)
 
-        inner = polars.datatypes.py_type_to_dtype(inner)
+        inner_parsed = polars.datatypes.py_type_to_dtype(inner)
 
         if isinstance(shape, int):
-            self.inner = inner
+            self.inner = inner_parsed
             self.size = shape
             self.shape = (shape,)
 
         elif isinstance(shape, tuple):
             if len(shape) > 1:
-                inner = Array(inner, shape[1:])
+                inner_parsed = Array(inner_parsed, shape[1:])
 
-            self.inner = inner
+            self.inner = inner_parsed
             self.size = shape[0]
             self.shape = shape
 
