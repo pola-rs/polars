@@ -203,6 +203,15 @@ pub struct HStack {
 }
 
 #[pyclass]
+/// Like Select, but all operations produce a single row.
+pub struct Reduce {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    exprs: Vec<PyExprIR>,
+}
+
+#[pyclass]
 /// Remove duplicates from the table
 pub struct Distinct {
     #[pyo3(get)]
@@ -436,11 +445,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input,
             exprs,
             schema: _,
-        } => Select {
+        } => Reduce {
             input: input.0,
-            expr: exprs.iter().map(|e| e.into()).collect(),
-            cse_expr: vec![],
-            options: (),
+            exprs: exprs.iter().map(|e| e.into()).collect(),
         }
         .into_py(py),
         IR::Distinct { input, options } => Distinct {
