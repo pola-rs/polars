@@ -133,7 +133,7 @@ impl SortSource {
         }?;
 
         // convert to chunks
-        let dfs = split_df(&mut df, self.n_threads);
+        let dfs = split_df(&mut df, self.n_threads, true);
         Ok(SourceResult::GotMoreData(self.finish_batch(dfs)))
     }
     fn print_verbose(&self, verbose: bool) {
