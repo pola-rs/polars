@@ -303,3 +303,10 @@ def test_ndarray_construction() -> None:
     s = pl.Series(a)
     assert s.dtype == pl.Array(pl.Int64, (4, 2))
     assert (s.to_numpy() == a).all()
+
+
+def test_array_width_deprecated() -> None:
+    with pytest.deprecated_call():
+        dtype = pl.Array(pl.Int8, width=2)
+    with pytest.deprecated_call():
+        assert dtype.width == 2
