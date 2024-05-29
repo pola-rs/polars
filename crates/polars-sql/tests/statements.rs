@@ -302,7 +302,6 @@ fn test_compound_join_three_tables() {
             ON df3.a = df1.a AND df3.b = df1.b
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-
     let expected = df! {
         "a" => [2, 3],
         "b" => [3, 4],
@@ -334,6 +333,7 @@ fn test_compound_join_nested_and() {
         "d" => [0, 3, 4, 5, 6]
     }
     .unwrap();
+
     let mut ctx = SQLContext::new();
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
@@ -428,7 +428,6 @@ fn test_compound_join_nested_and_with_brackets() {
         "e" => ["a", "b", "c", "d", "?"],
     }
     .unwrap();
-
     let df2 = df! {
         "a" => [1, 2, 3, 4, 5],
         "b" => [1, 3, 3, 5, 6],

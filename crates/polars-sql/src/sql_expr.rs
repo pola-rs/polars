@@ -299,7 +299,7 @@ impl SQLExprVisitor<'_> {
         }
 
         let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
-        let schema = lf.schema()?;
+        let schema = lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
 
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {
@@ -335,7 +335,7 @@ impl SQLExprVisitor<'_> {
     /// Visit a compound SQL identifier
     ///
     /// e.g. df.column or "df"."column"
-    fn visit_compound_identifier(&self, idents: &[Ident]) -> PolarsResult<Expr> {
+    fn visit_compound_identifier(&mut self, idents: &[Ident]) -> PolarsResult<Expr> {
         match idents {
             [tbl_name, column_name] => {
                 let mut lf = self
@@ -348,7 +348,8 @@ impl SQLExprVisitor<'_> {
                         )
                     })?;
 
-                let schema = lf.schema()?;
+                let schema =
+                    lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
                 if let Some((_, name, _)) = schema.get_full(&column_name.value) {
                     let resolved = &self.ctx.resolve_name(&tbl_name.value, &column_name.value);
                     Ok(if name != resolved {

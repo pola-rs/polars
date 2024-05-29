@@ -23,11 +23,12 @@ use crate::table_functions::PolarsTableFunctions;
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
+    pub(crate) lp_arena: Arena<IR>,
+    pub(crate) expr_arena: Arena<AExpr>,
+
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
     table_aliases: RefCell<PlHashMap<String, String>>,
     joined_aliases: RefCell<PlHashMap<String, PlHashMap<String, String>>>,
-    lp_arena: Arena<IR>,
-    expr_arena: Arena<AExpr>,
 }
 
 impl Default for SQLContext {
@@ -119,7 +120,7 @@ impl SQLContext {
             .map_err(to_compute_err)?;
 
         polars_ensure!(ast.len() == 1, ComputeError: "One (and only one) statement at a time please");
-        let res = self.execute_statement(ast.first().unwrap());
+        let res = self.execute_statement(ast.first().unwrap())?;
 
         // Ensure the result uses the proper arenas.
         // This will instantiate new arenas with a new version.
@@ -131,6 +132,7 @@ impl SQLContext {
         self.cte_map.borrow_mut().clear();
         self.table_aliases.borrow_mut().clear();
         self.joined_aliases.borrow_mut().clear();
+
         Ok(res)
     }
 
@@ -350,8 +352,10 @@ impl SQLContext {
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
                 let (r_name, mut rf) = self.get_table(&tbl.relation)?;
-                let left_schema = lf.schema()?;
-                let right_schema = rf.schema()?;
+                let left_schema =
+                    lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+                let right_schema =
+                    rf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
 
                 lf = match &tbl.join_operator {
                     JoinOperator::FullOuter(constraint) => {
@@ -389,7 +393,8 @@ impl SQLContext {
                 };
 
                 // track join-aliased columns so we can resolve them later
-                let joined_schema = lf.schema()?;
+                let joined_schema =
+                    lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
                 self.joined_aliases.borrow_mut().insert(
                     r_name.to_string(),
                     right_schema
