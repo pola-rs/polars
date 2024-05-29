@@ -9,7 +9,7 @@ String
      - Returns the length of the input string in bits.
    * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
-   * - :ref:`CONCATWS <concat_ws>`
+   * - :ref:`CONCAT_WS <concat_ws>`
      - Returns all input expressions concatenated together (and interleaved with a separator) as a string.
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
@@ -223,19 +223,23 @@ Returns the character length of the string.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame({"foo": ["ab", "efg", "i", "mnop"]})
-    >>> df.sql("SELECT foo, LENGTH(foo) AS len FROM self")
-    shape: (4, 2)
-    ┌──────┬─────┐
-    │ foo  ┆ len │
-    │ ---  ┆ --- │
-    │ str  ┆ u32 │
-    ╞══════╪═════╡
-    │ ab   ┆ 2   │
-    │ efg  ┆ 3   │
-    │ i    ┆ 1   │
-    │ mnop ┆ 4   │
-    └──────┴─────┘
+    >>> df = pl.DataFrame(
+      {
+        "iso_lang":["de", "ru", "es"],
+        "color": ["weiß", "синий", "amarillo"],
+      }
+    )
+    >>> df.sql("SELECT iso_lang, color, LENGTH(color) AS n_chars FROM self")
+    shape: (3, 3)
+    ┌──────────┬──────────┬─────────┐
+    │ iso_lang ┆ color    ┆ n_chars │
+    │ ---      ┆ ---      ┆ ---     │
+    │ str      ┆ str      ┆ u32     │
+    ╞══════════╪══════════╪═════════╡
+    │ de       ┆ weiß     ┆ 4       │
+    │ ru       ┆ синий    ┆ 5       │
+    │ es       ┆ amarillo ┆ 8       │
+    └──────────┴──────────┴─────────┘
 
 .. _lower:
 
