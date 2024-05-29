@@ -3930,12 +3930,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     “m:1”: check if join keys are unique in right dataset
 
             .. note::
+                This is currently not supported by the streaming engine.
 
-                - This is currently not supported the streaming engine.
         join_nulls
             Join on null values. By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of join columns).
+
             - None: -> join specific.
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
