@@ -317,7 +317,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         assert_frame_equal(
             result_frame,
             expected_frame,
-            check_dtype=(".dt." not in suggested_expression),
+            check_dtypes=(".dt." not in suggested_expression),
         )
 
 

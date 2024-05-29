@@ -1105,7 +1105,7 @@ def test_empty() -> None:
 
     assert_series_equal(pl.Series(), pl.Series())
     assert_series_equal(
-        pl.Series(dtype=pl.Int32), pl.Series(dtype=pl.Int64), check_dtype=False
+        pl.Series(dtype=pl.Int32), pl.Series(dtype=pl.Int64), check_dtypes=False
     )
 
     with pytest.raises(TypeError, match="ambiguous"):

@@ -97,7 +97,7 @@ def test_group_by_all() -> None:
             "n": [3, 2, 1],
         }
     )
-    assert_frame_equal(expected, res, check_dtype=False)
+    assert_frame_equal(expected, res, check_dtypes=False)
 
     # more involved determination of agg/group columns
     res = df.sql(
@@ -198,7 +198,7 @@ def test_group_by_ordinal_position() -> None:
             ORDER BY c
             """
         )
-        assert_frame_equal(res1, expected, check_dtype=False)
+        assert_frame_equal(res1, expected, check_dtypes=False)
 
         res2 = ctx.execute(
             """

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import (
     FLOAT_DTYPES,
     Array,
@@ -19,11 +20,12 @@ if TYPE_CHECKING:
     from polars import DataType
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_series_equal(
     left: Series,
     right: Series,
     *,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
@@ -42,7 +44,7 @@ def assert_series_equal(
         The first Series to compare.
     right
         The second Series to compare.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_names
         Require names to match.
@@ -99,7 +101,7 @@ def assert_series_equal(
     if check_names and left.name != right.name:
         raise_assertion_error("Series", "name mismatch", left.name, right.name)
 
-    if check_dtype and left.dtype != right.dtype:
+    if check_dtypes and left.dtype != right.dtype:
         raise_assertion_error("Series", "dtype mismatch", left.dtype, right.dtype)
 
     _assert_series_values_equal(
@@ -295,11 +297,12 @@ def _assert_series_values_within_tolerance(
         )
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_series_not_equal(
     left: Series,
     right: Series,
     *,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
@@ -317,7 +320,7 @@ def assert_series_not_equal(
         The first Series to compare.
     right
         The second Series to compare.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_names
         Require names to match.
@@ -355,7 +358,7 @@ def assert_series_not_equal(
         assert_series_equal(
             left=left,
             right=right,
-            check_dtype=check_dtype,
+            check_dtypes=check_dtypes,
             check_names=check_names,
             check_exact=check_exact,
             rtol=rtol,

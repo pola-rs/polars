@@ -137,7 +137,7 @@ def test_count_suffix_10783() -> None:
         .name.suffix("_suffix")
     )
     df_expect = df.with_columns(pl.Series("len_suffix", [3, 3, 1, 3]))
-    assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
+    assert_frame_equal(df_with_cnt, df_expect, check_dtypes=False)
 
 
 def test_or() -> None:
