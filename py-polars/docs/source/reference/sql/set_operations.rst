@@ -14,9 +14,9 @@ Set Operations
      - Combine the complete result sets of two or more SELECT statements.
        The final result set will be composed of all rows from each query.
    * - :ref:`UNION [ALL] BY NAME <union_by_name>`
-     - Combine the result sets of two or more SELECT statements by column name
-       instead of by position; if `ALL` is omitted the final result will have
-       no duplicate rows.
+     - Combine the result sets of two or more SELECT statements, aligning columns
+       by name instead of by ordinal position; if `ALL` is omitted the final result
+       will have no duplicate rows. This also combines columns from both datasets.
 
 
 .. _union:
@@ -30,34 +30,32 @@ The final result set will have no duplicate rows.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-          {
-              "foo": [1, 2, 3],
-              "ham": ["a", "a", "c"],
-          }
-      )
-    >>> other_df = pl.DataFrame(
-          {
-              "apple": ["x", "y", "z"],
-              "ham": ["a", "b", "b"],
-          }
-      )
-    >>> df.sql("""
-        SELECT ham FROM df
-        UNION
-        SELECT ham FROM other_df
-        """
-      )
-    shape: (3, 1)
-    ┌─────┐
-    │ ham │
-    │ --- │
-    │ str │
-    ╞═════╡
-    │ c   │
-    │ b   │
-    │ a   │
-    └─────┘
+    >>> lf1 = pl.LazyFrame({
+    ...     "id": [1, 2, 3],
+    ...     "name": ["Alice", "Bob", "Charlie"],
+    ... })
+    >>> lf2 = pl.LazyFrame({
+    ...     "id": [2, 3, 4],
+    ...     "age": [30, 25, 45],
+    ...     "name": ["Bob", "Charlie", "David"],
+    ... })
+    >>> lf_union = pl.sql("""
+    ...     SELECT id, name FROM df1
+    ...     UNION
+    ...     SELECT id, name FROM df2
+    ... """)
+    >>> lf_union.sort(by="id").collect()
+    shape: (4, 2)
+    ┌─────┬─────────┐
+    │ id  ┆ name    │
+    │ --- ┆ ---     │
+    │ i64 ┆ str     │
+    ╞═════╪═════════╡
+    │ 1   ┆ Alice   │
+    │ 2   ┆ Bob     │
+    │ 3   ┆ Charlie │
+    │ 4   ┆ David   │
+    └─────┴─────────┘
 
 .. _union_all:
 
@@ -70,78 +68,54 @@ The final result set will be composed of all rows from each query.
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-          {
-              "foo": [1, 2, 3],
-              "ham": ["a", "b", "c"],
-          }
-      )
-    >>> other_df = pl.DataFrame(
-          {
-              "apple": ["x", "y", "z"],
-              "ham": ["a", "b", "d"],
-          }
-      )
-    >>> df.sql("""
-        SELECT ham FROM df
-        UNION ALL
-        SELECT ham FROM other_df
-        """
-      )
-    shape: (6, 1)
-    ┌─────┐
-    │ ham │
-    │ --- │
-    │ str │
-    ╞═════╡
-    │ a   │
-    │ b   │
-    │ c   │
-    │ a   │
-    │ b   │
-    │ d   │
-    └─────┘
+    >>> lf_union_all = pl.sql("""
+    ...     SELECT id, name FROM df1
+    ...     UNION ALL
+    ...     SELECT id, name FROM df2
+    ... """)
+    >>> lf_union_all.sort(by="id").collect()
+    shape: (6, 2)
+    ┌─────┬─────────┐
+    │ id  ┆ name    │
+    │ --- ┆ ---     │
+    │ i64 ┆ str     │
+    ╞═════╪═════════╡
+    │ 1   ┆ Alice   │
+    │ 2   ┆ Bob     │
+    │ 2   ┆ Bob     │
+    │ 3   ┆ Charlie │
+    │ 3   ┆ Charlie │
+    │ 4   ┆ David   │
+    └─────┴─────────┘
 
 .. _union_by_name:
 
 UNION BY NAME
 -------------
-Combine the result sets of two or more SELECT statements by column name
-instead of by position; if `ALL` is omitted the final result will have
-no duplicate rows.
+Combine the result sets of two or more SELECT statements, aligning columns
+by name instead of by ordinal position; if `ALL` is omitted the final result
+will have no duplicate rows. This also combines columns from both datasets.
 
 **Example:**
 
 .. code-block:: python
 
-    >>> df = pl.DataFrame(
-          {
-              "foo": [1, 2, 3],
-              "ham": ["a", "a", "c"],
-          }
-      )
-    >>> other_df = pl.DataFrame(
-          {
-              "apple": ["x", "y", "z"],
-              "ham": ["a", "b", "c"],
-          }
-      )
-    >>> df.sql("""
-        SELECT ham FROM df
-        UNION BY NAME
-        SELECT ham FROM other_df
-        """
-      )
-    shape: (6, 2)
-    ┌──────┬──────┐
-    │ foo  ┆ ham  │
-    │ ---  ┆ ---  │
-    │ i64  ┆ str  │
-    ╞══════╪══════╡
-    │ null ┆ c    │
-    │ 2    ┆ null │
-    │ 1    ┆ null │
-    │ 3    ┆ null │
-    │ null ┆ b    │
-    │ null ┆ a    │
-    └──────┴──────┘
+    >>> lf_union_by_name = pl.sql("""
+    ...     SELECT * FROM df1
+    ...     UNION BY NAME
+    ...     SELECT * FROM df2
+    ... """)
+    >>> lf_union_all.sort(by="id").collect()
+    shape: (6, 3)
+    ┌─────┬─────────┬──────┐
+    │ id  ┆ name    ┆ age  │
+    │ --- ┆ ---     ┆ ---  │
+    │ i64 ┆ str     ┆ i64  │
+    ╞═════╪═════════╪══════╡
+    │ 1   ┆ Alice   ┆ null │
+    │ 2   ┆ Bob     ┆ null │
+    │ 2   ┆ Bob     ┆ 30   │
+    │ 3   ┆ Charlie ┆ 25   │
+    │ 3   ┆ Charlie ┆ null │
+    │ 4   ┆ David   ┆ 45   │
+    └─────┴─────────┴──────┘
