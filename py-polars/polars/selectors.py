@@ -87,7 +87,7 @@ def expand_selector(
     """
     Expand selector to column names, with respect to a specific frame or target schema.
 
-    .. versionchanged:: 0.20.30
+    .. versionadded:: 0.20.30
         The `strict` parameter was added.
 
     Parameters
@@ -1001,6 +1001,9 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
 def by_name(*names: str | Collection[str], require_all: bool = True) -> SelectorType:
     """
     Select all columns matching the given names.
+
+    .. versionadded:: 0.20.27
+      The `require_all` parameter was added.
 
     Parameters
     ----------

@@ -245,6 +245,8 @@ class ExprStructNameSpace:
 
         This is similar to `with_columns` on `DataFrame`.
 
+        .. versionadded:: 0.20.27
+
         Examples
         --------
         >>> df = pl.DataFrame(

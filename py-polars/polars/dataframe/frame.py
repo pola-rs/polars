@@ -423,6 +423,8 @@ class DataFrame:
         """
         Read a serialized DataFrame from a file.
 
+        .. versionadded:: 0.20.31
+
         Parameters
         ----------
         source
@@ -2224,6 +2226,8 @@ class DataFrame:
         """
         Serialize this DataFrame to a file or string in JSON format.
 
+        .. versionadded:: 0.20.31
+
         Parameters
         ----------
         file
@@ -3427,7 +3431,7 @@ class DataFrame:
         """
         Write the data in a Polars DataFrame to a database.
 
-        .. versionchanged:: 0.20.26
+        .. versionadded:: 0.20.26
             Support for instantiated connection objects in addition to URI strings, and
             a new `engine_options` parameter.
 
