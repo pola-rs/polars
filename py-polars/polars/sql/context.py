@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Collection, Generic, Mapping, overload
 
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals
 from polars._utils.wrap import wrap_ldf
@@ -40,9 +41,9 @@ class SQLContext(Generic[FrameType]):
 
     # note: the type-overloaded methods are required to support accurate typing
     # of the frame return from "execute" (which may be DataFrame or LazyFrame),
-    # as that is influenced by both the "eager_execution" flag at init-time AND
-    # the "eager" flag at query-time (if anyone can find a lighter-weight set
-    # of annotations that successfully resolves this, please go for it... ;)
+    # as that is influenced by both the "eager" flag at init-time AND the "eager"
+    # flag at query-time (if anyone can find a lighter-weight set of annotations
+    # that successfully resolves this, please go for it... ;)
 
     @overload
     def __init__(
@@ -50,7 +51,7 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        eager_execution: Literal[False] = False,
+        eager: Literal[False] = False,
         **named_frames: DataFrame | LazyFrame | None,
     ) -> None: ...
 
@@ -60,7 +61,7 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        eager_execution: Literal[True],
+        eager: Literal[True],
         **named_frames: DataFrame | LazyFrame | None,
     ) -> None: ...
 
@@ -70,16 +71,17 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        eager_execution: bool,
+        eager: bool,
         **named_frames: DataFrame | LazyFrame | None,
     ) -> None: ...
 
+    @deprecate_renamed_parameter("eager_execution", "eager", version="0.20.31")
     def __init__(
         self,
         frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
         *,
         register_globals: bool | int = False,
-        eager_execution: bool = False,
+        eager: bool = False,
         **named_frames: DataFrame | LazyFrame | None,
     ) -> None:
         """
@@ -93,7 +95,7 @@ class SQLContext(Generic[FrameType]):
             Register all eager/lazy frames found in the globals, automatically
             mapping their variable name to a table name. If given an integer
             then only the most recent "n" frames found will be registered.
-        eager_execution
+        eager
             Return query execution results as `DataFrame` instead of `LazyFrame`.
             (Note that the query itself is always executed in lazy-mode; this
             parameter impacts whether :meth:`execute` returns an eager or lazy
@@ -123,7 +125,7 @@ class SQLContext(Generic[FrameType]):
         )
 
         self._ctxt = PySQLContext.new()
-        self._eager_execution = eager_execution
+        self._eager_execution = eager
 
         frames = dict(frames or {})
         if register_globals:
@@ -166,7 +168,7 @@ class SQLContext(Generic[FrameType]):
         return f"<SQLContext [tables:{n_tables}] at 0x{id(self):x}>"
 
     # these overloads are necessary to cover the possible permutations
-    # of the init-time "eager_execution" param, and the "eager" param.
+    # of the init-time "eager" param, and the "eager" param.
 
     @overload
     def execute(
@@ -208,9 +210,9 @@ class SQLContext(Generic[FrameType]):
             A valid string SQL query.
         eager
             Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
-            If unset, the value of the init-time parameter "eager_execution" will be
-            used. (Note that the query itself is always executed in lazy-mode; this
-            parameter only impacts the type of the returned frame).
+            If unset, the value of the init-time "eager" parameter will be used.
+            Note that the query itself is always executed in lazy-mode; this
+            parameter only impacts the type of the returned frame.
 
         Examples
         --------

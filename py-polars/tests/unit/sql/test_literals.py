@@ -7,7 +7,7 @@ from polars.exceptions import ComputeError
 
 
 def test_bit_hex_literals() -> None:
-    with pl.SQLContext(df=None, eager_execution=True) as ctx:
+    with pl.SQLContext(df=None, eager=True) as ctx:
         out = ctx.execute(
             """
             SELECT *,

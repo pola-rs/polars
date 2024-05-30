@@ -58,7 +58,7 @@ def test_distinct() -> None:
             "b": [1, 2, 3, 4, 5, 6],
         }
     )
-    ctx = pl.SQLContext(register_globals=True, eager_execution=True)
+    ctx = pl.SQLContext(register_globals=True, eager=True)
     res1 = ctx.execute("SELECT DISTINCT a FROM df ORDER BY a DESC")
     assert_frame_equal(
         left=df.select("a").unique().sort(by="a", descending=True),

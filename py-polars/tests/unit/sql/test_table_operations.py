@@ -26,7 +26,7 @@ def test_drop_table(test_frame: pl.LazyFrame) -> None:
     # 'drop' completely removes the table from sql context
     expected = pl.DataFrame()
 
-    with pl.SQLContext(frame=test_frame, eager_execution=True) as ctx:
+    with pl.SQLContext(frame=test_frame, eager=True) as ctx:
         res = ctx.execute("DROP TABLE frame")
         assert_frame_equal(res, expected)
 
@@ -75,7 +75,7 @@ def test_truncate_table(truncate_sql: str, test_frame: pl.LazyFrame) -> None:
     # 'truncate' preserves the table, but optimally drops all rows within it
     expected = pl.DataFrame(schema=test_frame.schema)
 
-    with pl.SQLContext(frame=test_frame, eager_execution=True) as ctx:
+    with pl.SQLContext(frame=test_frame, eager=True) as ctx:
         res = ctx.execute(truncate_sql)
         assert_frame_equal(res, expected)
 

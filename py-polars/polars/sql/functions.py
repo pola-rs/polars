@@ -105,10 +105,7 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     """
     from polars.sql import SQLContext
 
-    with SQLContext(
-        eager_execution=eager,
-        register_globals=True,
-    ) as ctx:
+    with SQLContext(eager=eager, register_globals=True) as ctx:
         return ctx.execute(query)
 
 

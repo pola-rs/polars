@@ -58,7 +58,7 @@ def test_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
         "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
         "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
     }
-    ctx = pl.SQLContext(frames, eager_execution=True)
+    ctx = pl.SQLContext(frames, eager=True)
     assert_frame_equal(expected, ctx.execute(sql))
 
 
@@ -67,7 +67,7 @@ def test_join_cross() -> None:
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
         "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
     }
-    with pl.SQLContext(frames, eager_execution=True) as ctx:
+    with pl.SQLContext(frames, eager=True) as ctx:
         out = ctx.execute(
             """
             SELECT *
@@ -90,14 +90,14 @@ def test_join_cross() -> None:
 
 
 def test_join_cross_11927() -> None:
-    df1 = pl.DataFrame({"id": [1, 2, 3]})
+    df1 = pl.DataFrame({"id": [1, 2, 3]})  # noqa: F841
     df2 = pl.DataFrame({"id": [3, 4, 5]})  # noqa: F841
     df3 = pl.DataFrame({"id": [4, 5, 6]})  # noqa: F841
 
-    res = df1.sql("SELECT df2.id FROM self CROSS JOIN df2 WHERE self.id = df2.id")
+    res = pl.sql("SELECT df1.id FROM df1 CROSS JOIN df2 WHERE df1.id = df2.id")
     assert_frame_equal(res, pl.DataFrame({"id": [3]}))
 
-    res = df1.sql("SELECT * FROM self CROSS JOIN df3 WHERE self.id = df3.id")
+    res = pl.sql("SELECT * FROM df1 CROSS JOIN df3 WHERE df1.id = df3.id")
     assert res.is_empty()
 
 
@@ -173,7 +173,7 @@ def test_join_inner_15663() -> None:
             "VALUE_B": [25.6, 53.4, 12.7],
         }
     )
-    with pl.SQLContext(register_globals=True, eager_execution=True) as ctx:
+    with pl.SQLContext(register_globals=True, eager=True) as ctx:
         query = """
         SELECT
             a.LOCID,
@@ -257,7 +257,7 @@ def test_join_misc_13618() -> None:
         }
     )
     res = (
-        pl.SQLContext(t=df, t1=df, eager_execution=True)
+        pl.SQLContext(t=df, t1=df, eager=True)
         .execute("SELECT t.A, t.fruits, t1.B, t1.cars FROM t JOIN t1 ON t.A=t1.B")
         .to_dict(as_series=False)
     )
@@ -270,9 +270,9 @@ def test_join_misc_13618() -> None:
 
 
 def test_join_misc_16255() -> None:
-    df1 = pl.read_csv(BytesIO(b"id,data\n1,open"))
+    df1 = pl.read_csv(BytesIO(b"id,data\n1,open"))  # noqa: F841
     df2 = pl.read_csv(BytesIO(b"id,data\n1,closed"))  # noqa: F841
-    res = df1.sql(
+    res = pl.sql(
         """
         SELECT a.id, a.data AS d1, b.data AS d2
         FROM self AS a JOIN df2 AS b
