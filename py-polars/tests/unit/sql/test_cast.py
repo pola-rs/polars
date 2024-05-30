@@ -161,8 +161,14 @@ def test_cast() -> None:
 def test_cast_errors(values: Any, cast_op: str, error: str) -> None:
     df = pl.DataFrame({"values": values})
 
+    # invalid CAST should raise an error...
     with pytest.raises(ComputeError, match=error):
         df.sql(f"SELECT {cast_op} FROM df")
+
+    # ... or return `null` values if using TRY_CAST
+    target_type = cast_op.split("::")[1]
+    res = df.sql(f"SELECT TRY_CAST(values AS {target_type}) AS cast_values FROM df")
+    assert None in res.to_series()
 
 
 def test_cast_json() -> None:
