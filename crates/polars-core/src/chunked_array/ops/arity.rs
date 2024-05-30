@@ -4,6 +4,7 @@ use arrow::array::{Array, StaticArray};
 use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 
+use crate::chunked_array::metadata::MetadataProperties;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, PolarsDataType, Series};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
@@ -491,7 +492,17 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect();
-    lhs.copy_with_chunks(chunks, keep_sorted, keep_fast_explode)
+
+    let mut ca = lhs.copy_with_chunks(chunks);
+
+    use MetadataProperties as P;
+
+    let mut properties = P::empty();
+    properties.set(P::SORTED, keep_sorted);
+    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.copy_metadata(&lhs, properties);
+
+    ca
 }
 
 #[inline]
@@ -538,7 +549,15 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect::<Result<Vec<_>, E>>()?;
-    Ok(lhs.copy_with_chunks(chunks, keep_sorted, keep_fast_explode))
+    let mut ca = lhs.copy_with_chunks(chunks);
+
+    use MetadataProperties as P;
+    let mut properties = P::empty();
+    properties.set(P::SORTED, keep_sorted);
+    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.copy_metadata(&lhs, properties);
+
+    Ok(ca)
 }
 
 #[inline]
