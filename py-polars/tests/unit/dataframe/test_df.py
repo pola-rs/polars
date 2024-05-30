@@ -1953,8 +1953,8 @@ def test_product() -> None:
     expected = pl.DataFrame(
         {"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1], "str": [None]}
     )
-    assert_frame_not_equal(out, expected, check_dtype=True)
-    assert_frame_equal(out, expected, check_dtype=False)
+    assert_frame_not_equal(out, expected, check_dtypes=True)
+    assert_frame_equal(out, expected, check_dtypes=False)
 
 
 def test_first_last_nth_expressions(fruits_cars: pl.DataFrame) -> None:

@@ -4954,7 +4954,7 @@ class DataFrame:
         >>> df1.equals(df2)
         False
         """
-        return self._df.equals(other._df, null_equal)
+        return self._df.equals(other._df, null_equal=null_equal)
 
     @deprecate_function(
         "DataFrame.replace is deprecated and will be removed in a future version. "

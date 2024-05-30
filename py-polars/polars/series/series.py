@@ -4111,8 +4111,13 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("strict", "check_dtypes", version="0.20.31")
     def equals(
-        self, other: Series, *, null_equal: bool = True, strict: bool = False
+        self,
+        other: Series,
+        *,
+        check_dtypes: bool = False,
+        null_equal: bool = True,
     ) -> bool:
         """
         Check whether the Series is equal to another Series.
@@ -4121,11 +4126,10 @@ class Series:
         ----------
         other
             Series to compare with.
+        check_dtypes
+            Require data types to match.
         null_equal
             Consider null values as equal.
-        strict
-            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
-            `pl.Int64` will return `False`.
 
         See Also
         --------
@@ -4140,7 +4144,9 @@ class Series:
         >>> s1.equals(s2)
         False
         """
-        return self._s.equals(other._s, null_equal, strict)
+        return self._s.equals(
+            other._s, check_dtypes=check_dtypes, null_equal=null_equal
+        )
 
     def cast(
         self,
@@ -8112,7 +8118,7 @@ class Series:
             Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
             `pl.Int64` will return `False`.
         """
-        return self.equals(other, null_equal=null_equal, strict=strict)
+        return self.equals(other, check_dtypes=strict, null_equal=null_equal)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

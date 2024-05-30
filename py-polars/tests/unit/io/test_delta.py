@@ -24,7 +24,7 @@ def test_scan_delta(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(str(delta_table_path), version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_version(delta_table_path: Path) -> None:
@@ -66,7 +66,7 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(str(delta_table_path), version=0).select("name")
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_filesystem(delta_table_path: Path) -> None:
@@ -78,7 +78,7 @@ def test_scan_delta_filesystem(delta_table_path: Path) -> None:
     )
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_relative(delta_table_path: Path) -> None:
@@ -87,7 +87,7 @@ def test_scan_delta_relative(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(rel_delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
     ldf = pl.scan_delta(rel_delta_table_path, version=1)
     assert_frame_not_equal(expected, ldf.collect())
@@ -97,7 +97,7 @@ def test_read_delta(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_version(delta_table_path: Path) -> None:
@@ -139,7 +139,7 @@ def test_read_delta_columns(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0, columns=["name"])
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_filesystem(delta_table_path: Path) -> None:
@@ -151,7 +151,7 @@ def test_read_delta_filesystem(delta_table_path: Path) -> None:
     )
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_relative(delta_table_path: Path) -> None:
@@ -160,7 +160,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
     df = pl.read_delta(rel_delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 @pytest.mark.write_disk()

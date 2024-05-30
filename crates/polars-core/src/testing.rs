@@ -34,7 +34,7 @@ impl Series {
             && {
                 let eq = self.equal_missing(other);
                 match eq {
-                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
+                    Ok(b) => b.all(),
                     Err(_) => false,
                 }
             }
