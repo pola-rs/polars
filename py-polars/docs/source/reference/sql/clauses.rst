@@ -22,8 +22,8 @@ SQL Clauses
    * - :ref:`ORDER BY <order_by>`
      - Sort the query result based on one or more specified columns.
    * - :ref:`LIMIT <limit>`
-     - Specify the number of rows returned, and .
-   * - :ref:`OFFSET <offset>` |
+     - Specify the number of rows returned.
+   * - :ref:`OFFSET <offset>`
      - Skip a specified number of rows.
 
 
