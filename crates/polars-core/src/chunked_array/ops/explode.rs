@@ -9,6 +9,7 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
+use crate::chunked_array::metadata::MetadataProperties;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -272,7 +273,12 @@ impl ExplodeByOffsets for ListChunked {
         }
         process_range(start, last, &mut builder);
         let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
-        unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
+        let mut ca = unsafe { self.copy_with_chunks(vec![Box::new(arr)]) };
+
+        use MetadataProperties as P;
+        ca.copy_metadata(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca.into_series()
     }
 }
 

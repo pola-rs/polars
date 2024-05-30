@@ -2,6 +2,7 @@
 
 use arrow::compute::cast::CastOptions;
 
+use crate::chunked_array::metadata::MetadataProperties;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
@@ -306,13 +307,13 @@ impl BinaryChunked {
             .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
-        StringChunked::from_chunks_and_metadata(
-            chunks,
-            field,
-            Arc::new(self.effective_metadata().cast()),
-            true,
-            true,
-        )
+
+        let mut ca = StringChunked::new_with_compute_len(field, chunks);
+
+        use MetadataProperties as P;
+        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca
     }
 }
 
@@ -323,15 +324,13 @@ impl StringChunked {
             .map(|arr| arr.to_binview().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
-        unsafe {
-            BinaryChunked::from_chunks_and_metadata(
-                chunks,
-                field,
-                Arc::new(self.effective_metadata().cast()),
-                true,
-                true,
-            )
-        }
+
+        let mut ca = BinaryChunked::new_with_compute_len(field, chunks);
+
+        use MetadataProperties as P;
+        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca
     }
 }
 
