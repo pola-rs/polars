@@ -2040,14 +2040,14 @@ class Expr:
         *,
         nulls_last: bool = False,
         maintain_order: bool = False,
-        multithreaded: bool = True,
+        multithreaded: bool | None = None,
     ) -> Self:
         r"""
         Return the `k` largest elements.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n + k \log{n})
 
         Parameters
         ----------
@@ -2057,8 +2057,13 @@ class Expr:
             Place null values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -2076,10 +2081,8 @@ class Expr:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").bottom_k().alias("bottom_k"),
-        ...     ]
+        ...     pl.col("value").top_k().alias("top_k"),
+        ...     pl.col("value").bottom_k().alias("bottom_k"),
         ... )
         shape: (5, 2)
         ┌───────┬──────────┐
@@ -2094,6 +2097,16 @@ class Expr:
         │ 2     ┆ 98       │
         └───────┴──────────┘
         """
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         k = parse_as_expression(k)
         return self._from_pyexpr(
             self._pyexpr.top_k(
@@ -2112,14 +2125,14 @@ class Expr:
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
-        multithreaded: bool = True,
+        multithreaded: bool | None = None,
     ) -> Self:
         r"""
         Return elements corresponding to the `k` largest elements of the `by` column(s).
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n + k \log{n})
 
         Parameters
         ----------
@@ -2138,6 +2151,10 @@ class Expr:
             Whether the order should be maintained if elements are equal.
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -2225,6 +2242,16 @@ class Expr:
         │ Banana ┆ 5   ┆ 2   │
         └────────┴─────┴─────┘
         """
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `top_k_by` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
@@ -2249,14 +2276,14 @@ class Expr:
         *,
         nulls_last: bool = False,
         maintain_order: bool = False,
-        multithreaded: bool = True,
+        multithreaded: bool | None = None,
     ) -> Self:
         r"""
         Return the `k` smallest elements.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n + k \log{n})
 
         Parameters
         ----------
@@ -2266,8 +2293,13 @@ class Expr:
             Place null values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -2283,10 +2315,8 @@ class Expr:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").bottom_k().alias("bottom_k"),
-        ...     ]
+        ...     pl.col("value").top_k().alias("top_k"),
+        ...     pl.col("value").bottom_k().alias("bottom_k"),
         ... )
         shape: (5, 2)
         ┌───────┬──────────┐
@@ -2301,6 +2331,16 @@ class Expr:
         │ 2     ┆ 98       │
         └───────┴──────────┘
         """
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         k = parse_as_expression(k)
         return self._from_pyexpr(
             self._pyexpr.bottom_k(
@@ -2319,14 +2359,14 @@ class Expr:
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
-        multithreaded: bool = True,
+        multithreaded: bool | None = None,
     ) -> Self:
         r"""
         Return elements corresponding to the `k` smallest elements of `by` column(s).
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n + k \log{n})
 
         Parameters
         ----------
@@ -2343,8 +2383,13 @@ class Expr:
             Place null values last.
         maintain_order
             Whether the order should be maintained if elements are equal.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -2432,6 +2477,16 @@ class Expr:
         │ Banana ┆ 6   ┆ 1   │
         └────────┴─────┴─────┘
         """
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `bottom_k_by` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):

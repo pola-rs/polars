@@ -1363,7 +1363,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
-        multithreaded: bool = True,
+        multithreaded: bool | None = None,
     ) -> Self:
         """
         Return the `k` largest elements.
@@ -1386,8 +1386,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might
             be worse since this requires a stable search.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1432,6 +1437,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]
@@ -1452,7 +1467,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
         maintain_order: bool = False,
-        multithreaded: bool = True,
+        multithreaded: bool | None = None,
     ) -> Self:
         """
         Return the `k` smallest elements.
@@ -1475,8 +1490,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1521,6 +1541,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]

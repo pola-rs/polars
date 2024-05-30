@@ -345,3 +345,8 @@ def test_top_k_empty() -> None:
     df = pl.DataFrame({"test": []})
 
     assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
+
+
+def test_top_k_multithreaded_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").top_k(5, multithreaded=True)
