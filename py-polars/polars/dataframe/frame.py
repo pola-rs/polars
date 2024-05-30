@@ -4727,8 +4727,6 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | Sequence[bool] | None = None,
-        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
         Return the `k` largest rows.
@@ -4744,23 +4742,6 @@ class DataFrame:
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
-
-        nulls_last
-            Place null values last.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Null values will be considered lowest priority and will only be
-                included if `k` is larger than the number of non-null elements.
-
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
-            worse since this requires a stable search.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                There will be no guarantees about the order of the output.
 
         See Also
         --------
@@ -4807,13 +4788,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(
-                k,
-                by=by,
-                descending=descending,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-            )
+            .top_k(k, by=by, descending=descending)
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4828,8 +4803,6 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | Sequence[bool] | None = None,
-        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
         Return the `k` smallest rows.
@@ -4845,23 +4818,6 @@ class DataFrame:
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
-
-        nulls_last
-            Place null values last.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Null values will be considered lowest priority and will only be
-                included if `k` is larger than the number of non-null elements.
-
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
-            worse since this requires a stable search.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                There will be no guarantees about the order of the output.
 
         See Also
         --------
@@ -4908,13 +4864,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(
-                k,
-                by=by,
-                descending=descending,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-            )
+            .bottom_k(k, by=by, descending=descending)
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
