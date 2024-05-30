@@ -1248,7 +1248,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, *, table_name: str | None = None) -> Self:
+    def sql(self, query: str, *, table_name: str = "self") -> Self:
         """
         Execute a SQL query against the LazyFrame.
 
@@ -1265,13 +1265,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             SQL query to execute.
         table_name
             Optionally provide an explicit name for the table that represents the
-            calling frame (the alias "self" will always be registered/available).
+            calling frame (defaults to "self").
 
         Notes
         -----
         * The calling frame is automatically registered as a table in the SQL context
-          under the name "self". All DataFrames and LazyFrames found in the current
-          set of global variables are also registered, using their variable name.
+          under the name "self". If you want access to the DataFrames and LazyFrames
+          found in the current globals, use the top-level :meth:`pl.sql <polars.sql>`.
         * More control over registration and execution behaviour is available by
           using the :class:`SQLContext` object.
 
@@ -1297,27 +1297,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ x   ┆ 8   │
         └─────┴─────┘
 
-        Join two LazyFrames:
-
-        >>> lf1.sql(
-        ...     '''
-        ...     SELECT self.*, d
-        ...     FROM self
-        ...     INNER JOIN lf2 USING (a)
-        ...     WHERE a > 1 AND b < 8
-        ...     '''
-        ... ).collect()
-        shape: (1, 4)
-        ┌─────┬─────┬─────┬──────┐
-        │ a   ┆ b   ┆ c   ┆ d    │
-        │ --- ┆ --- ┆ --- ┆ ---  │
-        │ i64 ┆ i64 ┆ str ┆ i64  │
-        ╞═════╪═════╪═════╪══════╡
-        │ 2   ┆ 7   ┆ y   ┆ -654 │
-        └─────┴─────┴─────┴──────┘
-
-        Apply SQL transforms (aliasing "self" to "frame") and subsequently
-        filter natively (you can freely mix SQL and native operations):
+        Apply SQL transforms (aliasing "self" to "frame") then filter
+        natively (you can freely mix SQL and native operations):
 
         >>> lf1.sql(
         ...     query='''
@@ -1348,7 +1329,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         with SQLContext(
             register_globals=True,
-            eager_execution=False,
+            eager=False,
         ) as ctx:
             frames = {table_name: self} if table_name else {}
             frames["self"] = self

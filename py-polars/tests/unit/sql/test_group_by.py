@@ -18,7 +18,7 @@ def foods_ipc_path() -> Path:
 def test_group_by(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    ctx = pl.SQLContext(eager_execution=True)
+    ctx = pl.SQLContext(eager=True)
     ctx.register("foods", lf)
 
     out = ctx.execute(

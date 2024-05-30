@@ -93,7 +93,7 @@ def test_round_ndigits(decimals: int, expected: list[float]) -> None:
     df = pl.DataFrame(
         {"n": [-8192.499, -3.9550, -1.54321, 2.45678, 3.59901, 8192.5001]},
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         if decimals == 0:
             out = ctx.execute("SELECT ROUND(n) AS n FROM df")
             assert_series_equal(out["n"], pl.Series("n", values=expected))
@@ -104,7 +104,7 @@ def test_round_ndigits(decimals: int, expected: list[float]) -> None:
 
 def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
             InvalidOperationError, match="invalid 'decimals' for Round: ??"
         ):

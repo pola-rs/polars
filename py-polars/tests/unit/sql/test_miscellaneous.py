@@ -15,13 +15,13 @@ def foods_ipc_path() -> Path:
 
 
 def test_any_all() -> None:
-    df = pl.DataFrame(
+    df = pl.DataFrame(  # noqa: F841
         {
             "x": [-1, 0, 1, 2, 3, 4],
             "y": [1, 0, 0, 1, 2, 3],
         }
     )
-    res = df.sql(
+    res = pl.sql(
         """
         SELECT
           x >= ALL(df.y) AS "All Geq",
@@ -36,7 +36,8 @@ def test_any_all() -> None:
           x != ANY(df.y) AS "Any Neq",
         FROM df
         """,
-    )
+    ).collect()
+
     assert res.to_dict(as_series=False) == {
         "All Geq": [0, 0, 0, 0, 1, 1],
         "All G": [0, 0, 0, 0, 0, 1],
@@ -58,7 +59,7 @@ def test_distinct() -> None:
             "b": [1, 2, 3, 4, 5, 6],
         }
     )
-    ctx = pl.SQLContext(register_globals=True, eager_execution=True)
+    ctx = pl.SQLContext(register_globals=True, eager=True)
     res1 = ctx.execute("SELECT DISTINCT a FROM df ORDER BY a DESC")
     assert_frame_equal(
         left=df.select("a").unique().sort(by="a", descending=True),

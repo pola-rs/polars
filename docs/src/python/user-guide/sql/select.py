@@ -20,7 +20,7 @@ df = pl.DataFrame(
     }
 )
 
-ctx = pl.SQLContext(population=df, eager_execution=True)
+ctx = pl.SQLContext(population=df, eager=True)
 
 print(ctx.execute("SELECT * FROM population"))
 # --8<-- [end:df]
