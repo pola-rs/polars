@@ -345,3 +345,34 @@ def test_top_k_empty() -> None:
     df = pl.DataFrame({"test": []})
 
     assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
+
+
+def test_top_k_nulls() -> None:
+    s = pl.Series([1, 2, 3, None, None])
+
+    valid_count = s.len() - s.null_count()
+    result = s.top_k(valid_count)
+    assert result.null_count() == 0
+
+    result = s.top_k(s.len())
+    assert result.null_count() == s.null_count()
+
+    result = s.top_k(s.len() * 2)
+    assert_series_equal(result.sort(), s.sort())
+
+
+@pytest.mark.xfail(
+    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/15238"
+)
+def test_bottom_k_nulls() -> None:
+    s = pl.Series([1, 2, 3, None, None])
+    valid_count = s.len() - s.null_count()
+
+    result = s.bottom_k(valid_count)
+    assert result.null_count() == 0
+
+    result = s.bottom_k(s.len())
+    assert result.null_count() == s.null_count()
+
+    result = s.bottom_k(s.len() * 2)
+    assert_series_equal(result.sort(), s.sort())
