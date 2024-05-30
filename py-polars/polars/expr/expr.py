@@ -2174,8 +2174,8 @@ class Expr:
         k
             Number of elements to return.
         descending
-            If `True`, consider the k smallest (instead of the k largest). Top-k by
-            multiple columns can be specified per column by passing a sequence of
+            Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
             booleans.
 
         nulls_last
@@ -2473,9 +2473,10 @@ class Expr:
         k
             Number of elements to return.
         descending
-            If `True`, consider the k largest (instead of the k smallest). Bottom-k by
-            multiple columns can be specified per column by passing a sequence of
+            Consider the `k` largest elements of the `by` column(s) (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
             booleans.
+
         nulls_last
             Place null values last.
 

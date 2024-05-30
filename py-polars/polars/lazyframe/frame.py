@@ -1376,8 +1376,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column(s) used to determine the top rows.
             Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` smallest. Top-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
+            booleans.
 
         nulls_last
             Place null values last.
@@ -1510,8 +1511,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column(s) used to determine the bottom rows.
             Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` largest. Bottom-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` largest elements of the `by` column(s) (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
+            booleans.
 
         nulls_last
             Place null values last.
