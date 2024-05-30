@@ -5719,6 +5719,24 @@ class DataFrame:
         │ 2020-01-03 19:45:32 ┆ 11    ┆ 2     ┆ 9     │
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
+
+        The index count is based on actual values in a defined column and not on
+        consecutive rows as polars does not use indices:
+
+        >>> df = pl.DataFrame({"int": [0, 4, 5, 6, 8], "value": [1, 4, 2, 4, 1]})
+        >>> df.rolling("int", period="3i").agg(pl.col("int").alias("aggregated"))
+        shape: (5, 2)
+        ┌─────────┬────────────┐
+        │ integer ┆ aggregated │
+        │ ---     ┆ ---        │
+        │ i64     ┆ list[i64]  │
+        ╞═════════╪════════════╡
+        │ 0       ┆ [0]        │
+        │ 4       ┆ [4]        │
+        │ 5       ┆ [4, 5]     │
+        │ 6       ┆ [4, 5, 6]  │
+        │ 8       ┆ [6, 8]     │
+        └─────────┴────────────┘
         """
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
