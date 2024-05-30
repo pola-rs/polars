@@ -119,7 +119,7 @@ impl SQLContext {
             .parse_statements()
             .map_err(to_compute_err)?;
 
-        polars_ensure!(ast.len() == 1, ComputeError: "One (and only one) statement at a time please");
+        polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement at a time please");
         let res = self.execute_statement(ast.first().unwrap())?;
 
         // Ensure the result uses the proper arenas.
@@ -168,7 +168,7 @@ impl SQLContext {
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
             _ => polars_bail!(
-                ComputeError: "SQL statement type {:?} is not supported", ast,
+                SQLInterface: "statement type {:?} is not supported", ast,
             ),
         })
     }
@@ -221,9 +221,9 @@ impl SQLContext {
                 right,
             } => self.process_union(left, right, set_quantifier, query),
             SetExpr::SetOperation { op, .. } => {
-                polars_bail!(InvalidOperation: "'{}' operation not yet supported", op)
+                polars_bail!(SQLInterface: "'{}' operation not yet supported", op)
             },
-            op => polars_bail!(InvalidOperation: "'{}' operation not yet supported", op),
+            op => polars_bail!(SQLInterface: "'{}' operation not yet supported", op),
         }
     }
 
@@ -259,7 +259,7 @@ impl SQLContext {
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },
             #[allow(unreachable_patterns)]
-            _ => polars_bail!(InvalidOperation: "'UNION {}' is not yet supported", quantifier),
+            _ => polars_bail!(SQLInterface: "'UNION {}' is not yet supported", quantifier),
         }
     }
 
@@ -318,10 +318,12 @@ impl SQLContext {
                         .lazy();
                         Ok(lf.clone())
                     } else {
-                        polars_bail!(ComputeError: "table '{}' does not exist", tbl);
+                        polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
                     }
                 },
-                _ => polars_bail!(ComputeError: "TRUNCATE does not support use of 'partitions'"),
+                _ => {
+                    polars_bail!(SQLInterface: "TRUNCATE does not support use of 'partitions'")
+                },
             }
         } else {
             unreachable!()
@@ -335,7 +337,7 @@ impl SQLContext {
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
             if with.recursive {
-                polars_bail!(ComputeError: "recursive CTEs are not supported")
+                polars_bail!(SQLInterface: "recursive CTEs are not supported")
             }
             for cte in &with.cte_tables {
                 let cte_name = cte.alias.name.value.clone();
@@ -386,7 +388,7 @@ impl SQLContext {
                     JoinOperator::CrossJoin => lf.cross_join(rf, Some(format!(":{}", r_name))),
                     join_type => {
                         polars_bail!(
-                            InvalidOperation:
+                            SQLInterface:
                             "join type '{:?}' not yet supported by polars-sql", join_type
                         );
                     },
@@ -424,7 +426,7 @@ impl SQLContext {
         let sql_tbl: &TableWithJoins = select_stmt
             .from
             .first()
-            .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
+            .ok_or_else(|| polars_err!(SQLSyntax: "no table name provided in query"))?;
 
         let mut lf = self.execute_from_statement(sql_tbl)?;
         let mut contains_wildcard = false;
@@ -482,8 +484,8 @@ impl SQLContext {
                         } if matches!(**expr, SQLExpr::Value(SQLValue::Number(_, _))) => {
                             if let SQLExpr::Value(SQLValue::Number(ref idx, _)) = **expr {
                                 Err(polars_err!(
-                                ComputeError:
-                                "group_by error: expected a positive integer or valid expression; got -{}",
+                                SQLSyntax:
+                                "GROUP BY error: expected a positive integer or valid expression; got -{}",
                                 idx
                                 ))
                             } else {
@@ -496,8 +498,8 @@ impl SQLContext {
                             Ok(projections[idx - 1].clone())
                         },
                         SQLExpr::Value(v) => Err(polars_err!(
-                            ComputeError:
-                            "group_by error: expected a positive integer or valid expression; got {}", v,
+                            SQLSyntax:
+                            "GROUP BY error: expected a positive integer or valid expression; got {}", v,
                         )),
                         _ => parse_sql_expr(e, self, schema.as_deref()),
                     })
@@ -621,10 +623,7 @@ impl SQLContext {
                         if let Expr::Column(name) = expr {
                             Ok(name.to_string())
                         } else {
-                            Err(polars_err!(
-                                ComputeError:
-                                "DISTINCT ON only supports column names"
-                            ))
+                            Err(polars_err!(SQLSyntax:"DISTINCT ON only supports column names"))
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -700,7 +699,7 @@ impl SQLContext {
             let tbl_name = name.0.first().unwrap().value.as_str();
             // CREATE TABLE IF NOT EXISTS
             if *if_not_exists && self.table_map.contains_key(tbl_name) {
-                polars_bail!(ComputeError: "relation {} already exists", tbl_name);
+                polars_bail!(SQLInterface: "relation {} already exists", tbl_name);
                 // CREATE OR REPLACE TABLE
             }
             if let Some(query) = query {
@@ -713,7 +712,7 @@ impl SQLContext {
                 .lazy();
                 Ok(out)
             } else {
-                polars_bail!(ComputeError: "only CREATE TABLE AS SELECT is supported");
+                polars_bail!(SQLInterface: "only `CREATE TABLE AS SELECT` is currently supported");
             }
         } else {
             unreachable!()
@@ -740,7 +739,7 @@ impl SQLContext {
                         None => Ok((tbl_name.to_string(), lf)),
                     }
                 } else {
-                    polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
+                    polars_bail!(SQLInterface: "relation '{}' was not found", tbl_name);
                 }
             },
             TableFactor::Derived {
@@ -748,14 +747,13 @@ impl SQLContext {
                 subquery,
                 alias,
             } => {
-                polars_ensure!(!(*lateral), ComputeError: "LATERAL not supported");
-
+                polars_ensure!(!(*lateral), SQLInterface: "LATERAL not supported");
                 if let Some(alias) = alias {
                     let lf = self.execute_query_no_ctes(subquery)?;
                     self.table_map.insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
-                    polars_bail!(ComputeError: "derived tables must have aliases");
+                    polars_bail!(SQLSyntax: "derived tables must have aliases");
                 }
             },
             TableFactor::UNNEST {
@@ -784,13 +782,13 @@ impl SQLContext {
                         .collect::<Result<_, _>>()?;
 
                     polars_ensure!(!column_names.is_empty(),
-                        ComputeError:
+                        SQLSyntax:
                         "UNNEST table alias must also declare column names, eg: {} (a,b,c)", alias.name.to_string()
                     );
                     if column_names.len() != column_values.len() {
                         let plural = if column_values.len() > 1 { "s" } else { "" };
                         polars_bail!(
-                            ComputeError:
+                            SQLSyntax:
                             "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
                         );
                     }
@@ -810,17 +808,17 @@ impl SQLContext {
                     if *with_offset {
                         // TODO: make a PR to `sqlparser-rs` to support 'ORDINALITY'
                         //  (note that 'OFFSET' is BigQuery-specific syntax, not PostgreSQL)
-                        polars_bail!(ComputeError: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
+                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
                     }
                     self.table_map.insert(table_name.clone(), lf.clone());
                     Ok((table_name.clone(), lf))
                 } else {
-                    polars_bail!(ComputeError: "UNNEST table must have an alias");
+                    polars_bail!(SQLSyntax: "UNNEST table must have an alias");
                 }
             },
 
             // Support bare table, optional with alias for now
-            _ => polars_bail!(ComputeError: "not yet implemented: {}", relation),
+            _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
         }
     }
 
@@ -858,7 +856,7 @@ impl SQLContext {
             descending.push(!ob.asc.unwrap_or(true));
             polars_ensure!(
                 ob.nulls_first.is_none(),
-                ComputeError: "nulls first/last is not yet supported",
+                SQLInterface: "NULLS FIRST/LAST is not (yet) supported",
             );
         }
 
@@ -879,7 +877,7 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         polars_ensure!(
             !contains_wildcard,
-            ComputeError: "group_by error: can't process wildcard in group_by"
+            SQLSyntax: "GROUP BY error: can't process wildcard in group_by"
         );
         let schema_before = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
         let group_by_keys_schema =
@@ -919,7 +917,7 @@ impl SQLContext {
             } else if let Expr::Column(_) = e {
                 // Non-aggregated columns must be part of the GROUP BY clause
                 if !group_by_keys_schema.contains(&field.name) {
-                    polars_bail!(ComputeError: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
+                    polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
             }
         }
@@ -962,10 +960,10 @@ impl SQLContext {
             ) => Ok(lf.slice(
                 offset
                     .parse()
-                    .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
+                    .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
                 limit
                     .parse()
-                    .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
+                    .map_err(|e| polars_err!(SQLInterface: "LIMIT conversion error: {}", e))?,
             )),
             (
                 Some(Offset {
@@ -976,17 +974,17 @@ impl SQLContext {
             ) => Ok(lf.slice(
                 offset
                     .parse()
-                    .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
+                    .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
                 IdxSize::MAX,
             )),
             (None, Some(SQLExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
                 limit
                     .parse()
-                    .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
+                    .map_err(|e| polars_err!(SQLInterface: "LIMIT conversion error: {}", e))?,
             )),
             (None, None) => Ok(lf),
             _ => polars_bail!(
-                ComputeError: "non-numeric arguments for LIMIT/OFFSET are not supported",
+                SQLSyntax: "non-numeric arguments for LIMIT/OFFSET are not supported",
             ),
         }
     }
@@ -1002,7 +1000,7 @@ impl SQLContext {
             [tbl_name] => {
                 let lf = self.table_map.get_mut(&tbl_name.value).ok_or_else(|| {
                     polars_err!(
-                        ComputeError: "no table named '{}' found",
+                        SQLInterface: "no table named '{}' found",
                         tbl_name
                     )
                 })?;
@@ -1010,7 +1008,7 @@ impl SQLContext {
                 cols(schema.iter_names())
             },
             e => polars_bail!(
-                ComputeError: "invalid wildcard expression: {:?}",
+                SQLSyntax: "invalid wildcard expression: {:?}",
                 e
             ),
         };
@@ -1024,7 +1022,7 @@ impl SQLContext {
         contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
         if options.opt_except.is_some() {
-            polars_bail!(InvalidOperation: "EXCEPT not supported; use EXCLUDE instead")
+            polars_bail!(SQLSyntax: "EXCEPT not supported; use EXCLUDE instead")
         }
         Ok(match &options.opt_exclude {
             Some(ExcludeSelectItem::Single(ident)) => {

@@ -36,7 +36,7 @@ fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
         Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
         Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
         Some(n) => {
-            polars_bail!(ComputeError: "invalid temporal type precision; expected 1-9, found {}", n)
+            polars_bail!(SQLSyntax: "invalid temporal type precision; expected 1-9, found {}", n)
         },
     })
 }
@@ -94,7 +94,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
             Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
             Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
             Some(n) => {
-                polars_bail!(ComputeError: "unsupported `float` size; expected a value between 1 and 53, found {}", n)
+                polars_bail!(SQLSyntax: "unsupported `float` size; expected a value between 1 and 53, found {}", n)
             },
             None => DataType::Float64,
         },
@@ -122,14 +122,14 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Time(_, tz) => match tz {
             TimezoneInfo::None => DataType::Time,
             _ => {
-                polars_bail!(ComputeError: "`time` with timezone is not supported; found tz={}", tz)
+                polars_bail!(SQLInterface: "`time` with timezone is not supported; found tz={}", tz)
             },
         },
         SQLDataType::Datetime(prec) => DataType::Datetime(timeunit_from_precision(prec)?, None),
         SQLDataType::Timestamp(prec, tz) => match tz {
             TimezoneInfo::None => DataType::Datetime(timeunit_from_precision(prec)?, None),
             _ => {
-                polars_bail!(ComputeError: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
+                polars_bail!(SQLInterface: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
             },
         },
 
@@ -161,12 +161,16 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
                 // `pguint` also provides a 1 byte (8bit) integer type alias
                 "int1" => DataType::Int8,
                 _ => {
-                    polars_bail!(ComputeError: "SQL datatype {:?} is not currently supported", value)
+                    polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
                 },
             },
-            _ => polars_bail!(ComputeError: "SQL datatype {:?} is not currently supported", idents),
+            _ => {
+                polars_bail!(SQLInterface: "datatype {:?} is not currently supported", idents)
+            },
         },
-        _ => polars_bail!(ComputeError: "SQL datatype {:?} is not currently supported", data_type),
+        _ => {
+            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", data_type)
+        },
     })
 }
 
@@ -193,15 +197,15 @@ impl SQLExprVisitor<'_> {
                 SQLExpr::Value(v) => self.visit_any_value(v, None),
                 SQLExpr::UnaryOp { op, expr } => match expr.as_ref() {
                     SQLExpr::Value(v) => self.visit_any_value(v, Some(op)),
-                    _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e)),
+                    _ => Err(polars_err!(SQLInterface: "expression {:?} is not yet supported", e)),
                 },
                 SQLExpr::Array(_) => {
                     // TODO: nested arrays (handle FnMut issues)
                     // let srs = self.array_expr_to_series(&[e.clone()])?;
                     // Ok(AnyValue::List(srs))
-                    Err(polars_err!(ComputeError: "SQL interface does not yet support nested array literals:\n{:?}", e))
+                    Err(polars_err!(SQLInterface: "nested array literals are not yet supported:\n{:?}", e))
                 },
-                _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e)),
+                _ => Err(polars_err!(SQLInterface: "expression {:?} is not yet supported", e)),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -302,7 +306,7 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
-            SQLExpr::Subquery(_) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
+            SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
             SQLExpr::Trim {
                 expr,
                 trim_where,
@@ -318,7 +322,7 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Value(value) => self.visit_literal(value),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
-                polars_bail!(InvalidOperation: "SQL expression {:?} is not yet supported", other)
+                polars_bail!(SQLInterface: "expression {:?} is not yet supported", other)
             },
         }
     }
@@ -329,7 +333,7 @@ impl SQLExprVisitor<'_> {
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
         if subquery.with.is_some() {
-            polars_bail!(InvalidOperation: "SQL subquery cannot be given CTEs");
+            polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE `with` clause");
         }
 
         let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
@@ -337,7 +341,7 @@ impl SQLExprVisitor<'_> {
 
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {
-                polars_bail!(InvalidOperation: "SQL subquery will return more than one column");
+                polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
             }
             let rand_string: String = thread_rng()
                 .sample_iter(&Alphanumeric)
@@ -355,8 +359,7 @@ impl SQLExprVisitor<'_> {
                 ));
             }
         };
-
-        polars_bail!(InvalidOperation: "SQL subquery type not supported");
+        polars_bail!(SQLInterface: "subquery type not supported");
     }
 
     /// Visit a single SQL identifier.
@@ -377,7 +380,7 @@ impl SQLExprVisitor<'_> {
                     .get_table_from_current_scope(&tbl_name.value)
                     .ok_or_else(|| {
                         polars_err!(
-                            ComputeError: "no table or alias named '{}' found",
+                            SQLInterface: "no table or alias named '{}' found",
                             tbl_name
                         )
                     })?;
@@ -393,14 +396,14 @@ impl SQLExprVisitor<'_> {
                     })
                 } else {
                     polars_bail!(
-                        ColumnNotFound: "no column named '{}' found in table '{}'",
+                        SQLInterface: "no column named '{}' found in table '{}'",
                         column_name,
                         tbl_name
                     )
                 }
             },
             _ => polars_bail!(
-                ComputeError: "invalid identifier {:?}",
+                SQLInterface: "invalid identifier {:?}",
                 idents
             ),
         }
@@ -415,12 +418,12 @@ impl SQLExprVisitor<'_> {
         case_insensitive: bool,
     ) -> PolarsResult<Expr> {
         if escape_char.is_some() {
-            polars_bail!(InvalidOperation: "ESCAPE char for LIKE/ILIKE is not yet supported; found '{}'", escape_char.unwrap());
+            polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not yet supported; found '{}'", escape_char.unwrap());
         }
         let pat = match self.visit_expr(pattern) {
             Ok(Expr::Literal(LiteralValue::String(s))) => s,
             _ => {
-                polars_bail!(InvalidOperation: "LIKE/ILIKE pattern must be a string literal; found {}", pattern)
+                polars_bail!(SQLSyntax: "LIKE/ILIKE pattern must be a string literal; found {}", pattern)
             },
         };
         if pat.is_empty() || (!case_insensitive && pat.chars().all(|c| !matches!(c, '%' | '_'))) {
@@ -544,25 +547,29 @@ impl SQLExprVisitor<'_> {
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
-                _ => polars_bail!(ComputeError: "invalid pattern for '~' operator: {:?}", right),
+                _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
                 Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
-                _ => polars_bail!(ComputeError: "invalid pattern for '!~' operator: {:?}", right),
+                _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
-                _ => polars_bail!(ComputeError: "invalid pattern for '~*' operator: {:?}", right),
+                _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
                 Expr::Literal(LiteralValue::String(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
-                _ => polars_bail!(ComputeError: "invalid pattern for '!~*' operator: {:?}", right),
+                _ => {
+                    polars_bail!(SQLSyntax: "invalid pattern for '!~*' operator: {:?}", right)
+                },
             },
-            other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
+            other => {
+                polars_bail!(SQLInterface: "SQL operator {:?} is not yet supported", other)
+            },
         })
     }
 
@@ -581,7 +588,7 @@ impl SQLExprVisitor<'_> {
             (UnaryOperator::Plus, _) => lit(0) + expr,
             (UnaryOperator::Minus, _) => lit(0) - expr,
             (UnaryOperator::Not, _) => expr.not(),
-            other => polars_bail!(InvalidOperation: "unary operator {:?} is not supported", other),
+            other => polars_bail!(SQLInterface: "unary operator {:?} is not supported", other),
         })
     }
 
@@ -615,9 +622,9 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::Lt => Ok(left.lt(right.min())),
             BinaryOperator::GtEq => Ok(left.gt_eq(right.max())),
             BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
-            BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
-            BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
-            _ => polars_bail!(ComputeError: "invalid comparison operator"),
+            BinaryOperator::Eq => polars_bail!(SQLSyntax: "ALL cannot be used with ="),
+            BinaryOperator::NotEq => polars_bail!(SQLSyntax: "ALL cannot be used with !="),
+            _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
 
@@ -640,7 +647,7 @@ impl SQLExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
             BinaryOperator::Eq => Ok(left.is_in(right)),
             BinaryOperator::NotEq => Ok(left.is_in(right).not()),
-            _ => polars_bail!(ComputeError: "invalid comparison operator"),
+            _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
 
@@ -687,7 +694,9 @@ impl SQLExprVisitor<'_> {
         strict: bool,
     ) -> PolarsResult<Expr> {
         if format.is_some() {
-            return Err(polars_err!(ComputeError: "unsupported use of FORMAT in CAST expression"));
+            return Err(
+                polars_err!(SQLInterface: "use of FORMAT is not currently supported in CAST"),
+            );
         }
         let expr = self.visit_expr(expr)?;
 
@@ -715,7 +724,7 @@ impl SQLExprVisitor<'_> {
             #[cfg(feature = "binary_encoding")]
             SQLValue::HexStringLiteral(x) => {
                 if x.len() % 2 != 0 {
-                    polars_bail!(ComputeError: "hex string literal must have an even number of digits; found '{}'", x)
+                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
                 };
                 lit(hex::decode(x.clone()).unwrap())
             },
@@ -727,7 +736,7 @@ impl SQLExprVisitor<'_> {
                 } else {
                     s.parse::<i64>().map(lit).map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}", s))?
+                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
             },
             SQLValue::SingleQuotedByteStringLiteral(b) => {
                 // note: for PostgreSQL this represents a BIT string literal (eg: b'10101') not a BYTE string
@@ -736,7 +745,7 @@ impl SQLExprVisitor<'_> {
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
-            other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
+            other => polars_bail!(SQLInterface: "SQL value {:?} is not supported", other),
         })
     }
 
@@ -755,7 +764,7 @@ impl SQLExprVisitor<'_> {
                     // no op should be taken as plus.
                     Some(UnaryOperator::Plus) | None => false,
                     Some(op) => {
-                        polars_bail!(ComputeError: "Unary op {:?} not supported for numeric SQL value", op)
+                        polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
                     },
                 };
                 // Check for existence of decimal separator dot
@@ -768,12 +777,12 @@ impl SQLExprVisitor<'_> {
                         .map(|n: i64| AnyValue::Int64(if negate { -n } else { n }))
                         .map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {s:?}"))?
+                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {s:?}"))?
             },
             #[cfg(feature = "binary_encoding")]
             SQLValue::HexStringLiteral(x) => {
                 if x.len() % 2 != 0 {
-                    polars_bail!(ComputeError: "hex string literal must have an even number of digits; found '{}'", x)
+                    polars_bail!(SQLSyntax: "hex string literal must have an even number of digits; found '{}'", x)
                 };
                 AnyValue::BinaryOwned(hex::decode(x.clone()).unwrap())
             },
@@ -782,13 +791,15 @@ impl SQLExprVisitor<'_> {
                 let bytes_literal = bitstring_to_bytes_literal(b)?;
                 match bytes_literal {
                     Expr::Literal(LiteralValue::Binary(v)) => AnyValue::BinaryOwned(v.to_vec()),
-                    _ => polars_bail!(ComputeError: "failed to parse bitstring literal: {:?}", b),
+                    _ => {
+                        polars_bail!(SQLInterface: "failed to parse bitstring literal: {:?}", b)
+                    },
                 }
             },
             SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
                 AnyValue::StringOwned(s.into())
             },
-            other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
+            other => polars_bail!(SQLInterface: "SQL value {:?} is not yet supported", other),
         })
     }
 
@@ -825,7 +836,7 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<Expr> {
         if trim_characters.is_some() {
             // TODO: allow compact snowflake/bigquery syntax?
-            return Err(polars_err!(ComputeError: "unsupported TRIM syntax"));
+            return Err(polars_err!(SQLSyntax: "unsupported TRIM syntax (custom chars)"));
         };
         let expr = self.visit_expr(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
@@ -857,7 +868,7 @@ impl SQLExprVisitor<'_> {
         if let Some(limit) = &expr.limit {
             let limit = match self.visit_expr(limit)? {
                 Expr::Literal(LiteralValue::Int(n)) if n >= 0 => n as usize,
-                _ => polars_bail!(ComputeError: "limit in ARRAY_AGG must be a positive integer"),
+                _ => polars_bail!(SQLSyntax: "limit in ARRAY_AGG must be a positive integer"),
             };
             base = base.head(Some(limit));
         }
@@ -866,7 +877,7 @@ impl SQLExprVisitor<'_> {
         }
         polars_ensure!(
             !expr.within_group,
-            ComputeError: "ARRAY_AGG WITHIN GROUP is not yet supported"
+            SQLInterface: "ARRAY_AGG WITHIN GROUP is not yet supported"
         );
         Ok(base.implode())
     }
@@ -912,21 +923,21 @@ impl SQLExprVisitor<'_> {
         {
             polars_ensure!(
                 conditions.len() == results.len(),
-                ComputeError: "WHEN and THEN expressions must have the same length"
+                SQLSyntax: "WHEN and THEN expressions must have the same length"
             );
             polars_ensure!(
                 !conditions.is_empty(),
-                ComputeError: "WHEN and THEN expressions must have at least one element"
+                SQLSyntax: "WHEN and THEN expressions must have at least one element"
             );
 
             let mut when_thens = conditions.iter().zip(results.iter());
             let first = when_thens.next();
             if first.is_none() {
-                polars_bail!(ComputeError: "WHEN and THEN expressions must have at least one element");
+                polars_bail!(SQLSyntax: "WHEN and THEN expressions must have at least one element");
             }
             let else_res = match else_result {
                 Some(else_res) => self.visit_expr(else_res)?,
-                None => polars_bail!(ComputeError: "ELSE expression is required"),
+                None => polars_bail!(SQLSyntax: "ELSE expression is required"),
             };
             if let Some(operand_expr) = operand {
                 let first_operand_expr = self.visit_expr(operand_expr)?;
@@ -979,7 +990,7 @@ impl SQLExprVisitor<'_> {
     }
 
     fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
-        polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", expr);
+        polars_bail!(SQLInterface: "expression {:?} is not yet supported", expr);
     }
 }
 
@@ -1000,7 +1011,7 @@ fn collect_compound_identifiers(
             Ok((vec![col(col_a)], vec![col(col_b)]))
         }
     } else {
-        polars_bail!(InvalidOperation: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
+        polars_bail!(SQLInterface: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
     }
 }
 
@@ -1017,7 +1028,7 @@ fn process_join_on(
                 {
                     collect_compound_identifiers(left, right, left_name, right_name)
                 } else {
-                    polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
+                    polars_bail!(SQLInterface: "JOIN clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
                 }
             },
             BinaryOperator::And => {
@@ -1028,13 +1039,13 @@ fn process_join_on(
                 Ok((left_i, right_i))
             },
             _ => {
-                polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+                polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
             },
         }
     } else if let SQLExpr::Nested(expr) = expression {
         process_join_on(expr, left_name, right_name)
     } else {
-        polars_bail!(InvalidOperation: "SQL join clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
+        polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
     }
 }
 
@@ -1052,9 +1063,8 @@ pub(super) fn process_join_constraint(
             return Ok((left_on, right_on));
         }
         if op != &BinaryOperator::Eq {
-            polars_bail!(InvalidOperation:
-                "SQL interface (currently) only supports basic equi-join \
-                 constraints; found '{:?}' op in\n{:?}", op, constraint)
+            polars_bail!(SQLInterface:
+                "only equi-join constraints are supported; found '{:?}' op in\n{:?}", op, constraint)
         }
         match (left.as_ref(), right.as_ref()) {
             (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
@@ -1072,7 +1082,7 @@ pub(super) fn process_join_constraint(
             return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "unsupported SQL join constraint:\n{:?}", constraint);
+    polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
@@ -1110,7 +1120,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
             expr.alias(&alias.value)
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
-        _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
+        _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s.as_ref()),
     })
 }
 
@@ -1181,7 +1191,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
                 + expr.dt().nanosecond().div(typed_lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(ComputeError: "EXTRACT function does not support {}", field)
+            polars_bail!(SQLInterface: "EXTRACT function does not support {}", field)
         },
     })
 }
@@ -1214,7 +1224,7 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
             "time" => &DateTimeField::Time,
             "epoch" => &DateTimeField::Epoch,
             _ => {
-                polars_bail!(ComputeError: "DATE_PART function does not support '{}'", part)
+                polars_bail!(SQLInterface: "DATE_PART function does not support '{}'", part)
             },
         },
     )
@@ -1223,7 +1233,10 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
 fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
     let n_bits = b.len();
     if !b.chars().all(|c| c == '0' || c == '1') || n_bits > 64 {
-        polars_bail!(ComputeError: "bit string literal should contain only 0s and 1s and have length <= 64; found '{}' with length {}", b, n_bits)
+        polars_bail!(
+            SQLSyntax:
+            "bit string literal should contain only 0s and 1s and have length <= 64; found '{}' with length {}", b, n_bits
+        )
     }
     let s = b.as_str();
     Ok(lit(match n_bits {

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -82,7 +82,7 @@ def test_distinct() -> None:
 
     # test unregistration
     ctx.unregister("df")
-    with pytest.raises(ComputeError, match=".*'df'.*not found"):
+    with pytest.raises(SQLInterfaceError, match="relation 'df' was not found"):
         ctx.execute("SELECT * FROM df")
 
 

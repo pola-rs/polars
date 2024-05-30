@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 
 
 def test_bit_hex_literals() -> None:
@@ -50,26 +50,26 @@ def test_bit_hex_filter() -> None:
 def test_bit_hex_errors() -> None:
     with pl.SQLContext(test=None) as ctx:
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match="bit string literal should contain only 0s and 1s",
         ):
             ctx.execute("SELECT b'007' FROM test", eager=True)
 
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match="hex string literal must have an even number of digits",
         ):
             ctx.execute("SELECT x'00F' FROM test", eager=True)
 
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match="hex string literal must have an even number of digits",
         ):
             pl.sql_expr("colx IN (x'FF',x'123')")
 
         with pytest.raises(
-            ComputeError,
-            match=r'NationalStringLiteral\("hmmm"\) is not yet supported',
+            SQLInterfaceError,
+            match=r'NationalStringLiteral\("hmmm"\) is not supported',
         ):
             pl.sql_expr("N'hmmm'")
 

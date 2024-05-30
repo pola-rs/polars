@@ -14,6 +14,8 @@ try:
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
+        SQLInterfaceError,
+        SQLSyntaxError,
         StringCacheMismatchError,
         StructFieldNotFoundError,
     )
@@ -76,6 +78,12 @@ except ImportError:
 
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
+
+    class SQLInterfaceError(PolarsError):  # type: ignore[no-redef, misc]
+        """Exception raised when an error occurs in the SQL interface."""
+
+    class SQLSyntaxError(PolarsError):  # type: ignore[no-redef, misc]
+        """Exception raised from the SQL interface when encountering invalid syntax."""
 
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when string caches come from different sources."""
@@ -155,9 +163,10 @@ class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
 
 __all__ = [
     "ArrowError",
+    "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
-    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "MapWithoutReturnDtypeWarning",
@@ -165,12 +174,13 @@ __all__ = [
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
-    "PolarsInefficientMapWarning",
-    "CategoricalRemappingWarning",
     "PolarsError",
+    "PolarsInefficientMapWarning",
     "PolarsPanicError",
     "PolarsWarning",
     "RowsError",
+    "SQLInterfaceError",
+    "SQLSyntaxError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
