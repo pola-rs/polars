@@ -49,7 +49,6 @@ If you run into problems, please contact us on [Discord](https://discord.gg/4UfP
 
     If you are a Windows user, the steps below might not work as expected.
     Try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
-    If this is not an option, consider using [Scoop](https://scoop.sh/) or [Chocolatey](https://chocolatey.org/) to install `make`, `cmake` and other missing tools.
     Under native Windows, you may have to manually copy the contents of `toolchain.toml` to `py-polars/toolchain.toml`, as Git for Windows may not correctly handle symbolic links.
 
 #### Configuring Git
@@ -87,6 +86,8 @@ You will need Python even if you intend to work on the Rust code only, as we rel
 
 Finally, install [dprint](https://dprint.dev/install/).
 This is not strictly required, but it is recommended as we use it to autoformat certain file types.
+
+This guide uses [GNU make](https://www.gnu.org/software/make/) and (indirectly) [cmake](https://cmake.org/). They should come pre-installed on your system. If you are on Windows, install them as well.
 
 You can now check that everything works correctly by going into the `py-polars` directory and running the test suite
 (warning: this may be slow the first time you run it):
