@@ -109,7 +109,7 @@ def test_string_left_right_reverse() -> None:
 def test_string_left_negative_expr() -> None:
     # negative values and expressions
     df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
-    with pl.SQLContext(df=df, eager_execution=True) as sql:
+    with pl.SQLContext(df=df, eager=True) as sql:
         res = sql.execute(
             """
             SELECT
@@ -143,7 +143,7 @@ def test_string_left_negative_expr() -> None:
 def test_string_right_negative_expr() -> None:
     # negative values and expressions
     df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
-    with pl.SQLContext(df=df, eager_execution=True) as sql:
+    with pl.SQLContext(df=df, eager=True) as sql:
         res = sql.execute(
             """
             SELECT
@@ -249,7 +249,7 @@ def test_string_position() -> None:
         values=["Dubai", "Abu Dhabi", "Sharjah", "Al Ain", "Ajman", "Ras Al Khaimah"],
     ).to_frame()
 
-    with pl.SQLContext(cities=df, eager_execution=True) as ctx:
+    with pl.SQLContext(cities=df, eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT

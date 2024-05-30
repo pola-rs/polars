@@ -22,7 +22,7 @@ def test_case_when() -> None:
             "v2": [101, 202, 303, 404],
         }
     )
-    with pl.SQLContext(test_data=lf, eager_execution=True) as ctx:
+    with pl.SQLContext(test_data=lf, eager=True) as ctx:
         out = ctx.execute(
             """
             SELECT *, CASE WHEN COALESCE(v1, v2) % 2 != 0 THEN 'odd' ELSE 'even' END as "v3"

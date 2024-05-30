@@ -21,7 +21,7 @@ def test_date() -> None:
             "version": ["0.0.1", "0.7.3", "0.7.4"],
         }
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
 
     expected = pl.DataFrame({"date": [True, False, False]})
@@ -99,7 +99,7 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
             ],
         }
     )
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART(dt,'{part}')"):
             res = ctx.execute(f"SELECT {func} AS {part} FROM frame_data").to_series()
 
@@ -125,9 +125,7 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
     ],
 )
 def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
-    with pl.SQLContext(
-        frame_data=pl.DataFrame({"dt": [dt]}), eager_execution=True
-    ) as ctx:
+    with pl.SQLContext(frame_data=pl.DataFrame({"dt": [dt]}), eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -226,7 +224,7 @@ def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
     )
     precision = {"ms": 3, "us": 6, "ns": 9}
 
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         prec = f"({precision[unit]})" if unit else ""
         res = ctx.execute(f"SELECT ts::timestamp{prec} FROM frame_data").to_series()
 
@@ -237,7 +235,7 @@ def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
 def test_timestamp_time_unit_errors() -> None:
     df = pl.DataFrame({"ts": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
 
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         for prec in (0, 15):
             with pytest.raises(
                 ComputeError,

@@ -21,7 +21,7 @@ def test_div() -> None:
             "b": [-100.5, 7.0, 2.5, None, -3.14],
         }
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -81,7 +81,7 @@ def test_equal_not_equal() -> None:
 def test_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    ctx = pl.SQLContext(foods1=lf, eager_execution=True)
+    ctx = pl.SQLContext(foods1=lf, eager=True)
     out = ctx.execute(
         """
         SELECT *

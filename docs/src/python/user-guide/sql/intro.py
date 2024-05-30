@@ -33,7 +33,7 @@ ctx = pl.SQLContext(df_pandas=pl.from_pandas(df_pandas))
 pokemon = pl.read_csv(
     "https://gist.githubusercontent.com/ritchie46/cac6b337ea52281aa23c049250a4ff03/raw/89a957ff3919d90e6ef2d34235e6bf22304f3366/pokemon.csv"
 )
-with pl.SQLContext(register_globals=True, eager_execution=True) as ctx:
+with pl.SQLContext(register_globals=True, eager=True) as ctx:
     df_small = ctx.execute("SELECT * from pokemon LIMIT 5")
     print(df_small)
 # --8<-- [end:execute]
@@ -76,7 +76,7 @@ with pl.SQLContext(
     products_masterdata=pl.scan_csv("docs/data/products_masterdata.csv"),
     products_categories=pl.scan_ndjson("docs/data/products_categories.json"),
     sales_data=pl.from_pandas(sales_data),
-    eager_execution=True,
+    eager=True,
 ) as ctx:
     query = """
     SELECT
