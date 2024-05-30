@@ -1988,7 +1988,7 @@ class Expr:
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
         descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyexpr(self._pyexpr.top_k_by(k, by, descending=descending))
+        return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, descending=descending))
 
     def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
@@ -2151,7 +2151,9 @@ class Expr:
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
         descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyexpr(self._pyexpr.bottom_k_by(k, by, descending=descending))
+        return self._from_pyexpr(
+            self._pyexpr.bottom_k_by(by, k=k, descending=descending)
+        )
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """

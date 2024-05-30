@@ -1437,7 +1437,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         by = parse_as_list_of_expressions(by)
         descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyldf(self._ldf.top_k(k, by, descending))
+        return self._from_pyldf(self._ldf.top_k(k, by=by, descending=descending))
 
     def bottom_k(
         self,
@@ -1506,7 +1506,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         by = parse_as_list_of_expressions(by)
         descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyldf(self._ldf.bottom_k(k, by, descending))
+        return self._from_pyldf(self._ldf.bottom_k(k, by=by, descending=descending))
 
     def profile(
         self,
