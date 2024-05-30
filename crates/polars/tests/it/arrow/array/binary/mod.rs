@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray};
+use arrow::array::{Array, BinaryArray, Splitable};
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
@@ -9,11 +9,15 @@ mod mutable;
 mod mutable_values;
 mod to_mutable;
 
+fn array() -> BinaryArray<i32> {
+    vec![Some(b"hello".to_vec()), None, Some(b"hello2".to_vec())]
+        .into_iter()
+        .collect()
+}
+
 #[test]
 fn basics() {
-    let data = vec![Some(b"hello".to_vec()), None, Some(b"hello2".to_vec())];
-
-    let array: BinaryArray<i32> = data.into_iter().collect();
+    let array = array();
 
     assert_eq!(array.value(0), b"hello");
     assert_eq!(array.value(1), b"");
@@ -43,6 +47,23 @@ fn basics() {
     // note how this keeps everything: the offsets were sliced
     assert_eq!(array.values().as_slice(), b"hellohello2");
     assert_eq!(array.offsets().as_slice(), &[5, 5, 11]);
+}
+
+#[test]
+fn split_at() {
+    let (lhs, rhs) = array().split_at(1);
+
+    assert_eq!(lhs.value(0), b"hello");
+    assert_eq!(rhs.value(0), b"");
+    assert_eq!(rhs.value(1), b"hello2");
+
+    // note how this keeps everything: the offsets were sliced
+    assert_eq!(lhs.values().as_slice(), b"hellohello2");
+    assert_eq!(rhs.values().as_slice(), b"hellohello2");
+    assert_eq!(lhs.offsets().as_slice(), &[0, 5]);
+    assert_eq!(rhs.offsets().as_slice(), &[5, 5, 11]);
+    assert_eq!(lhs.validity().map_or(0, |v| v.set_bits()), 0);
+    assert_eq!(rhs.validity().map_or(0, |v| v.set_bits()), 1);
 }
 
 #[test]

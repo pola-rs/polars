@@ -186,6 +186,16 @@ where
         self.offset = offset;
     }
 
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = Splitable::split_at(self, offset);
+        (Box::new(lhs), Box::new(rhs))
+    }
+
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = unsafe { Splitable::split_at_unchecked(self, offset) };
+        (Box::new(lhs), Box::new(rhs))
+    }
+
     fn len(&self) -> usize {
         self.len
     }
@@ -211,6 +221,29 @@ where
             None => 0,
             Some(validity) => validity.unset_bits(),
         }
+    }
+}
+
+impl<T: PolarsObject> Splitable for ObjectArray<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        (
+            Self {
+                values: self.values.clone(),
+                null_bitmap: self.null_bitmap.clone(),
+                len: offset,
+                offset: self.offset,
+            },
+            Self {
+                values: self.values.clone(),
+                null_bitmap: self.null_bitmap.clone(),
+                len: self.len() - offset,
+                offset: self.offset + offset,
+            },
+        )
     }
 }
 

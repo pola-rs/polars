@@ -24,7 +24,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::primitive::PrimitiveArray;
 use super::specification::check_indexes;
-use super::{new_empty_array, new_null_array, Array};
+use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::array::dictionary::typed_iterator::{
     DictValue, DictionaryIterTyped, DictionaryValuesIterTyped,
 };
@@ -396,5 +396,28 @@ impl<K: DictionaryKey> Array for DictionaryArray<K> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<K: DictionaryKey> Splitable for DictionaryArray<K> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset < self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_keys, rhs_keys) = unsafe { Splitable::split_at_unchecked(&self.keys, offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                keys: lhs_keys,
+                values: self.values.clone(),
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                keys: rhs_keys,
+                values: self.values.clone(),
+            },
+        )
     }
 }

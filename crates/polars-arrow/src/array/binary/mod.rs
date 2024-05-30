@@ -1,7 +1,7 @@
 use either::Either;
 
 use super::specification::try_check_offsets_bounds;
-use super::{Array, GenericBinaryArray};
+use super::{Array, GenericBinaryArray, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -448,5 +448,32 @@ unsafe impl<O: Offset> GenericBinaryArray<O> for BinaryArray<O> {
     #[inline]
     fn offsets(&self) -> &[O] {
         self.offsets().buffer()
+    }
+}
+
+impl<O: Offset> Splitable for BinaryArray<O> {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_offsets, rhs_offsets) = unsafe { self.offsets.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                offsets: lhs_offsets,
+                values: self.values.clone(),
+                validity: lhs_validity,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                offsets: rhs_offsets,
+                values: self.values.clone(),
+                validity: rhs_validity,
+            },
+        )
     }
 }
