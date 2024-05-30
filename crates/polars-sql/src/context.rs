@@ -535,34 +535,34 @@ impl SQLContext {
             if query.order_by.is_empty() {
                 lf.select(projections)
             } else if !contains_wildcard {
-                let mut retained_names = Vec::with_capacity(projections.len());
+                let mut retained_names = PlIndexSet::with_capacity(projections.len());
                 let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
 
                 projections.iter().for_each(|expr| match expr {
                     Expr::Alias(_, name) => {
-                        retained_names.push(name.clone());
+                        retained_names.insert(name.clone());
                     },
                     Expr::Column(name) => {
-                        retained_names.push(name.clone());
+                        retained_names.insert(name.clone());
                     },
                     Expr::Columns(names) => names.iter().for_each(|name| {
-                        retained_names.push(name.clone());
+                        retained_names.insert(name.clone());
                     }),
                     Expr::Exclude(inner_expr, excludes) => {
                         if let Expr::Columns(names) = (*inner_expr).as_ref() {
                             names.iter().for_each(|name| {
-                                retained_names.push(name.clone());
+                                retained_names.insert(name.clone());
                             })
                         }
                         excludes.iter().for_each(|excluded| {
                             if let Excluded::Name(name) = excluded {
-                                retained_names.retain(|x| x != name);
+                                retained_names.shift_remove(name);
                             }
-                        });
+                        })
                     },
                     _ => {
                         let field = expr.to_field(&schema, Context::Default).unwrap();
-                        retained_names.push(ColumnName::from(field.name.as_str()));
+                        retained_names.insert(ColumnName::from(field.name.as_str()));
                     },
                 });
                 lf = lf.with_columns(projections);
