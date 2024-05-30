@@ -34,7 +34,7 @@ def test_any_all() -> None:
           x <= ANY(df.y) AS "Any Leq",
           x == ANY(df.y) AS "Any eq",
           x != ANY(df.y) AS "Any Neq",
-        FROM self
+        FROM df
         """,
     ).collect()
 

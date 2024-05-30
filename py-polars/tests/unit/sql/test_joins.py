@@ -257,7 +257,7 @@ def test_join_misc_13618() -> None:
         }
     )
     res = (
-        pl.SQLContext(t=df, t1=df, eager_execution=True)
+        pl.SQLContext(t=df, t1=df, eager=True)
         .execute(
             """
             SELECT t.A, t.fruits, t1.B, t1.cars
