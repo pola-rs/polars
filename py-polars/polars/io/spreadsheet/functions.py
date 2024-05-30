@@ -150,11 +150,11 @@ def read_excel(
     """
     Read Excel spreadsheet data into a DataFrame.
 
-    .. versionchanged:: 0.20.6
+    .. versionadded:: 0.20.6
         Added "calamine" fastexcel engine for Excel Workbooks (.xlsx, .xlsb, .xls).
-    .. versionchanged:: 0.19.4
+    .. versionadded:: 0.19.4
         Added "pyxlsb" engine for Excel Binary Workbooks (.xlsb).
-    .. versionchanged:: 0.19.3
+    .. versionadded:: 0.19.3
         Added "openpyxl" engine, and added `schema_overrides` parameter.
 
     Parameters
