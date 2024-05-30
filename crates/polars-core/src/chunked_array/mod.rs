@@ -50,7 +50,7 @@ use std::slice::Iter;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 
-use self::metadata::{Metadata, MetadataFlags};
+use self::metadata::{Metadata, MetadataFlags, MetadataProperties};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null};
 
@@ -176,6 +176,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a reference to the used [`Metadata`]
     ///
     /// This results a reference to an empty [`Metadata`] if its unset for this [`ChunkedArray`].
+    #[inline(always)]
     pub fn effective_metadata(&self) -> &Metadata<T> {
         self.md.as_ref().map_or(&Metadata::DEFAULT, AsRef::as_ref)
     }
@@ -216,7 +217,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn unset_fast_explode_list(&mut self) {
-        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(false)
+        self.set_fast_explode_list(false)
+    }
+
+    pub fn set_fast_explode_list(&mut self, value: bool) {
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(value)
+    }
+
+    pub fn get_fast_explode_list(&self) -> bool {
+        self.get_flags().get_fast_explode_list()
     }
 
     pub fn get_flags(&self) -> MetadataFlags {
@@ -231,7 +240,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        self.effective_metadata().is_sorted()
+        self.md.as_ref().map_or(IsSorted::Not, |md| md.is_sorted())
     }
 
     /// Set the 'sorted' bit meta info.
@@ -244,6 +253,125 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let mut out = self.clone();
         out.set_sorted_flag(sorted);
         out
+    }
+
+    pub fn get_min_value(&self) -> Option<&T::OwnedPhysical> {
+        self.md.as_ref()?.get_min_value()
+    }
+
+    pub fn get_max_value(&self) -> Option<&T::OwnedPhysical> {
+        self.md.as_ref()?.get_max_value()
+    }
+
+    pub fn get_distinct_count(&self) -> Option<IdxSize> {
+        self.md.as_ref()?.get_distinct_count()
+    }
+
+    /// Copies [`Metadata`] properties specified by `props`  from `other` with different underlying [`PolarsDataType`] into
+    /// `self`.
+    ///
+    /// This does not copy the properties with a different type between the [`Metadata`]s (e.g.
+    /// `min_value` and `max_value`) and will panic on debug builds if that is attempted.
+    #[inline(always)]
+    pub fn copy_metadata_cast<O: PolarsDataType>(
+        &mut self,
+        other: &ChunkedArray<O>,
+        props: MetadataProperties,
+    ) {
+        use MetadataProperties as P;
+
+        // If you add a property, add it here and below to ensure that metadata is copied
+        // properly.
+        debug_assert!(
+            {
+                props
+                    - (P::SORTED
+                        | P::FAST_EXPLODE_LIST
+                        | P::MIN_VALUE
+                        | P::MAX_VALUE
+                        | P::DISTINCT_COUNT)
+            }
+            .is_empty(),
+            "A MetadataProperty was not added to the copy_metadata_cast check"
+        );
+
+        // We add a fast path here for if both metadatas are empty, as this is quite a common case.
+        if props.is_empty() || (self.md.is_none() && other.md.is_none()) {
+            return;
+        }
+
+        debug_assert!(!props.contains(P::MIN_VALUE));
+        debug_assert!(!props.contains(P::MAX_VALUE));
+
+        let md = Arc::make_mut(self.metadata_mut());
+        let other_md = other.effective_metadata();
+
+        if props.contains(P::SORTED) {
+            md.set_sorted_flag(other_md.is_sorted());
+        }
+        if props.contains(P::FAST_EXPLODE_LIST) {
+            md.set_fast_explode_list(other_md.get_fast_explode_list());
+        }
+        if props.contains(P::DISTINCT_COUNT) {
+            md.set_distinct_count(other_md.get_distinct_count());
+        }
+    }
+
+    /// Copies [`Metadata`] properties specified by `props` from `other` into `self`.
+    #[inline(always)]
+    pub fn copy_metadata(&mut self, other: &Self, props: MetadataProperties) {
+        use MetadataProperties as P;
+
+        // If you add a property add it here and below to ensure that metadata is copied properly.
+        debug_assert!(
+            {
+                props
+                    - (P::SORTED
+                        | P::FAST_EXPLODE_LIST
+                        | P::MIN_VALUE
+                        | P::MAX_VALUE
+                        | P::DISTINCT_COUNT)
+            }
+            .is_empty(),
+            "A MetadataProperty was not added to the copy_metadata check"
+        );
+
+        // We add a fast path here for if both metadatas are empty, as this is quite a common case.
+        if props.is_empty() || (self.md.is_none() && other.md.is_none()) {
+            return;
+        }
+
+        // This checks whether we are okay to just clone the Arc.
+        if props.is_all()
+            || ((props.contains(P::SORTED) || self.is_sorted_flag() == other.is_sorted_flag())
+                && (props.contains(P::FAST_EXPLODE_LIST)
+                    || self.get_fast_explode_list() == other.get_fast_explode_list())
+                && (props.contains(P::MIN_VALUE) || self.get_min_value() == other.get_min_value())
+                && (props.contains(P::MAX_VALUE) || self.get_max_value() == other.get_max_value())
+                && (props.contains(P::DISTINCT_COUNT)
+                    || self.get_distinct_count() == other.get_distinct_count()))
+        {
+            self.md.clone_from(&other.md)
+        }
+
+        let md = Arc::make_mut(self.metadata_mut());
+        let other_md = other.effective_metadata();
+
+        if props.contains(P::SORTED) {
+            md.set_sorted_flag(other_md.is_sorted());
+        }
+        if props.contains(P::FAST_EXPLODE_LIST) {
+            md.set_fast_explode_list(other_md.get_fast_explode_list());
+        }
+        if props.contains(P::MIN_VALUE) {
+            md.set_min_value(other_md.get_max_value().cloned());
+        }
+        if props.contains(P::MAX_VALUE) {
+            md.set_max_value(other_md.get_min_value().cloned());
+        }
+        if props.contains(P::DISTINCT_COUNT) {
+            md.set_distinct_count(other_md.get_distinct_count());
+        }
     }
 
     /// Get the index of the first non null value in this [`ChunkedArray`].
@@ -328,15 +456,16 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     pub fn clear(&self) -> Self {
         // SAFETY: we keep the correct dtype
-        unsafe {
-            self.copy_with_chunks(
-                vec![new_empty_array(
-                    self.chunks.first().unwrap().data_type().clone(),
-                )],
-                true,
-                true,
-            )
-        }
+        let mut ca = unsafe {
+            self.copy_with_chunks(vec![new_empty_array(
+                self.chunks.first().unwrap().data_type().clone(),
+            )])
+        };
+
+        use MetadataProperties as P;
+        ca.copy_metadata(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca
     }
 
     /// Unpack a [`Series`] to the same physical type.
@@ -410,19 +539,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// # Safety
     /// The caller must ensure the dtypes of the chunks are correct
-    unsafe fn copy_with_chunks(
-        &self,
-        chunks: Vec<ArrayRef>,
-        keep_sorted: bool,
-        keep_fast_explode: bool,
-    ) -> Self {
-        Self::from_chunks_and_metadata(
-            chunks,
-            self.field.clone(),
-            self.metadata_owned_arc(),
-            keep_sorted,
-            keep_fast_explode,
-        )
+    unsafe fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        Self::new_with_compute_len(self.field.clone(), chunks)
     }
 
     /// Get data type of [`ChunkedArray`].

@@ -214,33 +214,6 @@ where
         ChunkedArray::new_with_compute_len(field, chunks)
     }
 
-    /// Create a new ChunkedArray from self, where the chunks are replaced.
-    ///
-    /// # Safety
-    /// The caller must ensure the dtypes of the chunks are correct
-    pub(crate) unsafe fn from_chunks_and_metadata(
-        chunks: Vec<ArrayRef>,
-        field: Arc<Field>,
-        metadata: Arc<Metadata<T>>,
-        keep_sorted: bool,
-        keep_fast_explode: bool,
-    ) -> Self {
-        let mut out = ChunkedArray::new_with_compute_len(field, chunks);
-
-        let mut md = metadata;
-        if !keep_sorted {
-            let inner = Arc::make_mut(&mut md);
-            inner.set_sorted_flag(IsSorted::Not);
-        }
-        if !keep_fast_explode {
-            let inner = Arc::make_mut(&mut md);
-            inner.set_fast_explode_list(false);
-        }
-        out.md = Some(md);
-
-        out
-    }
-
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,

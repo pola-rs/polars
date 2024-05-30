@@ -8,6 +8,17 @@ use serde::{Deserialize, Serialize};
 use super::PolarsDataType;
 use crate::series::IsSorted;
 
+bitflags! {
+    #[derive(Default, Debug, Clone, Copy, PartialEq)]
+    pub struct MetadataProperties: u32 {
+        const SORTED = 0x01;
+        const FAST_EXPLODE_LIST = 0x02;
+        const MIN_VALUE = 0x04;
+        const MAX_VALUE = 0x08;
+        const DISTINCT_COUNT = 0x10;
+    }
+}
+
 pub struct Metadata<T: PolarsDataType> {
     flags: MetadataFlags,
 
@@ -18,7 +29,7 @@ pub struct Metadata<T: PolarsDataType> {
 }
 
 bitflags! {
-    #[derive(Default, Debug, Clone, Copy,PartialEq)]
+    #[derive(Default, Debug, Clone, Copy, PartialEq)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
     pub struct MetadataFlags: u8 {
         const SORTED_ASC = 0x01;
@@ -52,6 +63,10 @@ impl MetadataFlags {
         } else {
             IsSorted::Not
         }
+    }
+
+    pub fn get_fast_explode_list(&self) -> bool {
+        self.contains(MetadataFlags::FAST_EXPLODE_LIST)
     }
 }
 
@@ -92,16 +107,6 @@ impl<T: PolarsDataType> Metadata<T> {
 
         distinct_count: None,
     };
-
-    pub fn cast<R: PolarsDataType>(&self) -> Metadata<R> {
-        // @TODO: It might be possible to cast the min_value, max_value and distinct_values
-        Metadata {
-            flags: self.flags,
-            min_value: None,
-            max_value: None,
-            distinct_count: None,
-        }
-    }
 
     pub fn is_sorted_ascending(&self) -> bool {
         self.flags.contains(MetadataFlags::SORTED_ASC)
@@ -150,14 +155,14 @@ impl<T: PolarsDataType> Metadata<T> {
         self.set_sorted_descending(descending);
     }
 
-    pub fn set_distinct_count(&mut self, distinct_count: IdxSize) {
-        self.distinct_count = Some(distinct_count);
+    pub fn set_distinct_count(&mut self, distinct_count: Option<IdxSize>) {
+        self.distinct_count = distinct_count;
     }
-    pub fn set_min_value(&mut self, min_value: T::OwnedPhysical) {
-        self.min_value = Some(min_value);
+    pub fn set_min_value(&mut self, min_value: Option<T::OwnedPhysical>) {
+        self.min_value = min_value;
     }
-    pub fn set_max_value(&mut self, max_value: T::OwnedPhysical) {
-        self.max_value = Some(max_value);
+    pub fn set_max_value(&mut self, max_value: Option<T::OwnedPhysical>) {
+        self.max_value = max_value;
     }
 
     pub fn set_flags(&mut self, flags: MetadataFlags) {
