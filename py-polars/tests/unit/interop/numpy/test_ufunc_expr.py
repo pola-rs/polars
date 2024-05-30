@@ -133,6 +133,44 @@ def test_grouped_ufunc() -> None:
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
 
 
+def test_generalized_ufunc_scalar() -> None:
+    numba = pytest.importorskip("numba")
+
+    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
+    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]
+        total = 0
+        for value in arr:
+            total += value
+        result[0] = total
+
+    # Make type checkers happy:
+    custom_sum = cast(Callable[[object], object], my_custom_sum)
+
+    # Demonstrate NumPy as the canonical expected behavior:
+    assert custom_sum(np.array([10, 2, 3], dtype=np.int64)) == 15
+
+    # Direct call of the gufunc:
+    df = pl.DataFrame({"values": [10, 2, 3]})
+    assert custom_sum(df.get_column("values")) == 15
+
+    # Indirect call of the gufunc:
+    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=True))
+    assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
+    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=False))
+    assert_frame_equal(indirect, pl.DataFrame({"values": [15]}))
+
+    # group_by()
+    df = pl.DataFrame({"labels": ["a", "b", "a", "b"], "values": [10, 2, 3, 30]})
+    indirect = (
+        df.group_by("labels")
+        .agg(pl.col("values").map_batches(custom_sum, returns_scalar=True))
+        .sort("labels")
+    )
+    assert_frame_equal(
+        indirect, pl.DataFrame({"labels": ["a", "b"], "values": [13, 32]})
+    )
+
+
 def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
     numba = pytest.importorskip("numba")
 

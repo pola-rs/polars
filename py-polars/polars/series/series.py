@@ -1380,6 +1380,7 @@ class Series:
 
             # Only generalized ufuncs have a signature set:
             is_generalized_ufunc = bool(ufunc.signature)
+
             if is_generalized_ufunc:
                 # Generalized ufuncs will operate on the whole array, so
                 # missing data can corrupt the results.
@@ -1392,7 +1393,13 @@ class Series:
                 # output size.
                 assert ufunc.signature is not None  # pacify MyPy
                 ufunc_input, ufunc_output = ufunc.signature.split("->")
-                allocate_output = ufunc_input == ufunc_output
+                if ufunc_output == "()":
+                    # If the result a scalar, just let the function do its
+                    # thing, no need for any song and dance involving
+                    # allocation:
+                    return ufunc(*args, dtype=dtype_char, **kwargs)
+                else:
+                    allocate_output = ufunc_input == ufunc_output
             else:
                 allocate_output = True
 
@@ -1409,6 +1416,7 @@ class Series:
                 lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs),
                 allocate_output,
             )
+
             result = self._from_pyseries(series)
             if is_generalized_ufunc:
                 # In this case we've disallowed passing in missing data, so no
@@ -1426,7 +1434,6 @@ class Series:
                 .select(F.when(validity_mask).then(F.col(self.name)))
                 .to_series(0)
             )
-
         else:
             msg = (
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
