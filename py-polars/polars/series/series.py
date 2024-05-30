@@ -3400,13 +3400,13 @@ class Series:
                 self._s.sort(descending, nulls_last, multithreaded)
             )
 
-    def top_k(self, k: int | IntoExprColumn = 5) -> Series:
+    def top_k(self, k: int = 5) -> Series:
         r"""
         Return the `k` largest elements.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n + k \log{n})
 
         Parameters
         ----------
@@ -3430,13 +3430,13 @@ class Series:
         ]
         """
 
-    def bottom_k(self, k: int | IntoExprColumn = 5) -> Series:
+    def bottom_k(self, k: int = 5) -> Series:
         r"""
         Return the `k` smallest elements.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n + k \log{n})
 
         Parameters
         ----------
