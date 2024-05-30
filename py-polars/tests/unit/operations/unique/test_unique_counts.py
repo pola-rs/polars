@@ -47,3 +47,21 @@ def test_unique_counts_on_bool() -> None:
     s = pl.Series("bool", [True, False, False, True, True, True])
     expected = pl.Series("bool", [4, 2], dtype=pl.UInt32)
     assert_series_equal(s.unique_counts(), expected)
+
+
+def test_unique_counts_on_bool_only_true() -> None:
+    s = pl.Series("bool", [True, True, True])
+    expected = pl.Series("bool", [3], dtype=pl.UInt32)
+    assert_series_equal(s.unique_counts(), expected)
+
+
+def test_unique_counts_on_bool_only_false() -> None:
+    s = pl.Series("bool", [False, False, False])
+    expected = pl.Series("bool", [3], dtype=pl.UInt32)
+    assert_series_equal(s.unique_counts(), expected)
+
+
+def test_unique_counts_on_bool_include_null() -> None:
+    s = pl.Series("bool", [True, None, False, False, True, True])
+    expected = pl.Series("bool", [3, 1, 2], dtype=pl.UInt32)
+    assert_series_equal(s.unique_counts(), expected)
