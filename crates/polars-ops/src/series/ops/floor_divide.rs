@@ -29,6 +29,10 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
         _ => {},
     }
 
+    if !a.dtype().is_numeric() {
+        polars_bail!(op = "floor_div", a.dtype());
+    }
+
     let logical_type = a.dtype();
 
     let a = a.to_physical_repr();
