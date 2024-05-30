@@ -1361,7 +1361,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -1380,8 +1380,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending
             Return the `k` smallest. Top-k by multiple columns can be specified
             per column by passing a sequence of booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
@@ -1442,6 +1448,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
         if maintain_order is not None:
             issue_deprecation_warning(
                 "The `maintain_order` parameter for `top_k` is deprecated."
@@ -1480,7 +1497,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -1499,8 +1516,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending
             Return the `k` largest. Bottom-k by multiple columns can be specified
             per column by passing a sequence of booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
@@ -1561,6 +1584,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
         if maintain_order is not None:
             issue_deprecation_warning(
                 "The `maintain_order` parameter for `bottom_k` is deprecated."

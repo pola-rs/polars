@@ -2038,7 +2038,7 @@ class Expr:
         self,
         k: int | IntoExprColumn = 5,
         *,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -2053,8 +2053,14 @@ class Expr:
         ----------
         k
             Number of elements to return.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
@@ -2102,6 +2108,17 @@ class Expr:
         │ 2     ┆ 98       │
         └───────┴──────────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
         if maintain_order is not None:
             issue_deprecation_warning(
                 "The `maintain_order` parameter for `top_k` is deprecated."
@@ -2138,7 +2155,7 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -2160,8 +2177,14 @@ class Expr:
             If `True`, consider the k smallest (instead of the k largest). Top-k by
             multiple columns can be specified per column by passing a sequence of
             booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
@@ -2263,6 +2286,17 @@ class Expr:
         │ Banana ┆ 5   ┆ 2   │
         └────────┴─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `top_k_by` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
         if maintain_order is not None:
             issue_deprecation_warning(
                 "The `maintain_order` parameter for `top_k_by` is deprecated."
@@ -2305,7 +2339,7 @@ class Expr:
         self,
         k: int | IntoExprColumn = 5,
         *,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -2320,8 +2354,14 @@ class Expr:
         ----------
         k
             Number of elements to return.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
@@ -2367,6 +2407,17 @@ class Expr:
         │ 2     ┆ 98       │
         └───────┴──────────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
         if maintain_order is not None:
             issue_deprecation_warning(
                 "The `maintain_order` parameter for `bottom_k` is deprecated."
@@ -2403,7 +2454,7 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -2528,6 +2579,17 @@ class Expr:
         │ Banana ┆ 6   ┆ 1   │
         └────────┴─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `bottom_k_by` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
         if maintain_order is not None:
             issue_deprecation_warning(
                 "The `maintain_order` parameter for `bottom_k_by` is deprecated."

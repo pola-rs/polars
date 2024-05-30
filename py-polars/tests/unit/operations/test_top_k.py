@@ -347,6 +347,11 @@ def test_top_k_empty() -> None:
     assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
 
 
+def test_top_k_nulls_last_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").top_k(5, nulls_last=True)
+
+
 def test_top_k_maintain_order_deprecated() -> None:
     with pytest.deprecated_call():
         pl.col("a").top_k(5, maintain_order=True)

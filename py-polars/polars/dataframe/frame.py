@@ -4742,7 +4742,7 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
     ) -> DataFrame:
         """
@@ -4760,8 +4760,14 @@ class DataFrame:
         descending
             Return the `k` smallest. Top-k by multiple columns can be specified
             per column by passing a sequence of booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
@@ -4838,7 +4844,7 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | None = None,
         maintain_order: bool | None = None,
     ) -> DataFrame:
         """
@@ -4856,8 +4862,14 @@ class DataFrame:
         descending
             Return the `k` largest. Bottom-k by multiple columns can be specified
             per column by passing a sequence of booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
 
         maintain_order
             Whether the order should be maintained if elements are equal.
