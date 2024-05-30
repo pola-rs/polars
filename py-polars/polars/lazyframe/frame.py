@@ -1366,17 +1366,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         multithreaded: bool | None = None,
     ) -> Self:
         """
-        Return the `k` largest elements.
-
-        If `descending=True` the smallest elements will be given.
+        Return the `k` largest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the top rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
             Return the `k` smallest. Top-k by multiple columns can be specified
             per column by passing a sequence of booleans.
@@ -1502,17 +1500,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         multithreaded: bool | None = None,
     ) -> Self:
         """
-        Return the `k` smallest elements.
-
-        If `descending=True` the largest elements will be given.
+        Return the `k` smallest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the bottom rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
             Return the `k` largest. Bottom-k by multiple columns can be specified
             per column by passing a sequence of booleans.

@@ -2160,7 +2160,7 @@ class Expr:
         multithreaded: bool | None = None,
     ) -> Self:
         r"""
-        Return elements corresponding to the `k` largest elements of the `by` column(s).
+        Return the elements corresponding to the `k` largest elements of the `by` column(s).
 
         This has time complexity:
 
@@ -2169,8 +2169,8 @@ class Expr:
         Parameters
         ----------
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the largest elements.
+            Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
         descending
@@ -2285,7 +2285,7 @@ class Expr:
         │ Banana ┆ 6   ┆ 1   │
         │ Banana ┆ 5   ┆ 2   │
         └────────┴─────┴─────┘
-        """
+        """  # noqa: W505
         if nulls_last is not None:
             issue_deprecation_warning(
                 "The `nulls_last` parameter for `top_k_by` is deprecated."
@@ -2459,7 +2459,7 @@ class Expr:
         multithreaded: bool | None = None,
     ) -> Self:
         r"""
-        Return elements corresponding to the `k` smallest elements of `by` column(s).
+        Return the elements corresponding to the `k` smallest elements of the `by` column(s).
 
         This has time complexity:
 
@@ -2468,7 +2468,7 @@ class Expr:
         Parameters
         ----------
         by
-            Column(s) included in sort order.
+            Column(s) used to determine the smallest elements.
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
@@ -2578,7 +2578,7 @@ class Expr:
         │ Banana ┆ 5   ┆ 2   │
         │ Banana ┆ 6   ┆ 1   │
         └────────┴─────┴─────┘
-        """
+        """  # noqa: W505
         if nulls_last is not None:
             issue_deprecation_warning(
                 "The `nulls_last` parameter for `bottom_k_by` is deprecated."
