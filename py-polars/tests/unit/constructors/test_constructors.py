@@ -1624,7 +1624,7 @@ def test_array_construction() -> None:
         {"row_id": "a", "data": [1, 2, 3]},
         {"row_id": "b", "data": [2, 3, 4]},
     ]
-    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
+    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, shape=3)}
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]

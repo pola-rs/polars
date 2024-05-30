@@ -171,7 +171,7 @@ def test_contains() -> None:
 
 
 def test_list_contains_invalid_datatype() -> None:
-    df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, width=2)})
+    df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(pl.SchemaError, match="invalid series dtype: expected `List`"):
         df.select(pl.col("a").list.contains(2))
 
