@@ -8,7 +8,7 @@ Table Operations
    * - Function
      - Description
    * - :ref:`CREATE TABLE <create_table>`
-     - Define a new table and its columns in the context.
+     - Create a new table and its columns from a SQL query against an existing table.
    * - :ref:`DROP TABLES <drop_tables>`
      - Delete a specified table and related data.
    * - :ref:`EXPLAIN <explain>`
@@ -22,7 +22,7 @@ Table Operations
 
 CREATE TABLE
 ------------
-Create a new table and its columns.
+Create a new table and its columns from a SQL query against an existing table.
 
 **Example:**
 

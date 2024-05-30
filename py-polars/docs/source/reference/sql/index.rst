@@ -40,6 +40,8 @@ and operations supported by Polars.
         **SQL Functions**
         ^^^^^^^^^^^^^^^^^
 
+        :doc:`Overview <functions/index>`
+
         .. toctree::
            :maxdepth: 2
 
