@@ -1342,33 +1342,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
+        nulls_last: bool | None = None,
+        maintain_order: bool | None = None,
+        multithreaded: bool | None = None,
     ) -> Self:
         """
-        Return the `k` largest elements.
-
-        If `descending=True` the smallest elements will be given.
+        Return the `k` largest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the top rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` smallest. Top-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
+            booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might
             be worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1413,6 +1428,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
+        if maintain_order is not None:
+            issue_deprecation_warning(
+                "The `maintain_order` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " There will be no guarantees about the order of the output.",
+                version="0.20.31",
+            )
+        else:
+            maintain_order = False
+
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]
@@ -1431,33 +1477,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
+        nulls_last: bool | None = None,
+        maintain_order: bool | None = None,
+        multithreaded: bool | None = None,
     ) -> Self:
         """
-        Return the `k` smallest elements.
-
-        If `descending=True` the largest elements will be given.
+        Return the `k` smallest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the bottom rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` largest. Bottom-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` largest elements of the `by` column(s) (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
+            booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1502,6 +1563,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
+        if maintain_order is not None:
+            issue_deprecation_warning(
+                "The `maintain_order` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " There will be no guarantees about the order of the output.",
+                version="0.20.31",
+            )
+        else:
+            maintain_order = False
+
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]

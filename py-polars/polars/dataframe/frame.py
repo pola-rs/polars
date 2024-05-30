@@ -4722,30 +4722,40 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
+        nulls_last: bool | None = None,
+        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
-        Return the `k` largest elements.
-
-        If `descending=True` the smallest elements will be given.
+        Return the `k` largest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the top rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` smallest. Top-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
+            booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
 
         See Also
         --------
@@ -4813,30 +4823,40 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
+        nulls_last: bool | None = None,
+        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
-        Return the `k` smallest elements.
-
-        If `descending=True` the largest elements will be given.
+        Return the `k` smallest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the bottom rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` largest. Bottom-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` largest elements of the `by` column(s) (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
+            booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
 
         See Also
         --------

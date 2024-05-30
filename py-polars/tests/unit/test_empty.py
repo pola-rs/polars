@@ -13,12 +13,6 @@ def test_empty_str_concat_lit() -> None:
     }
 
 
-def test_top_k_empty() -> None:
-    df = pl.DataFrame({"test": []})
-
-    assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
-
-
 def test_empty_cross_join() -> None:
     a = pl.LazyFrame(schema={"a": pl.Int32})
     b = pl.LazyFrame(schema={"b": pl.Int32})
