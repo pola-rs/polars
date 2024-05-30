@@ -774,3 +774,9 @@ def test_nested_cache_no_panic_16553() -> None:
     assert pl.LazyFrame().select(a=[[[1]]]).collect(comm_subexpr_elim=True).to_dict(
         as_series=False
     ) == {"a": [[[[1]]]]}
+
+
+def test_hash_empty_series_16577() -> None:
+    s = pl.Series(values=None)
+    out = pl.LazyFrame().select(s).collect()
+    assert out.equals(s.to_frame())
