@@ -95,10 +95,10 @@ def test_join_cross_11927() -> None:
     df3 = pl.DataFrame({"id": [4, 5, 6]})  # noqa: F841
 
     res = pl.sql("SELECT df1.id FROM df1 CROSS JOIN df2 WHERE df1.id = df2.id")
-    assert_frame_equal(res, pl.DataFrame({"id": [3]}))
+    assert_frame_equal(res.collect(), pl.DataFrame({"id": [3]}))
 
     res = pl.sql("SELECT * FROM df1 CROSS JOIN df3 WHERE df1.id = df3.id")
-    assert res.is_empty()
+    assert res.collect().is_empty()
 
 
 @pytest.mark.parametrize(
@@ -275,9 +275,10 @@ def test_join_misc_16255() -> None:
     res = pl.sql(
         """
         SELECT a.id, a.data AS d1, b.data AS d2
-        FROM self AS a JOIN df2 AS b
+        FROM df1 AS a JOIN df2 AS b
         ON a.id = b.id
-        """
+        """,
+        eager=True,
     )
     assert res.rows() == [(1, "open", "closed")]
 
