@@ -5726,17 +5726,17 @@ class DataFrame:
         >>> df = pl.DataFrame({"int": [0, 4, 5, 6, 8], "value": [1, 4, 2, 4, 1]})
         >>> df.rolling("int", period="3i").agg(pl.col("int").alias("aggregated"))
         shape: (5, 2)
-        ┌─────────┬────────────┐
-        │ integer ┆ aggregated │
-        │ ---     ┆ ---        │
-        │ i64     ┆ list[i64]  │
-        ╞═════════╪════════════╡
-        │ 0       ┆ [0]        │
-        │ 4       ┆ [4]        │
-        │ 5       ┆ [4, 5]     │
-        │ 6       ┆ [4, 5, 6]  │
-        │ 8       ┆ [6, 8]     │
-        └─────────┴────────────┘
+        ┌─────┬────────────┐
+        │ int ┆ aggregated │
+        │ --- ┆ ---        │
+        │ i64 ┆ list[i64]  │
+        ╞═════╪════════════╡
+        │ 0   ┆ [0]        │
+        │ 4   ┆ [4]        │
+        │ 5   ┆ [4, 5]     │
+        │ 6   ┆ [4, 5, 6]  │
+        │ 8   ┆ [6, 8]     │
+        └─────┴────────────┘
         """
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
