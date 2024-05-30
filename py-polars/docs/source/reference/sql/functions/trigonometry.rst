@@ -509,7 +509,7 @@ Compute the sine of the input column (in degrees).
     # ┌────────────┐
     # │ SIND       │
     # │ ---        │
-    #  f64        │
+    # | f64        │
     # ╞════════════╡
     # │ 0.0        │
     # │ 1.0        │
