@@ -14,7 +14,41 @@ pub trait PolarsTruncate {
 
 impl PolarsTruncate for DatetimeChunked {
     fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self> {
-        let offset = Duration::parse(offset);
+        let offset: Duration = Duration::parse(offset);
+        let time_zone = self.time_zone();
+        // A sqrt(n) cache is not too small, not too large.
+        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+
+        // Let's check if we can use a fastpath...
+        if every.len() == 1 {
+            if let Some(every) = every.get(0) {
+                let every =
+                    *duration_cache.get_or_insert_with(every, |string| Duration::parse(string));
+                if every.negative {
+                    polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
+                }
+                if (time_zone.is_none() || time_zone.as_deref() == Some("UTC"))
+                    && (every.months() == 0 && every.weeks() == 0)
+                {
+                    // ... yes we can! Weeks, months, and time zones require extra logic.
+                    // But in this simple case, it's just simple integer arithmetic.
+                    let every = match self.time_unit() {
+                        TimeUnit::Milliseconds => every.duration_ms(),
+                        TimeUnit::Microseconds => every.duration_us(),
+                        TimeUnit::Nanoseconds => every.duration_ns(),
+                    };
+                    return Ok(self
+                        .apply_values(|t| {
+                            let mut remainder = t % every;
+                            if remainder < 0 {
+                                remainder += every
+                            }
+                            t - remainder
+                        })
+                        .into_datetime(self.time_unit(), time_zone.clone()));
+                };
+            }
+        }
 
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => Window::truncate_ns,
@@ -22,8 +56,14 @@ impl PolarsTruncate for DatetimeChunked {
             TimeUnit::Milliseconds => Window::truncate_ms,
         };
 
-        // A sqrt(n) cache is not too small, not too large.
-        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        // TODO: optimize the code below, so it does the following:
+        //       - convert to naive
+        //       - truncate all naively
+        //       - localize, preserving the fold of the original datetime.
+        //       The last step is the non-trivial one. But it should be worth it,
+        //       and faster than the current approach of truncating everything
+        //       as tz-aware.
+
         let out = broadcast_try_binary_elementwise(self, every, |opt_timestamp, opt_every| match (
             opt_timestamp,
             opt_every,
