@@ -1362,7 +1362,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
-        maintain_order: bool = False,
+        maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
         """
@@ -1382,10 +1382,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might
             be worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
 
         multithreaded
             Sort using multiple threads.
@@ -1437,6 +1442,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
+        if maintain_order is not None:
+            issue_deprecation_warning(
+                "The `maintain_order` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " There will be no guarantees about the order of the output.",
+                version="0.20.31",
+            )
+        else:
+            maintain_order = False
+
         if multithreaded is not None:
             issue_deprecation_warning(
                 "The `multithreaded` parameter for `top_k` is deprecated."
@@ -1466,7 +1481,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
-        maintain_order: bool = False,
+        maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
         """
@@ -1486,10 +1501,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
 
         multithreaded
             Sort using multiple threads.
@@ -1541,6 +1561,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
+        if maintain_order is not None:
+            issue_deprecation_warning(
+                "The `maintain_order` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " There will be no guarantees about the order of the output.",
+                version="0.20.31",
+            )
+        else:
+            maintain_order = False
+
         if multithreaded is not None:
             issue_deprecation_warning(
                 "The `multithreaded` parameter for `bottom_k` is deprecated."

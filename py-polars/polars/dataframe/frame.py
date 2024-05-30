@@ -4743,7 +4743,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
-        maintain_order: bool = False,
+        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
         Return the `k` largest elements.
@@ -4762,10 +4762,15 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
 
         See Also
         --------
@@ -4834,7 +4839,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
         nulls_last: bool = False,
-        maintain_order: bool = False,
+        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
         Return the `k` smallest elements.
@@ -4853,10 +4858,15 @@ class DataFrame:
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
 
         See Also
         --------
