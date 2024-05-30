@@ -720,7 +720,7 @@ class Array(NestedType):
     ]
     """
 
-    inner: PolarsDataType | None = None
+    inner: PolarsDataType
     size: int
     shape: tuple[int, ...]
 
@@ -776,8 +776,6 @@ class Array(NestedType):
         elif isinstance(other, Array):
             if self.shape != other.shape:
                 return False
-            elif self.inner is None or other.inner is None:
-                return True
             else:
                 return self.inner == other.inner
         else:
