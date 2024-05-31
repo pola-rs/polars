@@ -695,7 +695,7 @@ class List(NestedType):
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, List):
             return True
-        if isinstance(other, List):
+        elif isinstance(other, List):
             if self.inner is None or other.inner is None:
                 return True
             else:
