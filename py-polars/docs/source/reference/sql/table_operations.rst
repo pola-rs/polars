@@ -15,6 +15,8 @@ Table Operations
      - Returns logical plan of the query.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables in the context.
+   * - :ref:`UNNEST <unnest>`
+     - Unnest one or more arrays as columns in a new table.
    * - :ref:`TRUNCATE <truncate>`
      - Remove rows from table without deleting the table from context.
 
@@ -65,6 +67,23 @@ Display the list of tables in the context.
 .. code-block:: sql
 
     SHOW TABLES
+
+.. _unnest:
+
+UNNEST
+------
+Unnest one or more arrays as columns in a new table.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT * FROM
+      UNNEST(
+        [1, 2, 3, 4],
+        ['ww','xx','yy','zz'],
+        [23.0, 24.5, 28.0, 27.5]
+      ) AS tbl (x,y,z)
 
 .. _truncate:
 

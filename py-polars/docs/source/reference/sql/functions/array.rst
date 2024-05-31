@@ -28,7 +28,7 @@ Array
    * - :ref:`ARRAY_UPPER <array_upper>`
      - Returns the upper bound (max value) in an array.
    * - :ref:`UNNEST <unnest>`
-     - Unnests/explodes an array column into multiple rows.
+     - Unnests (explodes) an array column into multiple rows.
 
 .. _array_contains:
 
