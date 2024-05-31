@@ -152,6 +152,7 @@ pub struct FunctionOptions {
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
+    // Raise if use in group by
     pub allow_group_aware: bool,
 }
 

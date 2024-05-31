@@ -238,9 +238,10 @@ impl ApplyExpr {
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac|
+            .map(|ac| {
                 // SAFETY: unstable series never lives longer than the iterator.
-                unsafe { ac.iter_groups(self.pass_name_to_apply) })
+                unsafe { ac.iter_groups(self.pass_name_to_apply) }
+            })
             .collect::<Vec<_>>();
 
         // Length of the items to iterate over.
@@ -457,7 +458,8 @@ fn apply_multiple_elementwise<'a>(
         },
         first_as => {
             let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
-            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal());
+            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
+                && acs.iter().any(|ac| ac.is_aggregated());
             let mut s = acs
                 .iter_mut()
                 .enumerate()
