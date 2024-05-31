@@ -758,11 +758,12 @@ class Array(NestedType):
             raise TypeError(msg)
 
         inner_parsed = polars.datatypes.py_type_to_dtype(inner)
+        inner_shape = inner_parsed.shape if isinstance(inner_parsed, Array) else ()
 
         if isinstance(shape, int):
             self.inner = inner_parsed
             self.size = shape
-            self.shape = (shape,)
+            self.shape = (shape,) + inner_shape
 
         elif isinstance(shape, tuple):
             if len(shape) > 1:
@@ -770,7 +771,7 @@ class Array(NestedType):
 
             self.inner = inner_parsed
             self.size = shape[0]
-            self.shape = shape
+            self.shape = shape + inner_shape
 
         else:
             msg = f"invalid input for shape: {shape!r}"
@@ -786,8 +787,8 @@ class Array(NestedType):
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
-        if isinstance(other, Array):
-            if self.size != other.size:
+        elif isinstance(other, Array):
+            if self.shape != other.shape:
                 return False
             elif self.inner is None or other.inner is None:
                 return True
