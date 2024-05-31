@@ -765,14 +765,14 @@ impl SQLContext {
             } => {
                 if let Some(alias) = alias {
                     let table_name = alias.name.value.clone();
-                    let column_names: Vec<Option<String>> = alias
+                    let column_names: Vec<Option<&str>> = alias
                         .columns
                         .iter()
                         .map(|c| {
                             if c.value.is_empty() {
                                 None
                             } else {
-                                Some(c.value.clone())
+                                Some(c.value.as_str())
                             }
                         })
                         .collect();
