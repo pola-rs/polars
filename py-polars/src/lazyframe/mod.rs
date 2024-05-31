@@ -1,6 +1,7 @@
 mod exitable;
 mod visit;
 pub(crate) mod visitor;
+mod data_frame_iter;
 use std::collections::HashMap;
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
@@ -21,6 +22,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
+use crate::lazyframe::data_frame_iter::DataFrameIter;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
@@ -649,6 +651,26 @@ impl PyLazyFrame {
                 },
             });
         });
+    }
+
+    #[cfg(all(feature = "streaming"))]
+    fn sink_to_batches(
+        &self,
+        py: Python,
+        limit: Option<usize>,
+    ) -> PyResult<DataFrameIter> {
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        let df_receiver = py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_to_batches().map_err(PyPolarsErr::from)
+        })?;
+        let df_iter = DataFrameIter{
+                df_receiver,
+                limit,
+                num_rows: 0
+            };
+        Ok(df_iter)
     }
 
     #[cfg(all(feature = "streaming", feature = "parquet"))]

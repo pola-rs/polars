@@ -14,6 +14,7 @@ from typing import (
     Callable,
     ClassVar,
     Collection,
+    Generator,
     Iterable,
     Mapping,
     NoReturn,
@@ -2100,6 +2101,40 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
         ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
         return result  # type: ignore[return-value]
+
+    @unstable()
+    def collect_batches(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
+        no_optimization: bool = False,
+        streaming: bool = True,
+        _eager: bool = False,
+    ) -> Generator[DataFrame, None, None]:
+        """Collect in batches."""
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim,
+            comm_subexpr_elim,
+            cluster_with_columns,
+            streaming,
+            _eager,
+        )
+        df_iter = ldf.sink_to_batches()
+        for df in df_iter:
+            yield wrap_df(df)
+
 
     @unstable()
     def sink_parquet(

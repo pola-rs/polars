@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
+use crossbeam_channel::{bounded, Receiver};
 #[cfg(feature = "csv")]
 pub use csv::*;
 #[cfg(not(target_arch = "wasm32"))]
@@ -31,6 +32,7 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_core::prelude::*;
+use polars_core::POOL;
 use polars_io::RowIndex;
 use polars_ops::frame::JoinCoalesce;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
@@ -814,6 +816,30 @@ impl LazyFrame {
         );
         let _ = physical_plan.execute(&mut state)?;
         Ok(())
+    }
+
+    pub fn sink_to_batches(mut self) -> Result<Receiver<DataFrame>, PolarsError> {
+        self.opt_state.streaming = true;
+        let morsels_per_sink = POOL.current_num_threads();
+        let backpressure = morsels_per_sink * 4;
+        let (sender, receiver) = bounded(backpressure);
+        self.logical_plan = DslPlan::Sink {
+            input: Arc::new(self.logical_plan),
+            payload: SinkType::Batch {
+                sender: BatchSender { id: 0, sender },
+            },
+        };
+
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: format!("cannot run the whole query in a streaming order")
+        );
+        POOL.spawn(move || {
+            let _ = physical_plan.execute(&mut state).unwrap();
+        });
+
+        Ok(receiver)
     }
 
     /// Filter by some predicate expression.

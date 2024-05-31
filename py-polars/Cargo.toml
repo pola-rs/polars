@@ -20,6 +20,7 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
+crossbeam-channel = { workspace = true }
 either = { workspace = true }
 itoa = { workspace = true }
 libc = "0.2"

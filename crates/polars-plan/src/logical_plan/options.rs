@@ -1,5 +1,7 @@
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
+use crossbeam_channel::{bounded, Sender};
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
@@ -223,10 +225,41 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+#[derive(Clone, Debug)]
+pub struct BatchSender {
+    pub id: u32,
+    pub sender: Sender<DataFrame>,
+}
+
+impl Default for BatchSender {
+    fn default() -> Self {
+        let (sender, _receiver) = bounded(1);
+        Self { id: 0, sender }
+    }
+}
+
+impl PartialEq for BatchSender {
+    fn eq(&self, other: &Self) -> bool {
+        self.sender.same_channel(&other.sender)
+    }
+}
+
+impl Eq for BatchSender {}
+
+impl Hash for BatchSender {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state)
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SinkType {
     Memory,
+    Batch {
+        #[cfg_attr(feature = "serde", serde(skip))]
+        sender: BatchSender,
+    },
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
