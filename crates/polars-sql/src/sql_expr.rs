@@ -4,6 +4,7 @@ use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
+use polars_ops::series::SeriesReshape;
 use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
 use rand::distributions::Alphanumeric;
@@ -185,6 +186,28 @@ pub(crate) struct SQLExprVisitor<'a> {
 }
 
 impl SQLExprVisitor<'_> {
+    fn array_expr_to_series(&mut self, elements: &[SQLExpr]) -> PolarsResult<Series> {
+        let array_elements = elements
+            .iter()
+            .map(|e| match e {
+                SQLExpr::Value(v) => self.visit_any_value(v, None),
+                SQLExpr::UnaryOp { op, expr } => match expr.as_ref() {
+                    SQLExpr::Value(v) => self.visit_any_value(v, Some(op)),
+                    _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e)),
+                },
+                SQLExpr::Array(_) => {
+                    // TODO: nested arrays (handle FnMut issues)
+                    // let srs = self.array_expr_to_series(&[e.clone()])?;
+                    // Ok(AnyValue::List(srs))
+                    Err(polars_err!(ComputeError: "SQL interface does not yet support nested array literals:\n{:?}", e))
+                },
+                _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e)),
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        Series::from_any_values("", &array_elements, true)
+    }
+
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         match expr {
             SQLExpr::AllOp {
@@ -197,6 +220,7 @@ impl SQLExprVisitor<'_> {
                 compare_op,
                 right,
             } => self.visit_any(left, compare_op, right),
+            SQLExpr::Array(arr) => self.visit_array_expr(&arr.elem, true, None),
             SQLExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SQLExpr::Between {
                 expr,
@@ -220,7 +244,12 @@ impl SQLExprVisitor<'_> {
                 expr,
                 list,
                 negated,
-            } => self.visit_in_list(expr, list, *negated),
+            } => {
+                let expr = self.visit_expr(expr)?;
+                let elems = self.visit_array_expr(list, false, Some(&expr))?;
+                let is_in = expr.is_in(elems);
+                Ok(if *negated { is_in.not() } else { is_in })
+            },
             SQLExpr::InSubquery {
                 expr,
                 subquery,
@@ -615,6 +644,38 @@ impl SQLExprVisitor<'_> {
         }
     }
 
+    /// Visit a SQL `ARRAY` list (including `IN` values).
+    fn visit_array_expr(
+        &mut self,
+        elements: &[SQLExpr],
+        result_as_element: bool,
+        dtype_expr_match: Option<&Expr>,
+    ) -> PolarsResult<Expr> {
+        let mut elems = self.array_expr_to_series(elements)?;
+
+        // handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+        // (not yet as versatile as the temporal string conversions in visit_binary_op)
+        if let (Some(Expr::Column(name)), Some(schema)) =
+            (dtype_expr_match, self.active_schema.as_ref())
+        {
+            if elems.dtype() == &DataType::String {
+                if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
+                    schema.get(name)
+                {
+                    elems = elems.strict_cast(&schema.get(name).unwrap().clone())?;
+                }
+            }
+        }
+        // if we are parsing the list as an element in a series, implode.
+        // otherwise, return the series as-is.
+        let res = if result_as_element {
+            elems.implode()?.into_series()
+        } else {
+            elems
+        };
+        Ok(lit(res))
+    }
+
     /// Visit a SQL `CAST` or `TRY_CAST` expression.
     ///
     /// e.g. `CAST(col AS INT)`, `col::int4`, or `TRY_CAST(col AS VARCHAR)`,
@@ -808,59 +869,6 @@ impl SQLExprVisitor<'_> {
             ComputeError: "ARRAY_AGG WITHIN GROUP is not yet supported"
         );
         Ok(base.implode())
-    }
-
-    /// Visit a SQL `IN` expression
-    fn visit_in_list(
-        &mut self,
-        expr: &SQLExpr,
-        list: &[SQLExpr],
-        negated: bool,
-    ) -> PolarsResult<Expr> {
-        let expr = self.visit_expr(expr)?;
-        let list = list
-            .iter()
-            .map(|e| {
-                if let SQLExpr::Value(v) = e {
-                    let av = self.visit_any_value(v, None)?;
-                    Ok(av)
-                } else if let SQLExpr::UnaryOp {op, expr} = e {
-                    match expr.as_ref() {
-                        SQLExpr::Value(v) => {
-                            let av = self.visit_any_value(v, Some(op))?;
-                            Ok(av)
-                        },
-                        _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))
-                    }
-                }else{
-                    Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))
-                }
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-
-        let mut s = Series::from_any_values("", &list, true)?;
-
-        // handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
-        // (not yet as versatile as the temporal string conversions in visit_binary_op)
-        if s.dtype() == &DataType::String {
-            // handle implicit temporal string comparisons, eg: "dt >= '2024-04-30'"
-            if let Expr::Column(name) = &expr {
-                if self.active_schema.is_some() {
-                    let schema = self.active_schema.as_ref().unwrap();
-                    let left_dtype = schema.get(name);
-                    if let Some(DataType::Date | DataType::Time | DataType::Datetime(_, _)) =
-                        left_dtype
-                    {
-                        s = s.strict_cast(&left_dtype.unwrap().clone())?;
-                    }
-                }
-            }
-        }
-        if negated {
-            Ok(expr.is_in(lit(s)).not())
-        } else {
-            Ok(expr.is_in(lit(s)))
-        }
     }
 
     /// Visit a SQL subquery inside and `IN` expression.
@@ -1113,6 +1121,19 @@ pub(crate) fn parse_sql_expr(
 ) -> PolarsResult<Expr> {
     let mut visitor = SQLExprVisitor { ctx, active_schema };
     visitor.visit_expr(expr)
+}
+
+pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Series> {
+    match expr {
+        SQLExpr::Array(arr) => {
+            let mut visitor = SQLExprVisitor {
+                ctx,
+                active_schema: None,
+            };
+            visitor.array_expr_to_series(arr.elem.as_slice())
+        },
+        _ => polars_bail!(ComputeError: "Expected array expression, found {:?}", expr),
+    }
 }
 
 fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {

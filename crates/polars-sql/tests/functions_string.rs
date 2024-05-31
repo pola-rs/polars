@@ -109,3 +109,23 @@ fn test_array_to_string() {
     .unwrap();
     assert!(df_sql.equals(&df_expected));
 }
+
+#[test]
+fn test_array_literal() {
+    let mut context = SQLContext::new();
+    context.register("df", DataFrame::empty().lazy());
+
+    let sql = "SELECT [100,200,300] AS arr FROM df";
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_expected = df! {
+        "arr" => &[100i64, 200, 300],
+    }
+    .unwrap()
+    .lazy()
+    .select(&[col("arr").implode()])
+    .collect()
+    .unwrap();
+
+    assert!(df_sql.equals(&df_expected));
+    assert!(df_sql.height() == 1);
+}
