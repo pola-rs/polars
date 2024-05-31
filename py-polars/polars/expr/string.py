@@ -307,8 +307,8 @@ class ExprStringNameSpace:
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
-            time_unit = dtype.time_unit  # type: ignore[union-attr]
-            time_zone = dtype.time_zone  # type: ignore[union-attr]
+            time_unit = getattr(dtype, "time_unit", None)
+            time_zone = getattr(dtype, "time_zone", None)
             return self.to_datetime(
                 format,
                 time_unit=time_unit,
