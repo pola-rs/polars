@@ -782,12 +782,11 @@ impl SQLContext {
                         .map(|arr| parse_sql_array(arr, self))
                         .collect::<Result<_, _>>()?;
 
-                    if column_names.is_empty() {
-                        polars_bail!(
-                            ComputeError:
-                            "UNNEST table alias must also declare column names, eg: {} (a,b,c)", alias.name.to_string()
-                        );
-                    } else if column_names.len() != column_values.len() {
+                    polars_ensure!(!column_names.is_empty(),
+                        ComputeError:
+                        "UNNEST table alias must also declare column names, eg: {} (a,b,c)", alias.name.to_string()
+                    );
+                    if column_names.len() != column_values.len() {
                         let plural = if column_values.len() > 1 { "s" } else { "" };
                         polars_bail!(
                             ComputeError:
