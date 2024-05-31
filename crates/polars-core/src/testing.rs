@@ -191,6 +191,7 @@ mod test {
     fn test_series_dtype_not_equal() {
         let s_i32 = Series::new("a", &[1_i32, 2_i32]);
         let s_i64 = Series::new("a", &[1_i64, 2_i64]);
+        assert!(s_i32.dtype() != s_i64.dtype());
         assert!(s_i32.equals(&s_i64));
     }
 
