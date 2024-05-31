@@ -565,14 +565,11 @@ impl SQLContext {
                         retained_names.insert(ColumnName::from(field.name.as_str()));
                     },
                 });
+                let retained_columns: Vec<_> =
+                    retained_names.into_iter().map(|name| col(&name)).collect();
                 lf = lf.with_columns(projections);
                 lf = self.process_order_by(lf, &query.order_by)?;
-                lf.select(
-                    retained_names
-                        .iter()
-                        .map(|name| col(name))
-                        .collect::<Vec<_>>(),
-                )
+                lf.select(&retained_columns)
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
                 let exclude_expr = projections.iter().find(|expr| {
