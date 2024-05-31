@@ -39,11 +39,8 @@ impl PolarsTruncate for DatetimeChunked {
                     };
                     return Ok(self
                         .apply_values(|t| {
-                            let mut remainder = t % every;
-                            if remainder < 0 {
-                                remainder += every
-                            }
-                            t - remainder
+                            let remainder = t % every;
+                            t - remainder + every * (remainder < 0) as i64
                         })
                         .into_datetime(self.time_unit(), time_zone.clone()));
                 };
