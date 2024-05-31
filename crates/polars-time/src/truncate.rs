@@ -51,6 +51,10 @@ impl PolarsTruncate for DatetimeChunked {
                 }
             }
         }
+        let mut duration_cache = match duration_cache_opt {
+            Some(cache) => cache,
+            None => FastFixedCache::new((every.len() as f64).sqrt() as usize),
+        };
 
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => Window::truncate_ns,
@@ -71,10 +75,8 @@ impl PolarsTruncate for DatetimeChunked {
             opt_every,
         ) {
             (Some(timestamp), Some(every)) => {
-                let every = duration_cache_opt
-                    .as_mut()
-                    .map(|cache| *cache.get_or_insert_with(every, |every| Duration::parse(every)))
-                    .unwrap();
+                let every =
+                    *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
 
                 if every.negative {
                     polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
