@@ -268,3 +268,13 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> 
             "parquet file can be skipped, the statistics were sufficient"
             " to apply the predicate." in captured
         )
+
+
+@pytest.mark.write_disk()
+def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.parquet"
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Int32})
+    df.write_parquet(file_path)
+    q = pl.scan_parquet(file_path)
+    q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
+    assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)

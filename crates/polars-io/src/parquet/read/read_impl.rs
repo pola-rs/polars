@@ -779,10 +779,13 @@ impl BatchedParquetReader {
                     self.chunks_fifo.push_back(df)
                 }
             }
+        } else {
+            skipped_all_rgs = !self.has_returned;
         };
 
         if self.chunks_fifo.is_empty() {
             if skipped_all_rgs {
+                self.has_returned = true;
                 Ok(Some(vec![materialize_empty_df(
                     Some(self.projection.as_ref()),
                     &self.schema,
@@ -803,7 +806,7 @@ impl BatchedParquetReader {
                 }
             }
 
-            self.has_returned |= true;
+            self.has_returned = true;
             Ok(Some(chunks))
         }
     }
