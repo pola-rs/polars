@@ -806,11 +806,10 @@ impl SQLContext {
                         })
                         .collect();
 
-                    let columns: Vec<_> = column_series.into_iter().map(|s| s.0.clone()).collect();
-                    let lf = DataFrame::new(columns)?.lazy();
+                    let lf = DataFrame::new(column_series)?.lazy();
                     if *with_offset {
                         // TODO: make a PR to `sqlparser-rs` to support 'ORDINALITY'
-                        //  (as 'OFFSET' is BigQuery-specific syntax, not PostgreSQL)
+                        //  (note that 'OFFSET' is BigQuery-specific syntax, not PostgreSQL)
                         polars_bail!(ComputeError: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
                     }
                     self.table_map.insert(table_name.clone(), lf.clone());
