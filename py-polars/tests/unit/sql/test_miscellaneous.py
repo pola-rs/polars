@@ -260,6 +260,27 @@ def test_order_by(foods_ipc_path: Path) -> None:
     }
 
 
+def test_order_by_misc() -> None:
+    res = pl.DataFrame(
+        {
+            "x": ["apple", "orange"],
+            "y": ["sheep", "alligator"],
+            "z": ["hello", "world"],
+        }
+    ).sql(
+        """
+        SELECT z, y, x
+        FROM self ORDER BY y DESC
+        """
+    )
+    assert res.columns == ["z", "y", "x"]
+    assert res.to_dict(as_series=False) == {
+        "z": ["hello", "world"],
+        "y": ["sheep", "alligator"],
+        "x": ["apple", "orange"],
+    }
+
+
 def test_register_context() -> None:
     # use as context manager unregisters tables created within each scope
     # on exit from that scope; arbitrary levels of nesting are supported.

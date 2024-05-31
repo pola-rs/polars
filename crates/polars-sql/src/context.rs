@@ -535,9 +535,8 @@ impl SQLContext {
             if query.order_by.is_empty() {
                 lf.select(projections)
             } else if !contains_wildcard {
+                let mut retained_names = PlIndexSet::with_capacity(projections.len());
                 let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
-                let mut column_names = schema.get_names();
-                let mut retained_names = PlHashSet::new();
 
                 projections.iter().for_each(|expr| match expr {
                     Expr::Alias(_, name) => {
@@ -557,18 +556,20 @@ impl SQLContext {
                         }
                         excludes.iter().for_each(|excluded| {
                             if let Excluded::Name(name) = excluded {
-                                retained_names.remove(name);
+                                retained_names.shift_remove(name);
                             }
-                        });
+                        })
                     },
-                    _ => {},
+                    _ => {
+                        let field = expr.to_field(&schema, Context::Default).unwrap();
+                        retained_names.insert(ColumnName::from(field.name.as_str()));
+                    },
                 });
-
+                let retained_columns: Vec<_> =
+                    retained_names.into_iter().map(|name| col(&name)).collect();
                 lf = lf.with_columns(projections);
                 lf = self.process_order_by(lf, &query.order_by)?;
-
-                column_names.retain(|&name| !retained_names.contains(name));
-                lf.drop(column_names)
+                lf.select(&retained_columns)
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
                 let exclude_expr = projections.iter().find(|expr| {
