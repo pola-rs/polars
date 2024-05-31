@@ -96,6 +96,10 @@ where
 
         let md = self.effective_metadata();
 
+        if let Some(min) = md.get_min_value() {
+            return Some(*min);
+        }
+
         match md.is_sorted() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
@@ -119,6 +123,10 @@ where
         // There is at least one non-null value.
 
         let md = self.effective_metadata();
+
+        if let Some(max) = md.get_max_value() {
+            return Some(*max);
+        }
 
         match md.is_sorted() {
             IsSorted::Ascending => {
@@ -223,37 +231,37 @@ impl BooleanChunked {
     }
 
     pub fn min(&self) -> Option<bool> {
-        let nc = self.null_count();
-        let len = self.len();
-        if self.is_empty() || nc == len {
+        let null_count = self.null_count();
+        let length = self.len();
+
+        if self.is_empty() || null_count == length {
             return None;
         }
-        if nc == 0 {
-            if self.all() {
-                Some(true)
-            } else {
-                Some(false)
-            }
+
+        if let Some(min) = self.effective_metadata().get_min_value() {
+            return Some(*min);
+        }
+
+        Some(if null_count == 0 {
+            self.all()
         } else {
             // we can unwrap as we already checked empty and all null above
-            if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
-                Some(true)
-            } else {
-                Some(false)
-            }
-        }
+            (self.sum().unwrap() + null_count as IdxSize) == length as IdxSize
+        })
     }
 
     pub fn max(&self) -> Option<bool> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
-        if self.any() {
-            Some(true)
-        } else {
-            Some(false)
+
+        if let Some(max) = self.effective_metadata().get_max_value() {
+            return Some(*max);
         }
+
+        Some(self.any())
     }
+
     pub fn mean(&self) -> Option<f64> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
@@ -413,7 +421,14 @@ impl StringChunked {
         if self.is_empty() {
             return None;
         }
-        match self.is_sorted_flag() {
+
+        let md = self.effective_metadata();
+
+        if let Some(max) = md.get_max_value() {
+            return Some(max);
+        }
+
+        match md.is_sorted() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
                     // SAFETY: last_non_null returns in bound index
@@ -436,6 +451,13 @@ impl StringChunked {
         if self.is_empty() {
             return None;
         }
+
+        let md = self.effective_metadata();
+
+        if let Some(min) = md.get_min_value() {
+            return Some(min);
+        }
+
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
@@ -544,7 +566,13 @@ impl BinaryChunked {
         if self.is_empty() {
             return None;
         }
-        match self.is_sorted_flag() {
+
+        let md = self.effective_metadata();
+        if let Some(max) = md.get_max_value() {
+            return Some(max);
+        }
+
+        match md.is_sorted() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
                     // SAFETY: last_non_null returns in bound index.
@@ -568,7 +596,13 @@ impl BinaryChunked {
         if self.is_empty() {
             return None;
         }
-        match self.is_sorted_flag() {
+
+        let md = self.effective_metadata();
+        if let Some(min) = md.get_min_value() {
+            return Some(min);
+        }
+
+        match md.is_sorted() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
                     // SAFETY: first_non_null returns in bound index.

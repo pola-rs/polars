@@ -203,6 +203,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.md.get_or_insert_with(Default::default)
     }
 
+    /// Get a mutable reference to the [`ChunkedArray`]'s [`Metadata`].
+    ///
+    /// This should only be done when you will for sure add some new metadata.
+    pub fn metadata_make_mut(&mut self) -> &mut Metadata<T> {
+        Arc::make_mut(self.md.get_or_insert_with(Default::default))
+    }
+
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
         self.effective_metadata().is_sorted_ascending()
     }
