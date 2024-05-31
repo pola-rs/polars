@@ -80,6 +80,9 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         pushable.clear();
         potential_pushable.clear();
 
+        pushable.reserve(current_exprs.as_exprs().len());
+        potential_pushable.reserve(current_exprs.as_exprs().len());
+
         // @NOTE
         // We can pushdown any column that utilizes no live columns that are generated in the
         // input.
