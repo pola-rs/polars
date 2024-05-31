@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -1669,15 +1670,15 @@ class ExprStringNameSpace:
         ...     ).with_columns(name=pl.col("captures").struct["1"].str.to_uppercase())
         ... )
         shape: (3, 3)
-        ┌───────────────────────────────────┬───────────────────────┬──────────┐
-        │ url                               ┆ captures              ┆ name     │
-        │ ---                               ┆ ---                   ┆ ---      │
-        │ str                               ┆ struct[2]             ┆ str      │
-        ╞═══════════════════════════════════╪═══════════════════════╪══════════╡
-        │ http://vote.com/ballon_dor?candi… ┆ {"messi","python"}    ┆ MESSI    │
-        │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
-        │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
-        └───────────────────────────────────┴───────────────────────┴──────────┘
+        ┌─────────────────────────────────┬───────────────────────┬──────────┐
+        │ url                             ┆ captures              ┆ name     │
+        │ ---                             ┆ ---                   ┆ ---      │
+        │ str                             ┆ struct[2]             ┆ str      │
+        ╞═════════════════════════════════╪═══════════════════════╪══════════╡
+        │ http://vote.com/ballon_dor?can… ┆ {"messi","python"}    ┆ MESSI    │
+        │ http://vote.com/ballon_dor?can… ┆ {"weghorst","polars"} ┆ WEGHORST │
+        │ http://vote.com/ballon_dor?err… ┆ {null,null}           ┆ null     │
+        └─────────────────────────────────┴───────────────────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
@@ -2352,9 +2353,22 @@ class ExprStringNameSpace:
         n = parse_as_expression(n)
         return wrap_expr(self._pyexpr.str_tail(n))
 
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -2364,7 +2378,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["foo", "bar"]})
-        >>> df.select(pl.col("a").str.explode())
+        >>> df.select(pl.col("a").str.explode())  # doctest: +SKIP
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -2379,7 +2393,8 @@ class ExprStringNameSpace:
         │ r   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.str_explode())
+        split = self.split("")
+        return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
     def to_integer(
         self, *, base: int | IntoExprColumn = 10, strict: bool = True

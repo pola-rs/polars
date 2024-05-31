@@ -47,11 +47,11 @@ def test_shift_and_fill() -> None:
     out = ldf.with_columns(
         pl.col("a").shift(n=-2, fill_value=pl.col("b").mean())
     ).collect()
-    assert out["a"].null_count() == 0
+    assert not out["a"].has_nulls()
 
     # use df method
     out = ldf.shift(n=2, fill_value=pl.col("b").std()).collect()
-    assert out["a"].null_count() == 0
+    assert not out["a"].has_nulls()
 
 
 def test_shift_expr() -> None:

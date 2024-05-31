@@ -7,7 +7,7 @@ from contextlib import suppress
 from datetime import date
 from pathlib import Path
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import pyarrow as pa
 import pytest
@@ -157,10 +157,6 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.UInt8},
             ),
             id="uri: connectorx",
-            marks=pytest.mark.skipif(
-                sys.version_info > (3, 11),
-                reason="connectorx cannot be installed on Python 3.12 yet.",
-            ),
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -348,11 +344,24 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
         t.c.value,
     ).where(t.c.value < 0)
 
+    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
     for conn in (alchemy_session, alchemy_engine, alchemy_conn):
         assert_frame_equal(
             pl.read_database(selectable_query, connection=conn),
-            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+            expected,
         )
+
+    batches = list(
+        pl.read_database(
+            selectable_query,
+            connection=conn,
+            iter_batches=True,
+            batch_size=1,
+        )
+    )
+    assert len(batches) == 1
+    assert_frame_equal(batches[0], expected)
 
 
 def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
@@ -473,7 +482,7 @@ def test_read_database_mocked(
             "repeat_batch_calls", False
         ),
     )
-    res = pl.read_database(  # type: ignore[call-overload]
+    res = pl.read_database(
         query="SELECT * FROM test_data",
         connection=mc,
         iter_batches=iter_batches,
@@ -483,6 +492,7 @@ def test_read_database_mocked(
         assert isinstance(res, GeneratorType)
         res = pl.concat(res)
 
+    res = cast(pl.DataFrame, res)
     assert expected_call in mc.cursor().called
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
@@ -526,8 +536,8 @@ def test_read_database_mocked(
                 read_method="read_database_uri",
                 query="SELECT * FROM test_data",
                 protocol="mysql",
-                errclass=ImportError,
-                errmsg="ADBC mysql driver not detected",
+                errclass=ModuleNotFoundError,
+                errmsg="ADBC 'adbc_driver_mysql.dbapi' driver not detected.",
                 engine="adbc",
             ),
             id="Unavailable adbc driver",
@@ -644,10 +654,6 @@ def test_read_database_exceptions(
         read_database(**params)
 
 
-@pytest.mark.skipif(
-    sys.version_info > (3, 11),
-    reason="connectorx cannot be installed on Python 3.12 yet.",
-)
 @pytest.mark.parametrize(
     "uri",
     [
@@ -656,11 +662,16 @@ def test_read_database_exceptions(
     ],
 )
 def test_read_database_cx_credentials(uri: str) -> None:
-    # check that we masked the potential credentials leak; this isn't really
-    # our responsibility (ideally would be handled by connectorx), but we
-    # can reasonably mitigate the issue.
-    with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
-        pl.read_database_uri("SELECT * FROM data", uri=uri)
+    if sys.version_info > (3, 11):
+        # slightly different error on more recent Python versions
+        with pytest.raises(RuntimeError, match=r"Source.*not supported"):
+            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
+    else:
+        # check that we masked the potential credentials leak; this isn't really
+        # our responsibility (ideally would be handled by connectorx), but we
+        # can reasonably mitigate the issue.
+        with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
+            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
 @pytest.mark.write_disk()

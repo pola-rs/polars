@@ -19,6 +19,7 @@ Computation
     Series.cos
     Series.cosh
     Series.cot
+    Series.cum_count
     Series.cum_max
     Series.cum_min
     Series.cum_prod
@@ -49,6 +50,7 @@ Computation
     Series.peak_min
     Series.rank
     Series.replace
+    Series.replace_all
     Series.rolling_apply
     Series.rolling_map
     Series.rolling_max

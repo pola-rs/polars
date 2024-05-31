@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
+use either::Either;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
@@ -12,8 +13,15 @@ use super::hive::HivePartitions;
 use crate::prelude::*;
 
 impl DslPlan {
+    // Warning! This should not be used on the DSL internally.
+    // All schema resolving should be done during conversion to [`IR`].
+
+    /// Compute the schema. This requires conversion to [`IR`] and type-resolving.
     pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
-        let (node, lp_arena, _) = self.clone().to_alp()?;
+        let mut lp_arena = Default::default();
+        let mut expr_arena = Default::default();
+        let node = to_alp(self.clone(), &mut expr_arena, &mut lp_arena, false, true)?;
+
         Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
 }
@@ -24,7 +32,7 @@ pub struct FileInfo {
     pub schema: SchemaRef,
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
-    pub reader_schema: Option<ArrowSchemaRef>,
+    pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
@@ -35,7 +43,7 @@ impl FileInfo {
     /// Constructs a new [`FileInfo`].
     pub fn new(
         schema: SchemaRef,
-        reader_schema: Option<ArrowSchemaRef>,
+        reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
         row_estimation: (Option<usize>, usize),
     ) -> Self {
         Self {
@@ -201,7 +209,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross | JoinType::Outer { .. } => {
+                    JoinType::Cross | JoinType::Full { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
@@ -298,11 +306,11 @@ pub(crate) fn det_join_schema(
                 new_schema.with_column(field.name, field.dtype);
                 arena.clear();
             }
-            // except in asof joins. Asof joins are not equi-joins
+            // Except in asof joins. Asof joins are not equi-joins
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if !options.args.how.merges_join_keys() {
+            if !options.args.coalesce.coalesce(&options.args.how) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
@@ -327,10 +335,13 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
+            let are_coalesced = options.args.coalesce.coalesce(&options.args.how);
+            let is_asof = options.args.how.is_asof();
+
+            // Asof joins are special, if the names are equal they will not be coalesced.
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str())  // The names that are joined on are merged
-                || matches!(&options.args.how, JoinType::Outer{coalesce: false})
-                // The names are not merged
+                if !join_on_right.contains(name.as_str()) || (!are_coalesced && !is_asof)
+                // The names that are joined on are merged
                 {
                     if schema_left.contains(name.as_str()) {
                         #[cfg(feature = "asof_join")]

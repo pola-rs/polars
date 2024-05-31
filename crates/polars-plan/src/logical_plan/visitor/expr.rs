@@ -44,7 +44,10 @@ impl TreeWalker for Expr {
             Column(_) => self,
             Columns(_) => self,
             DtypeColumn(_) => self,
+            IndexColumn(_) => self,
             Literal(_) => self,
+            #[cfg(feature = "dtype-struct")]
+            Field(_) => self,
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
             },
@@ -195,7 +198,6 @@ impl AExpr {
                     input: il,
                     function: fl,
                     options: ol,
-                    ..
                 },
                 Function {
                     input: ir,
@@ -228,7 +230,7 @@ impl<'a> AExprArena<'a> {
     }
 
     // Check single node on equality
-    fn is_equal(&self, other: &Self) -> bool {
+    fn is_equal_single(&self, other: &Self) -> bool {
         let self_ae = self.to_aexpr();
         let other_ae = other.to_aexpr();
         self_ae.is_equal_node(other_ae)
@@ -249,7 +251,7 @@ impl PartialEq for AExprArena<'_> {
                     let l = Self::new(l, self.arena);
                     let r = Self::new(r, self.arena);
 
-                    if !l.is_equal(&r) {
+                    if !l.is_equal_single(&r) {
                         return false;
                     }
 

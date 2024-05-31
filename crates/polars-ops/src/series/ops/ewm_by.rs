@@ -1,44 +1,74 @@
+use bytemuck::allocation::zeroed_vec;
 use num_traits::{Float, FromPrimitive, One, Zero};
 use polars_core::prelude::*;
+use polars_core::utils::binary_concatenate_validities;
 
 pub fn ewm_mean_by(
     s: &Series,
     times: &Series,
     half_life: i64,
-    assume_sorted: bool,
+    times_is_sorted: bool,
 ) -> PolarsResult<Series> {
-    let func = match assume_sorted {
-        true => ewm_mean_by_impl_sorted,
-        false => ewm_mean_by_impl,
-    };
+    fn func<T>(
+        values: &ChunkedArray<T>,
+        times: &Int64Chunked,
+        half_life: i64,
+        times_is_sorted: bool,
+    ) -> PolarsResult<Series>
+    where
+        T: PolarsFloatType,
+        T::Native: Float + Zero + One,
+        ChunkedArray<T>: IntoSeries,
+    {
+        if times_is_sorted {
+            Ok(ewm_mean_by_impl_sorted(values, times, half_life).into_series())
+        } else {
+            Ok(ewm_mean_by_impl(values, times, half_life).into_series())
+        }
+    }
+
     match (s.dtype(), times.dtype()) {
-        (DataType::Float64, DataType::Int64) => {
-            Ok(func(s.f64().unwrap(), times.i64().unwrap(), half_life).into_series())
-        },
-        (DataType::Float32, DataType::Int64) => {
-            Ok(ewm_mean_by_impl(s.f32().unwrap(), times.i64().unwrap(), half_life).into_series())
-        },
+        (DataType::Float64, DataType::Int64) => func(
+            s.f64().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
+        (DataType::Float32, DataType::Int64) => func(
+            s.f32().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(time_unit, _)) => {
             let half_life = adjust_half_life_to_time_unit(half_life, time_unit);
-            ewm_mean_by(s, &times.cast(&DataType::Int64)?, half_life, assume_sorted)
+            ewm_mean_by(
+                s,
+                &times.cast(&DataType::Int64)?,
+                half_life,
+                times_is_sorted,
+            )
         },
         #[cfg(feature = "dtype-date")]
         (_, DataType::Date) => ewm_mean_by(
             s,
             &times.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
             half_life,
-            assume_sorted,
+            times_is_sorted,
         ),
-        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => {
-            ewm_mean_by(s, &times.cast(&DataType::Int64)?, half_life, assume_sorted)
-        },
+        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => ewm_mean_by(
+            s,
+            &times.cast(&DataType::Int64)?,
+            half_life,
+            times_is_sorted,
+        ),
         (DataType::UInt64 | DataType::UInt32 | DataType::Int64 | DataType::Int32, _) => {
             ewm_mean_by(
                 &s.cast(&DataType::Float64)?,
                 times,
                 half_life,
-                assume_sorted,
+                times_is_sorted,
             )
         },
         _ => {
@@ -61,50 +91,51 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
 {
     let sorting_indices = times.arg_sort(Default::default());
-    let values = unsafe { values.take_unchecked(&sorting_indices) };
-    let times = unsafe { times.take_unchecked(&sorting_indices) };
+    let sorted_values = unsafe { values.take_unchecked(&sorting_indices) };
+    let sorted_times = unsafe { times.take_unchecked(&sorting_indices) };
     let sorting_indices = sorting_indices
         .cont_slice()
         .expect("`arg_sort` should have returned a single chunk");
 
-    let mut out = vec![None; times.len()];
+    let mut out: Vec<_> = zeroed_vec(sorted_times.len());
 
     let mut skip_rows: usize = 0;
     let mut prev_time: i64 = 0;
     let mut prev_result = T::Native::zero();
-    for (idx, (value, time)) in values.iter().zip(times.iter()).enumerate() {
+    for (idx, (value, time)) in sorted_values.iter().zip(sorted_times.iter()).enumerate() {
         if let (Some(time), Some(value)) = (time, value) {
             prev_time = time;
             prev_result = value;
             unsafe {
                 let out_idx = sorting_indices.get_unchecked(idx);
-                *out.get_unchecked_mut(*out_idx as usize) = Some(prev_result);
+                *out.get_unchecked_mut(*out_idx as usize) = prev_result;
             }
             skip_rows = idx + 1;
             break;
         };
     }
-    values
+    sorted_values
         .iter()
-        .zip(times.iter())
+        .zip(sorted_times.iter())
         .enumerate()
         .skip(skip_rows)
         .for_each(|(idx, (value, time))| {
-            let result_opt = match (time, value) {
-                (Some(time), Some(value)) => {
-                    let result = update(value, prev_result, time, prev_time, half_life);
-                    prev_time = time;
-                    prev_result = result;
-                    Some(result)
-                },
-                _ => None,
+            if let (Some(time), Some(value)) = (time, value) {
+                let result = update(value, prev_result, time, prev_time, half_life);
+                prev_time = time;
+                prev_result = result;
+                unsafe {
+                    let out_idx = sorting_indices.get_unchecked(idx);
+                    *out.get_unchecked_mut(*out_idx as usize) = result;
+                }
             };
-            unsafe {
-                let out_idx = sorting_indices.get_unchecked(idx);
-                *out.get_unchecked_mut(*out_idx as usize) = result_opt;
-            }
         });
-    ChunkedArray::<T>::from_iter_options(values.name(), out.into_iter())
+    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(true));
+    if (times.null_count() > 0) || (values.null_count() > 0) {
+        let validity = binary_concatenate_validities(times, values);
+        arr = arr.with_validity_typed(validity);
+    }
+    ChunkedArray::with_chunk(values.name(), arr)
 }
 
 /// Fastpath if `times` is known to already be sorted.
@@ -117,7 +148,7 @@ where
     T: PolarsFloatType,
     T::Native: Float + Zero + One,
 {
-    let mut out = Vec::with_capacity(times.len());
+    let mut out: Vec<_> = zeroed_vec(times.len());
 
     let mut skip_rows: usize = 0;
     let mut prev_time: i64 = 0;
@@ -126,30 +157,34 @@ where
         if let (Some(time), Some(value)) = (time, value) {
             prev_time = time;
             prev_result = value;
-            out.push(Some(prev_result));
+            unsafe {
+                *out.get_unchecked_mut(idx) = prev_result;
+            }
             skip_rows = idx + 1;
             break;
-        } else {
-            out.push(None)
         }
     }
     values
         .iter()
         .zip(times.iter())
+        .enumerate()
         .skip(skip_rows)
-        .for_each(|(value, time)| {
-            let result_opt = match (time, value) {
-                (Some(time), Some(value)) => {
-                    let result = update(value, prev_result, time, prev_time, half_life);
-                    prev_time = time;
-                    prev_result = result;
-                    Some(result)
-                },
-                _ => None,
+        .for_each(|(idx, (value, time))| {
+            if let (Some(time), Some(value)) = (time, value) {
+                let result = update(value, prev_result, time, prev_time, half_life);
+                prev_time = time;
+                prev_result = result;
+                unsafe {
+                    *out.get_unchecked_mut(idx) = result;
+                }
             };
-            out.push(result_opt);
         });
-    ChunkedArray::<T>::from_iter_options(values.name(), out.into_iter())
+    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(true));
+    if (times.null_count() > 0) || (values.null_count() > 0) {
+        let validity = binary_concatenate_validities(times, values);
+        arr = arr.with_validity_typed(validity);
+    }
+    ChunkedArray::with_chunk(values.name(), arr)
 }
 
 fn adjust_half_life_to_time_unit(half_life: i64, time_unit: &TimeUnit) -> i64 {

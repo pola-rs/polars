@@ -3,11 +3,6 @@
 #![allow(clippy::transmute_undefined_repr)]
 #![allow(non_local_definitions)]
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
-extern crate polars as polars_rs;
-
-#[cfg(feature = "build_info")]
-#[macro_use]
-extern crate pyo3_built;
 
 #[cfg(feature = "build_info")]
 #[allow(dead_code)]
@@ -15,7 +10,7 @@ mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-mod arrow_interop;
+mod allocator;
 #[cfg(feature = "csv")]
 mod batched_csv;
 mod conversion;
@@ -26,6 +21,7 @@ mod expr;
 mod file;
 mod functions;
 mod gil_once_cell;
+mod interop;
 mod lazyframe;
 mod lazygroupby;
 mod map;
@@ -40,16 +36,11 @@ mod py_modules;
 mod series;
 #[cfg(feature = "sql")]
 mod sql;
-mod to_numpy;
 mod utils;
 
-#[cfg(all(target_family = "unix", not(use_mimalloc)))]
-use jemallocator::Jemalloc;
-#[cfg(any(not(target_family = "unix"), use_mimalloc))]
-use mimalloc::MiMalloc;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
+use pyo3::{wrap_pyfunction, wrap_pymodule};
 
 #[cfg(feature = "csv")]
 use crate::batched_csv::PyBatchedCsv;
@@ -65,30 +56,68 @@ use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
 use crate::lazygroupby::PyLazyGroupBy;
-#[cfg(debug_assertions)]
-use crate::memory::TracemallocAllocator;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
 
-// On Windows tracemalloc does work. However, we build abi3 wheels, and the
-// relevant C APIs are not part of the limited stable CPython API. As a result,
-// linking breaks on Windows if we use tracemalloc C APIs. So we only use this
-// on Windows for now.
-#[global_allocator]
-#[cfg(all(target_family = "unix", debug_assertions))]
-static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
-
-#[global_allocator]
-#[cfg(all(target_family = "unix", not(use_mimalloc), not(debug_assertions)))]
-static ALLOC: Jemalloc = Jemalloc;
-
-#[global_allocator]
-#[cfg(all(any(not(target_family = "unix"), use_mimalloc), not(debug_assertions)))]
-static ALLOC: MiMalloc = MiMalloc;
+#[pymodule]
+fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    use crate::lazyframe::visitor::nodes::*;
+    m.add_class::<PythonScan>().unwrap();
+    m.add_class::<Slice>().unwrap();
+    m.add_class::<Filter>().unwrap();
+    m.add_class::<Scan>().unwrap();
+    m.add_class::<DataFrameScan>().unwrap();
+    m.add_class::<SimpleProjection>().unwrap();
+    m.add_class::<Select>().unwrap();
+    m.add_class::<Sort>().unwrap();
+    m.add_class::<Cache>().unwrap();
+    m.add_class::<GroupBy>().unwrap();
+    m.add_class::<Join>().unwrap();
+    m.add_class::<HStack>().unwrap();
+    m.add_class::<Reduce>().unwrap();
+    m.add_class::<Distinct>().unwrap();
+    m.add_class::<MapFunction>().unwrap();
+    m.add_class::<Union>().unwrap();
+    m.add_class::<HConcat>().unwrap();
+    m.add_class::<ExtContext>().unwrap();
+    m.add_class::<Sink>().unwrap();
+    Ok(())
+}
 
 #[pymodule]
-fn polars(py: Python, m: &PyModule) -> PyResult<()> {
+fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    use crate::lazyframe::visitor::expr_nodes::*;
+    use crate::lazyframe::PyExprIR;
+    // Expressions
+    m.add_class::<PyExprIR>().unwrap();
+    m.add_class::<Alias>().unwrap();
+    m.add_class::<Column>().unwrap();
+    m.add_class::<Literal>().unwrap();
+    m.add_class::<BinaryExpr>().unwrap();
+    m.add_class::<Cast>().unwrap();
+    m.add_class::<Sort>().unwrap();
+    m.add_class::<Gather>().unwrap();
+    m.add_class::<Filter>().unwrap();
+    m.add_class::<SortBy>().unwrap();
+    m.add_class::<Agg>().unwrap();
+    m.add_class::<Ternary>().unwrap();
+    m.add_class::<Function>().unwrap();
+    m.add_class::<Len>().unwrap();
+    m.add_class::<Window>().unwrap();
+    m.add_class::<PyOperator>().unwrap();
+    m.add_class::<PyStringFunction>().unwrap();
+    m.add_class::<PyBooleanFunction>().unwrap();
+    m.add_class::<PyTemporalFunction>().unwrap();
+    // Options
+    m.add_class::<PyWindowMapping>().unwrap();
+    m.add_class::<PyRollingGroupOptions>().unwrap();
+    m.add_class::<PyGroupbyOptions>().unwrap();
+    Ok(())
+}
+
+#[pymodule]
+fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -102,6 +131,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
 
+    // Submodules
+    // LogicalPlan objects
+    m.add_wrapped(wrap_pymodule!(_ir_nodes))?;
+    // Expr objects
+    m.add_wrapped(wrap_pymodule!(_expr_nodes))?;
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(functions::concat_df))
         .unwrap();
@@ -159,6 +193,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::coalesce))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::field)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
@@ -192,6 +227,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::index_cols))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::first)).unwrap();
@@ -199,6 +236,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::nth)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
@@ -275,68 +313,125 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Exceptions - Errors
-    m.add("PolarsError", py.get_type::<PolarsBaseError>())
+    m.add("PolarsError", py.get_type_bound::<PolarsBaseError>())
         .unwrap();
-    m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
+    m.add(
+        "ColumnNotFoundError",
+        py.get_type_bound::<ColumnNotFoundError>(),
+    )
+    .unwrap();
+    m.add("ComputeError", py.get_type_bound::<ComputeError>())
         .unwrap();
-    m.add("ComputeError", py.get_type::<ComputeError>())
-        .unwrap();
-    m.add("DuplicateError", py.get_type::<DuplicateError>())
+    m.add("DuplicateError", py.get_type_bound::<DuplicateError>())
         .unwrap();
     m.add(
         "InvalidOperationError",
-        py.get_type::<InvalidOperationError>(),
+        py.get_type_bound::<InvalidOperationError>(),
     )
     .unwrap();
-    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
+    m.add("NoDataError", py.get_type_bound::<NoDataError>())
         .unwrap();
-    m.add("PolarsPanicError", py.get_type::<PanicException>())
+    m.add("OutOfBoundsError", py.get_type_bound::<OutOfBoundsError>())
         .unwrap();
-    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
+    m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
+        .unwrap();
+    m.add("SchemaError", py.get_type_bound::<SchemaError>())
+        .unwrap();
     m.add(
         "SchemaFieldNotFoundError",
-        py.get_type::<SchemaFieldNotFoundError>(),
+        py.get_type_bound::<SchemaFieldNotFoundError>(),
     )
     .unwrap();
-    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
-        .unwrap();
+    m.add(
+        "ShapeError",
+        py.get_type_bound::<crate::error::ShapeError>(),
+    )
+    .unwrap();
     m.add(
         "StringCacheMismatchError",
-        py.get_type::<crate::error::StringCacheMismatchError>(),
+        py.get_type_bound::<crate::error::StringCacheMismatchError>(),
     )
     .unwrap();
     m.add(
         "StructFieldNotFoundError",
-        py.get_type::<StructFieldNotFoundError>(),
+        py.get_type_bound::<StructFieldNotFoundError>(),
     )
     .unwrap();
 
     // Exceptions - Warnings
-    m.add("PolarsWarning", py.get_type::<PolarsBaseWarning>())
+    m.add("PolarsWarning", py.get_type_bound::<PolarsBaseWarning>())
         .unwrap();
     m.add(
         "CategoricalRemappingWarning",
-        py.get_type::<CategoricalRemappingWarning>(),
+        py.get_type_bound::<CategoricalRemappingWarning>(),
     )
     .unwrap();
     m.add(
         "MapWithoutReturnDtypeWarning",
-        py.get_type::<MapWithoutReturnDtypeWarning>(),
+        py.get_type_bound::<MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     #[cfg(feature = "build_info")]
-    m.add(
-        "__build__",
-        pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
-    )?;
+    add_build_info(py, m)?;
 
     // Plugins
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
 
+    Ok(())
+}
+
+#[cfg(feature = "build_info")]
+fn add_build_info(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    use pyo3::types::{PyDict, PyString};
+    let info = PyDict::new_bound(py);
+
+    let build = PyDict::new_bound(py);
+    build.set_item("rustc", build::RUSTC)?;
+    build.set_item("rustc-version", build::RUSTC_VERSION)?;
+    build.set_item("opt-level", build::OPT_LEVEL)?;
+    build.set_item("debug", build::DEBUG)?;
+    build.set_item("jobs", build::NUM_JOBS)?;
+    info.set_item("compiler", build)?;
+
+    info.set_item("time", build::BUILT_TIME_UTC)?;
+
+    let deps = PyDict::new_bound(py);
+    for (name, version) in build::DEPENDENCIES.iter() {
+        deps.set_item(name, version)?;
+    }
+    info.set_item("dependencies", deps)?;
+
+    let features = build::FEATURES
+        .iter()
+        .map(|feat| PyString::new_bound(py, feat))
+        .collect::<Vec<_>>();
+    info.set_item("features", features)?;
+
+    let host = PyDict::new_bound(py);
+    host.set_item("triple", build::HOST)?;
+    info.set_item("host", host)?;
+
+    let target = PyDict::new_bound(py);
+    target.set_item("arch", build::CFG_TARGET_ARCH)?;
+    target.set_item("os", build::CFG_OS)?;
+    target.set_item("family", build::CFG_FAMILY)?;
+    target.set_item("env", build::CFG_ENV)?;
+    target.set_item("triple", build::TARGET)?;
+    target.set_item("endianness", build::CFG_ENDIAN)?;
+    target.set_item("pointer-width", build::CFG_POINTER_WIDTH)?;
+    target.set_item("profile", build::PROFILE)?;
+    info.set_item("target", target)?;
+
+    let git = PyDict::new_bound(py);
+    git.set_item("version", build::GIT_VERSION)?;
+    git.set_item("dirty", build::GIT_DIRTY)?;
+    git.set_item("hash", build::GIT_COMMIT_HASH)?;
+    git.set_item("head", build::GIT_HEAD_REF)?;
+    info.set_item("git", git)?;
+    m.add("__build__", info)?;
     Ok(())
 }

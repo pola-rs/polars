@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 
@@ -54,6 +55,47 @@ def test_selector_all(df: pl.DataFrame) -> None:
     assert df.select(cs.all() & pl.col("abc")).schema == {"abc": pl.UInt16}
 
 
+def test_selector_alpha() -> None:
+    df = pl.DataFrame(
+        schema=["Hello 123", "こんにちは (^_^)", "مرحبا", "你好!", "World"],
+    )
+    # alphabetical-only (across all languages)
+    assert expand_selector(df, cs.alpha()) == ("مرحبا", "World")
+    assert expand_selector(df, cs.alpha(ascii_only=True)) == ("World",)
+    assert expand_selector(df, ~cs.alpha()) == (
+        "Hello 123",
+        "こんにちは (^_^)",
+        "你好!",
+    )
+    assert expand_selector(df, ~cs.alpha(ignore_spaces=True)) == (
+        "Hello 123",
+        "こんにちは (^_^)",
+        "你好!",
+    )
+
+    # alphanumeric-only (across all languages)
+    assert expand_selector(df, cs.alphanumeric(True)) == ("World",)
+    assert expand_selector(df, ~cs.alphanumeric()) == (
+        "Hello 123",
+        "こんにちは (^_^)",
+        "你好!",
+    )
+    assert expand_selector(df, ~cs.alphanumeric(True, ignore_spaces=True)) == (
+        "こんにちは (^_^)",
+        "مرحبا",
+        "你好!",
+    )
+    assert expand_selector(df, cs.alphanumeric(ignore_spaces=True)) == (
+        "Hello 123",
+        "مرحبا",
+        "World",
+    )
+    assert expand_selector(df, ~cs.alphanumeric(ignore_spaces=True)) == (
+        "こんにちは (^_^)",
+        "你好!",
+    )
+
+
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
     assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
         "abc": pl.UInt16,
@@ -70,16 +112,55 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
     assert df.select(cs.by_dtype()).schema == {}
     assert df.select(cs.by_dtype([])).schema == {}
 
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.by_dtype(999))  # type: ignore[arg-type]
+
+
+def test_selector_by_index(df: pl.DataFrame) -> None:
+    # one or more +ve indexes
+    assert df.select(cs.by_index(0)).columns == ["abc"]
+    assert df.select(pl.nth([0, 1, 2])).columns == ["abc", "bbb", "cde"]
+    assert df.select(cs.by_index(0, 1, 2)).columns == ["abc", "bbb", "cde"]
+
+    # one or more -ve indexes
+    assert df.select(cs.by_index(-1)).columns == ["qqR"]
+    assert df.select(cs.by_index(-3, -2, -1)).columns == ["Lmn", "opp", "qqR"]
+
+    # range objects
+    assert df.select(cs.by_index(range(3))).columns == ["abc", "bbb", "cde"]
+    assert df.select(cs.by_index(0, range(-3, 0))).columns == [
+        "abc",
+        "Lmn",
+        "opp",
+        "qqR",
+    ]
+
+    # exclude by index
+    assert df.select(~cs.by_index(range(0, df.width, 2))).columns == [
+        "bbb",
+        "def",
+        "fgg",
+        "JJK",
+        "opp",
+    ]
+
+    # expected errors
+    with pytest.raises(ColumnNotFoundError):
+        df.select(cs.by_index(999))
+
+    for invalid in ("one", ["two", "three"]):
+        with pytest.raises(TypeError):
+            df.select(cs.by_index(invalid))  # type: ignore[arg-type]
+
 
 def test_selector_by_name(df: pl.DataFrame) -> None:
     for selector in (
         cs.by_name("abc", "cde"),
         cs.by_name("abc") | pl.col("cde"),
     ):
-        assert df.select(selector).columns == [
-            "abc",
-            "cde",
-        ]
+        assert df.select(selector).columns == ["abc", "cde"]
+
     assert df.select(~cs.by_name("abc", "cde", "ghi", "Lmn", "opp", "eee")).columns == [
         "bbb",
         "def",
@@ -89,6 +170,28 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     ]
     assert df.select(cs.by_name()).columns == []
     assert df.select(cs.by_name([])).columns == []
+
+    selected_cols = df.select(
+        cs.by_name("???", "fgg", "!!!", require_all=False)
+    ).columns
+    assert selected_cols == ["fgg"]
+
+    # check "by_name & col"
+    for selector_expr, expected in (
+        (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),
+        (pl.col("ghi") & cs.by_name("cde", "abc"), ["ghi", "cde", "abc"]),
+    ):
+        assert df.select(selector_expr).columns == expected
+
+    # expected errors
+    with pytest.raises(ColumnNotFoundError, match="xxx"):
+        df.select(cs.by_name("xxx", "fgg", "!!!"))
+
+    with pytest.raises(ColumnNotFoundError):
+        df.select(cs.by_name("stroopwafel"))
+
+    with pytest.raises(TypeError):
+        df.select(cs.by_name(999))  # type: ignore[arg-type]
 
 
 def test_selector_contains(df: pl.DataFrame) -> None:
@@ -107,6 +210,10 @@ def test_selector_contains(df: pl.DataFrame) -> None:
         "qqR",
     ]
     assert df.select(cs.contains(("ee", "x"))).columns == ["eee"]
+
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.contains(999))  # type: ignore[arg-type]
 
 
 def test_selector_datetime(df: pl.DataFrame) -> None:
@@ -194,6 +301,10 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
         == df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns
     )
 
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.datetime(999))  # type: ignore[arg-type]
+
 
 def test_select_decimal(df: pl.DataFrame) -> None:
     assert df.select(cs.decimal()).columns == []
@@ -207,6 +318,17 @@ def test_select_decimal(df: pl.DataFrame) -> None:
     assert df.select(cs.numeric()).columns == ["zz0", "zz1", "zz2"]
     assert df.select(cs.decimal()).columns == ["zz1", "zz2"]
     assert df.select(~cs.decimal()).columns == ["zz0"]
+
+
+def test_selector_digit() -> None:
+    df = pl.DataFrame(schema=["Portfolio", "Year", "2000", "2010", "2020", "✌️"])
+    assert expand_selector(df, cs.digit()) == ("2000", "2010", "2020")
+    assert expand_selector(df, ~cs.digit()) == ("Portfolio", "Year", "✌️")
+
+    df = pl.DataFrame({"১৯৯৯": [1999], "২০৭৭": [2077], "3000": [3000]})
+    assert expand_selector(df, cs.digit()) == tuple(df.columns)
+    assert expand_selector(df, cs.digit(ascii_only=True)) == ("3000",)
+    assert expand_selector(df, (cs.digit() - cs.digit(True))) == ("১৯৯৯", "২০৭৭")
 
 
 def test_selector_drop(df: pl.DataFrame) -> None:
@@ -248,6 +370,34 @@ def test_selector_ends_with(df: pl.DataFrame) -> None:
         "JJK",
         "qqR",
     ]
+
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.ends_with(999))  # type: ignore[arg-type]
+
+
+def test_selector_expand() -> None:
+    schema = {
+        "id": pl.Int64,
+        "desc": pl.String,
+        "count": pl.UInt32,
+        "value": pl.Float64,
+    }
+
+    expanded = cs.expand_selector(schema, cs.numeric() - cs.unsigned_integer())
+    assert expanded == ("id", "value")
+
+    with pytest.raises(TypeError, match="expected a selector"):
+        cs.expand_selector(schema, pl.exclude("id", "count"))
+
+    with pytest.raises(TypeError, match="expected a selector"):
+        cs.expand_selector(schema, pl.col("value") // 100)
+
+    expanded = cs.expand_selector(schema, pl.exclude("id", "count"), strict=False)
+    assert expanded == ("desc", "value")
+
+    expanded = cs.expand_selector(schema, cs.numeric().exclude("id"), strict=False)
+    assert expanded == ("count", "value")
 
 
 def test_selector_first_last(df: pl.DataFrame) -> None:
@@ -349,6 +499,9 @@ def test_selector_startswith(df: pl.DataFrame) -> None:
         "opp",
         "qqR",
     ]
+    # expected errors
+    with pytest.raises(TypeError):
+        df.select(cs.starts_with(999))  # type: ignore[arg-type]
 
 
 def test_selector_temporal(df: pl.DataFrame) -> None:
@@ -425,7 +578,16 @@ def test_selector_repr() -> None:
     assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
     assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
     assert_repr_equals(
-        cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
+        cs.integer() & cs.matches("z"),
+        "(cs.integer() & cs.matches(pattern='z'))",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear"),
+        "cs.by_name('baz', 'moose', 'foo', 'bear')",
+    )
+    assert_repr_equals(
+        cs.by_name("baz", "moose", "foo", "bear", require_all=False),
+        "cs.by_name('baz', 'moose', 'foo', 'bear', require_all=False)",
     )
     assert_repr_equals(
         cs.temporal() | cs.by_dtype(pl.String) & cs.string(include_categorical=False),
@@ -461,6 +623,13 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "ghi": pl.Time,
         "Lmn": pl.Duration,
     }
+
+    frame = pl.DataFrame({"colx": [0, 1, 2], "coly": [3, 4, 5], "colz": [6, 7, 8]})
+    sub_expr = cs.matches("[yz]$") - pl.col("colx")  # << shouldn't behave as set
+    assert frame.select(sub_expr).rows() == [(3, 6), (3, 6), (3, 6)]
+
+    with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
+        df.select(pl.col("colx") - cs.matches("[yz]$"))
 
     # COMPLEMENT SET
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
@@ -553,10 +722,23 @@ def test_regex_expansion_exclude_10002() -> None:
 
 
 def test_is_selector() -> None:
+    # only actual/compound selectors should pass this check
     assert is_selector(cs.numeric())
     assert is_selector(cs.by_dtype(pl.UInt32) | pl.col("xyz"))
-    assert not is_selector(pl.col("cde"))
+
+    # expressions (and literals, etc) should fail
+    assert not is_selector(pl.col("xyz"))
+    assert not is_selector(cs.numeric().name.suffix(":num"))
+    assert not is_selector(cs.date() + pl.col("time"))
     assert not is_selector(None)
+    assert not is_selector("x")
+
+    schema = {"x": pl.Int64, "y": pl.Float64}
+    with pytest.raises(TypeError):
+        expand_selector(schema, 999)
+
+    with pytest.raises(TypeError):
+        expand_selector(schema, "colname")
 
 
 def test_selector_or() -> None:

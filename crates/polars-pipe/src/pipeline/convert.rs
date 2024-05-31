@@ -99,14 +99,11 @@ where
             }
             match scan_type {
                 #[cfg(feature = "csv")]
-                FileScan::Csv {
-                    options: csv_options,
-                } => {
-                    assert_eq!(paths.len(), 1);
+                FileScan::Csv { options } => {
                     let src = sources::CsvSource::new(
-                        paths[0].clone(),
+                        paths,
                         file_info.schema,
-                        csv_options,
+                        options,
                         file_options,
                         verbose,
                     )?;
@@ -285,12 +282,12 @@ where
                     };
 
                     match jt {
-                        join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                        JoinType::Inner | JoinType::Left => {
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
                                 Arc::from(options.args.suffix()),
-                                join_type.clone(),
+                                options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
@@ -302,7 +299,7 @@ where
                                 placeholder,
                             )) as Box<dyn SinkTrait>
                         },
-                        JoinType::Outer { .. } => {
+                        JoinType::Full { .. } => {
                             // First get the names before we (potentially) swap.
                             let key_names_left = join_columns_left
                                 .iter()
@@ -317,7 +314,7 @@ where
 
                             Box::new(GenericBuild::<Tracker>::new(
                                 Arc::from(options.args.suffix()),
-                                jt.clone(),
+                                options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
@@ -337,6 +334,13 @@ where
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
+        },
+        Reduce {
+            input: _,
+            exprs: _,
+            schema: _,
+        } => {
+            todo!()
         },
         Sort {
             input,
@@ -415,10 +419,10 @@ where
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
-                                        expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
+                                        expr_arena.add(AExpr::Agg(IRAggExpr::First(col)))
                                     },
                                     UniqueKeepStrategy::Last => {
-                                        expr_arena.add(AExpr::Agg(AAggExpr::Last(col)))
+                                        expr_arena.add(AExpr::Agg(IRAggExpr::Last(col)))
                                     },
                                     UniqueKeepStrategy::None => {
                                         unreachable!()

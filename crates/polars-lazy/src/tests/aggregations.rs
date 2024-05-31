@@ -173,14 +173,14 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
         .group_by([col("fruits")])
         .agg([
             col("A")
-                .rolling_min(RollingOptions {
-                    window_size: Duration::new(1),
+                .rolling_min(RollingOptionsFixedWindow {
+                    window_size: 1,
                     ..Default::default()
                 })
                 .alias("input"),
             col("A")
-                .rolling_min(RollingOptions {
-                    window_size: Duration::new(1),
+                .rolling_min(RollingOptionsFixedWindow {
+                    window_size: 1,
                     ..Default::default()
                 })
                 .pow(2.0)
@@ -211,8 +211,8 @@ fn test_power_in_agg_list2() -> PolarsResult<()> {
         .lazy()
         .group_by([col("fruits")])
         .agg([col("A")
-            .rolling_min(RollingOptions {
-                window_size: Duration::new(2),
+            .rolling_min(RollingOptionsFixedWindow {
+                window_size: 2,
                 min_periods: 2,
                 ..Default::default()
             })
@@ -480,40 +480,40 @@ fn take_aggregations() -> PolarsResult<()> {
 #[test]
 fn test_take_consistency() -> PolarsResult<()> {
     let df = fruits_cars();
-    // let out = df
-    //     .clone()
-    //     .lazy()
-    //     .select([col("A")
-    //         .arg_sort(SortOptions {
-    //             descending: true,
-    //             nulls_last: false,
-    //             multithreaded: true,
-    //             maintain_order: false,
-    //         })
-    //         .get(lit(0))])
-    //     .collect()?;
-    //
-    // let a = out.column("A")?;
-    // let a = a.idx()?;
-    // assert_eq!(a.get(0), Some(4));
-    //
-    // let out = df
-    //     .clone()
-    //     .lazy()
-    //     .group_by_stable([col("cars")])
-    //     .agg([col("A")
-    //         .arg_sort(SortOptions {
-    //             descending: true,
-    //             nulls_last: false,
-    //             multithreaded: true,
-    //             maintain_order: false,
-    //         })
-    //         .get(lit(0))])
-    //     .collect()?;
-    //
-    // let out = out.column("A")?;
-    // let out = out.idx()?;
-    // assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
+    let out = df
+        .clone()
+        .lazy()
+        .select([col("A")
+            .arg_sort(SortOptions {
+                descending: true,
+                nulls_last: false,
+                multithreaded: true,
+                maintain_order: false,
+            })
+            .get(lit(0))])
+        .collect()?;
+
+    let a = out.column("A")?;
+    let a = a.idx()?;
+    assert_eq!(a.get(0), Some(4));
+
+    let out = df
+        .clone()
+        .lazy()
+        .group_by_stable([col("cars")])
+        .agg([col("A")
+            .arg_sort(SortOptions {
+                descending: true,
+                nulls_last: false,
+                multithreaded: true,
+                maintain_order: false,
+            })
+            .get(lit(0))])
+        .collect()?;
+
+    let out = out.column("A")?;
+    let out = out.idx()?;
+    assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     let out_df = df
         .lazy()

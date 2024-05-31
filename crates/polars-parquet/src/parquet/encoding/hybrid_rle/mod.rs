@@ -4,7 +4,7 @@ mod decoder;
 mod encoder;
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
-pub use encoder::{encode_bool, encode_u32};
+pub use encoder::encode;
 use polars_utils::iter::FallibleIterator;
 
 use super::bitpacked;
@@ -41,7 +41,7 @@ pub struct HybridRleDecoder<'a> {
 
 #[inline]
 fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
-    Ok(match decoder.next().transpose()? {
+    Ok(match decoder.next() {
         Some(HybridEncoded::Bitpacked(packed)) => {
             let num_bits = decoder.num_bits();
             let length = std::cmp::min(packed.len() * 8 / num_bits, remaining);
@@ -137,7 +137,7 @@ mod tests {
 
         let data = (0..1000).collect::<Vec<_>>();
 
-        encode_u32(&mut buffer, data.iter().cloned(), num_bits).unwrap();
+        encode::<u32, _, _>(&mut buffer, data.iter().cloned(), num_bits).unwrap();
 
         let decoder = HybridRleDecoder::try_new(&buffer, num_bits, data.len())?;
 

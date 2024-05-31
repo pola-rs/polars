@@ -47,13 +47,7 @@ pub trait ListBuilderTrait {
     fn finish(&mut self) -> ListChunked {
         let arr = self.inner_array();
 
-        let mut ca = ListChunked {
-            field: Arc::new(self.field().clone()),
-            chunks: vec![arr],
-            phantom: PhantomData,
-            ..Default::default()
-        };
-        ca.compute_len();
+        let mut ca = ListChunked::new_with_compute_len(Arc::new(self.field().clone()), vec![arr]);
         if self.fast_explode() {
             ca.set_fast_explode()
         }

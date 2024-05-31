@@ -297,7 +297,7 @@ fn ordering_other_columns<'a>(
 
 impl ChunkSort<StringType> for StringChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<StringType> {
-        unsafe { self.as_binary().sort_with(options).to_string() }
+        unsafe { self.as_binary().sort_with(options).to_string_unchecked() }
     }
 
     fn sort(&self, descending: bool) -> StringChunked {
@@ -730,7 +730,7 @@ mod test {
         });
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
-        let expected = [4, 2, 1, 5, 6, 0, 3, 7];
+        let expected = [2, 4, 1, 5, 6, 0, 3, 7];
         assert_eq!(idx, expected);
     }
 

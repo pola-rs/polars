@@ -327,12 +327,15 @@ impl Display for FunctionNode {
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
+                    let ir_plan = original.as_ref().clone().to_alp().unwrap();
+                    let ir_display = ir_plan.display();
+
                     writeln!(f, "--- STREAMING")?;
-                    write!(f, "{:?}", original.as_ref())?;
+                    write!(f, "{ir_display}")?;
                     let indent = 2;
-                    writeln!(f, "{:indent$}--- END STREAMING", "")
+                    write!(f, "{:indent$}--- END STREAMING", "")
                 } else {
-                    writeln!(f, "STREAMING")
+                    write!(f, "STREAMING")
                 }
             },
             Rename { .. } => write!(f, "RENAME"),

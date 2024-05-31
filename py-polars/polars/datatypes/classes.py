@@ -84,7 +84,7 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_nested(self) -> bool:  # noqa: D102
+    def is_nested(cls) -> bool:  # noqa: D102
         ...
 
 
@@ -599,7 +599,7 @@ class Enum(DataType):
             self.categories = pl.Series(name="category", dtype=String)
             return
 
-        if categories.null_count() > 0:
+        if categories.has_nulls():
             msg = "Enum categories must not contain null values"
             raise TypeError(msg)
 
@@ -735,11 +735,46 @@ class Array(NestedType):
     """
 
     inner: PolarsDataType | None = None
-    width: int
+    size: int
+    shape: tuple[int, ...]
 
-    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
-        self.width = width
+    def __init__(
+        self,
+        inner: PolarsDataType | PythonDataType,
+        shape: int | tuple[int, ...] | None = None,
+        *,
+        width: int | None = None,
+    ):
+        if width is not None:
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                version="0.20.31",
+            )
+            shape = width
+        elif shape is None:
+            msg = "Array constructor is missing the required argument `shape`"
+            raise TypeError(msg)
+
+        inner_parsed = polars.datatypes.py_type_to_dtype(inner)
+
+        if isinstance(shape, int):
+            self.inner = inner_parsed
+            self.size = shape
+            self.shape = (shape,)
+
+        elif isinstance(shape, tuple):
+            if len(shape) > 1:
+                inner_parsed = Array(inner_parsed, shape[1:])
+
+            self.inner = inner_parsed
+            self.size = shape[0]
+            self.shape = shape
+
+        else:
+            msg = f"invalid input for shape: {shape!r}"
+            raise TypeError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -752,7 +787,7 @@ class Array(NestedType):
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
         if isinstance(other, Array):
-            if self.width != other.width:
+            if self.size != other.size:
                 return False
             elif self.inner is None or other.inner is None:
                 return True
@@ -762,11 +797,27 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner, self.width))
+        return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
+        # Get leaf type
+        dtype = self.inner
+        while isinstance(dtype, Array):
+            dtype = dtype.inner
+
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, width={self.width})"
+        return f"{class_name}({dtype!r}, shape={self.shape})"
+
+    @property
+    def width(self) -> int:
+        """The size of the Array."""
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "The `width` attribute for `Array` is deprecated. Use `size` instead.",
+            version="0.20.31",
+        )
+        return self.size
 
 
 class Field:

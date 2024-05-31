@@ -41,13 +41,13 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
+    _is_generator,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
     parse_percentiles,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
-from polars.convert import from_dict
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -76,8 +76,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.dependencies import subprocess
-from polars.io.csv._utils import _check_arg_is_1byte
+from polars.dependencies import import_optional, subprocess
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
@@ -100,6 +99,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnNameOrSelector,
         CsvQuoteStyle,
+        ExplainFormat,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
@@ -348,7 +348,7 @@ class LazyFrame:
     @classmethod
     def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
-        Read a logical plan from a JSON file to construct a LazyFrame.
+        Read a logical plan from a file to construct a LazyFrame.
 
         Parameters
         ----------
@@ -359,11 +359,9 @@ class LazyFrame:
 
         Warnings
         --------
-            This function uses :mod:`pickle` under some circumstances, and as
-            such inherits the security implications. Deserializing can execute
-            arbitrary code so it should only be attempted on trusted data.
-            pickle is only used when the logical plan contains python UDFs.
-
+        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        and as such inherits the security implications. Deserializing can execute
+        arbitrary code, so it should only be attempted on trusted data.
 
         See Also
         --------
@@ -589,22 +587,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6   │
         └─────┘
         """
-        if isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
+
+        def serialize_to_string() -> str:
             with BytesIO() as buf:
                 self._ldf.serialize(buf)
                 json_bytes = buf.getvalue()
+            return json_bytes.decode("utf8")
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
-            else:
-                return json_str
+        if file is None:
+            return serialize_to_string()
+        elif isinstance(file, StringIO):
+            json_str = serialize_to_string()
+            file.write(json_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._ldf.serialize(file)
+            return None
         else:
             self._ldf.serialize(file)
-        return None
+            return None
 
     def pipe(
         self,
@@ -772,6 +774,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
         └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
         """
+        from polars.convert import from_dict
+
         if not self.columns:
             msg = "cannot describe a LazyFrame that has no columns"
             raise TypeError(msg)
@@ -880,6 +884,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def explain(
         self,
         *,
+        format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
@@ -888,8 +893,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
-        tree_format: bool = False,
+        tree_format: bool | None = None,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -898,6 +904,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
+        format : {'plain', 'tree'}
+            The format to use for displaying the logical plan.
         optimized
             Return an optimized query plan. Defaults to `True`.
             If this is set to `True` the subsequent
@@ -917,10 +925,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
         tree_format
-            Format the output as a tree
+            Format the output as a tree.
+
+            .. deprecated:: 0.20.30
+                Use `format="tree"` instead.
 
         Examples
         --------
@@ -935,6 +948,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).explain()  # doctest: +SKIP
         """
+        if tree_format is not None:
+            issue_deprecation_warning(
+                "The `tree_format` parameter for `LazyFrame.explain` is deprecated"
+                " Use the `format` parameter instead.",
+                version="0.20.30",
+            )
+            if tree_format:
+                format = "tree"
+
         if optimized:
             ldf = self._ldf.optimization_toggle(
                 type_coercion,
@@ -944,16 +966,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 slice_pushdown,
                 comm_subplan_elim,
                 comm_subexpr_elim,
+                cluster_with_columns,
                 streaming,
                 _eager=False,
             )
-            if tree_format:
+            if format == "tree":
                 return ldf.describe_optimized_plan_tree()
-            return ldf.describe_optimized_plan()
+            else:
+                return ldf.describe_optimized_plan()
 
-        if tree_format:
+        if format == "tree":
             return self._ldf.describe_plan_tree()
-        return self._ldf.describe_plan()
+        else:
+            return self._ldf.describe_plan()
 
     def show_graph(
         self,
@@ -970,10 +995,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> str | None:
         """
-        Show a plot of the query plan. Note that you should have graphviz installed.
+        Show a plot of the query plan.
+
+        Note that graphviz must be installed to render the visualization (if not
+        already present you can download it here: <https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1001,6 +1030,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -1025,6 +1056,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1042,7 +1074,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
             )
         except (ImportError, FileNotFoundError):
-            msg = "Graphviz dot binary should be on your PATH"
+            msg = (
+                "The graphviz `dot` binary should be on your PATH."
+                "(If not installed you can download here: https://graphviz.org/download/)"
+            )
             raise ImportError(msg) from None
 
         if output_path:
@@ -1056,12 +1091,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             return display(SVG(graph))
         else:
-            try:
-                import matplotlib.image as mpimg
-                import matplotlib.pyplot as plt
-            except ImportError:
-                msg = "matplotlib should be installed to show graph"
-                raise ModuleNotFoundError(msg) from None
+            import_optional(
+                "matplotlib",
+                err_prefix="",
+                err_suffix="should be installed to show graphs",
+            )
+            import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
+
             plt.figure(figsize=figsize)
             img = mpimg.imread(BytesIO(graph))
             plt.imshow(img)
@@ -1211,39 +1248,142 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    def sql(self, query: str, *, table_name: str = "self") -> Self:
+        """
+        Execute a SQL query against the LazyFrame.
+
+        .. versionadded:: 0.20.23
+
+        .. warning::
+            This functionality is considered **unstable**, although it is close to
+            being considered stable. It may be changed at any point without it being
+            considered a breaking change.
+
+        Parameters
+        ----------
+        query
+            SQL query to execute.
+        table_name
+            Optionally provide an explicit name for the table that represents the
+            calling frame (defaults to "self").
+
+        Notes
+        -----
+        * The calling frame is automatically registered as a table in the SQL context
+          under the name "self". If you want access to the DataFrames and LazyFrames
+          found in the current globals, use the top-level :meth:`pl.sql <polars.sql>`.
+        * More control over registration and execution behaviour is available by
+          using the :class:`SQLContext` object.
+
+        See Also
+        --------
+        SQLContext
+
+        Examples
+        --------
+        >>> lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": [6, 7, 8], "c": ["z", "y", "x"]})
+        >>> lf2 = pl.LazyFrame({"a": [3, 2, 1], "d": [125, -654, 888]})
+
+        Query the LazyFrame using SQL:
+
+        >>> lf1.sql("SELECT c, b FROM self WHERE a > 1").collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ c   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ y   ┆ 7   │
+        │ x   ┆ 8   │
+        └─────┴─────┘
+
+        Apply SQL transforms (aliasing "self" to "frame") then filter
+        natively (you can freely mix SQL and native operations):
+
+        >>> lf1.sql(
+        ...     query='''
+        ...         SELECT
+        ...             a,
+        ...             (a % 2 == 0) AS a_is_even,
+        ...             (b::float4 / 2) AS "b/2",
+        ...             CONCAT_WS(':', c, c, c) AS c_c_c
+        ...         FROM frame
+        ...         ORDER BY a
+        ...     ''',
+        ...     table_name="frame",
+        ... ).filter(~pl.col("c_c_c").str.starts_with("x")).collect()
+        shape: (2, 4)
+        ┌─────┬───────────┬─────┬───────┐
+        │ a   ┆ a_is_even ┆ b/2 ┆ c_c_c │
+        │ --- ┆ ---       ┆ --- ┆ ---   │
+        │ i64 ┆ bool      ┆ f32 ┆ str   │
+        ╞═════╪═══════════╪═════╪═══════╡
+        │ 1   ┆ false     ┆ 3.0 ┆ z:z:z │
+        │ 2   ┆ true      ┆ 3.5 ┆ y:y:y │
+        └─────┴───────────┴─────┴───────┘
+        """
+        from polars.sql import SQLContext
+
+        issue_unstable_warning(
+            "`sql` is considered **unstable** (although it is close to being considered stable)."
+        )
+        with SQLContext(
+            register_globals=True,
+            eager=False,
+        ) as ctx:
+            frames = {table_name: self} if table_name else {}
+            frames["self"] = self
+            ctx.register_many(frames)
+            return ctx.execute(query)  # type: ignore[return-value]
+
     def top_k(
         self,
         k: int,
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
+        nulls_last: bool | None = None,
+        maintain_order: bool | None = None,
+        multithreaded: bool | None = None,
     ) -> Self:
         """
-        Return the `k` largest elements.
-
-        If `descending=True` the smallest elements will be given.
+        Return the `k` largest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the top rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` smallest. Top-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
+            booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might
             be worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1288,6 +1428,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
+        if maintain_order is not None:
+            issue_deprecation_warning(
+                "The `maintain_order` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " There will be no guarantees about the order of the output.",
+                version="0.20.31",
+            )
+        else:
+            maintain_order = False
+
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `top_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]
@@ -1306,33 +1477,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
+        nulls_last: bool | None = None,
+        maintain_order: bool | None = None,
+        multithreaded: bool | None = None,
     ) -> Self:
         """
-        Return the `k` smallest elements.
-
-        If `descending=True` the largest elements will be given.
+        Return the `k` smallest rows.
 
         Parameters
         ----------
         k
             Number of rows to return.
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the bottom rows.
+            Accepts expression input. Strings are parsed as column names.
         descending
-            Return the `k` largest. Bottom-k by multiple columns can be specified
-            per column by passing a sequence of booleans.
+            Consider the `k` largest elements of the `by` column(s) (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
+            booleans.
+
         nulls_last
             Place null values last.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Null values will be considered lowest priority and will only be
+                included if `k` is larger than the number of non-null elements.
+
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
             worse since this requires a stable search.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                There will be no guarantees about the order of the output.
+
         multithreaded
             Sort using multiple threads.
+
+            .. deprecated:: 0.20.31
+                This parameter will be removed in the next breaking release.
+                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1377,6 +1563,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
+        if nulls_last is not None:
+            issue_deprecation_warning(
+                "The `nulls_last` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Null values will be considered lowest priority and will only be"
+                " included if `k` is larger than the number of non-null elements.",
+                version="0.20.31",
+            )
+        else:
+            nulls_last = False
+
+        if maintain_order is not None:
+            issue_deprecation_warning(
+                "The `maintain_order` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " There will be no guarantees about the order of the output.",
+                version="0.20.31",
+            )
+        else:
+            maintain_order = False
+
+        if multithreaded is not None:
+            issue_deprecation_warning(
+                "The `multithreaded` parameter for `bottom_k` is deprecated."
+                " It will be removed in the next breaking release."
+                " Polars itself will determine whether to use multithreading or not.",
+                version="0.20.31",
+            )
+        else:
+            multithreaded = True
+
         by = parse_as_list_of_expressions(by)
         if isinstance(descending, bool):
             descending = [descending]
@@ -1397,6 +1614,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1429,6 +1647,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1477,6 +1697,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1486,6 +1707,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -1493,44 +1715,41 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         (df, timings) = wrap_df(df), wrap_df(timings)
 
         if show_plot:
-            try:
-                import matplotlib.pyplot as plt
+            import_optional(
+                "matplotlib",
+                err_suffix="should be installed to show profiling plots",
+            )
+            import matplotlib.pyplot as plt
 
-                fig, ax = plt.subplots(1, figsize=figsize)
+            fig, ax = plt.subplots(1, figsize=figsize)
 
-                max_val = timings["end"][-1]
-                timings_ = timings.reverse()
+            max_val = timings["end"][-1]
+            timings_ = timings.reverse()
 
-                if max_val > 1e9:
-                    unit = "s"
-                    timings_ = timings_.with_columns(
-                        F.col(["start", "end"]) / 1_000_000
-                    )
-                elif max_val > 1e6:
-                    unit = "ms"
-                    timings_ = timings_.with_columns(F.col(["start", "end"]) / 1000)
-                else:
-                    unit = "us"
-                if truncate_nodes > 0:
-                    timings_ = timings_.with_columns(
-                        F.col("node").str.slice(0, truncate_nodes) + "..."
-                    )
-
-                max_in_unit = timings_["end"][0]
-                ax.barh(
-                    timings_["node"],
-                    width=timings_["end"] - timings_["start"],
-                    left=timings_["start"],
+            if max_val > 1e9:
+                unit = "s"
+                timings_ = timings_.with_columns(F.col(["start", "end"]) / 1_000_000)
+            elif max_val > 1e6:
+                unit = "ms"
+                timings_ = timings_.with_columns(F.col(["start", "end"]) / 1000)
+            else:
+                unit = "us"
+            if truncate_nodes > 0:
+                timings_ = timings_.with_columns(
+                    F.col("node").str.slice(0, truncate_nodes) + "..."
                 )
 
-                plt.title("Profiling result")
-                ax.set_xlabel(f"node duration in [{unit}], total {max_in_unit}{unit}")
-                ax.set_ylabel("nodes")
-                plt.show()
+            max_in_unit = timings_["end"][0]
+            ax.barh(
+                timings_["node"],
+                width=timings_["end"] - timings_["start"],
+                left=timings_["start"],
+            )
 
-            except ImportError:
-                msg = "matplotlib should be installed to show profiling plot"
-                raise ModuleNotFoundError(msg) from None
+            plt.title("Profiling result")
+            ax.set_xlabel(f"node duration in [{unit}], total {max_in_unit}{unit}")
+            ax.set_ylabel("nodes")
+            plt.show()
 
         return df, timings
 
@@ -1545,6 +1764,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: Literal[True],
@@ -1562,6 +1782,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: Literal[False] = False,
@@ -1578,10 +1799,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
         background: bool = False,
         _eager: bool = False,
+        **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
         """
         Materialize this LazyFrame into a DataFrame.
@@ -1605,6 +1828,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         no_optimization
             Turn off (certain) optimizations.
         streaming
@@ -1678,6 +1903,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1691,13 +1917,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager,
         )
         if background:
             return InProcessQuery(ldf.collect_concurrently())
 
-        return wrap_df(ldf.collect())
+        # Only for testing purposes atm.
+        callback = _kwargs.get("post_opt_callback")
+
+        return wrap_df(ldf.collect(callback))
 
     @overload
     def collect_async(
@@ -1712,6 +1942,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = True,
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
@@ -1728,6 +1959,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = True,
     ) -> Awaitable[DataFrame]: ...
 
@@ -1743,6 +1975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
@@ -1779,6 +2012,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Process the query in batches to handle larger-than-memory data.
             If set to `False` (default), the entire query is processed in a single
@@ -1843,6 +2078,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1856,6 +2092,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -2144,6 +2381,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
         """
+        from polars.io.csv._utils import _check_arg_is_1byte
+
         _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
@@ -2260,6 +2499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
+            cluster_with_columns=False,
             streaming=True,
             _eager=False,
         )
@@ -2276,6 +2516,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
         streaming: bool = False,
     ) -> DataFrame:
         """
@@ -2301,6 +2542,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Will try to cache branching subplans that occur on self-joins or unions.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+        cluster_with_columns
+            Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
@@ -2348,6 +2591,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             comm_subplan_elim = False
             comm_subexpr_elim = False
+            cluster_with_columns = False
 
         lf = self._ldf.optimization_toggle(
             type_coercion,
@@ -2357,6 +2601,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
         )
@@ -2680,7 +2925,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 return self.clear()  # type: ignore[return-value]
             elif p is True:
                 continue  # no-op; matches all rows
-            elif is_bool_sequence(p, include_series=True):
+            if _is_generator(p):
+                p = tuple(p)
+            if is_bool_sequence(p, include_series=True):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
             elif (
                 (is_seq := is_sequence(p))
@@ -2996,7 +3243,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3071,6 +3318,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
+            .. deprecated:: 0.20.31
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
+
         Returns
         -------
         LazyGroupBy
@@ -3131,9 +3382,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
-        lgb = self._ldf.rolling(
-            index_column, period, offset, closed, pyexprs_by, check_sorted
-        )
+        lgb = self._ldf.rolling(index_column, period, offset, closed, pyexprs_by)
         return LazyGroupBy(lgb)
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -3150,7 +3399,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3234,6 +3483,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             verify data is sorted. This is expensive. If you are sure the
             data within the groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
+
+            .. deprecated:: 0.20.31
+                Sortedness is now verified in a quick manner, you can safely remove
+                this argument.
 
         Returns
         -------
@@ -3499,7 +3752,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             closed,
             pyexprs_by,
             start_by,
-            check_sorted,
         )
         return LazyGroupBy(lgb)
 
@@ -3594,6 +3846,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
+
 
         Examples
         --------
@@ -3698,6 +3951,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
+        coalesce: bool | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -3711,7 +3965,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
+        how : {'inner', 'left', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
             * *inner*
@@ -3719,10 +3973,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
-            * *outer*
+            * *full*
                  Returns all rows when there is a match in either left or right table
-            * *outer_coalesce*
-                 Same as 'outer', but coalesces the key columns
             * *cross*
                  Returns the Cartesian product of rows from both tables
             * *semi*
@@ -3751,10 +4003,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     “m:1”: check if join keys are unique in right dataset
 
             .. note::
+                This is currently not supported by the streaming engine.
 
-                - This is currently not supported the streaming engine.
         join_nulls
             Join on null values. By default null values will never produce matches.
+        coalesce
+            Coalescing behavior (merging of join columns).
+
+            - None: -> join specific.
+            - True: -> Always coalesce join columns.
+            - False: -> Never coalesce join columns.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -3791,7 +4049,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6.0 ┆ a   ┆ x     │
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
-        >>> lf.join(other_lf, on="ham", how="outer").collect()
+        >>> lf.join(other_lf, on="ham", how="full").collect()
         shape: (4, 5)
         ┌──────┬──────┬──────┬───────┬───────────┐
         │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
@@ -3803,7 +4061,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null ┆ z     ┆ d         │
         │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
         └──────┴──────┴──────┴───────┴───────────┘
-        >>> lf.join(other_lf, on="ham", how="left").collect()
+        >>> lf.join(other_lf, on="ham", how="left", coalesce=True).collect()
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -3838,7 +4096,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
 
-        if how == "cross":
+        if how == "outer":
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer'` should be replaced with `how='full'`.",
+                version="0.20.29",
+            )
+        elif how == "outer_coalesce":
+            coalesce = True
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
+                version="0.20.29",
+            )
+        elif how == "left" and coalesce is None:
+            issue_deprecation_warning(
+                "The default coalesce behavior of left join will change to `False` in the next breaking release."
+                " Pass `coalesce=True` to keep the current behavior and silence this warning.",
+                version="0.20.30",
+            )
+
+        elif how == "cross":
             return self._from_pyldf(
                 self._ldf.join(
                     other._ldf,
@@ -3875,6 +4153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 how,
                 suffix,
                 validate,
+                coalesce,
             )
         )
 
@@ -4784,7 +5063,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def fill_null(
         self,
-        value: Any | None = None,
+        value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
         *,
@@ -4804,6 +5083,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             'backward' strategy.
         matches_supertype
             Fill all matching supertypes of the fill `value` literal.
+
+        See Also
+        --------
+        fill_nan
 
         Examples
         --------
@@ -4921,8 +5204,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        Note that floating point NaN (Not a Number) are not missing values!
-        To replace missing values, use :func:`fill_null` instead.
+        Note that floating point NaNs (Not a Number) are not missing values.
+        To replace missing values, use :func:`fill_null`.
+
+        See Also
+        --------
+        fill_null
 
         Examples
         --------
@@ -5779,7 +6066,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
+        how: Literal["left", "inner", "full"] = "left",
         *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
@@ -5799,11 +6086,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Column names that will be joined on. If set to `None` (default),
             the implicit row index of each frame is used as a join key.
-        how : {'left', 'inner', 'outer'}
+        how : {'left', 'inner', 'full'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
-            * 'outer' will update existing rows where the key matches while also
+            * 'full' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
         left_on
            Join column(s) of the left DataFrame.
@@ -5875,10 +6162,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ -99 │
         └─────┴─────┘
 
-        Update `df` values with the non-null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values with the non-null values in `new_df`, using a full
+        outer join strategy that defines explicit join columns in each frame:
 
-        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="outer").collect()
+        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="full").collect()
         shape: (5, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -5892,11 +6179,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66 │
         └─────┴─────┘
 
-        Update `df` values including null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
+        Update `df` values including null values in `new_df`, using a full
+        outer join strategy that defines explicit join columns in each frame:
 
         >>> lf.update(
-        ...     new_lf, left_on="A", right_on="C", how="outer", include_nulls=True
+        ...     new_lf, left_on="A", right_on="C", how="full", include_nulls=True
         ... ).collect()
         shape: (5, 2)
         ┌─────┬──────┐
@@ -5911,11 +6198,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66  │
         └─────┴──────┘
         """
-        if how not in ("left", "inner", "outer"):
-            msg = f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+        if how in ("outer", "outer_coalesce"):
+            how = "full"
+            issue_deprecation_warning(
+                "Use of `how='outer'` should be replaced with `how='full'`.",
+                version="0.20.29",
+            )
+
+        if how not in ("left", "inner", "full"):
+            msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
             raise ValueError(msg)
-        if how == "outer":
-            how = "outer_coalesce"  # type: ignore[assignment]
 
         row_index_used = False
         if on is None:
@@ -5955,7 +6247,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise ValueError(msg)
 
         # no need to join if *only* join columns are in other (inner/left update only)
-        if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]
+        if how != "full" and len(other.columns) == len(right_on):
             if row_index_used:
                 return self.drop(row_index_name)
             return self
@@ -5982,6 +6274,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 right_on=right_on,
                 how=how,
                 suffix=tmp_name,
+                coalesce=True,
             )
             .with_columns(
                 (
@@ -6059,7 +6352,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
@@ -6120,7 +6413,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
@@ -6185,7 +6478,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool = True,
+        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).

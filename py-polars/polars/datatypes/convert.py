@@ -68,6 +68,10 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
+    if sys.version_info >= (3, 10):
+        from typing import TypeGuard
+    else:
+        from typing_extensions import TypeGuard
 
 PY_STR_TO_DTYPE: SchemaDict = {
     "float": Float64,
@@ -107,7 +111,7 @@ def _map_py_type_to_dtype(
     if issubclass(python_dtype, date):
         return Date
     if python_dtype is timedelta:
-        return Duration("us")
+        return Duration
     if python_dtype is time:
         return Time
     if python_dtype is list:
@@ -139,7 +143,9 @@ def _map_py_type_to_dtype(
     raise TypeError(msg)
 
 
-def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
+def is_polars_dtype(
+    dtype: Any, *, include_unknown: bool = False
+) -> TypeGuard[PolarsDataType]:
     """Indicate whether the given input is a Polars dtype, or dtype specialization."""
     try:
         if dtype == Unknown:

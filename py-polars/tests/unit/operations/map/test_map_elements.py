@@ -151,7 +151,7 @@ def test_map_elements_type_propagation() -> None:
         .group_by("a", maintain_order=True)
         .agg(
             [
-                pl.when(pl.col("b").null_count() == 0)
+                pl.when(~pl.col("b").has_nulls())
                 .then(
                     pl.col("b").map_elements(
                         lambda s: s[0]["c"],

@@ -3,14 +3,12 @@ use std::borrow::Cow;
 
 use ahash::RandomState;
 
+use super::MetadataFlags;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
-use crate::chunked_array::Settings;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
@@ -39,10 +37,10 @@ where
         self.0.dtype()
     }
 
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
@@ -82,8 +80,8 @@ where
         ObjectChunked::rename(&mut self.0, name)
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        ObjectChunked::chunk_id(&self.0)
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        ObjectChunked::chunk_lengths(&self.0)
     }
 
     fn name(&self) -> &str {

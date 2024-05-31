@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
@@ -1442,15 +1444,31 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(5)
-    assert len(batches) == 5  # type: ignore[arg-type]
+    batches = reader.next_batches(10)
+    assert batches is not None
+    assert len(batches) == 5
 
-    batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
+
+    # ragged lines
+    with NamedTemporaryFile() as tmp:
+        data = b"A\nB,ragged\nC"
+        tmp.write(data)
+        tmp.seek(0)
+
+        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        batches = pl.read_csv_batched(
+            tmp.name,
+            has_header=False,
+            truncate_ragged_lines=True,
+        ).next_batches(1)
+
+        assert batches is not None
+        assert_frame_equal(pl.concat(batches), expected)
 
 
 def test_batched_csv_reader_empty(io_files_path: Path) -> None:
@@ -2044,6 +2062,22 @@ def test_csv_escape_cf_15349() -> None:
     assert f.read() == b'test\nnormal\n"with\rcr"\n'
 
 
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("streaming", [True, False])
+def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.csv"
+
+    df = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int64).to_frame()
+    df.write_csv(path)
+
+    skip = 2
+    expect = df.slice(skip)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
+
+
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     csv = textwrap.dedent(
@@ -2081,3 +2115,18 @@ def test_fsspec_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
         pl.read_csv(
             "s3://foods/cabbage.csv", storage_options={"key": "key", "secret": "secret"}
         )
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(
+    os.environ.get("POLARS_FORCE_ASYNC") == "1" or sys.platform == "win32",
+    reason="only local",
+)
+def test_no_glob(tmpdir: Path) -> None:
+    df = pl.DataFrame({"foo": 1})
+    p = tmpdir / "*.csv"
+    df.write_csv(str(p))
+    p = tmpdir / "*1.csv"
+    df.write_csv(str(p))
+    p = tmpdir / "*.csv"
+    assert_frame_equal(pl.read_csv(str(p), glob=False), df)

@@ -137,7 +137,7 @@ def test_count_suffix_10783() -> None:
         .name.suffix("_suffix")
     )
     df_expect = df.with_columns(pl.Series("len_suffix", [3, 3, 1, 3]))
-    assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
+    assert_frame_equal(df_with_cnt, df_expect, check_dtypes=False)
 
 
 def test_or() -> None:
@@ -209,6 +209,28 @@ def test_filter_multiple_predicates() -> None:
         },
     )
     assert ldf.filter(predicate="==").select("description").collect().item() == "eq"
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        [pl.lit(True)],
+        iter([pl.lit(True)]),
+        [True, True, True],
+        iter([True, True, True]),
+        (p for p in (pl.col("c") < 9,)),
+        (p for p in (pl.col("a") > 0, pl.col("b") > 0)),
+    ],
+)
+def test_filter_seq_iterable_all_true(predicate: Any) -> None:
+    ldf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1],
+            "b": [1, 1, 2],
+            "c": [3, 1, 2],
+        }
+    )
+    assert_frame_equal(ldf, ldf.filter(predicate))
 
 
 def test_apply_custom_function() -> None:
@@ -857,25 +879,6 @@ def test_argminmax() -> None:
     )
     assert out["max"][0] == 1
     assert out["min"][0] == 0
-
-
-def test_rename() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename({"a": "foo", "b": "bar"}).collect()
-    assert out.columns == ["foo", "bar", "c"]
-
-
-def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().rename({"A": "C"}).collect()
-    assert res.columns[0] == "C"
-
-
-def test_rename_lambda() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
-    out = ldf.rename(
-        lambda col: "foo" if col == "a" else "bar" if col == "b" else col
-    ).collect()
-    assert out.columns == ["foo", "bar", "c"]
 
 
 def test_reverse() -> None:

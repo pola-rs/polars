@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def test_date_range() -> None:
-    # if low/high are both date, range is also be date _iif_ the granularity is >= 1d
+    # if low/high are both date, range is also be date _iff_ the granularity is >= 1d
     result = pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True)
     assert result.to_list() == [date(2022, 1, 1), date(2022, 2, 1), date(2022, 3, 1)]
 

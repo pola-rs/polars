@@ -38,7 +38,7 @@ impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
         let mut df = self.clone();
-        if self.height() == 0 {
+        if self.is_empty() {
             for s in &columns {
                 df.with_column(s.explode()?)?;
             }

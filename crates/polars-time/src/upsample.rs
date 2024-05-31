@@ -1,8 +1,8 @@
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
-use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
+use polars_ops::series::SeriesMethods;
 
 use crate::prelude::*;
 
@@ -128,7 +128,7 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    ensure_sorted_arg(s, "upsample")?;
+    s.ensure_sorted_arg("upsample")?;
     let time_type = s.dtype();
     if matches!(time_type, DataType::Date) {
         let mut df = source.clone();

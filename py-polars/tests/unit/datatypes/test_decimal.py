@@ -70,30 +70,33 @@ def test_frame_from_pydecimal_and_ints(
 
 
 @pytest.mark.parametrize(
-    ("trim_zeros", "expected"),
+    ("input", "trim_zeros", "expected"),
     [
-        (True, "0.01"),
-        (False, "0.010000000000000000000000000"),
+        ("0.00", True, "0"),
+        ("0.00", False, "0.00"),
+        ("-1", True, "-1"),
+        ("-1.000000000000000000000000000", False, "-1.000000000000000000000000000"),
+        ("0.0100", True, "0.01"),
+        ("0.0100", False, "0.0100"),
+        ("0.010000000000000000000000000", False, "0.010000000000000000000000000"),
+        ("-1.123801239123981293891283123", True, "-1.123801239123981293891283123"),
+        (
+            "12345678901.234567890123458390192857685",
+            True,
+            "12345678901.234567890123458390192857685",
+        ),
+        (
+            "-99999999999.999999999999999999999999999",
+            True,
+            "-99999999999.999999999999999999999999999",
+        ),
     ],
 )
-def test_to_from_pydecimal_and_format(trim_zeros: bool, expected: str) -> None:
-    dec_strs = [
-        "0",
-        "-1",
-        expected,
-        "-1.123801239123981293891283123",
-        "12345678901.234567890123458390192857685",
-        "-99999999999.999999999999999999999999999",
-    ]
+def test_decimal_format(input: str, trim_zeros: bool, expected: str) -> None:
     with pl.Config(trim_decimal_zeros=trim_zeros):
-        formatted = (
-            str(pl.Series(list(map(D, dec_strs))))
-            .split("[", 1)[1]
-            .split("\n", 1)[1]
-            .strip()[1:-1]
-            .split()
-        )
-        assert formatted == dec_strs
+        series = pl.Series([input]).str.to_decimal()
+        formatted = str(series).split("\n")[-2].strip()
+        assert formatted == expected
 
 
 def test_init_decimal_dtype() -> None:
@@ -458,3 +461,13 @@ def test_decimal_streaming() -> None:
             D("161102921617598.363263936811563000"),
         ],
     }
+
+
+def test_decimal_supertype() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals()
+        pl.Config.activate_decimals()
+        q = pl.LazyFrame([0.12345678]).select(
+            pl.col("column_0").cast(pl.Decimal(scale=6)) * 1
+        )
+        assert q.collect().dtypes[0].is_decimal()

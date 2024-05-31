@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import re
-import typing
 from datetime import date, datetime, timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -324,7 +325,7 @@ def test_cse_10401() -> None:
 
     q = df.with_columns(pl.all().fill_null(0).fill_nan(0))
 
-    assert r"""col("clicks").fill_null([0]).alias("__POLARS_CSER""" in q.explain()
+    assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
 
     expected = pl.DataFrame({"clicks": [1.0, 0.0, 0.0]})
     assert_frame_equal(q.collect(comm_subexpr_elim=True), expected)
@@ -512,7 +513,7 @@ def test_no_cse_in_with_context() -> None:
         .with_context(df2.lazy())
         .select(
             pl.col("date_start", "label").gather(
-                pl.col("date_start").search_sorted("timestamp") - 1
+                pl.col("date_start").search_sorted(pl.col("timestamp")) - 1
             ),
         )
     ).collect().to_dict(as_series=False) == {
@@ -598,7 +599,6 @@ def test_cse_11958() -> None:
     }
 
 
-@typing.no_type_check
 def test_cse_14047() -> None:
     ldf = pl.LazyFrame(
         {
@@ -615,7 +615,7 @@ def test_cse_14047() -> None:
 
     def count_diff(
         price: pl.Expr, upper_bound: float = 0.1, lower_bound: float = 0.001
-    ):
+    ) -> pl.Expr:
         span_end_to_curr = (
             price.count()
             .cast(int)
@@ -630,7 +630,7 @@ def test_cse_14047() -> None:
             f"count_diff_{upper_bound}_{lower_bound}"
         )
 
-    def s_per_count(count_diff, span) -> pl.Expr:
+    def s_per_count(count_diff: pl.Expr, span: tuple[float, float]) -> pl.Expr:
         return (span[1] * 1000 - span[0] * 1000) / count_diff
 
     spans = [(0.001, 0.1), (1, 10)]
@@ -723,3 +723,60 @@ def test_cse_drop_nulls_15795() -> None:
     C = A.join(B, on="X").select("X")
     D = B.select("X")
     assert C.join(D, on="X").collect().shape == (1, 1)
+
+
+def test_cse_no_projection_15980() -> None:
+    df = pl.LazyFrame({"x": "a", "y": 1})
+    df = pl.concat(df.with_columns(pl.col("y").add(n)) for n in range(2))
+
+    assert df.filter(pl.col("x").eq("a")).select("x").collect().to_dict(
+        as_series=False
+    ) == {"x": ["a", "a"]}
+
+
+@pytest.mark.debug()
+def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    holdings = pl.DataFrame(
+        {
+            "fund_currency": ["CLP", "CLP"],
+            "asset_currency": ["EUR", "USA"],
+        }
+    )
+
+    usd = ["USD"]
+    eur = ["EUR"]
+    clp = ["CLP"]
+
+    currency_factor_query_dict = [
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(eur) & pl.col("fund_currency").is_in(usd),
+        pl.col("asset_currency").is_in(clp) & pl.col("fund_currency").is_in(clp),
+        pl.col("asset_currency").is_in(usd) & pl.col("fund_currency").is_in(usd),
+    ]
+
+    factor_holdings = holdings.lazy().with_columns(
+        [
+            pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
+        ]
+    )
+
+    assert factor_holdings.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+        "fund_currency": ["CLP", "CLP"],
+        "asset_currency": ["EUR", "USA"],
+        "currency_factor": [True, False],
+    }
+    captured = capfd.readouterr().err
+    assert "3 CSE" in captured
+
+
+def test_nested_cache_no_panic_16553() -> None:
+    assert pl.LazyFrame().select(a=[[[1]]]).collect(comm_subexpr_elim=True).to_dict(
+        as_series=False
+    ) == {"a": [[[[1]]]]}
+
+
+def test_hash_empty_series_16577() -> None:
+    s = pl.Series(values=None)
+    out = pl.LazyFrame().select(s).collect()
+    assert out.equals(s.to_frame())

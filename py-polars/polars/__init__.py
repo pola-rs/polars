@@ -135,6 +135,7 @@ from polars.functions import (
     duration,
     element,
     exclude,
+    field,
     first,
     fold,
     format,
@@ -158,6 +159,7 @@ from polars.functions import (
     min,
     min_horizontal,
     n_unique,
+    nth,
     ones,
     quantile,
     reduce,
@@ -213,7 +215,7 @@ from polars.meta import (
     threadpool_size,
 )
 from polars.series import Series
-from polars.sql import SQLContext
+from polars.sql import SQLContext, sql
 from polars.string_cache import (
     StringCache,
     disable_string_cache,
@@ -384,6 +386,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "field",
     "first",
     "fold",
     "format",
@@ -401,6 +404,7 @@ __all__ = [
     "mean",
     "median",
     "n_unique",
+    "nth",
     "quantile",
     "reduce",
     "rolling_corr",
@@ -426,6 +430,7 @@ __all__ = [
     "from_repr",
     # polars.sql
     "SQLContext",
+    "sql",
     # polars.utils
     "build_info",
     "get_index_type",

@@ -11,6 +11,15 @@ fn float_type(field: &mut Field) {
 }
 
 impl AExpr {
+    pub fn to_dtype(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        arena: &Arena<AExpr>,
+    ) -> PolarsResult<DataType> {
+        self.to_field(schema, ctxt, arena).map(|f| f.dtype)
+    }
+
     /// Get Field result of the expression. The schema is the input data.
     #[recursive]
     pub fn to_field(
@@ -66,12 +75,12 @@ impl AExpr {
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
-                    | Operator::And
+                    | Operator::LogicalAnd
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::NotEqValidity
                     | Operator::EqValidity
-                    | Operator::Or => {
+                    | Operator::LogicalOr => {
                         let out_field;
                         let out_name = {
                             out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
@@ -101,7 +110,7 @@ impl AExpr {
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
-                use AAggExpr::*;
+                use IRAggExpr::*;
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
@@ -221,8 +230,8 @@ impl AExpr {
             Wildcard => {
                 polars_bail!(ComputeError: "wildcard column selection not supported at this point")
             },
-            Nth(_) => {
-                polars_bail!(ComputeError: "nth column selection not supported at this point")
+            Nth(n) => {
+                polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
             },
         }
     }
@@ -289,25 +298,36 @@ fn get_arithmetic_field(
         _ => {
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
 
-            // Avoid needlessly type casting numeric columns during arithmetic
-            // with literals.
-            if (left_field.dtype.is_integer() && right_type.is_integer())
-                || (left_field.dtype.is_float() && right_type.is_float())
-            {
-                match (left_ae, right_ae) {
-                    (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                    (AExpr::Literal(_), _) => {
-                        // literal will be coerced to match right type
-                        left_field.coerce(right_type);
+            match (&left_field.dtype, &right_type) {
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), Struct(_)) => {
+                    if op.is_arithmetic() {
                         return Ok(left_field);
-                    },
-                    (_, AExpr::Literal(_)) => {
-                        // literal will be coerced to match right type
-                        return Ok(left_field);
-                    },
-                    _ => {},
-                }
+                    }
+                },
+                _ => {
+                    // Avoid needlessly type casting numeric columns during arithmetic
+                    // with literals.
+                    if (left_field.dtype.is_integer() && right_type.is_integer())
+                        || (left_field.dtype.is_float() && right_type.is_float())
+                    {
+                        match (left_ae, right_ae) {
+                            (AExpr::Literal(_), AExpr::Literal(_)) => {},
+                            (AExpr::Literal(_), _) => {
+                                // literal will be coerced to match right type
+                                left_field.coerce(right_type);
+                                return Ok(left_field);
+                            },
+                            (_, AExpr::Literal(_)) => {
+                                // literal will be coerced to match right type
+                                return Ok(left_field);
+                            },
+                            _ => {},
+                        }
+                    }
+                },
             }
+
             try_get_supertype(&left_field.dtype, &right_type)?
         },
     };

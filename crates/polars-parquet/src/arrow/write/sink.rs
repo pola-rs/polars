@@ -4,7 +4,7 @@ use std::task::Poll;
 use ahash::AHashMap;
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::RecordBatchT;
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
@@ -14,7 +14,7 @@ use super::{Encoding, SchemaDescriptor, WriteOptions};
 use crate::parquet::metadata::KeyValue;
 use crate::parquet::write::{FileStreamer, WriteOptions as ParquetWriteOptions};
 
-/// Sink that writes array [`chunks`](RecordBatch) as a Parquet file.
+/// Sink that writes array [`chunks`](RecordBatchT) as a Parquet file.
 ///
 /// Any values in the sink's `metadata` field will be written to the file's footer
 /// when the sink is closed.
@@ -110,7 +110,7 @@ where
     }
 }
 
-impl<'a, W> Sink<RecordBatch<Box<dyn Array>>> for FileSink<'a, W>
+impl<'a, W> Sink<RecordBatchT<Box<dyn Array>>> for FileSink<'a, W>
 where
     W: AsyncWrite + Send + Unpin + 'a,
 {
@@ -118,7 +118,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        item: RecordBatch<Box<dyn Array>>,
+        item: RecordBatchT<Box<dyn Array>>,
     ) -> Result<(), Self::Error> {
         if self.schema.fields.len() != item.arrays().len() {
             polars_bail!(InvalidOperation:

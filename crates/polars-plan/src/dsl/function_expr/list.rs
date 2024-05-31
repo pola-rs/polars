@@ -398,7 +398,7 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let mut first_ca = match first.list().ok() {
         Some(ca) => ca,
         None => {
-            first = first.reshape(&[-1, 1]).unwrap();
+            first = first.reshape_list(&[-1, 1]).unwrap();
             first.list().unwrap()
         },
     }
@@ -482,7 +482,7 @@ pub(super) fn gather(args: &[Series], null_on_oob: bool) -> PolarsResult<Series>
         let idx = idx.get(0)?.try_extract::<i64>()?;
         let out = ca.lst_get(idx, null_on_oob)?;
         // make sure we return a list
-        out.reshape(&[-1, 1])
+        out.reshape_list(&[-1, 1])
     } else {
         ca.lst_gather(idx, null_on_oob)
     }

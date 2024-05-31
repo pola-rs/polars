@@ -1,15 +1,34 @@
 use std::collections::BTreeMap;
 
+#[cfg(feature = "dtype-array")]
+use polars_utils::format_tuple;
+
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = String;
 
 pub static DTYPE_ENUM_KEY: &str = "POLARS.CATEGORICAL_TYPE";
 pub static DTYPE_ENUM_VALUE: &str = "ENUM";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(
+    any(feature = "serde", feature = "serde-lazy"),
+    derive(Serialize, Deserialize)
+)]
+pub enum UnknownKind {
+    // Hold the value to determine the concrete size.
+    Int(i128),
+    Float,
+    // Can be Categorical or String
+    Str,
+    #[default]
+    Any,
+}
+
+#[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -59,8 +78,13 @@ pub enum DataType {
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
-    #[default]
-    Unknown,
+    Unknown(UnknownKind),
+}
+
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown(UnknownKind::Any)
+    }
 }
 
 pub trait AsRefDataType {
@@ -99,6 +123,10 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-array")]
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
+                },
+                (Unknown(l), Unknown(r)) => match (l, r) {
+                    (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                    _ => l == r,
                 },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
@@ -144,8 +172,27 @@ impl DataType {
             DataType::List(inner) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
-            DataType::Unknown => false,
+            DataType::Unknown(_) => false,
             _ => true,
+        }
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Get the full shape of a multidimensional array.
+    pub fn get_shape(&self) -> Option<Vec<usize>> {
+        fn get_shape_impl(dt: &DataType, shape: &mut Vec<usize>) {
+            if let DataType::Array(inner, size) = dt {
+                shape.push(*size);
+                get_shape_impl(inner, shape);
+            }
+        }
+
+        if let DataType::Array(inner, size) = self {
+            let mut shape = vec![*size];
+            get_shape_impl(inner, &mut shape);
+            Some(shape)
+        } else {
+            None
         }
     }
 
@@ -157,6 +204,15 @@ impl DataType {
             DataType::Array(inner, _) => Some(inner),
             _ => None,
         }
+    }
+
+    /// Get the absolute inner data type of a nested type.
+    pub fn leaf_dtype(&self) -> &DataType {
+        let mut prev = self;
+        while let Some(dtype) = prev.inner_dtype() {
+            prev = dtype
+        }
+        prev
     }
 
     /// Convert to the physical data type
@@ -211,17 +267,17 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
-    /// Check if this [`DataType`] is a boolean
+    /// Check if this [`DataType`] is a boolean.
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
 
-    /// Check if this [`DataType`] is a list
+    /// Check if this [`DataType`] is a list.
     pub fn is_list(&self) -> bool {
         matches!(self, DataType::List(_))
     }
 
-    /// Check if this [`DataType`] is a array
+    /// Check if this [`DataType`] is an array.
     pub fn is_array(&self) -> bool {
         #[cfg(feature = "dtype-array")]
         {
@@ -341,7 +397,10 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
-        matches!(self, DataType::Float32 | DataType::Float64)
+        matches!(
+            self,
+            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+        )
     }
 
     /// Check if this [`DataType`] is an integer.
@@ -356,6 +415,7 @@ impl DataType {
                 | DataType::UInt16
                 | DataType::UInt32
                 | DataType::UInt64
+                | DataType::Unknown(UnknownKind::Int(_))
         )
     }
 
@@ -379,6 +439,32 @@ impl DataType {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => true,
             _ => false,
+        }
+    }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, DataType::String | DataType::Unknown(UnknownKind::Str))
+    }
+
+    pub fn is_categorical(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Categorical(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_enum(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            matches!(self, DataType::Enum(_, _))
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            false
         }
     }
 
@@ -490,7 +576,17 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown => Ok(ArrowDataType::Unknown),
+            Unknown(kind) => {
+                let dt = match kind {
+                    UnknownKind::Any => ArrowDataType::Unknown,
+                    UnknownKind::Float => ArrowDataType::Float64,
+                    UnknownKind::Str => ArrowDataType::Utf8View,
+                    UnknownKind::Int(v) => {
+                        return materialize_dyn_int(*v).dtype().try_to_arrow(pl_flavor)
+                    },
+                };
+                Ok(dt)
+            },
         }
     }
 
@@ -581,7 +677,17 @@ impl Display for DataType {
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
-            DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
+            DataType::Array(_, _) => {
+                let tp = self.leaf_dtype();
+
+                let dims = self.get_shape().unwrap();
+                let shape = if dims.len() == 1 {
+                    format!("{}", dims[0])
+                } else {
+                    format_tuple!(dims)
+                };
+                return write!(f, "array[{tp}, {}]", shape);
+            },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s, _) => s,
@@ -591,7 +697,12 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
-            DataType::Unknown => "unknown",
+            DataType::Unknown(kind) => match kind {
+                UnknownKind::Any => "unknown",
+                UnknownKind::Int(_) => "dyn int",
+                UnknownKind::Float => "dyn float",
+                UnknownKind::Str => "dyn str",
+            },
             DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)

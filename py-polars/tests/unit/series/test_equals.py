@@ -11,7 +11,7 @@ def test_equals() -> None:
     s2 = pl.Series("a", [1, 2, None], pl.Int64)
 
     assert s1.equals(s2) is True
-    assert s1.equals(s2, strict=True) is False
+    assert s1.equals(s2, check_dtypes=True) is False
     assert s1.equals(s2, null_equal=False) is False
 
     df = pl.DataFrame(
@@ -25,7 +25,7 @@ def test_equals() -> None:
     s4 = df["s4"].rename("b")
 
     assert s3.equals(s4) is False
-    assert s3.equals(s4, strict=True) is False
+    assert s3.equals(s4, check_dtypes=True) is False
     assert s3.equals(s4, null_equal=False) is False
     assert s3.dt.convert_time_zone("Asia/Tokyo").equals(s4) is True
 
@@ -55,7 +55,8 @@ def test_eq_array_cmp_list() -> None:
 def test_eq_array_cmp_int() -> None:
     s = pl.Series([[1, 3], [1, 2]], dtype=pl.Array(pl.Int16, 2))
     with pytest.raises(
-        TypeError, match="cannot convert Python type 'int' to Array\\(Int16, width=2\\)"
+        TypeError,
+        match="cannot convert Python type 'int' to Array\\(Int16, shape=\\(2,\\)\\)",
     ):
         s == 1  # noqa: B015
 
@@ -90,3 +91,10 @@ def test_ne_missing_expr() -> None:
     result_evaluated = pl.select(result).to_series()
     expected = pl.Series([False, True])
     assert_series_equal(result_evaluated, expected)
+
+
+def test_series_equals_strict_deprecated() -> None:
+    s1 = pl.Series("a", [1.0, 2.0, None], pl.Float64)
+    s2 = pl.Series("a", [1, 2, None], pl.Int64)
+    with pytest.deprecated_call():
+        assert not s1.equals(s2, strict=True)  # type: ignore[call-arg]

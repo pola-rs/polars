@@ -6,7 +6,7 @@ use parquet_format_safe::RowGroup;
 use super::indexes::{write_column_index, write_offset_index};
 use super::page::PageWriteSpec;
 use super::row_group::write_row_group;
-use super::{RowGroupIter, WriteOptions};
+use super::{RowGroupIterColumns, WriteOptions};
 use crate::parquet::error::{Error, Result};
 pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::metadata::{SchemaDescriptor, ThriftFileMetaData};
@@ -146,7 +146,7 @@ impl<W: Write> FileWriter<W> {
     /// Writes a row group to the file.
     ///
     /// This call is IO-bounded
-    pub fn write<E>(&mut self, row_group: RowGroupIter<'_, E>) -> Result<()>
+    pub fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> Result<()>
     where
         Error: From<E>,
         E: std::error::Error,

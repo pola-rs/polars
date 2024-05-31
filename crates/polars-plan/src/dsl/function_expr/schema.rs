@@ -1,3 +1,5 @@
+use polars_core::utils::materialize_dyn_int;
+
 use super::*;
 
 impl FunctionExpr {
@@ -57,18 +59,23 @@ impl FunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
-            FillNull { super_type, .. } => mapper.with_dtype(super_type.clone()),
+            FillNull { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) => {
-                        mapper.with_same_dtype()
-                    },
-                    Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
-                    | Std(_) | StdBy(_) => mapper.map_to_float_dtype(),
+                    Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
+                    Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
                     Skew(..) => mapper.map_to_float_dtype(),
+                }
+            },
+            #[cfg(feature = "rolling_window_by")]
+            RollingExprBy(rolling_func, ..) => {
+                use RollingFunctionBy::*;
+                match rolling_func {
+                    MinBy(_) | MaxBy(_) | SumBy(_) => mapper.with_same_dtype(),
+                    MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),
@@ -94,12 +101,18 @@ impl FunctionExpr {
                 DataType::Struct(fields.to_vec()),
             )),
             #[cfg(feature = "top_k")]
-            TopK(_) => mapper.with_same_dtype(),
+            TopK { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "top_k")]
+            TopKBy { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
-            ValueCounts { .. } => mapper.map_dtype(|dt| {
+            ValueCounts {
+                sort: _,
+                parallel: _,
+                name,
+            } => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
                     Field::new(fields[0].name().as_str(), dt.clone()),
-                    Field::new("count", IDX_DTYPE),
+                    Field::new(name, IDX_DTYPE),
                 ])
             }),
             #[cfg(feature = "unique_counts")]
@@ -163,6 +176,8 @@ impl FunctionExpr {
                 InterpolationMethod::Linear => mapper.map_numeric_to_float_dtype(),
                 InterpolationMethod::Nearest => mapper.with_same_dtype(),
             },
+            #[cfg(feature = "interpolate_by")]
+            InterpolateBy => mapper.map_numeric_to_float_dtype(),
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data
@@ -224,12 +239,24 @@ impl FunctionExpr {
             },
             #[cfg(feature = "repeat_by")]
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
-            Reshape(dims) => mapper.map_dtype(|dt| {
+            Reshape(dims, nested_type) => mapper.map_dtype(|dt| {
                 let dtype = dt.inner_dtype().unwrap_or(dt).clone();
                 if dims.len() == 1 {
                     dtype
                 } else {
-                    DataType::List(Box::new(dtype))
+                    match nested_type {
+                        NestedType::List => DataType::List(Box::new(dtype)),
+                        #[cfg(feature = "dtype-array")]
+                        NestedType::Array => {
+                            let mut prev_dtype = dtype.leaf_dtype().clone();
+
+                            // We pop the outer dimension as that is the height of the series.
+                            for dim in &dims[1..] {
+                                prev_dtype = DataType::Array(Box::new(prev_dtype), *dim as usize);
+                            }
+                            prev_dtype
+                        },
+                    }
                 }
             }),
             #[cfg(feature = "cutqcut")]
@@ -309,10 +336,12 @@ impl FunctionExpr {
         }
     }
 
-    pub(crate) fn output_name(&self) -> Option<&ColumnName> {
+    pub(crate) fn output_name(&self) -> Option<OutputName> {
         match self {
             #[cfg(feature = "dtype-struct")]
-            FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => Some(name),
+            FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+                Some(OutputName::Field(name.clone()))
+            },
             _ => None,
         }
     }
@@ -325,6 +354,10 @@ pub struct FieldsMapper<'a> {
 impl<'a> FieldsMapper<'a> {
     pub fn new(fields: &'a [Field]) -> Self {
         Self { fields }
+    }
+
+    pub fn args(&self) -> &[Field] {
+        self.fields
     }
 
     /// Field with the same dtype.
@@ -409,11 +442,8 @@ impl<'a> FieldsMapper<'a> {
 
     /// Map the dtype to the "supertype" of all fields.
     pub fn map_to_supertype(&self) -> PolarsResult<Field> {
+        let st = args_to_supertype(self.fields)?;
         let mut first = self.fields[0].clone();
-        let mut st = first.data_type().clone();
-        for field in &self.fields[1..] {
-            st = try_get_supertype(&st, field.data_type())?
-        }
         first.coerce(st);
         Ok(first)
     }
@@ -425,7 +455,7 @@ impl<'a> FieldsMapper<'a> {
             .data_type()
             .inner_dtype()
             .cloned()
-            .unwrap_or(DataType::Unknown);
+            .unwrap_or_else(|| DataType::Unknown(Default::default()));
         first.coerce(dt);
         Ok(first)
     }
@@ -470,12 +500,16 @@ impl<'a> FieldsMapper<'a> {
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
-        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+        let dt = first
+            .data_type()
+            .inner_dtype()
+            .cloned()
+            .unwrap_or_else(|| Unknown(Default::default()));
 
-        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
-            first.coerce(Int64);
-        } else {
-            first.coerce(dt);
+        match dt {
+            Boolean => first.coerce(IDX_DTYPE),
+            UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
+            _ => first.coerce(dt),
         }
         Ok(first)
     }
@@ -496,7 +530,7 @@ impl<'a> FieldsMapper<'a> {
 
     #[cfg(feature = "extract_jsonpath")]
     pub fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
-        let dtype = dtype.unwrap_or(DataType::Unknown);
+        let dtype = dtype.unwrap_or_else(|| DataType::Unknown(Default::default()));
         self.with_dtype(dtype)
     }
 
@@ -506,14 +540,37 @@ impl<'a> FieldsMapper<'a> {
             Some(dtype) => dtype,
             // Supertype of `new` and `default`
             None => {
-                let default = if let Some(default) = self.fields.get(3) {
-                    default
-                } else {
-                    &self.fields[0]
-                };
-                try_get_supertype(self.fields[2].data_type(), default.data_type())?
+                let column_type = &self.fields[0];
+                let new = &self.fields[2];
+                try_get_supertype(column_type.data_type(), new.data_type())?
             },
         };
         self.with_dtype(dtype)
     }
+}
+
+pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResult<DataType> {
+    let mut st = dtypes[0].as_ref().clone();
+    for dt in &dtypes[1..] {
+        st = try_get_supertype(&st, dt.as_ref())?
+    }
+
+    match (dtypes[0].as_ref(), &st) {
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(_, ord), DataType::String) => st = DataType::Categorical(None, *ord),
+        _ => {
+            if let DataType::Unknown(kind) = st {
+                match kind {
+                    UnknownKind::Float => st = DataType::Float64,
+                    UnknownKind::Int(v) => {
+                        st = materialize_dyn_int(v).dtype();
+                    },
+                    UnknownKind::Str => st = DataType::String,
+                    _ => {},
+                }
+            }
+        },
+    }
+
+    Ok(st)
 }

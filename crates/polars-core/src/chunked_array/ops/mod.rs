@@ -23,8 +23,6 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
-#[cfg(feature = "interpolate")]
-mod interpolate;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
@@ -45,14 +43,6 @@ use serde::{Deserialize, Serialize};
 pub use sort::options::*;
 
 use crate::series::IsSorted;
-
-#[cfg(feature = "to_list")]
-pub trait ToList<T: PolarsDataType> {
-    fn to_list(&self) -> PolarsResult<ListChunked> {
-        polars_bail!(opq = to_list, T::get_dtype());
-    }
-}
-
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
     fn reinterpret_signed(&self) -> Series {
@@ -343,10 +333,12 @@ pub trait ChunkCompare<Rhs> {
 }
 
 /// Get unique values in a `ChunkedArray`
-pub trait ChunkUnique<T: PolarsDataType> {
+pub trait ChunkUnique {
     // We don't return Self to be able to use AutoRef specialization
     /// Get unique values of a ChunkedArray
-    fn unique(&self) -> PolarsResult<ChunkedArray<T>>;
+    fn unique(&self) -> PolarsResult<Self>
+    where
+        Self: Sized;
 
     /// Get first index of the unique values in a `ChunkedArray`.
     /// This Vec is sorted.

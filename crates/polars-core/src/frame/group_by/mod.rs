@@ -76,7 +76,7 @@ impl DataFrame {
                 .cloned()
                 .collect::<Vec<_>>();
             if by.is_empty() {
-                let groups = if self.height() == 0 {
+                let groups = if self.is_empty() {
                     vec![]
                 } else {
                     vec![[0, self.height() as IdxSize]]

@@ -6,6 +6,7 @@ use polars_core::error::*;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Series;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 #[cfg(feature = "serde")]
 use serde::ser::Error;
@@ -67,9 +68,9 @@ impl Serialize for PythonFunction {
             let dumped = pickle
                 .call1((python_function,))
                 .map_err(|s| S::Error::custom(format!("cannot pickle {s}")))?;
-            let dumped = dumped.extract::<&PyBytes>().unwrap();
+            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
 
-            serializer.serialize_bytes(dumped.as_bytes())
+            serializer.serialize_bytes(&dumped)
         })
     }
 }
@@ -103,14 +104,21 @@ pub struct PythonUdfExpression {
     python_function: PyObject,
     output_type: Option<DataType>,
     is_elementwise: bool,
+    returns_scalar: bool,
 }
 
 impl PythonUdfExpression {
-    pub fn new(lambda: PyObject, output_type: Option<DataType>, is_elementwise: bool) -> Self {
+    pub fn new(
+        lambda: PyObject,
+        output_type: Option<DataType>,
+        is_elementwise: bool,
+        returns_scalar: bool,
+    ) -> Self {
         Self {
             python_function: lambda,
             output_type,
             is_elementwise,
+            returns_scalar,
         }
     }
 
@@ -120,7 +128,7 @@ impl PythonUdfExpression {
         // skip header
         let buf = &buf[MAGIC_BYTE_MARK.len()..];
         let mut reader = Cursor::new(buf);
-        let (output_type, is_elementwise): (Option<DataType>, bool) =
+        let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
             ciborium::de::from_reader(&mut reader).map_err(map_err)?;
 
         let remainder = &buf[reader.position() as usize..];
@@ -137,6 +145,7 @@ impl PythonUdfExpression {
                 python_function.into(),
                 output_type,
                 is_elementwise,
+                returns_scalar,
             )) as Arc<dyn SeriesUdf>)
         })
     }
@@ -157,9 +166,12 @@ impl SeriesUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         let func = unsafe { CALL_SERIES_UDF_PYTHON.unwrap() };
 
-        let output_type = self.output_type.clone().unwrap_or(DataType::Unknown);
+        let output_type = self
+            .output_type
+            .clone()
+            .unwrap_or_else(|| DataType::Unknown(Default::default()));
         let mut out = func(s[0].clone(), &self.python_function)?;
-        if output_type != DataType::Unknown {
+        if !matches!(output_type, DataType::Unknown(_)) {
             let must_cast = out.dtype().matches_schema_type(&output_type).map_err(|_| {
                 polars_err!(
                     SchemaMismatch: "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
@@ -177,8 +189,15 @@ impl SeriesUdf for PythonUdfExpression {
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         buf.extend_from_slice(MAGIC_BYTE_MARK);
-        ciborium::ser::into_writer(&(self.output_type.clone(), self.is_elementwise), &mut *buf)
-            .unwrap();
+        ciborium::ser::into_writer(
+            &(
+                self.output_type.clone(),
+                self.is_elementwise,
+                self.returns_scalar,
+            ),
+            &mut *buf,
+        )
+        .unwrap();
 
         Python::with_gil(|py| {
             let pickle = PyModule::import_bound(py, "cloudpickle")
@@ -189,8 +208,8 @@ impl SeriesUdf for PythonUdfExpression {
             let dumped = pickle
                 .call1((self.python_function.clone(),))
                 .map_err(from_pyerr)?;
-            let dumped = dumped.extract::<&PyBytes>().unwrap();
-            buf.extend_from_slice(dumped.as_bytes());
+            let dumped = dumped.extract::<PyBackedBytes>().unwrap();
+            buf.extend_from_slice(&dumped);
             Ok(())
         })
     }
@@ -201,7 +220,7 @@ impl SeriesUdf for PythonUdfExpression {
             Some(ref dt) => Field::new(fld.name(), dt.clone()),
             None => {
                 let mut fld = fld.clone();
-                fld.coerce(DataType::Unknown);
+                fld.coerce(DataType::Unknown(Default::default()));
                 fld
             },
         }))
@@ -218,12 +237,13 @@ impl Expr {
             (ApplyOptions::GroupWise, "python_udf")
         };
 
+        let returns_scalar = func.returns_scalar;
         let return_dtype = func.output_type.clone();
         let output_type = GetOutput::map_field(move |fld| match return_dtype {
             Some(ref dt) => Field::new(fld.name(), dt.clone()),
             None => {
                 let mut fld = fld.clone();
-                fld.coerce(DataType::Unknown);
+                fld.coerce(DataType::Unknown(Default::default()));
                 fld
             },
         });
@@ -235,6 +255,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups,
                 fmt_str: name,
+                returns_scalar,
                 ..Default::default()
             },
         }

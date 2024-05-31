@@ -1,12 +1,12 @@
-use polars::frame::ArrowChunk;
+use polars::export::arrow::record_batch::RecordBatch;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 
 use super::*;
-use crate::arrow_interop;
 use crate::conversion::{ObjectValue, Wrap};
+use crate::interop;
 
 #[pymethods]
 impl PyDataFrame {
@@ -21,7 +21,7 @@ impl PyDataFrame {
             return Err(PyPolarsErr::from(polars_err!(oob = idx, self.df.height())).into());
         }
         let out = Python::with_gil(|py| {
-            PyTuple::new(
+            PyTuple::new_bound(
                 py,
                 self.df.get_columns().iter().map(|s| match s.dtype() {
                     DataType::Object(_, _) => {
@@ -40,10 +40,10 @@ impl PyDataFrame {
     pub fn row_tuples(&self) -> PyObject {
         Python::with_gil(|py| {
             let df = &self.df;
-            PyList::new(
+            PyList::new_bound(
                 py,
                 (0..df.height()).map(|idx| {
-                    PyTuple::new(
+                    PyTuple::new_bound(
                         py,
                         self.df.get_columns().iter().map(|s| match s.dtype() {
                             DataType::Null => py.None(),
@@ -66,13 +66,13 @@ impl PyDataFrame {
     pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
         self.df.align_chunks();
         Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
+            let pyarrow = py.import_bound("pyarrow")?;
             let names = self.df.get_column_names();
 
             let rbs = self
                 .df
                 .iter_chunks(false)
-                .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
+                .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
         })
@@ -87,7 +87,7 @@ impl PyDataFrame {
     pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
         self.df.as_single_chunk_par();
         Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
+            let pyarrow = py.import_bound("pyarrow")?;
             let names = self.df.get_column_names();
             let cat_columns = self
                 .df
@@ -121,9 +121,9 @@ impl PyDataFrame {
                         .unwrap();
                         *arr = out;
                     }
-                    let rb = ArrowChunk::new(rb);
+                    let rb = RecordBatch::new(rb);
 
-                    arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow)
+                    interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow)
                 })
                 .collect::<PyResult<_>>()?;
             Ok(rbs)

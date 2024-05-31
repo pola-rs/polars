@@ -7,9 +7,7 @@ use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{delta_bitpacked, Encoding};
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{
-    serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
-};
+use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::write::utils::invalid_encoding;
 use crate::write::Page;
 
@@ -92,7 +90,7 @@ pub(crate) fn build_statistics<O: Offset>(
     array: &BinaryArray<O>,
     primitive_type: PrimitiveType,
 ) -> ParquetStatistics {
-    let statistics = &BinaryStatistics {
+    BinaryStatistics {
         primitive_type,
         null_count: Some(array.null_count() as i64),
         distinct_count: None,
@@ -106,8 +104,8 @@ pub(crate) fn build_statistics<O: Offset>(
             .flatten()
             .min_by(|x, y| ord_binary(x, y))
             .map(|x| x.to_vec()),
-    } as &dyn Statistics;
-    serialize_statistics(statistics)
+    }
+    .serialize()
 }
 
 pub(crate) fn encode_delta<O: Offset>(

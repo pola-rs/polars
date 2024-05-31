@@ -1,17 +1,23 @@
-mod dsl_plan_to_ir_plan;
-mod expr_to_expr_ir;
+mod convert_utils;
+mod dsl_to_ir;
+mod expr_expansion;
+mod expr_to_ir;
 mod ir_to_dsl;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 mod scans;
+mod stack_opt;
 
 use std::borrow::Cow;
 
-pub use dsl_plan_to_ir_plan::*;
-pub use expr_to_expr_ir::*;
+pub use dsl_to_ir::*;
+pub use expr_to_ir::*;
 pub use ir_to_dsl::*;
 use polars_core::prelude::*;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+pub(crate) mod type_coercion;
+
+pub(crate) use expr_expansion::{is_regex_projection, prepare_projection, rewrite_projections};
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -52,27 +58,26 @@ impl IR {
             },
             #[cfg(feature = "python")]
             IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
-            IR::Union { inputs, options } => {
+            IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::Union { inputs, options }
+                DslPlan::Union {
+                    inputs,
+                    args: Default::default(),
+                }
             },
             IR::HConcat {
                 inputs,
-                schema,
+                schema: _,
                 options,
             } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
-                DslPlan::HConcat {
-                    inputs,
-                    schema: schema.clone(),
-                    options,
-                }
+                DslPlan::HConcat { inputs, options }
             },
             IR::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
@@ -117,7 +122,16 @@ impl IR {
                     options,
                 }
             },
-            IR::SimpleProjection { input, columns, .. } => {
+            IR::Reduce { exprs, input, .. } => {
+                let i = convert_to_lp(input, lp_arena);
+                let expr = expr_irs_to_exprs(exprs, expr_arena);
+                DslPlan::Select {
+                    expr,
+                    input: Arc::new(i),
+                    options: Default::default(),
+                }
+            },
+            IR::SimpleProjection { input, columns } => {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
                     .iter_names()

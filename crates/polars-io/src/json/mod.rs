@@ -71,7 +71,6 @@ use std::ops::Deref;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
 use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

@@ -51,7 +51,7 @@ fn round_trip_opt_stats(
         data_pagesize_limit: None,
     };
 
-    let iter = vec![RecordBatch::try_new(vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(vec![array.clone()])];
 
     let row_groups =
         RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;

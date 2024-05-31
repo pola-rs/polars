@@ -2,8 +2,8 @@ use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
-use crate::logical_plan::expr_expansion::is_regex_projection;
-use crate::logical_plan::tree_format::TreeFmtVisitor;
+use crate::logical_plan::alp::tree_format::TreeFmtVisitor;
+use crate::logical_plan::conversion::is_regex_projection;
 use crate::logical_plan::visitor::{AexprNode, TreeWalker};
 
 /// Specialized expressions for Categorical dtypes.
@@ -54,6 +54,7 @@ impl MetaNameSpace {
     pub fn has_multiple_outputs(&self) -> bool {
         self.0.into_iter().any(|e| match e {
             Expr::Selector(_) | Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
+            Expr::IndexColumn(idxs) => idxs.len() > 1,
             Expr::Column(name) => is_regex_projection(name),
             _ => false,
         })
@@ -65,6 +66,26 @@ impl MetaNameSpace {
             Expr::Column(name) => !is_regex_projection(name),
             _ => false,
         }
+    }
+
+    /// Indicate if this expression only selects columns; the presence of any
+    /// transform operations will cause the check to return `false`, though
+    /// aliasing of the selected columns is optionally allowed.
+    pub fn is_column_selection(&self, allow_aliasing: bool) -> bool {
+        self.0.into_iter().all(|e| match e {
+            Expr::Column(_)
+            | Expr::Columns(_)
+            | Expr::DtypeColumn(_)
+            | Expr::Exclude(_, _)
+            | Expr::Nth(_)
+            | Expr::IndexColumn(_)
+            | Expr::Selector(_)
+            | Expr::Wildcard => true,
+            Expr::Alias(_, _) | Expr::KeepName(_) | Expr::RenameAlias { .. } if allow_aliasing => {
+                true
+            },
+            _ => false,
+        })
     }
 
     /// Indicate if this expression expands to multiple expressions with regex expansion.
@@ -84,7 +105,7 @@ impl MetaNameSpace {
             }
             Ok(Expr::Selector(s))
         } else {
-            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
         }
     }
 
@@ -97,7 +118,7 @@ impl MetaNameSpace {
             }
             Ok(Expr::Selector(s))
         } else {
-            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
         }
     }
 
@@ -110,7 +131,7 @@ impl MetaNameSpace {
             }
             Ok(Expr::Selector(s))
         } else {
-            polars_bail!(ComputeError: "expected selector, got {}", self.0)
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
         }
     }
 

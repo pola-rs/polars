@@ -1,6 +1,6 @@
 use polars::prelude::*;
 use polars_core::utils::arrow::array::Utf8ViewArray;
-use pyo3::{FromPyObject, PyAny, PyResult};
+use pyo3::prelude::*;
 
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
@@ -65,7 +65,7 @@ impl From<&DataType> for PyDataType {
             DataType::Categorical(_, _) => Categorical,
             DataType::Enum(rev_map, _) => Enum(rev_map.as_ref().unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
-            DataType::Null | DataType::Unknown | DataType::BinaryOffset => {
+            DataType::Null | DataType::Unknown(_) | DataType::BinaryOffset => {
                 panic!("null or unknown not expected here")
             },
         }
@@ -111,8 +111,8 @@ impl From<PyDataType> for DataType {
     }
 }
 
-impl FromPyObject<'_> for PyDataType {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for PyDataType {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let dt = ob.extract::<Wrap<DataType>>()?;
         Ok(dt.0.into())
     }

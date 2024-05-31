@@ -131,11 +131,13 @@ def test_list_empty_group_by_result_3521() -> None:
 
     # Calculate n_unique after dropping nulls
     # This will panic on polars version 0.13.38 and 0.13.39
-    assert (
+    result = (
         left.join(right, on="join_column", how="left")
         .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(as_series=False) == {"group_by_column": [1], "n_unique_column": [[]]}
+    )
+    expected = {"group_by_column": [1], "n_unique_column": [[]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_fill_null() -> None:
@@ -831,3 +833,13 @@ def test_take_list_15719() -> None:
     )
 
     assert_frame_equal(df, expected)
+
+
+def test_list_str_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series(["foo", "bar"]).sum()
+
+
+def test_list_list_sum_exception_12935() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([[1], [2]]).sum()

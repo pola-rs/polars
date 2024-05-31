@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+import tempfile
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture()
@@ -285,3 +283,141 @@ def test_scan_empty_csv_with_row_index(tmp_path: Path) -> None:
 
     read = pl.scan_csv(file_path).with_row_index("idx")
     assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.String)])
+
+
+@pytest.mark.write_disk()
+def test_csv_null_values_with_projection_15515() -> None:
+    data = """IndCode,SireCode,BirthDate,Flag
+ID00316,.,19940315,
+"""
+
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(data.encode())
+        f.seek(0)
+
+        q = (
+            pl.scan_csv(f.name, null_values={"SireCode": "."})
+            .with_columns(pl.col("SireCode").alias("SireKey"))
+            .select("SireKey", "BirthDate")
+        )
+
+        assert q.collect().to_dict(as_series=False) == {
+            "SireKey": [None],
+            "BirthDate": [19940315],
+        }
+
+
+@pytest.mark.write_disk()
+def test_csv_respect_user_schema_ragged_lines_15254() -> None:
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(
+            b"""
+A,B,C
+1,2,3
+4,5,6,7,8
+9,10,11
+""".strip()
+        )
+        f.seek(0)
+
+        df = pl.scan_csv(
+            f.name, schema=dict.fromkeys("ABCDE", pl.String), truncate_ragged_lines=True
+        ).collect()
+        assert df.to_dict(as_series=False) == {
+            "A": ["1", "4", "9"],
+            "B": ["2", "5", "10"],
+            "C": ["3", "6", "11"],
+            "D": [None, "7", None],
+            "E": [None, "8", None],
+        }
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+@pytest.mark.parametrize(
+    "dfs",
+    [
+        [pl.DataFrame({"a": [1, 2, 3]}), pl.DataFrame({"b": [4, 5, 6]})],
+        [
+            pl.DataFrame({"a": [1, 2, 3]}),
+            pl.DataFrame({"b": [4, 5, 6], "c": [7, 8, 9]}),
+        ],
+    ],
+)
+def test_file_list_schema_mismatch(
+    tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(dfs))]
+
+    for df, path in zip(dfs, paths):
+        df.write_csv(path)
+
+    lf = pl.scan_csv(paths)
+    with pytest.raises(pl.ComputeError):
+        lf.collect(streaming=streaming)
+
+    if len({df.width for df in dfs}) == 1:
+        expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
+        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(streaming=streaming)
+
+        assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_lst = [
+        """\
+a
+1
+2
+""",
+        """\
+a
+b
+c
+""",
+    ]
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
+
+    for data, path in zip(data_lst, paths):
+        with Path(path).open("w") as f:
+            f.write(data)
+
+    expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
+    out = pl.scan_csv(paths).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_file_list_comment_skip_rows_16327(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data_lst = [
+        """\
+# comment
+a
+b
+c
+""",
+        """\
+a
+b
+c
+""",
+    ]
+
+    paths = [f"{tmp_path}/{i}.csv" for i in range(len(data_lst))]
+
+    for data, path in zip(data_lst, paths):
+        with Path(path).open("w") as f:
+            f.write(data)
+
+    expect = pl.Series("a", ["b", "c", "b", "c"]).to_frame()
+    out = pl.scan_csv(paths, comment_prefix="#").collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)

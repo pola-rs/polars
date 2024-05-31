@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg" alt="Polars logo">
+  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg" alt="Polars logo">
   <br>
 </h1>
 
@@ -29,7 +29,7 @@
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
-  <a href="https://rpolars.github.io/index.html">R</a>
+  <a href="https://pola-rs.github.io/r-polars/index.html">R</a>
   |
   <b>StackOverflow</b>:
   <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>

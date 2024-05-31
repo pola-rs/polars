@@ -177,8 +177,15 @@ pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<IR>, expr_arena: &Arena<AExp
         .unwrap();
 
     println!("SUBPLAN ELIGIBLE FOR STREAMING:");
-    let lp = node_to_lp(root, expr_arena, &mut (lp_arena.clone()));
-    println!("{lp:?}\n");
+    println!(
+        "{}\n",
+        IRPlanRef {
+            lp_top: root,
+            lp_arena,
+            expr_arena
+        }
+        .display()
+    );
 
     println!("PIPELINE TREE:");
     for (i, branch) in tree.iter().enumerate() {

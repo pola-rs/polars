@@ -31,6 +31,11 @@ impl IR {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
             },
+            Reduce { schema, .. } => Reduce {
+                input: inputs[0],
+                exprs,
+                schema: schema.clone(),
+            },
             Select {
                 schema, options, ..
             } => Select {
@@ -150,14 +155,9 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
-            SimpleProjection {
-                columns,
-                duplicate_check,
-                ..
-            } => SimpleProjection {
+            SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
-                duplicate_check: *duplicate_check,
             },
             Invalid => unreachable!(),
         }
@@ -170,6 +170,7 @@ impl IR {
             Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
+            Reduce { exprs, .. } => container.extend_from_slice(exprs),
             Select { expr, .. } => container.extend_from_slice(expr),
             GroupBy { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
@@ -231,6 +232,7 @@ impl IR {
             Slice { input, .. } => *input,
             Filter { input, .. } => *input,
             Select { input, .. } => *input,
+            Reduce { input, .. } => *input,
             SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,

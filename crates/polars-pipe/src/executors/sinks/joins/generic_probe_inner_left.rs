@@ -81,7 +81,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 .iter()
                 .flat_map(|phys_e| {
                     phys_e
-                        .evaluate(&tmp, context.execution_state.as_any())
+                        .evaluate(&tmp, &context.execution_state)
                         .ok()
                         .map(|s| s.name().to_string())
                 })

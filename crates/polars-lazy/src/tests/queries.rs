@@ -550,21 +550,15 @@ fn test_simplify_expr() {
 
     let plan = df
         .lazy()
-        .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal_width")])
+        .select(&[lit(1.0) + lit(1.0) + col("sepal_width")])
         .logical_plan;
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(SimplifyExprRule {})];
-
-    let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer
-        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-        .unwrap();
+    let lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena, true, false).unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
-        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
+        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float(2.0))))
     );
 }
 
@@ -640,13 +634,7 @@ fn test_type_coercion() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
-
-    let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer
-        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-        .unwrap();
+    let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
     let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
     if let DslPlan::Select { expr, .. } = lp {
@@ -713,7 +701,7 @@ fn test_lazy_group_by_apply() {
         .group_by([col("fruits")])
         .agg([col("cars").apply(
             |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
-            GetOutput::same_type(),
+            GetOutput::from_type(DataType::UInt32),
         )])
         .collect()
         .unwrap();
@@ -1183,7 +1171,7 @@ fn test_cross_join() -> PolarsResult<()> {
         "b" => [None, Some(12)]
     ]?;
 
-    let out = df1.lazy().cross_join(df2.lazy()).collect()?;
+    let out = df1.lazy().cross_join(df2.lazy(), None).collect()?;
     assert_eq!(out.shape(), (6, 4));
     Ok(())
 }

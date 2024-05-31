@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
-use polars_io::csv::CsvWriterOptions;
+use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetWriteOptions;
+use polars_io::parquet::write::ParquetWriteOptions;
 use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
@@ -271,6 +271,53 @@ impl Default for ProjectionOptions {
         Self {
             run_parallel: true,
             duplicate_check: true,
+        }
+    }
+}
+
+impl ProjectionOptions {
+    /// Conservatively merge the options of two [`ProjectionOptions`]
+    pub fn merge_options(&self, other: &Self) -> Self {
+        Self {
+            run_parallel: self.run_parallel & other.run_parallel,
+            duplicate_check: self.duplicate_check & other.duplicate_check,
+        }
+    }
+}
+
+// Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct UnionArgs {
+    pub parallel: bool,
+    pub rechunk: bool,
+    pub to_supertypes: bool,
+    pub diagonal: bool,
+    // If it is a union from a scan over multiple files.
+    pub from_partitioned_ds: bool,
+}
+
+impl Default for UnionArgs {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            rechunk: false,
+            to_supertypes: false,
+            diagonal: false,
+            from_partitioned_ds: false,
+        }
+    }
+}
+
+impl From<UnionArgs> for UnionOptions {
+    fn from(args: UnionArgs) -> Self {
+        UnionOptions {
+            slice: None,
+            parallel: args.parallel,
+            rows: (None, 0),
+            from_partitioned_ds: args.from_partitioned_ds,
+            flattened_by_opt: false,
+            rechunk: args.rechunk,
         }
     }
 }

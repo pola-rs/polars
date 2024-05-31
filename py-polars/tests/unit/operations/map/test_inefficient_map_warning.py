@@ -305,6 +305,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 ],
             }
         )
+
         result_frame = df.select(
             x=col,
             y=eval(suggested_expression, EVAL_ENVIRONMENT),
@@ -316,7 +317,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         assert_frame_equal(
             result_frame,
             expected_frame,
-            check_dtype=(".dt." not in suggested_expression),
+            check_dtypes=(".dt." not in suggested_expression),
         )
 
 
@@ -505,7 +506,7 @@ def test_omit_implicit_bool() -> None:
 
 
 def test_partial_functions_13523() -> None:
-    def plus(value, amount: int):  # type: ignore[no-untyped-def]
+    def plus(value: int, amount: int) -> int:
         return value + amount
 
     data = {"a": [1, 2], "b": [3, 4]}

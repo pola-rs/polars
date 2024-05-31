@@ -1,35 +1,20 @@
 use polars_core::prelude::*;
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::{CommentPrefix, CsvEncoding, CsvParserOptions, NullValues};
+use polars_io::csv::read::CsvReadOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetOptions;
+use polars_io::parquet::read::ParquetOptions;
 use polars_io::HiveOptions;
-#[cfg(any(
-    feature = "parquet",
-    feature = "parquet_async",
-    feature = "csv",
-    feature = "ipc"
-))]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_io::RowIndex;
 
 use crate::constants::UNLIMITED_CACHE;
-use crate::logical_plan::expr_expansion::rewrite_projections;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
-
-pub(crate) fn prepare_projection(
-    exprs: Vec<Expr>,
-    schema: &Schema,
-) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, schema, &[])?;
-    let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
-    Ok((exprs, schema))
-}
 
 pub struct DslBuilder(pub DslPlan);
 
@@ -84,13 +69,13 @@ impl DslBuilder {
         .into())
     }
 
-    #[cfg(any(feature = "parquet", feature = "parquet_async"))]
+    #[cfg(feature = "parquet")]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<Arc<[std::path::PathBuf]>>>(
         paths: P,
         n_rows: Option<usize>,
         cache: bool,
-        parallel: polars_io::parquet::ParallelStrategy,
+        parallel: polars_io::parquet::read::ParallelStrategy,
         row_index: Option<RowIndex>,
         rechunk: bool,
         low_memory: bool,
@@ -167,42 +152,22 @@ impl DslBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<std::path::PathBuf>>(
-        path: P,
-        separator: u8,
-        has_header: bool,
-        ignore_errors: bool,
-        skip_rows: usize,
-        n_rows: Option<usize>,
+    pub fn scan_csv<P: Into<Arc<[std::path::PathBuf]>>>(
+        paths: P,
+        read_options: CsvReadOptions,
         cache: bool,
-        schema: Option<SchemaRef>,
-        schema_overwrite: Option<SchemaRef>,
-        low_memory: bool,
-        comment_prefix: Option<CommentPrefix>,
-        quote_char: Option<u8>,
-        eol_char: u8,
-        null_values: Option<NullValues>,
-        infer_schema_length: Option<usize>,
-        rechunk: bool,
-        skip_rows_after_header: usize,
-        encoding: CsvEncoding,
-        row_index: Option<RowIndex>,
-        try_parse_dates: bool,
-        raise_if_empty: bool,
-        truncate_ragged_lines: bool,
-        n_threads: Option<usize>,
-        decimal_comma: bool,
     ) -> PolarsResult<Self> {
-        let path = path.into();
+        let paths = paths.into();
 
-        let paths = Arc::new([path]);
+        // This gets partially moved by FileScanOptions
+        let read_options_clone = read_options.clone();
 
         let options = FileScanOptions {
             with_columns: None,
             cache,
-            n_rows,
-            rechunk,
-            row_index,
+            n_rows: read_options_clone.n_rows,
+            rechunk: read_options_clone.rechunk,
+            row_index: read_options_clone.row_index,
             file_counter: Default::default(),
             // TODO: Support Hive partitioning.
             hive_options: HiveOptions {
@@ -216,27 +181,7 @@ impl DslBuilder {
             file_options: options,
             predicate: None,
             scan_type: FileScan::Csv {
-                options: CsvParserOptions {
-                    has_header,
-                    separator,
-                    ignore_errors,
-                    skip_rows,
-                    low_memory,
-                    comment_prefix,
-                    quote_char,
-                    eol_char,
-                    null_values,
-                    encoding,
-                    try_parse_dates,
-                    raise_if_empty,
-                    truncate_ragged_lines,
-                    n_threads,
-                    schema,
-                    schema_overwrite,
-                    skip_rows_after_header,
-                    infer_schema_length,
-                    decimal_comma,
-                },
+                options: read_options,
             },
         }
         .into())

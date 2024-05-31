@@ -17,19 +17,18 @@ impl StackOptimizer {
     ) -> PolarsResult<Node> {
         let mut changed = true;
 
-        let mut plans = Vec::with_capacity(32);
-
-        // nodes of expressions and lp node from which the expressions are a member of
-        let mut exprs = Vec::with_capacity(32);
+        // Nodes of expressions and lp node from which the expressions are a member of.
+        let mut plans = vec![];
+        let mut exprs = vec![];
         let mut scratch = vec![];
 
-        // run loop until reaching fixed point
+        // Run loop until reaching fixed point.
         while changed {
-            // recurse into sub plans and expressions and apply rules
+            // Recurse into sub plans and expressions and apply rules.
             changed = false;
             plans.push(lp_top);
             while let Some(current_node) = plans.pop() {
-                // apply rules
+                // Apply rules
                 for rule in rules.iter_mut() {
                     // keep iterating over same rule
                     while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
@@ -44,24 +43,18 @@ impl StackOptimizer {
                 plan.copy_exprs(&mut scratch);
                 plan.copy_inputs(&mut plans);
 
-                // first do a single pass to ensure we process
-                // from leaves to root.
-                // this ensures for instance
-                // that we first do constant folding on operands
-                // before we decide that multiple binary expression
-                // can be replaced with a fused operator
+                if scratch.is_empty() {
+                    continue;
+                }
+
                 while let Some(expr_ir) = scratch.pop() {
                     exprs.push(expr_ir.node());
-                    // traverse all subexpressions and add to the stack
-                    let expr = unsafe { expr_arena.get_unchecked(expr_ir.node()) };
-                    expr.nodes(&mut exprs);
                 }
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-                        // don't apply rules to `col`, `lit` etc.
                         if expr.is_leaf() {
                             continue;
                         }

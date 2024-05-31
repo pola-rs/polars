@@ -293,3 +293,13 @@ def test_null_column_arithmetic(op: Any) -> None:
     # test broadcast left
     output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
     assert_frame_equal(expected_df, output_df)
+
+
+def test_bool_floordiv() -> None:
+    df = pl.DataFrame({"x": [True]})
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="floor_div operation not supported for dtype `bool`",
+    ):
+        df.with_columns(pl.col("x").floordiv(2))

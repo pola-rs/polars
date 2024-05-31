@@ -5,10 +5,11 @@
 extern crate core;
 
 pub mod constants;
-pub mod dot;
 pub mod dsl;
 pub mod frame;
 pub mod global;
 pub mod logical_plan;
 pub mod prelude;
+// Activate later
+// mod reduce;
 pub mod utils;

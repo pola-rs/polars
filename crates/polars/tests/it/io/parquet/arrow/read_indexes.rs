@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use arrow::array::*;
 use arrow::datatypes::*;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::RecordBatchT;
 use polars_error::{PolarsError, PolarsResult};
 use polars_parquet::read::*;
 use polars_parquet::write::*;
@@ -146,7 +146,7 @@ fn read_with_indexes(
         })
         .collect::<Vec<_>>();
 
-    let expected = RecordBatch::new(vec![expected]);
+    let expected = RecordBatchT::new(vec![expected]);
 
     let chunks = FileReader::new(
         reader,

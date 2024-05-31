@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from datetime import timedelta
 from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
@@ -19,13 +20,12 @@ from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
-    from datetime import timedelta
-
     from polars import Expr
     from polars.type_aliases import (
         Ambiguous,
         EpochTimeUnit,
         IntoExpr,
+        IntoExprColumn,
         NonExistent,
         Roll,
         TimeUnit,
@@ -344,7 +344,7 @@ class ExprDateTimeNameSpace:
     @unstable()
     def round(
         self,
-        every: str | timedelta,
+        every: str | timedelta | IntoExprColumn,
         offset: str | timedelta | None = None,
         *,
         ambiguous: Ambiguous | Expr | None = None,
@@ -481,10 +481,12 @@ class ExprDateTimeNameSpace:
                 "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
                 version="0.19.13",
             )
-
+        if isinstance(every, timedelta):
+            every = parse_as_duration_string(every)
+        every = parse_as_expression(every, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_round(
-                parse_as_duration_string(every),
+                every,
                 parse_as_duration_string(offset),
             )
         )
@@ -2220,6 +2222,8 @@ class ExprDateTimeNameSpace:
         """
         Roll backward to the first day of the month.
 
+        For datetimes, the time-of-day is preserved.
+
         Returns
         -------
         Expr
@@ -2268,6 +2272,8 @@ class ExprDateTimeNameSpace:
     def month_end(self) -> Expr:
         """
         Roll forward to the last day of the month.
+
+        For datetimes, the time-of-day is preserved.
 
         Returns
         -------

@@ -4,8 +4,8 @@ use super::*;
 fn test_rolling() {
     let s = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]).into_series();
     let a = s
-        .rolling_sum(RollingOptionsImpl {
-            window_size: Duration::new(2),
+        .rolling_sum(RollingOptionsFixedWindow {
+            window_size: 2,
             min_periods: 1,
             ..Default::default()
         })
@@ -20,8 +20,8 @@ fn test_rolling() {
             .collect::<Vec<_>>()
     );
     let a = s
-        .rolling_min(RollingOptionsImpl {
-            window_size: Duration::new(2),
+        .rolling_min(RollingOptionsFixedWindow {
+            window_size: 2,
             min_periods: 1,
             ..Default::default()
         })
@@ -36,8 +36,8 @@ fn test_rolling() {
             .collect::<Vec<_>>()
     );
     let a = s
-        .rolling_max(RollingOptionsImpl {
-            window_size: Duration::new(2),
+        .rolling_max(RollingOptionsFixedWindow {
+            window_size: 2,
             weights: Some(vec![1., 1.]),
             min_periods: 1,
             ..Default::default()
@@ -59,8 +59,8 @@ fn test_rolling() {
 fn test_rolling_min_periods() {
     let s = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]).into_series();
     let a = s
-        .rolling_max(RollingOptionsImpl {
-            window_size: Duration::new(2),
+        .rolling_max(RollingOptionsFixedWindow {
+            window_size: 2,
             min_periods: 2,
             ..Default::default()
         })
@@ -87,8 +87,8 @@ fn test_rolling_mean() {
 
     // check err on wrong input
     assert!(s
-        .rolling_mean(RollingOptionsImpl {
-            window_size: Duration::new(1),
+        .rolling_mean(RollingOptionsFixedWindow {
+            window_size: 1,
             min_periods: 2,
             ..Default::default()
         })
@@ -96,8 +96,8 @@ fn test_rolling_mean() {
 
     // validate that we divide by the proper window length. (same as pandas)
     let a = s
-        .rolling_mean(RollingOptionsImpl {
-            window_size: Duration::new(3),
+        .rolling_mean(RollingOptionsFixedWindow {
+            window_size: 3,
             min_periods: 1,
             center: false,
             ..Default::default()
@@ -119,8 +119,8 @@ fn test_rolling_mean() {
 
     // check centered rolling window
     let a = s
-        .rolling_mean(RollingOptionsImpl {
-            window_size: Duration::new(3),
+        .rolling_mean(RollingOptionsFixedWindow {
+            window_size: 3,
             min_periods: 1,
             center: true,
             ..Default::default()
@@ -144,8 +144,8 @@ fn test_rolling_mean() {
     let ca = Int32Chunked::from_slice("", &[1, 8, 6, 2, 16, 10]);
     let out = ca
         .into_series()
-        .rolling_mean(RollingOptionsImpl {
-            window_size: Duration::new(2),
+        .rolling_mean(RollingOptionsFixedWindow {
+            window_size: 2,
             weights: None,
             min_periods: 2,
             center: false,
@@ -177,7 +177,7 @@ fn test_rolling_map() {
 
     let out = ca
         .rolling_map(
-            &|s| s.sum_as_series().unwrap(),
+            &|s| s.sum_reduce().unwrap().into_series(s.name()),
             RollingOptionsFixedWindow {
                 window_size: 3,
                 min_periods: 3,
@@ -211,8 +211,8 @@ fn test_rolling_var() {
     .into_series();
     // window larger than array
     assert_eq!(
-        s.rolling_var(RollingOptionsImpl {
-            window_size: Duration::new(10),
+        s.rolling_var(RollingOptionsFixedWindow {
+            window_size: 10,
             min_periods: 10,
             ..Default::default()
         })
@@ -221,8 +221,8 @@ fn test_rolling_var() {
         s.len()
     );
 
-    let options = RollingOptionsImpl {
-        window_size: Duration::new(3),
+    let options = RollingOptionsFixedWindow {
+        window_size: 3,
         min_periods: 3,
         ..Default::default()
     };
@@ -252,8 +252,8 @@ fn test_rolling_var() {
 
     // check centered rolling window
     let out = s
-        .rolling_var(RollingOptionsImpl {
-            window_size: Duration::new(4),
+        .rolling_var(RollingOptionsFixedWindow {
+            window_size: 4,
             min_periods: 3,
             center: true,
             ..Default::default()

@@ -68,7 +68,7 @@ def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int16
 
 
 def test_fill_enum_upcast() -> None:
@@ -403,26 +403,6 @@ def test_schema_true_divide_6643() -> None:
     assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
 
 
-def test_rename_schema_order_6660() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [],
-            "b": [],
-            "c": [],
-            "d": [],
-        }
-    )
-
-    mapper = {"a": "1", "b": "2", "c": "3", "d": "4"}
-
-    renamed = df.lazy().rename(mapper)
-
-    computed = renamed.select([pl.all(), pl.col("4").alias("computed")])
-
-    assert renamed.schema == renamed.collect().schema
-    assert computed.schema == computed.collect().schema
-
-
 def test_from_dicts_all_cols_6716() -> None:
     dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
 
@@ -519,6 +499,12 @@ def test_absence_off_null_prop_8224() -> None:
             pl.col("x").sum(),
             {"x": pl.UInt32},
             {"x": pl.UInt32},
+        ),
+        (
+            {"a": [[1, 2]]},
+            pl.col("a").list.sum(),
+            {"a": pl.Int64},
+            {"a": pl.List(pl.Int64)},
         ),
     ],
 )
@@ -710,3 +696,15 @@ def test_resolved_names_15442() -> None:
     right = 1000
     in_x = (left < center.struct.field("x")) & (center.struct.field("x") <= right)
     assert df.lazy().filter(in_x).collect().shape == (1, 2)
+
+
+def test_list_sum_bool_schema() -> None:
+    q = pl.LazyFrame({"x": [[True, True, False]]})
+    assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
+
+
+@pytest.mark.parametrize("op", ["and_", "or_"])
+def test_bitwise_integral_schema(op: str) -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
+    q = df.select(getattr(pl.col("a"), op)(pl.col("b")))
+    assert q.schema["a"] == df.schema["a"]

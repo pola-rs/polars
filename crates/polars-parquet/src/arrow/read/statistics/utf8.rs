@@ -2,10 +2,10 @@ use arrow::array::{MutableArray, MutableUtf8Array};
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
 
-use crate::parquet::statistics::{BinaryStatistics, Statistics as ParquetStatistics};
+use crate::parquet::statistics::BinaryStatistics;
 
 pub(super) fn push<O: Offset>(
-    from: Option<&dyn ParquetStatistics>,
+    from: Option<&BinaryStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
 ) -> PolarsResult<()> {
@@ -17,7 +17,6 @@ pub(super) fn push<O: Offset>(
         .as_mut_any()
         .downcast_mut::<MutableUtf8Array<O>>()
         .unwrap();
-    let from = from.map(|s| s.as_any().downcast_ref::<BinaryStatistics>().unwrap());
 
     min.push(
         from.and_then(|s| s.min_value.as_deref().map(simdutf8::basic::from_utf8))
@@ -27,5 +26,6 @@ pub(super) fn push<O: Offset>(
         from.and_then(|s| s.max_value.as_deref().map(simdutf8::basic::from_utf8))
             .transpose()?,
     );
+
     Ok(())
 }

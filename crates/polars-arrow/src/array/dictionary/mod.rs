@@ -25,7 +25,9 @@ use polars_error::{polars_bail, PolarsResult};
 use super::primitive::PrimitiveArray;
 use super::specification::check_indexes;
 use super::{new_empty_array, new_null_array, Array};
-use crate::array::dictionary::typed_iterator::{DictValue, DictionaryValuesIterTyped};
+use crate::array::dictionary::typed_iterator::{
+    DictValue, DictionaryIterTyped, DictionaryValuesIterTyped,
+};
 
 /// Trait denoting [`NativeType`]s that can be used as keys of a dictionary.
 /// # Safety
@@ -241,30 +243,22 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     ///
     /// # Panics
     ///
-    /// Panics if the keys of this [`DictionaryArray`] have any null types.
-    /// If they do [`DictionaryArray::iter_typed`] should be called
+    /// Panics if the keys of this [`DictionaryArray`] has any nulls.
+    /// If they do [`DictionaryArray::iter_typed`] should be used.
     pub fn values_iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryValuesIterTyped<K, V>> {
         let keys = &self.keys;
         assert_eq!(keys.null_count(), 0);
         let values = self.values.as_ref();
         let values = V::downcast_values(values)?;
-        Ok(unsafe { DictionaryValuesIterTyped::new(keys, values) })
+        Ok(DictionaryValuesIterTyped::new(keys, values))
     }
 
     /// Returns an iterator over the optional values of  [`Option<V::IterValue>`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the `values` array
-    pub fn iter_typed<V: DictValue>(
-        &self,
-    ) -> PolarsResult<ZipValidity<V::IterValue<'_>, DictionaryValuesIterTyped<K, V>, BitmapIter>>
-    {
+    pub fn iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryIterTyped<K, V>> {
         let keys = &self.keys;
         let values = self.values.as_ref();
         let values = V::downcast_values(values)?;
-        let values_iter = unsafe { DictionaryValuesIterTyped::new(keys, values) };
-        Ok(ZipValidity::new_with_validity(values_iter, self.validity()))
+        Ok(DictionaryIterTyped::new(keys, values))
     }
 
     /// Returns the [`ArrowDataType`] of this [`DictionaryArray`]

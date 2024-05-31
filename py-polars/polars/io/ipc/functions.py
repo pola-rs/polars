@@ -11,7 +11,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import import_optional
 from polars.io._utils import (
     is_glob_pattern,
     is_local_file,
@@ -98,14 +98,16 @@ def read_ipc(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                msg = "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
-                raise ModuleNotFoundError(msg)
-
-            import pyarrow as pa
-            import pyarrow.feather
-
-            tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
+            pyarrow_feather = import_optional(
+                "pyarrow.feather",
+                err_prefix="",
+                err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
+            )
+            tbl = pyarrow_feather.read_table(
+                data,
+                memory_map=memory_map,
+                columns=columns,
+            )
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_index_name is not None:
                 df = df.with_row_index(row_index_name, row_index_offset)
@@ -225,16 +227,12 @@ def read_ipc_stream(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
-                msg = (
-                    "'pyarrow' is required when using"
-                    " 'read_ipc_stream(..., use_pyarrow=True)'"
-                )
-                raise ModuleNotFoundError(msg)
-
-            import pyarrow as pa
-
-            with pa.ipc.RecordBatchStreamReader(data) as reader:
+            pyarrow_ipc = import_optional(
+                "pyarrow.ipc",
+                err_prefix="",
+                err_suffix="is required when using 'read_ipc_stream(..., use_pyarrow=True)'",
+            )
+            with pyarrow_ipc.RecordBatchStreamReader(data) as reader:
                 tbl = reader.read_all()
                 df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
                 if row_index_name is not None:

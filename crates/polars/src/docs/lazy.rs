@@ -145,7 +145,7 @@
 //! let lf_a = df_a.clone().lazy();
 //! let lf_b = df_b.clone().lazy();
 //!
-//! let joined = lf_a.join(lf_b, vec![col("a")], vec![col("foo")], JoinArgs::new(JoinType::Outer)).collect()?;
+//! let joined = lf_a.join(lf_b, vec![col("a")], vec![col("foo")], JoinArgs::new(JoinType::Full)).collect()?;
 //! // joined:
 //!
 //! // ╭─────┬─────┬─────┬──────┬─────────╮
@@ -172,7 +172,7 @@
 //!
 //! # let lf_a = df_a.clone().lazy();
 //! # let lf_b = df_b.clone().lazy();
-//! let outer = lf_a.outer_join(lf_b, col("a"), col("foo")).collect()?;
+//! let outer = lf_a.full_join(lf_b, col("a"), col("foo")).collect()?;
 //!
 //! # let lf_a = df_a.clone().lazy();
 //! # let lf_b = df_b.clone().lazy();

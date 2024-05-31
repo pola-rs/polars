@@ -67,10 +67,11 @@ impl AsRef<Expr> for AggExpr {
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, Arc<str>),
-    Column(Arc<str>),
-    Columns(Vec<String>),
+    Alias(Arc<Expr>, ColumnName),
+    Column(ColumnName),
+    Columns(Arc<[ColumnName]>),
     DtypeColumn(Vec<DataType>),
+    IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Arc<Expr>,
@@ -143,6 +144,8 @@ pub enum Expr {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
+    #[cfg(feature = "dtype-struct")]
+    Field(Arc<[ColumnName]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
@@ -172,6 +175,7 @@ impl Hash for Expr {
             Expr::Column(name) => name.hash(state),
             Expr::Columns(names) => names.hash(state),
             Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            Expr::IndexColumn(indices) => indices.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             Expr::Nth(v) => v.hash(state),
@@ -275,6 +279,8 @@ impl Hash for Expr {
                 options.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(names) => names.hash(state),
         }
     }
 }
@@ -291,14 +297,14 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(Arc<str>),
+    Name(ColumnName),
     Dtype(DataType),
 }
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
-        // this is not called much and th expression depth is typically shallow
+        // this is not called much and the expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
         self.to_field_amortized(schema, ctxt, &mut arena)
     }

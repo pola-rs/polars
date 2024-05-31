@@ -120,14 +120,6 @@ impl From<avro_schema::error::Error> for PolarsError {
     }
 }
 
-#[cfg(feature = "parquet2")]
-impl From<PolarsError> for parquet2::error::Error {
-    fn from(value: PolarsError) -> Self {
-        // catch all needed :(.
-        parquet2::error::Error::OutOfSpec(format!("error: {value}"))
-    }
-}
-
 impl From<simdutf8::basic::Utf8Error> for PolarsError {
     fn from(value: simdutf8::basic::Utf8Error) -> Self {
         polars_err!(ComputeError: "invalid utf8: {}", value)
@@ -153,6 +145,10 @@ impl PolarsError {
         use PolarsError::*;
         match self {
             Context { error, msg } => {
+                // If context is 1 level deep, just return error.
+                if !matches!(&*error, PolarsError::Context { .. }) {
+                    return *error;
+                }
                 let mut current_error = &*error;
                 let material_error = error.get_err();
 
@@ -164,14 +160,15 @@ impl PolarsError {
                 }
 
                 let mut bt = String::new();
-                let first_message = messages.pop().unwrap();
 
                 let mut count = 0;
                 while let Some(msg) = messages.pop() {
                     count += 1;
                     writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
                 }
-                material_error.wrap_msg(move |msg| format!("{first_message}\nThe reason: {msg}:\n\nThis error occurred with the following context stack:\n{bt}"))
+                material_error.wrap_msg(move |msg| {
+                    format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
+                })
             },
             err => err,
         }
@@ -266,6 +263,11 @@ macro_rules! polars_err {
     (op = $op:expr, $arg:expr) => {
         $crate::polars_err!(
             InvalidOperation: "{} operation not supported for dtype `{}`", $op, $arg
+        )
+    };
+    (op = $op:expr, $arg:expr, hint = $hint:literal) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation not supported for dtype `{}`\n\nHint: {}", $op, $arg, $hint
         )
     };
     (op = $op:expr, $lhs:expr, $rhs:expr) => {

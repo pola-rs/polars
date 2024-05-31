@@ -3,6 +3,11 @@ SQL Interface
 =============
 .. currentmodule:: polars
 
+Polars provides a SQL interface to query frame data; this is available
+through the :class:`SQLContext` object, detailed below, and the DataFrame
+:meth:`~polars.DataFrame.sql` and LazyFrame :meth:`~polars.LazyFrame.sql`
+methods (which make use of SQLContext internally).
+
 .. py:class:: SQLContext
     :canonical: polars.sql.SQLContext
 
@@ -10,7 +15,7 @@ SQL Interface
 
     .. automethod:: __init__
 
-    Note: can be used as a context manager.
+    **Note:** can be used as a context manager.
 
     .. automethod:: __enter__
     .. automethod:: __exit__

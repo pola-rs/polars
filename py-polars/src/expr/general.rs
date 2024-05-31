@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -6,6 +7,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
@@ -83,14 +85,15 @@ impl PyExpr {
         ciborium::ser::into_writer(&self.inner, &mut writer)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        Ok(PyBytes::new_bound(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
+        match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                self.inner = ciborium::de::from_reader(s.as_bytes())
+                let cursor = Cursor::new(&*s);
+                self.inner = ciborium::de::from_reader(cursor)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
             },
@@ -247,8 +250,8 @@ impl PyExpr {
     fn len(&self) -> Self {
         self.inner.clone().len().into()
     }
-    fn value_counts(&self, sort: bool, parallel: bool) -> Self {
-        self.inner.clone().value_counts(sort, parallel).into()
+    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> Self {
+        self.inner.clone().value_counts(sort, parallel, name).into()
     }
     fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
@@ -290,13 +293,89 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: Self) -> Self {
-        self.inner.clone().top_k(k.inner).into()
+    fn top_k(&self, k: Self, nulls_last: bool, maintain_order: bool, multithreaded: bool) -> Self {
+        self.inner
+            .clone()
+            .top_k(
+                k.inner,
+                SortOptions::default()
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(maintain_order)
+                    .with_multithreaded(multithreaded),
+            )
+            .into()
     }
 
     #[cfg(feature = "top_k")]
-    fn bottom_k(&self, k: Self) -> Self {
-        self.inner.clone().bottom_k(k.inner).into()
+    fn top_k_by(
+        &self,
+        k: Self,
+        by: Vec<Self>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        maintain_order: bool,
+        multithreaded: bool,
+    ) -> Self {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.inner
+            .clone()
+            .top_k_by(
+                k.inner,
+                by,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    maintain_order,
+                    multithreaded,
+                },
+            )
+            .into()
+    }
+
+    #[cfg(feature = "top_k")]
+    fn bottom_k(
+        &self,
+        k: Self,
+        nulls_last: bool,
+        maintain_order: bool,
+        multithreaded: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .bottom_k(
+                k.inner,
+                SortOptions::default()
+                    .with_nulls_last(nulls_last)
+                    .with_maintain_order(maintain_order)
+                    .with_multithreaded(multithreaded),
+            )
+            .into()
+    }
+
+    #[cfg(feature = "top_k")]
+    fn bottom_k_by(
+        &self,
+        k: Self,
+        by: Vec<Self>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+        maintain_order: bool,
+        multithreaded: bool,
+    ) -> Self {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.inner
+            .clone()
+            .bottom_k_by(
+                k.inner,
+                by,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    maintain_order,
+                    multithreaded,
+                },
+            )
+            .into()
     }
 
     #[cfg(feature = "peaks")]
@@ -600,14 +679,12 @@ impl PyExpr {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
-        check_sorted: bool,
     ) -> Self {
         let options = RollingGroupOptions {
             index_column: index_column.into(),
             period: Duration::parse(period),
             offset: Duration::parse(offset),
             closed_window: closed.0,
-            check_sorted,
         };
 
         self.inner.clone().rolling(options).into()
@@ -678,15 +755,23 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise))]
+    #[pyo3(signature = (lambda, output_type, agg_list, is_elementwise, returns_scalar))]
     fn map_batches(
         &self,
         lambda: PyObject,
         output_type: Option<Wrap<DataType>>,
         agg_list: bool,
         is_elementwise: bool,
+        returns_scalar: bool,
     ) -> Self {
-        map_single(self, lambda, output_type, agg_list, is_elementwise)
+        map_single(
+            self,
+            lambda,
+            output_type,
+            agg_list,
+            is_elementwise,
+            returns_scalar,
+        )
     }
 
     fn dot(&self, other: Self) -> Self {
@@ -708,6 +793,9 @@ impl PyExpr {
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
+    }
+    fn interpolate_by(&self, by: PyExpr) -> Self {
+        self.inner.clone().interpolate_by(by.inner).into()
     }
 
     fn lower_bound(&self) -> Self {
@@ -742,8 +830,13 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
-    fn reshape(&self, dims: Vec<i64>) -> Self {
-        self.inner.clone().reshape(&dims).into()
+    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> Self {
+        let nested = if is_list {
+            NestedType::List
+        } else {
+            NestedType::Array
+        };
+        self.inner.clone().reshape(&dims, nested).into()
     }
 
     fn to_physical(&self) -> Self {
@@ -787,11 +880,11 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_mean_by(&self, times: PyExpr, half_life: &str, check_sorted: bool) -> Self {
+    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> Self {
         let half_life = Duration::parse(half_life);
         self.inner
             .clone()
-            .ewm_mean_by(times.inner, half_life, check_sorted)
+            .ewm_mean_by(times.inner, half_life)
             .into()
     }
 

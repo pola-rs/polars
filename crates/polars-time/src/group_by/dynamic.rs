@@ -3,9 +3,9 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
@@ -34,9 +34,6 @@ pub struct DynamicGroupOptions {
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
-    /// In cases sortedness cannot be checked by the sorted flag,
-    /// traverse the data to check sortedness.
-    pub check_sorted: bool,
 }
 
 impl Default for DynamicGroupOptions {
@@ -50,7 +47,6 @@ impl Default for DynamicGroupOptions {
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
-            check_sorted: true,
         }
     }
 }
@@ -64,9 +60,6 @@ pub struct RollingGroupOptions {
     pub period: Duration,
     pub offset: Duration,
     pub closed_window: ClosedWindow,
-    /// In cases sortedness cannot be checked by the sorted flag,
-    /// traverse the data to check sortedness.
-    pub check_sorted: bool,
 }
 
 impl Default for RollingGroupOptions {
@@ -76,7 +69,6 @@ impl Default for RollingGroupOptions {
             period: Duration::new(1),
             offset: Duration::new(1),
             closed_window: ClosedWindow::Left,
-            check_sorted: true,
         }
     }
 }
@@ -128,15 +120,15 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         polars_ensure!(
-                        options.period.duration_ns() > 0 && !options.period.negative,
+                        !options.period.is_zero() && !options.period.negative,
                         ComputeError:
                         "rolling window period should be strictly positive",
         );
         let time = self.0.column(&options.index_column)?.clone();
-        if group_by.is_empty() && options.check_sorted {
+        if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            ensure_sorted_arg(&time, "rolling")?;
+            time.ensure_sorted_arg("rolling")?;
         }
         let time_type = time.dtype();
 
@@ -202,10 +194,10 @@ impl Wrap<&DataFrame> {
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?.rechunk();
-        if group_by.is_empty() && options.check_sorted {
+        if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
-            ensure_sorted_arg(&time, "group_by_dynamic")?;
+            time.ensure_sorted_arg("group_by_dynamic")?;
         }
         let time_type = time.dtype();
 
@@ -349,9 +341,7 @@ impl Wrap<&DataFrame> {
                                 let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
-                                if options.check_sorted
-                                    && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
-                                {
+                                if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
                                     check_sortedness_slice(ts)?
                                 }
                                 let (sub_groups, lower, upper) = group_by_windows(
@@ -428,9 +418,7 @@ impl Wrap<&DataFrame> {
                                 let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
-                                if options.check_sorted
-                                    && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
-                                {
+                                if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
                                     check_sortedness_slice(ts)?
                                 }
                                 let (sub_groups, _, _) = group_by_windows(
@@ -573,9 +561,7 @@ impl Wrap<&DataFrame> {
                             let dt = unsafe { dt_local.take_unchecked(base_g.1) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
-                            if options.check_sorted
-                                && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
-                            {
+                            if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
                                 check_sortedness_slice(ts)?
                             }
 
@@ -631,7 +617,13 @@ fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> 
     sub_groups
         .iter()
         .map(|&[first, len]| {
-            let new_first = base_g[0] + first;
+            let new_first = if len == 0 {
+                // In case the group is empty, keep the original first so that the
+                // group_by keys still point to the original group.
+                base_g[0]
+            } else {
+                base_g[0] + first
+            };
             [new_first, len]
         })
         .collect_trusted::<Vec<_>>()
@@ -710,7 +702,6 @@ mod test {
                         period: Duration::parse("2d"),
                         offset: Duration::parse("-2d"),
                         closed_window: ClosedWindow::Right,
-                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -758,7 +749,6 @@ mod test {
                     period: Duration::parse("2d"),
                     offset: Duration::parse("-2d"),
                     closed_window: ClosedWindow::Right,
-                    ..Default::default()
                 },
             )
             .unwrap();
@@ -842,7 +832,6 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
-                    ..Default::default()
                 },
             )
             .unwrap();
@@ -963,7 +952,6 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
-                    ..Default::default()
                 },
             )
             .unwrap();

@@ -14,10 +14,10 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -54,8 +54,8 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -69,6 +69,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
+    }
+
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(
+            op = "`sum`",
+            self.dtype(),
+            hint = "you may mean to call `concat_list`"
+        );
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

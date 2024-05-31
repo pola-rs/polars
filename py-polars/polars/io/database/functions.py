@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.datatypes import N_INFER_DEFAULT
+from polars.dependencies import import_optional
 from polars.exceptions import InvalidOperationError
 from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
@@ -31,7 +32,7 @@ def read_database(
     query: str | Selectable,
     connection: ConnectionOrCursor | str,
     *,
-    iter_batches: Literal[False] = False,
+    iter_batches: Literal[False] = ...,
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
@@ -52,6 +53,20 @@ def read_database(
     execute_options: dict[str, Any] | None = ...,
     **kwargs: Any,
 ) -> Iterable[DataFrame]: ...
+
+
+@overload
+def read_database(
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
+    *,
+    iter_batches: bool,
+    batch_size: int | None = ...,
+    schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
+    **kwargs: Any,
+) -> DataFrame | Iterable[DataFrame]: ...
 
 
 def read_database(  # noqa: D417
@@ -224,15 +239,11 @@ def read_database(  # noqa: D417
     if isinstance(connection, str):
         # check for odbc connection string
         if re.search(r"\bdriver\s*=\s*{[^}]+?}", connection, re.IGNORECASE):
-            try:
-                import arrow_odbc  # noqa: F401
-            except ModuleNotFoundError:
-                msg = (
-                    "use of an ODBC connection string requires the `arrow-odbc` package"
-                    "\n\nPlease run: pip install arrow-odbc"
-                )
-                raise ModuleNotFoundError(msg) from None
-
+            _ = import_optional(
+                module_name="arrow_odbc",
+                err_prefix="use of ODBC connection string requires the",
+                err_suffix="package",
+            )
             connection = ODBCCursorProxy(connection)
         else:
             # otherwise looks like a call to read_database_uri

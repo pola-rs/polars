@@ -40,9 +40,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
-use polars_plan::logical_plan::{
-    OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
-};
 
 #[cfg(feature = "cov")]
 use crate::dsl::pearson_corr;
@@ -51,7 +48,7 @@ use crate::prelude::*;
 #[cfg(feature = "parquet")]
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
 #[cfg(feature = "csv")]
-static GLOB_CSV: &str = "../../examples/datasets/*.csv";
+static GLOB_CSV: &str = "../../examples/datasets/foods*.csv";
 #[cfg(feature = "ipc")]
 static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
 #[cfg(feature = "parquet")]
@@ -85,7 +82,11 @@ fn init_files() {
             let out_path = path.replace(".csv", ext);
 
             if std::fs::metadata(&out_path).is_err() {
-                let mut df = CsvReader::from_path(path).unwrap().finish().unwrap();
+                let mut df = CsvReadOptions::default()
+                    .try_into_reader_with_file_path(Some(path.into()))
+                    .unwrap()
+                    .finish()
+                    .unwrap();
                 let f = std::fs::File::create(&out_path).unwrap();
 
                 match ext {
@@ -178,11 +179,28 @@ pub(crate) fn get_df() -> DataFrame {
 
     let file = Cursor::new(s);
 
-    let df = CsvReader::new(file)
-        // we also check if infer schema ignores errors
-        .infer_schema(Some(3))
-        .has_header(true)
+    CsvReadOptions::default()
+        .with_infer_schema_length(Some(3))
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()
-        .unwrap();
-    df
+        .unwrap()
+}
+
+#[test]
+fn test_foo() -> PolarsResult<()> {
+    let df = df![
+        "A" => [1],
+        "B" => [1],
+    ]?;
+
+    let q = df.lazy();
+
+    let out = q
+        .group_by([col("A")])
+        .agg([cols(["A", "B"]).name().prefix("_agg")])
+        .explain(false)?;
+
+    println!("{out}");
+    Ok(())
 }

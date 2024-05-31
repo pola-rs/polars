@@ -5,6 +5,7 @@ use hashbrown::hash_map::RawEntryMut;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
+use polars_ops::prelude::JoinArgs;
 use polars_utils::arena::Node;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unitvec;
@@ -13,7 +14,7 @@ use smartstring::alias::String as SmartString;
 use super::*;
 use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
-use crate::executors::sinks::joins::generic_probe_outer::GenericOuterJoinProbe;
+use crate::executors::sinks::joins::generic_probe_outer::GenericFullOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -34,6 +35,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     materialized_join_cols: Vec<BinaryArray<i64>>,
     suffix: Arc<str>,
     hb: RandomState,
+    join_args: JoinArgs,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
     hash_tables: PartitionedMap<K>,
@@ -45,7 +47,6 @@ pub struct GenericBuild<K: ExtraPayload> {
     // amortize allocations
     join_columns: Vec<ArrayRef>,
     hashes: Vec<u64>,
-    join_type: JoinType,
     // the join order is swapped to ensure we hash the smaller table
     swapped: bool,
     join_nulls: bool,
@@ -59,7 +60,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         suffix: Arc<str>,
-        join_type: JoinType,
+        join_args: JoinArgs,
         swapped: bool,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -76,7 +77,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
         }));
         GenericBuild {
             chunks: vec![],
-            join_type,
+            join_args,
             suffix,
             hb,
             swapped,
@@ -138,7 +139,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
     ) -> PolarsResult<&BinaryArray<i64>> {
         debug_assert!(self.join_columns.is_empty());
         for phys_e in self.join_columns_left.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
         }
@@ -278,7 +279,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         let mut new = Self::new(
             self.suffix.clone(),
-            self.join_type.clone(),
+            self.join_args.clone(),
             self.swapped,
             self.join_columns_left.clone(),
             self.join_columns_right.clone(),
@@ -317,7 +318,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         hashes.clear();
 
-        match self.join_type {
+        match self.join_args.how {
             JoinType::Inner | JoinType::Left => {
                 let probe_operator = GenericJoinProbe::new(
                     left_df,
@@ -330,14 +331,15 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.swapped,
                     hashes,
                     context,
-                    self.join_type.clone(),
+                    self.join_args.how.clone(),
                     self.join_nulls,
                 );
                 self.placeholder.replace(Box::new(probe_operator));
                 Ok(FinalizedSink::Operator)
             },
-            JoinType::Outer { coalesce } => {
-                let probe_operator = GenericOuterJoinProbe::new(
+            JoinType::Full => {
+                let coalesce = self.join_args.coalesce.coalesce(&JoinType::Full);
+                let probe_operator = GenericFullOuterJoinProbe::new(
                     left_df,
                     materialized_join_cols,
                     suffix,

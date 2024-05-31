@@ -17,9 +17,9 @@ pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -
 /// Eager version of `int_range` to avoid overhead from the expression engine.
 #[pyfunction]
 pub fn eager_int_range(
-    lower: &PyAny,
-    upper: &PyAny,
-    step: &PyAny,
+    lower: &Bound<'_, PyAny>,
+    upper: &Bound<'_, PyAny>,
+    step: &Bound<'_, PyAny>,
     dtype: Wrap<DataType>,
 ) -> PyResult<PySeries> {
     let dtype = dtype.0;

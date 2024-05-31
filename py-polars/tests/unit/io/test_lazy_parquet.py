@@ -59,6 +59,11 @@ def test_row_index(foods_parquet_path: Path) -> None:
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
 
 
+def test_row_index_len_16543(foods_parquet_path: Path) -> None:
+    q = pl.scan_parquet(foods_parquet_path).with_row_index()
+    assert q.select(pl.all()).select(pl.len()).collect().item() == 27
+
+
 @pytest.mark.write_disk()
 def test_categorical_parquet_statistics(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -251,7 +256,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
     assert df.n_chunks("all") == [4, 4]
 
     file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+    df.write_parquet(file_path, statistics=True, use_pyarrow=False, row_group_size=50)
 
     for pred in [
         pl.col("idx") < 50,

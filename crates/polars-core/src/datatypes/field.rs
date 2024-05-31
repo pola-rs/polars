@@ -3,7 +3,7 @@ use smartstring::alias::String as SmartString;
 use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)
@@ -111,6 +111,18 @@ impl Field {
     /// ```
     pub fn to_arrow(&self, pl_flavor: bool) -> ArrowField {
         self.dtype.to_arrow_field(self.name.as_str(), pl_flavor)
+    }
+}
+
+impl AsRef<DataType> for Field {
+    fn as_ref(&self) -> &DataType {
+        &self.dtype
+    }
+}
+
+impl AsRef<DataType> for DataType {
+    fn as_ref(&self) -> &DataType {
+        self
     }
 }
 

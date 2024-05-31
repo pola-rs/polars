@@ -4,7 +4,7 @@ use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
-use polars_plan::logical_plan::LiteralValue;
+use polars_plan::logical_plan::{typed_lit, LiteralValue};
 #[cfg(feature = "list_eval")]
 use polars_plan::prelude::col;
 use polars_plan::prelude::LiteralValue::Null;
@@ -814,7 +814,7 @@ impl SQLFunctionVisitor<'_> {
                 1 => self.visit_unary(|e| e.round(0)),
                 2 => self.try_visit_binary(|e, decimals| {
                     Ok(e.round(match decimals {
-                        Expr::Literal(LiteralValue::Int64(n)) => {
+                        Expr::Literal(LiteralValue::Int(n)) => {
                             if n >= 0 { n as u32 } else {
                                 polars_bail!(InvalidOperation: "Round does not (yet) support negative 'decimals': {}", function.args[1])
                             }
@@ -910,8 +910,8 @@ impl SQLFunctionVisitor<'_> {
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(Null) => lit(Null),
-                    Expr::Literal(LiteralValue::Int64(0)) => lit(""),
-                    Expr::Literal(LiteralValue::Int64(n)) => {
+                    Expr::Literal(LiteralValue::Int(0)) => lit(""),
+                    Expr::Literal(LiteralValue::Int(n)) => {
                         let len = if n > 0 { lit(n) } else { (e.clone().str().len_chars() + lit(n)).clip_min(lit(0)) };
                         e.str().slice(lit(0), len)
                     },
@@ -933,7 +933,7 @@ impl SQLFunctionVisitor<'_> {
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
                 // note: 1-indexed, not 0-indexed, and returns zero if match not found
-                self.visit_binary(|expr, substring| (expr.str().find(substring, true) + lit(1u32)).fill_null(0u32))
+                self.visit_binary(|expr, substring| (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32)))
             },
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
@@ -964,8 +964,9 @@ impl SQLFunctionVisitor<'_> {
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(Null) => lit(Null),
-                    Expr::Literal(LiteralValue::Int64(0)) => lit(""),
-                    Expr::Literal(LiteralValue::Int64(n)) => {
+                    Expr::Literal(LiteralValue::Int(0)) => typed_lit(""),
+                    Expr::Literal(LiteralValue::Int(n)) => {
+                        let n: i64 = n.try_into().unwrap();
                         let offset = if n < 0 { lit(n.abs()) } else { e.clone().str().len_chars().cast(DataType::Int32) - lit(n) };
                         e.str().slice(offset, lit(Null))
                     },
@@ -988,8 +989,8 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.try_visit_binary(|e, start| {
                     Ok(match start {
                         Expr::Literal(Null) => lit(Null),
-                        Expr::Literal(LiteralValue::Int64(n)) if n <= 0 => e,
-                        Expr::Literal(LiteralValue::Int64(n)) => e.str().slice(lit(n - 1), lit(Null)),
+                        Expr::Literal(LiteralValue::Int(n)) if n <= 0 => e,
+                        Expr::Literal(LiteralValue::Int(n)) => e.str().slice(lit(n - 1), lit(Null)),
                         Expr::Literal(_) => polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]),
                         _ => start.clone() + lit(1),
                     })
@@ -997,15 +998,15 @@ impl SQLFunctionVisitor<'_> {
                 3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
                     Ok(match (start.clone(), length.clone()) {
                         (Expr::Literal(Null), _) | (_, Expr::Literal(Null)) => lit(Null),
-                        (_, Expr::Literal(LiteralValue::Int64(n))) if n < 0 => {
+                        (_, Expr::Literal(LiteralValue::Int(n))) if n < 0 => {
                             polars_bail!(InvalidOperation: "Substring does not support negative length: {}", function.args[2])
                         },
-                        (Expr::Literal(LiteralValue::Int64(n)), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
-                        (Expr::Literal(LiteralValue::Int64(n)), _) => {
+                        (Expr::Literal(LiteralValue::Int(n)), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
+                        (Expr::Literal(LiteralValue::Int(n)), _) => {
                             e.str().slice(lit(0), (length.clone() + lit(n - 1)).clip_min(lit(0)))
                         },
                         (Expr::Literal(_), _) => polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]),
-                        (_, Expr::Literal(LiteralValue::Float64(_))) => {
+                        (_, Expr::Literal(LiteralValue::Float(_))) => {
                             polars_bail!(InvalidOperation: "invalid 'length' for Substring: {}", function.args[1])
                         },
                         _ => {
@@ -1073,7 +1074,7 @@ impl SQLFunctionVisitor<'_> {
             .into_iter()
             .map(|arg| {
                 if let FunctionArgExpr::Expr(e) = arg {
-                    parse_sql_expr(e, self.ctx)
+                    parse_sql_expr(e, self.ctx, None)
                 } else {
                     polars_bail!(ComputeError: "Only expressions are supported in UDFs")
                 }
@@ -1129,7 +1130,7 @@ impl SQLFunctionVisitor<'_> {
             let (order_by, desc): (Vec<Expr>, Vec<bool>) = order_by
                 .iter()
                 .map(|o| {
-                    let expr = parse_sql_expr(&o.expr, self.ctx)?;
+                    let expr = parse_sql_expr(&o.expr, self.ctx, None)?;
                     Ok(match o.asc {
                         Some(b) => (expr, !b),
                         None => (expr, false),
@@ -1156,7 +1157,7 @@ impl SQLFunctionVisitor<'_> {
         let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 // apply the function on the inner expr -- e.g. SUM(a) -> SUM
                 Ok(f(expr))
             },
@@ -1178,7 +1179,7 @@ impl SQLFunctionVisitor<'_> {
         let args = extract_args(self.func);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2)] => {
-                let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
+                let expr1 = parse_sql_expr(sql_expr1, self.ctx, None)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 f(expr1, expr2)
             },
@@ -1198,7 +1199,7 @@ impl SQLFunctionVisitor<'_> {
         let mut expr_args = vec![];
         for arg in args {
             if let FunctionArgExpr::Expr(sql_expr) = arg {
-                expr_args.push(parse_sql_expr(sql_expr, self.ctx)?);
+                expr_args.push(parse_sql_expr(sql_expr, self.ctx, None)?);
             } else {
                 return self.not_supported_error();
             };
@@ -1214,7 +1215,7 @@ impl SQLFunctionVisitor<'_> {
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =>
             {
-                let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
+                let expr1 = parse_sql_expr(sql_expr1, self.ctx, None)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
                 f(expr1, expr2, expr3)
@@ -1234,19 +1235,17 @@ impl SQLFunctionVisitor<'_> {
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let args = extract_args(self.func);
         match (self.func.distinct, args.as_slice()) {
-            // count()
-            (false, []) => Ok(len()),
+            // count(*), count()
+            (false, [FunctionArgExpr::Wildcard] | []) => Ok(len()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.count())
             },
-            // count(*)
-            (false, [FunctionArgExpr::Wildcard]) => Ok(len()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx, None)?;
                 let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.n_unique())
             },
@@ -1266,7 +1265,7 @@ impl SQLFunctionVisitor<'_> {
                         .order_by
                         .iter()
                         .map(|o| {
-                            let e = parse_sql_expr(&o.expr, self.ctx)?;
+                            let e = parse_sql_expr(&o.expr, self.ctx, None)?;
                             Ok(o.asc.map_or(e.clone(), |b| {
                                 e.sort(SortOptions::default().with_order_descending(!b))
                             }))
@@ -1278,7 +1277,7 @@ impl SQLFunctionVisitor<'_> {
                     let partition_by = window_spec
                         .partition_by
                         .iter()
-                        .map(|p| parse_sql_expr(p, self.ctx))
+                        .map(|p| parse_sql_expr(p, self.ctx, None))
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(partition_by)
                 }
@@ -1387,6 +1386,6 @@ impl FromSQLExpr for Expr {
     where
         Self: Sized,
     {
-        parse_sql_expr(expr, ctx)
+        parse_sql_expr(expr, ctx, None)
     }
 }

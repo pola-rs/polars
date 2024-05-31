@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
@@ -1216,7 +1217,7 @@ class StringNameSpace:
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         r"""
-        Replace first matching regex/literal substring with a new string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -1227,12 +1228,10 @@ class StringNameSpace:
             String that will replace the matched substring.
         literal
             Treat `pattern` as a literal string.
-        n
-            Number of matches to replace.
 
         See Also
         --------
-        replace_all
+        replace
 
         Notes
         -----
@@ -1582,8 +1581,8 @@ class StringNameSpace:
         shape: (2,)
         Series: 'sing' [str]
         [
-            "Welcome To My …
-            "There's No Tur…
+            "Welcome To My World"
+            "There's No Turning Back"
         ]
         """
 
@@ -1778,9 +1777,22 @@ class StringNameSpace:
         ]
         """
 
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -1790,7 +1802,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", ["foo", "bar"])
-        >>> s.str.explode()
+        >>> s.str.explode()  # doctest: +SKIP
         shape: (6,)
         Series: 'a' [str]
         [

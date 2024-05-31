@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -306,3 +307,49 @@ def test_read_ipc_only_loads_selected_columns(
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.
     assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
+
+
+@pytest.mark.write_disk()
+def test_ipc_decimal_15920(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    tmp_path.mkdir(exist_ok=True)
+
+    base_df = pl.Series(
+        "x",
+        [
+            *[
+                Decimal(x)
+                for x in [
+                    "10.1", "11.2", "12.3", "13.4", "14.5", "15.6", "16.7", "17.8", "18.9", "19.0",
+                    "20.1", "21.2", "22.3", "23.4", "24.5", "25.6", "26.7", "27.8", "28.9", "29.0",
+                    "30.1", "31.2", "32.3", "33.4", "34.5", "35.6", "36.7", "37.8", "38.9", "39.0"
+                ]
+            ],
+            *(50 * [None])
+        ],
+        dtype=pl.Decimal(18, 2),
+    ).to_frame()  # fmt: skip
+
+    for df in [base_df, base_df.drop_nulls()]:
+        path = f"{tmp_path}/data"
+        df.write_ipc(path)
+        assert_frame_equal(pl.read_ipc(path), df)
+
+
+@pytest.mark.write_disk()
+def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
+    p = tmp_path / "foo.ipc"
+    df = pl.DataFrame({"foo": [1, 2, 3]})
+    # first write is allowed
+    df.write_ipc(p)
+
+    # now open as memory mapped
+    df = pl.read_ipc(p, memory_map=True)
+
+    with pytest.raises(
+        pl.ComputeError, match="cannot write to file: already memory mapped"
+    ):
+        df.write_ipc(p)

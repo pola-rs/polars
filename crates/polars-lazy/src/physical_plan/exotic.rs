@@ -1,6 +1,6 @@
 use polars_core::prelude::*;
 
-use crate::physical_plan::planner::create_physical_expr;
+use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::prelude::*;
 
 #[cfg(feature = "pivot")]
@@ -34,5 +34,11 @@ pub(crate) fn prepare_expression_for_context(
     let lp = lp_arena.get(optimized);
     let aexpr = lp.get_exprs().pop().unwrap();
 
-    create_physical_expr(&aexpr, ctxt, &expr_arena, None, &mut Default::default())
+    create_physical_expr(
+        &aexpr,
+        ctxt,
+        &expr_arena,
+        None,
+        &mut ExpressionConversionState::new(true, 0),
+    )
 }

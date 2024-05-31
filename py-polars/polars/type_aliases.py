@@ -22,7 +22,7 @@ from typing import (
 if TYPE_CHECKING:
     import sys
 
-    from sqlalchemy import Engine
+    from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -66,10 +66,9 @@ SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 NumericLiteral: TypeAlias = Union[int, float, Decimal]
 TemporalLiteral: TypeAlias = Union[date, time, datetime, timedelta]
+NonNestedLiteral: TypeAlias = Union[NumericLiteral, TemporalLiteral, str, bool, bytes]
 # Python literal types (can convert into a `lit` expression)
-PythonLiteral: TypeAlias = Union[
-    NumericLiteral, TemporalLiteral, str, bool, bytes, List[Any]
-]
+PythonLiteral: TypeAlias = Union[NonNestedLiteral, List[Any]]
 # Inputs that can convert into a `col` expression
 IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 # Inputs that can convert into an expression
@@ -141,7 +140,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "outer", "semi", "anti", "cross", "outer_coalesce"
+    "inner", "left", "full", "semi", "anti", "cross", "outer", "outer_coalesce"
 ]  # JoinType
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
@@ -159,15 +158,18 @@ ConcatMethod = Literal[
     "horizontal",
     "align",
 ]
-EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
-Orientation: TypeAlias = Literal["col", "row"]
-SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
-TransferEncoding: TypeAlias = Literal["hex", "base64"]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
 DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
+EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
+JaxExportType: TypeAlias = Literal["array", "dict"]
+Orientation: TypeAlias = Literal["col", "row"]
+SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
+TorchExportType: TypeAlias = Literal["tensor", "dataset", "dict"]
+TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
+ExplainFormat: TypeAlias = Literal["plain", "tree"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[
@@ -247,4 +249,32 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine", "Session"]
+AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+ConnectionOrCursor: TypeAlias = Union[
+    BasicConnection, BasicCursor, Cursor, AlchemyConnection
+]
+
+
+# Annotations for `__getitem__` methods
+SingleIndexSelector: TypeAlias = int
+MultiIndexSelector: TypeAlias = Union[
+    slice,
+    range,
+    Sequence[int],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+SingleNameSelector: TypeAlias = str
+MultiNameSelector: TypeAlias = Union[
+    slice,
+    Sequence[str],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+BooleanMask: TypeAlias = Union[
+    Sequence[bool],
+    "Series",
+    "np.ndarray[Any, Any]",
+]
+SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
+MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]

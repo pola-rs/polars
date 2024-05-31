@@ -21,7 +21,7 @@ def test_date() -> None:
             "version": ["0.0.1", "0.7.3", "0.7.4"],
         }
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
 
     expected = pl.DataFrame({"date": [True, False, False]})
@@ -34,7 +34,7 @@ def test_date() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
-    df = pl.DataFrame(
+    df = pl.DataFrame(  # noqa: F841
         {
             "dtm": [
                 datetime(2099, 12, 31, 23, 59, 59),
@@ -45,10 +45,9 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
         },
         schema={"dtm": pl.Datetime(time_unit)},
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
-        result = ctx.execute("SELECT dtm::time as tm from df")["tm"].to_list()
 
-    assert result == [
+    res = pl.sql("SELECT dtm::time AS tm from df").collect()
+    assert res["tm"].to_list() == [
         time(23, 59, 59),
         time(12, 30, 30),
         time(1, 1, 1),
@@ -100,7 +99,7 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
             ],
         }
     )
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART(dt,'{part}')"):
             res = ctx.execute(f"SELECT {func} AS {part} FROM frame_data").to_series()
 
@@ -126,9 +125,7 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
     ],
 )
 def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
-    with pl.SQLContext(
-        frame_data=pl.DataFrame({"dt": [dt]}), eager_execution=True
-    ) as ctx:
+    with pl.SQLContext(frame_data=pl.DataFrame({"dt": [dt]}), eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -146,6 +143,65 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
                 schema=["c1", "c2", "c3", "c4"],
             ).cast(pl.Int32),
         )
+
+
+@pytest.mark.parametrize(
+    ("constraint", "expected"),
+    [
+        ("dtm >= '2020-12-30T10:30:45.987'", [0, 2]),
+        ("dtm::date > '2006-01-01'", [0, 2]),
+        ("dtm > '2006-01-01'", [0, 1, 2]),  # << implies '2006-01-01 00:00:00'
+        ("dtm <= '2006-01-01'", []),  # << implies '2006-01-01 00:00:00'
+        ("dt != '1960-01-07'", [0, 1]),
+        ("dt BETWEEN '2050-01-01' AND '2100-12-31'", [1]),
+        ("dt::datetime = '1960-01-07'", [2]),
+        ("dt::datetime = '1960-01-07 00:00:00'", [2]),
+        ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00:00'", [2]),
+        ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
+        (
+            "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
+            [0, 2],
+        ),
+    ],
+)
+def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [0, 1, 2],
+            "dtm": [
+                datetime(2024, 1, 7, 1, 2, 3, 123456),
+                datetime(2006, 1, 1, 23, 59, 59, 555555),
+                datetime(2020, 12, 30, 10, 30, 45, 987654),
+            ],
+            "dt": [
+                date(2020, 12, 30),
+                date(2077, 1, 1),
+                date(1960, 1, 7),
+            ],
+        }
+    )
+    res = df.sql(f"SELECT idx FROM self WHERE {constraint}")
+    actual = sorted(res["idx"])
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "dtval",
+    [
+        "2020-12-30T10:30:45",
+        "yyyy-mm-dd",
+        "2222-22-22",
+        "10:30:45",
+    ],
+)
+def test_implicit_temporal_string_errors(dtval: str) -> None:
+    df = pl.DataFrame({"dt": [date(2020, 12, 30)]})
+
+    with pytest.raises(
+        ComputeError,
+        match="(conversion.*failed)|(cannot compare.*string.*temporal)",
+    ):
+        df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
 
 
 @pytest.mark.parametrize(
@@ -168,7 +224,7 @@ def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
     )
     precision = {"ms": 3, "us": 6, "ns": 9}
 
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         prec = f"({precision[unit]})" if unit else ""
         res = ctx.execute(f"SELECT ts::timestamp{prec} FROM frame_data").to_series()
 
@@ -179,9 +235,10 @@ def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
 def test_timestamp_time_unit_errors() -> None:
     df = pl.DataFrame({"ts": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
 
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
-        for prec in (0, 4, 15):
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
+        for prec in (0, 15):
             with pytest.raises(
-                ComputeError, match=f"unsupported `timestamp` precision; .* prec={prec}"
+                ComputeError,
+                match=f"invalid temporal type precision; expected 1-9, found {prec}",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")

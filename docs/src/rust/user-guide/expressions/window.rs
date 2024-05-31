@@ -10,8 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bytes()
         .collect();
 
-    let df = CsvReader::new(std::io::Cursor::new(data))
-        .has_header(true)
+    let file = std::io::Cursor::new(data);
+    let df = CsvReadOptions::default()
+        .with_has_header(true)
+        .into_reader_with_file_handle(file)
         .finish()?;
 
     println!("{}", df);

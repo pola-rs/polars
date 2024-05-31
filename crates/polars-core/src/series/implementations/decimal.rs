@@ -10,10 +10,14 @@ unsafe impl IntoSeries for DecimalChunked {
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
 
 impl SeriesWrap<DecimalChunked> {
-    fn apply_physical<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
+    fn apply_physical_to_s<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
         f(&self.0)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
+    }
+
+    fn apply_physical<T, F: Fn(&Int128Chunked) -> T>(&self, f: F) -> T {
+        f(&self.0)
     }
 
     fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
@@ -81,10 +85,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -171,8 +175,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.rename(name)
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
 
     fn name(&self) -> &str {
@@ -187,7 +191,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.apply_physical(|ca| ca.slice(offset, length))
+        self.apply_physical_to_s(|ca| ca.slice(offset, length))
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -301,33 +305,53 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.apply_physical(|ca| ca.reverse())
+        self.apply_physical_to_s(|ca| ca.reverse())
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.apply_physical(|ca| ca.shift(periods))
+        self.apply_physical_to_s(|ca| ca.shift(periods))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
-            Int128Chunked::from_slice_options(self.name(), &[sum])
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+                unreachable!()
+            };
+            let av = AnyValue::Decimal(sum.unwrap(), *scale);
+            Scalar::new(self.dtype().clone(), av)
         }))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let min = ca.min();
-            Int128Chunked::from_slice_options(self.name(), &[min])
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+                unreachable!()
+            };
+            let av = if let Some(min) = min {
+                AnyValue::Decimal(min, *scale)
+            } else {
+                AnyValue::Null
+            };
+            Scalar::new(self.dtype().clone(), av)
         }))
     }
-    fn max_as_series(&self) -> PolarsResult<Series> {
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(self.apply_physical(|ca| {
             let max = ca.max();
-            Int128Chunked::from_slice_options(self.name(), &[max])
+            let DataType::Decimal(_, Some(scale)) = self.dtype() else {
+                unreachable!()
+            };
+            let av = if let Some(m) = max {
+                AnyValue::Decimal(m, *scale)
+            } else {
+                AnyValue::Null
+            };
+            Scalar::new(self.dtype().clone(), av)
         }))
     }
     fn as_any(&self) -> &dyn Any {

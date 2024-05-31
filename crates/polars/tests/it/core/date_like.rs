@@ -22,7 +22,7 @@ fn test_datelike_join() -> PolarsResult<()> {
         DataType::Datetime(TimeUnit::Nanoseconds, None)
     ));
 
-    let out = df.outer_join(&df.clone(), ["bar"], ["bar"])?;
+    let out = df.full_join(&df.clone(), ["bar"], ["bar"])?;
     assert!(matches!(
         out.column("bar")?.dtype(),
         DataType::Datetime(TimeUnit::Nanoseconds, None)

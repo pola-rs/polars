@@ -25,7 +25,7 @@ pub use cross_join::CrossJoin;
 use either::Either;
 #[cfg(feature = "chunked_ids")]
 use general::create_chunked_index_mapping;
-pub use general::{_coalesce_outer_join, _finish_join, _join_suffix_name};
+pub use general::{_coalesce_full_join, _finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
@@ -115,7 +115,8 @@ pub trait DataFrameJoinOps: IntoDf {
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
-        args.validation.is_valid_join(&args.how)?;
+        let should_coalesce = args.coalesce.coalesce(&args.how);
+        assert_eq!(selected_left.len(), selected_right.len());
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
@@ -161,16 +162,6 @@ pub trait DataFrameJoinOps: IntoDf {
             }
         }
 
-        polars_ensure!(
-            selected_left.len() == selected_right.len(),
-            ComputeError:
-                format!(
-                    "the number of columns given as join key (left: {}, right:{}) should be equal",
-                    selected_left.len(),
-                    selected_right.len()
-                )
-        );
-
         if let Some((l, r)) = selected_left
             .iter()
             .zip(&selected_right)
@@ -202,16 +193,13 @@ pub trait DataFrameJoinOps: IntoDf {
         if selected_left.len() == 1 {
             let s_left = &selected_left[0];
             let s_right = &selected_right[0];
+            let drop_names: Option<&[&str]> = if should_coalesce { None } else { Some(&[]) };
             return match args.how {
-                JoinType::Inner => {
-                    left_df._inner_join_from_series(other, s_left, s_right, args, _verbose, None)
-                },
-                JoinType::Left => {
-                    left_df._left_join_from_series(other, s_left, s_right, args, _verbose, None)
-                },
-                JoinType::Outer { .. } => {
-                    left_df._outer_join_from_series(other, s_left, s_right, args)
-                },
+                JoinType::Inner => left_df
+                    ._inner_join_from_series(other, s_left, s_right, args, _verbose, drop_names),
+                JoinType::Left => left_df
+                    ._left_join_from_series(other, s_left, s_right, args, _verbose, drop_names),
+                JoinType::Full => left_df._full_join_from_series(other, s_left, s_right, args),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => left_df._semi_anti_join_from_series(
                     s_left,
@@ -267,7 +255,12 @@ pub trait DataFrameJoinOps: IntoDf {
 
         let lhs_keys = prepare_keys_multiple(&selected_left, args.join_nulls)?.into_series();
         let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?.into_series();
-        let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let drop_names = if should_coalesce {
+            Some(selected_right.iter().map(|s| s.name()).collect::<Vec<_>>())
+        } else {
+            Some(vec![])
+        };
 
         // Multiple keys.
         match args.how {
@@ -278,17 +271,17 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::Cross => {
                 unreachable!()
             },
-            JoinType::Outer { coalesce } => {
+            JoinType::Full => {
                 let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
-                args.how = JoinType::Outer { coalesce: false };
+                args.coalesce = JoinCoalesce::KeepColumns;
                 let suffix = args.suffix.clone();
-                let out = left_df._outer_join_from_series(other, &lhs_keys, &rhs_keys, args);
+                let out = left_df._full_join_from_series(other, &lhs_keys, &rhs_keys, args);
 
-                if coalesce {
-                    Ok(_coalesce_outer_join(
+                if should_coalesce {
+                    Ok(_coalesce_full_join(
                         out?,
                         &names_left,
-                        &names_right,
+                        drop_names.as_ref().unwrap(),
                         suffix.as_deref(),
                         left_df,
                     ))
@@ -302,7 +295,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                Some(&names_right),
+                drop_names.as_deref(),
             ),
             JoinType::Left => left_df._left_join_from_series(
                 other,
@@ -310,7 +303,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &rhs_keys,
                 args,
                 _verbose,
-                Some(&names_right),
+                drop_names.as_deref(),
             ),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => self._join_impl(
@@ -348,7 +341,7 @@ pub trait DataFrameJoinOps: IntoDf {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Inner))
     }
 
-    /// Perform a left join on two DataFrames
+    /// Perform a left outer join on two DataFrames
     /// # Example
     ///
     /// ```no_run
@@ -391,32 +384,22 @@ pub trait DataFrameJoinOps: IntoDf {
         self.join(other, left_on, right_on, JoinArgs::new(JoinType::Left))
     }
 
-    /// Perform an outer join on two DataFrames
+    /// Perform a full outer join on two DataFrames
     /// # Example
     ///
     /// ```
     /// # use polars_core::prelude::*;
     /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
+    ///     left.full_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    fn outer_join<I, S>(
-        &self,
-        other: &DataFrame,
-        left_on: I,
-        right_on: I,
-    ) -> PolarsResult<DataFrame>
+    fn full_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(
-            other,
-            left_on,
-            right_on,
-            JoinArgs::new(JoinType::Outer { coalesce: false }),
-        )
+        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Full))
     }
 }
 

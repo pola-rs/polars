@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import re
-import sys
-from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
+from polars.dependencies import import_optional
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Coroutine
 
     if sys.version_info >= (3, 10):
@@ -29,22 +29,14 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     import asyncio
 
     from polars._utils.unstable import issue_unstable_warning
+    from polars.dependencies import import_optional
 
     issue_unstable_warning(
-        "Use of asynchronous connections is currently considered unstable"
-        " and unexpected issues may arise; if this happens, please report them."
+        "Use of asynchronous connections is currently considered unstable "
+        "and unexpected issues may arise; if this happens, please report them."
     )
-    try:
-        import nest_asyncio
-
-        nest_asyncio.apply()
-    except ModuleNotFoundError as _err:
-        msg = (
-            "Executing using async drivers requires the `nest_asyncio` package."
-            "\n\nPlease run: pip install nest_asyncio"
-        )
-        raise ModuleNotFoundError(msg) from None
-
+    nest_asyncio = import_optional("nest_asyncio")
+    nest_asyncio.apply()
     return asyncio.run(co)
 
 
@@ -57,12 +49,7 @@ def _read_sql_connectorx(
     protocol: str | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
-    try:
-        import connectorx as cx
-    except ModuleNotFoundError:
-        msg = "connectorx is not installed" "\n\nPlease run: pip install connectorx"
-        raise ModuleNotFoundError(msg) from None
-
+    cx = import_optional("connectorx")
     try:
         tbl = cx.read_sql(
             conn=connection_uri,
@@ -100,17 +87,15 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     module_suffix_map: dict[str, str] = {
         "postgres": "postgresql",
     }
-    try:
-        module_suffix = module_suffix_map.get(driver_name, driver_name)
-        module_name = f"adbc_driver_{module_suffix}.dbapi"
-        import_module(module_name)
-        adbc_driver = sys.modules[module_name]
-    except ImportError:
-        msg = (
-            f"ADBC {driver_name} driver not detected"
-            f"\n\nIf ADBC supports this database, please run: pip install adbc-driver-{driver_name} pyarrow"
-        )
-        raise ModuleNotFoundError(msg) from None
+    module_suffix = module_suffix_map.get(driver_name, driver_name)
+    module_name = f"adbc_driver_{module_suffix}.dbapi"
+
+    adbc_driver = import_optional(
+        module_name,
+        err_prefix="ADBC",
+        err_suffix="driver not detected",
+        install_message=f"If ADBC supports this database, please run: pip install adbc-driver-{driver_name} pyarrow",
+    )
 
     # some backends require the driver name to be stripped from the URI
     if driver_name in ("sqlite", "snowflake"):

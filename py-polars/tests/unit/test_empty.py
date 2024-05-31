@@ -13,12 +13,6 @@ def test_empty_str_concat_lit() -> None:
     }
 
 
-def test_top_k_empty() -> None:
-    df = pl.DataFrame({"test": []})
-
-    assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
-
-
 def test_empty_cross_join() -> None:
     a = pl.LazyFrame(schema={"a": pl.Int32})
     b = pl.LazyFrame(schema={"b": pl.Int32})
@@ -133,3 +127,8 @@ def test_empty_is_in() -> None:
     assert_series_equal(
         pl.Series("a", [1, 2, 3]).is_in([]), pl.Series("a", [False] * 3)
     )
+
+
+@pytest.mark.parametrize("method", ["drop_nulls", "unique"])
+def test_empty_to_empty(method: str) -> None:
+    assert getattr(pl.DataFrame(), method)().shape == (0, 0)

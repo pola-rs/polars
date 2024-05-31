@@ -54,6 +54,13 @@ impl PyExpr {
         self.inner.clone().meta().is_regex_projection()
     }
 
+    fn meta_is_column_selection(&self, allow_aliasing: bool) -> bool {
+        self.inner
+            .clone()
+            .meta()
+            .is_column_selection(allow_aliasing)
+    }
+
     fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
         let out = self
             .inner

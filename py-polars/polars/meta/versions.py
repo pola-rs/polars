@@ -14,29 +14,30 @@ def show_versions() -> None:
     --------
     >>> pl.show_versions()  # doctest: +SKIP
     --------Version info---------
-    Polars:               0.20.14
+    Polars:               0.20.22
     Index type:           UInt32
-    Platform:             macOS-14.3.1-arm64-arm-64bit
+    Platform:             macOS-14.4.1-arm64-arm-64bit
     Python:               3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)]
     ----Optional dependencies----
-    adbc_driver_manager:  0.10.0
+    adbc_driver_manager:  0.11.0
     cloudpickle:          3.0.0
     connectorx:           0.3.2
-    deltalake:            0.16.0
-    fastexcel:            0.9.1
+    deltalake:            0.17.1
+    fastexcel:            0.10.4
     fsspec:               2023.12.2
     gevent:               24.2.1
     hvplot:               0.9.2
-    matplotlib:           3.8.3
+    matplotlib:           3.8.4
     nest_asyncio:         1.6.0
     numpy:                1.26.4
     openpyxl:             3.1.2
-    pandas:               2.2.1
-    pyarrow:              15.0.0
-    pydantic:             2.6.3
+    pandas:               2.2.2
+    pyarrow:              16.0.0
+    pydantic:             2.7.1
     pyiceberg:            0.6.0
     pyxlsb:               1.0.10
-    sqlalchemy:           2.0.28
+    sqlalchemy:           2.0.29
+    torch:                2.2.2
     xlsx2csv:             0.8.2
     xlsxwriter:           3.2.0
     """  # noqa: W505
@@ -80,6 +81,7 @@ def _get_dependency_info() -> dict[str, str]:
         "pyiceberg",
         "pyxlsb",
         "sqlalchemy",
+        "torch",
         "xlsx2csv",
         "xlsxwriter",
     ]

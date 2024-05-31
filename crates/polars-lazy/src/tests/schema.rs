@@ -16,10 +16,14 @@ fn test_schema_update_after_projection_pd() -> PolarsResult<()> {
 
     // run optimizations
     // Get the explode node
-    let (input, lp_arena, _expr_arena) = q.to_alp_optimized()?;
+    let IRPlan {
+        lp_top,
+        lp_arena,
+        expr_arena: _,
+    } = q.to_alp_optimized()?;
 
     // assert the schema has been corrected with the projection pushdown run
-    let lp = lp_arena.get(input);
+    let lp = lp_arena.get(lp_top);
     assert!(matches!(
         lp,
         IR::MapFunction {

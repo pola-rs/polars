@@ -99,7 +99,7 @@ def test_not_found_error() -> None:
 
 def test_string_numeric_comp_err() -> None:
     with pytest.raises(
-        pl.ComputeError, match="cannot compare string with numeric data"
+        pl.ComputeError, match="cannot compare string with numeric type"
     ):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
@@ -170,13 +170,13 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
+        match=r"cannot select columns using key of type 'set': {'some'}",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
+        match=r"cannot select elements using key of type 'set': {'strange'}",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 
@@ -530,13 +530,6 @@ def test_window_size_validation() -> None:
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
 
 
-def test_invalid_getitem_key_err() -> None:
-    df = pl.DataFrame({"x": [1.0], "y": [1.0]})
-
-    with pytest.raises(KeyError, match=r"('x', 'y')"):
-        df["x", "y"]  # type: ignore[index]
-
-
 def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
@@ -704,3 +697,11 @@ def test_invalid_product_type() -> None:
         match="`product` operation not supported for dtype",
     ):
         pl.Series([[1, 2, 3]]).product()
+
+
+def test_fill_null_invalid_supertype() -> None:
+    df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
+    with pytest.raises(
+        pl.InvalidOperationError, match="could not determine supertype of"
+    ):
+        df.select(pl.col("date").fill_null(1.0))

@@ -1,4 +1,7 @@
+from typing import Literal
+
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -129,7 +132,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(n_field_strategy="max_width", fields=lambda i: f"genre{i+1}")
+        .list.to_struct(n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}")
     ).unnest("genres")
 
     out = q.collect()
@@ -360,13 +363,13 @@ def test_projection_count_11841() -> None:
     ).collect()
 
 
-def test_schema_outer_join_projection_pd_13287() -> None:
+def test_schema_full_outer_join_projection_pd_13287() -> None:
     lf = pl.LazyFrame({"a": [1, 1], "b": [2, 3]})
     lf2 = pl.LazyFrame({"a": [1, 1], "c": [2, 3]})
 
     assert lf.join(
         lf2,
-        how="outer",
+        how="full",
         left_on="a",
         right_on="c",
     ).with_columns(
@@ -374,11 +377,11 @@ def test_schema_outer_join_projection_pd_13287() -> None:
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
 
 
-def test_projection_pushdown_outer_join_duplicates() -> None:
+def test_projection_pushdown_full_outer_join_duplicates() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     assert (
-        df1.join(df2, on="a", how="outer").with_columns(c=0).select("a", "c").collect()
+        df1.join(df2, on="a", how="full").with_columns(c=0).select("a", "c").collect()
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
 
 
@@ -419,3 +422,81 @@ def test_cached_schema_15651() -> None:
 
     # ensure that q's "cached" columns are still correct
     assert q.columns == q.collect().columns
+
+
+def test_double_projection_pushdown_15895() -> None:
+    df = (
+        pl.LazyFrame({"A": [0], "B": [1]})
+        .select(C="A", A="B")
+        .group_by(1)
+        .all()
+        .collect(projection_pushdown=True)
+    )
+    assert df.to_dict(as_series=False) == {
+        "literal": [1],
+        "C": [[0]],
+        "A": [[1]],
+    }
+
+
+@pytest.mark.parametrize("join_type", ["inner", "left", "full"])
+def test_non_coalesce_join_projection_pushdown_16515(
+    join_type: Literal["inner", "left", "full"],
+) -> None:
+    left = pl.LazyFrame({"x": 1})
+    right = pl.LazyFrame({"y": 1})
+
+    assert (
+        left.join(right, how=join_type, left_on="x", right_on="y", coalesce=False)
+        .select("y")
+        .collect()
+        .item()
+        == 1
+    )
+
+
+@pytest.mark.parametrize("join_type", ["inner", "left", "full"])
+def test_non_coalesce_multi_key_join_projection_pushdown_16554(
+    join_type: Literal["inner", "left", "full"],
+) -> None:
+    lf1 = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, 4, 5],
+        }
+    )
+    lf2 = pl.LazyFrame(
+        {
+            "a": [0, 2, 3, 4, 5],
+            "b": [1, 2, 3, 5, 6],
+            "c": [7, 5, 3, 5, 7],
+        }
+    )
+
+    expect = (
+        lf1.with_columns(a2="a")
+        .join(
+            other=lf2,
+            how=join_type,
+            left_on=["a", "a2"],
+            right_on=["b", "c"],
+            coalesce=False,
+        )
+        .select("a", "b", "c")
+        .sort("a")
+        .collect()
+    )
+
+    out = (
+        lf1.join(
+            other=lf2,
+            how=join_type,
+            left_on=["a", "a"],
+            right_on=["b", "c"],
+            coalesce=False,
+        )
+        .select("a", "b", "c")
+        .collect()
+    )
+
+    assert_frame_equal(out.sort("a"), expect)

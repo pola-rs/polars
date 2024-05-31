@@ -196,6 +196,12 @@ impl SortOptions {
         self.maintain_order = enabled;
         self
     }
+
+    /// Reverse the order of sorting.
+    pub fn with_order_reversed(mut self) -> Self {
+        self.descending = !self.descending;
+        self
+    }
 }
 
 impl From<&SortOptions> for SortMultipleOptions {

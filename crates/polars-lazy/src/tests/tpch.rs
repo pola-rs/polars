@@ -85,10 +85,12 @@ fn test_q2() -> PolarsResult<()> {
         .limit(100)
         .with_comm_subplan_elim(true);
 
-    let (node, lp_arena, _) = q.clone().to_alp_optimized().unwrap();
+    let IRPlan {
+        lp_top, lp_arena, ..
+    } = q.clone().to_alp_optimized().unwrap();
     assert_eq!(
         (&lp_arena)
-            .iter(node)
+            .iter(lp_top)
             .filter(|(_, alp)| matches!(alp, IR::Cache { .. }))
             .count(),
         2

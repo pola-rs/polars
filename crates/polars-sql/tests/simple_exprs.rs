@@ -62,27 +62,72 @@ fn test_group_by_simple() -> PolarsResult<()> {
     let df_sql = context
         .execute(
             r#"
-        SELECT a, sum(b) as b , sum(a + b) as c, count(a) as total_count
+        SELECT
+          a          AS "aa",
+          SUM(b)     AS "bb",
+          SUM(a + b) AS "cc",
+          COUNT(a)   AS "count_a",
+          COUNT(*)   AS "count_star"
         FROM df
         GROUP BY a
         LIMIT 100
     "#,
         )?
-        .sort(["a"], Default::default())
+        .sort(["aa"], Default::default())
         .collect()?;
 
     let df_pl = df
         .lazy()
-        .group_by(&[col("a")])
+        .group_by(&[col("a").alias("aa")])
         .agg(&[
-            col("b").sum().alias("b"),
-            (col("a") + col("b")).sum().alias("c"),
-            col("a").count().alias("total_count"),
+            col("b").sum().alias("bb"),
+            (col("a") + col("b")).sum().alias("cc"),
+            col("a").count().alias("count_a"),
+            col("a").len().alias("count_star"),
         ])
         .limit(100)
-        .sort(["a"], Default::default())
+        .sort(["aa"], Default::default())
         .collect()?;
     assert_eq!(df_sql, df_pl);
+    Ok(())
+}
+
+#[test]
+fn test_group_by_expression_key() -> PolarsResult<()> {
+    let df = df! {
+        "a" => &["xx", "yy", "xx", "yy", "xx", "zz"],
+        "b" => &[1, 2, 3, 4, 5, 6],
+        "c" => &[99, 99, 66, 66, 66, 66],
+    }
+    .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+
+    // check how we handle grouping by a key that gets used in select transform
+    let df_sql = context
+        .execute(
+            r#"
+            SELECT
+                CASE WHEN a = 'zz' THEN 'xx' ELSE a END AS grp,
+                SUM(b) AS sum_b,
+                SUM(c) AS sum_c,
+            FROM df
+            GROUP BY a
+            ORDER BY sum_c
+        "#,
+        )?
+        .sort(["sum_c"], Default::default())
+        .collect()?;
+
+    let df_expected = df! {
+        "grp" => ["xx", "yy", "xx"],
+        "sum_b" => [6, 6, 9],
+        "sum_c" => [66, 165, 231],
+    }
+    .unwrap();
+
+    assert_eq!(df_sql, df_expected);
     Ok(())
 }
 
@@ -93,7 +138,8 @@ fn test_cast_exprs() {
     context.register("df", df.clone().lazy());
     let sql = r#"
         SELECT
-            cast(a as FLOAT) as floats,
+            cast(a as FLOAT) as f64,
+            cast(a as FLOAT(24)) as f32,
             cast(a as INT) as ints,
             cast(a as BIGINT) as bigints,
             cast(a as STRING) as strings,
@@ -103,7 +149,8 @@ fn test_cast_exprs() {
     let df_pl = df
         .lazy()
         .select(&[
-            col("a").cast(DataType::Float32).alias("floats"),
+            col("a").cast(DataType::Float64).alias("f64"),
+            col("a").cast(DataType::Float32).alias("f32"),
             col("a").cast(DataType::Int32).alias("ints"),
             col("a").cast(DataType::Int64).alias("bigints"),
             col("a").cast(DataType::String).alias("strings"),
@@ -140,6 +187,37 @@ fn test_literal_exprs() {
         .collect()
         .unwrap();
     assert!(df_sql.equals_missing(&df_pl));
+}
+
+#[test]
+fn test_implicit_date_string() {
+    let df = df! {
+        "idx" => &[Some(0), Some(1), Some(2), Some(3)],
+        "dt" => &[Some("1955-10-01"), None, Some("2007-07-05"), Some("2077-06-11")],
+    }
+    .unwrap()
+    .lazy()
+    .select(vec![col("idx"), col("dt").cast(DataType::Date)])
+    .collect()
+    .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("frame", df.clone().lazy());
+    for sql in [
+        "SELECT idx, dt FROM frame WHERE dt >= '2007-07-05'",
+        "SELECT idx, dt FROM frame WHERE dt::date >= '2007-07-05'",
+        "SELECT idx, dt FROM frame WHERE dt::datetime >= '2007-07-05 00:00:00'",
+        "SELECT idx, dt FROM frame WHERE dt::timestamp >= '2007-07-05 00:00:00'",
+    ] {
+        let df_sql = context.execute(sql).unwrap().collect().unwrap();
+        let df_pl = df
+            .clone()
+            .lazy()
+            .filter(col("idx").gt_eq(lit(2)))
+            .collect()
+            .unwrap();
+        assert!(df_sql.equals(&df_pl));
+    }
 }
 
 #[test]
@@ -329,7 +407,7 @@ fn test_agg_functions() {
 }
 
 #[test]
-fn create_table() {
+fn test_create_table() {
     let df = create_sample_df().unwrap();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());

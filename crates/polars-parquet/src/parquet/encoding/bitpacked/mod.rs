@@ -43,11 +43,11 @@ impl Packed for [u8; 32 * 4] {
     }
 }
 
-impl Packed for [u8; 64 * 64] {
-    const LENGTH: usize = 64 * 64;
+impl Packed for [u8; 64 * 8] {
+    const LENGTH: usize = 64 * 8;
     #[inline]
     fn zero() -> Self {
-        [0; 64 * 64]
+        [0; 64 * 8]
     }
 }
 
@@ -151,7 +151,7 @@ impl Unpackable for u32 {
 }
 
 impl Unpackable for u64 {
-    type Packed = [u8; 64 * 64];
+    type Packed = [u8; 64 * 8];
     type Unpacked = [u64; 64];
 
     #[inline]

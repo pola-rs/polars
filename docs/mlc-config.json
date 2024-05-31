@@ -1,9 +1,10 @@
 {
-    "ignorePatterns": [
-        {
-            "pattern": "^https://crates.io/"
-        },{
-            "pattern": "^https://stackoverflow.com/"
-        }
-    ]
+  "ignorePatterns": [
+    {
+      "pattern": "^https://crates.io/"
+    },
+    {
+      "pattern": "^https://stackoverflow.com/"
+    }
+  ]
 }

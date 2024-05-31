@@ -22,18 +22,18 @@ def test_case_when() -> None:
             "v2": [101, 202, 303, 404],
         }
     )
-    with pl.SQLContext(test_data=lf, eager_execution=True) as ctx:
+    with pl.SQLContext(test_data=lf, eager=True) as ctx:
         out = ctx.execute(
             """
             SELECT *, CASE WHEN COALESCE(v1, v2) % 2 != 0 THEN 'odd' ELSE 'even' END as "v3"
             FROM test_data
             """
         )
-    assert out.to_dict(as_series=False) == {
-        "v1": [None, 2, None, 4],
-        "v2": [101, 202, 303, 404],
-        "v3": ["odd", "even", "odd", "even"],
-    }
+        assert out.to_dict(as_series=False) == {
+            "v1": [None, 2, None, 4],
+            "v2": [101, 202, 303, 404],
+            "v3": ["odd", "even", "odd", "even"],
+        }
 
 
 def test_control_flow(foods_ipc_path: Path) -> None:

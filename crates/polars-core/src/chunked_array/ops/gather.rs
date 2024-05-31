@@ -141,7 +141,10 @@ unsafe fn gather_idx_array_unchecked<A: StaticArray>(
     }
 }
 
-impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ChunkedArray<T> {
+impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ChunkedArray<T>
+where
+    T: PolarsDataType<HasViews = FalseT>,
+{
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
         let rechunked;
@@ -161,29 +164,6 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
     }
 }
 
-trait NotSpecialized {}
-impl NotSpecialized for Int8Type {}
-impl NotSpecialized for Int16Type {}
-impl NotSpecialized for Int32Type {}
-impl NotSpecialized for Int64Type {}
-#[cfg(feature = "dtype-decimal")]
-impl NotSpecialized for Int128Type {}
-impl NotSpecialized for UInt8Type {}
-impl NotSpecialized for UInt16Type {}
-impl NotSpecialized for UInt32Type {}
-impl NotSpecialized for UInt64Type {}
-impl NotSpecialized for Float32Type {}
-impl NotSpecialized for Float64Type {}
-impl NotSpecialized for BooleanType {}
-impl NotSpecialized for ListType {}
-#[cfg(feature = "dtype-array")]
-impl NotSpecialized for FixedSizeListType {}
-impl NotSpecialized for BinaryOffsetType {}
-#[cfg(feature = "dtype-decimal")]
-impl NotSpecialized for DecimalType {}
-#[cfg(feature = "object")]
-impl<T> NotSpecialized for ObjectType<T> {}
-
 pub fn _update_gather_sorted_flag(sorted_arr: IsSorted, sorted_idx: IsSorted) -> IsSorted {
     use crate::series::IsSorted::*;
     match (sorted_arr, sorted_idx) {
@@ -196,7 +176,10 @@ pub fn _update_gather_sorted_flag(sorted_arr: IsSorted, sorted_idx: IsSorted) ->
     }
 }
 
-impl<T: PolarsDataType + NotSpecialized> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
+impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T>
+where
+    T: PolarsDataType<HasViews = FalseT>,
+{
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let rechunked;
@@ -272,7 +255,26 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
 
 impl ChunkTakeUnchecked<IdxCa> for StringChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        self.as_binary().take_unchecked(indices).to_string()
+        self.as_binary()
+            .take_unchecked(indices)
+            .to_string_unchecked()
+    }
+}
+
+impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for BinaryChunked {
+    /// Gather values from ChunkedArray by index.
+    unsafe fn take_unchecked(&self, indices: &I) -> Self {
+        let indices = IdxCa::mmap_slice("", indices.as_ref());
+        self.take_unchecked(&indices)
+    }
+}
+
+impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
+    /// Gather values from ChunkedArray by index.
+    unsafe fn take_unchecked(&self, indices: &I) -> Self {
+        self.as_binary()
+            .take_unchecked(indices)
+            .to_string_unchecked()
     }
 }
 

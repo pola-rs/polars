@@ -1,9 +1,9 @@
-use polars_parquet::parquet::encoding::hybrid_rle::encode_bool;
+use polars_parquet::parquet::encoding::hybrid_rle::encode;
 use polars_parquet::parquet::encoding::Encoding;
 use polars_parquet::parquet::error::Result;
 use polars_parquet::parquet::metadata::Descriptor;
 use polars_parquet::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
-use polars_parquet::parquet::statistics::{serialize_statistics, PrimitiveStatistics, Statistics};
+use polars_parquet::parquet::statistics::PrimitiveStatistics;
 use polars_parquet::parquet::types::NativeType;
 use polars_parquet::parquet::write::WriteOptions;
 
@@ -24,7 +24,7 @@ fn unzip_option<T: NativeType>(array: &[Option<T>]) -> Result<(Vec<u8>, Vec<u8>)
             false
         }
     });
-    encode_bool(&mut validity, iter)?;
+    encode::<bool, _, _>(&mut validity, iter, 1)?;
 
     // write the length, now that it is known
     let mut validity = validity.into_inner();
@@ -55,8 +55,8 @@ pub fn array_to_page_v1<T: NativeType>(
             distinct_count: None,
             max_value: array.iter().flatten().max_by(|x, y| x.ord(y)).copied(),
             min_value: array.iter().flatten().min_by(|x, y| x.ord(y)).copied(),
-        } as &dyn Statistics;
-        Some(serialize_statistics(statistics))
+        };
+        Some(statistics.serialize())
     } else {
         None
     };

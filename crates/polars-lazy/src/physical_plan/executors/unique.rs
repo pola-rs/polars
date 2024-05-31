@@ -19,9 +19,15 @@ impl Executor for UniqueExec {
         let keep = self.options.keep_strategy;
 
         state.record(
-            || match self.options.maintain_order {
-                true => df.unique_stable(subset, keep, self.options.slice),
-                false => df.unique(subset, keep, self.options.slice),
+            || {
+                if df.is_empty() {
+                    return Ok(df);
+                }
+
+                match self.options.maintain_order {
+                    true => df.unique_stable(subset, keep, self.options.slice),
+                    false => df.unique(subset, keep, self.options.slice),
+                }
             },
             Cow::Borrowed("unique()"),
         )

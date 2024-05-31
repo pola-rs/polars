@@ -19,7 +19,7 @@ For it to work well for the Polars code base, add the following settings to your
 
 ```json
 {
-    "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.cargo.features": "all"
 }
 ```
 
@@ -32,7 +32,7 @@ This will make it use the correct Ruff version and configuration.
 
 ```json
 {
-    "ruff.importStrategy": "fromEnvironment",
+  "ruff.importStrategy": "fromEnvironment"
 }
 ```
 
@@ -57,38 +57,38 @@ See the [official VSCode documentation](https://code.visualstudio.com/docs/edito
 
 ```json
 {
-    "configurations": [
-        {
-            "name": "Debug Rust/Python",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/py-polars/debug/launch.py",
-            "args": [
-                "${file}"
-            ],
-            "console": "internalConsole",
-            "justMyCode": true,
-            "serverReadyAction": {
-                "pattern": "pID = ([0-9]+)",
-                "action": "startDebugging",
-                "name": "Rust LLDB"
-            }
-        },
-        {
-            "name": "Rust LLDB",
-            "pid": "0",
-            "type": "lldb",
-            "request": "attach",
-            "program": "${workspaceFolder}/py-polars/.venv/bin/python",
-            "stopOnEntry": false,
-            "sourceLanguages": [
-                "rust"
-            ],
-            "presentation": {
-                "hidden": true
-            }
-        }
-    ]
+  "configurations": [
+    {
+      "name": "Debug Rust/Python",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/py-polars/debug/launch.py",
+      "args": [
+        "${file}"
+      ],
+      "console": "internalConsole",
+      "justMyCode": true,
+      "serverReadyAction": {
+        "pattern": "pID = ([0-9]+)",
+        "action": "startDebugging",
+        "name": "Rust LLDB"
+      }
+    },
+    {
+      "name": "Rust LLDB",
+      "pid": "0",
+      "type": "lldb",
+      "request": "attach",
+      "program": "${workspaceFolder}/py-polars/.venv/bin/python",
+      "stopOnEntry": false,
+      "sourceLanguages": [
+        "rust"
+      ],
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ]
 }
 ```
 
@@ -122,7 +122,7 @@ At this point, a second (Rust) debugger is attached to the Python debugger.
 The result is two simultaneous debuggers operating on the same running instance.
 Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop on the Rust debugger.
 
-## PyCharm / RustRover / CLion
+## JetBrains (PyCharm, RustRover, CLion)
 
 !!! info
 

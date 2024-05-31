@@ -2,6 +2,7 @@
 
 use arrow::compute::cast::CastOptions;
 
+use crate::chunked_array::metadata::MetadataProperties;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
@@ -300,13 +301,19 @@ impl ChunkCast for StringChunked {
 impl BinaryChunked {
     /// # Safety
     /// String is not validated
-    pub unsafe fn to_string(&self) -> StringChunked {
+    pub unsafe fn to_string_unchecked(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
             .map(|arr| arr.to_utf8view_unchecked().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::String));
-        StringChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
+
+        let mut ca = StringChunked::new_with_compute_len(field, chunks);
+
+        use MetadataProperties as P;
+        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca
     }
 }
 
@@ -317,9 +324,13 @@ impl StringChunked {
             .map(|arr| arr.to_binview().boxed())
             .collect();
         let field = Arc::new(Field::new(self.name(), DataType::Binary));
-        unsafe {
-            BinaryChunked::from_chunks_and_metadata(chunks, field, self.bit_settings, true, true)
-        }
+
+        let mut ca = BinaryChunked::new_with_compute_len(field, chunks);
+
+        use MetadataProperties as P;
+        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca
     }
 }
 
@@ -334,7 +345,7 @@ impl ChunkCast for BinaryChunked {
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
-            DataType::String => unsafe { Ok(self.to_string().into_series()) },
+            DataType::String => unsafe { Ok(self.to_string_unchecked().into_series()) },
             _ => self.cast(data_type),
         }
     }

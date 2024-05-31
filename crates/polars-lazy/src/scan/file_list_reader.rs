@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::utils::is_cloud_url;
+use polars_io::RowIndex;
+use polars_plan::prelude::UnionArgs;
 
 use crate::prelude::*;
 
@@ -35,6 +37,9 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
+        if !self.glob() {
+            return self.finish_no_glob();
+        }
         if let Some(paths) = self.iter_paths()? {
             let lfs = paths
                 .map(|r| {
@@ -79,7 +84,14 @@ pub trait LazyFileListReader: Clone {
     /// This method should not take into consideration [LazyFileListReader::n_rows]
     /// nor [LazyFileListReader::row_index].
     fn concat_impl(&self, lfs: Vec<LazyFrame>) -> PolarsResult<LazyFrame> {
-        concat_impl(&lfs, self.rechunk(), true, true, false)
+        let args = UnionArgs {
+            rechunk: self.rechunk(),
+            parallel: true,
+            to_supertypes: false,
+            from_partitioned_ds: true,
+            ..Default::default()
+        };
+        concat_impl(&lfs, args)
     }
 
     /// Get the final [LazyFrame].
@@ -87,6 +99,10 @@ pub trait LazyFileListReader: Clone {
     ///
     /// It is recommended to always use [LazyFileListReader::finish] method.
     fn finish_no_glob(self) -> PolarsResult<LazyFrame>;
+
+    fn glob(&self) -> bool {
+        true
+    }
 
     /// Path of the scanned file.
     /// It can be potentially a glob pattern.

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.20.22"
+version = "0.20.30"
 edition = "2021"
 
 [lib]
@@ -14,6 +14,7 @@ polars-lazy = { workspace = true, features = ["python"] }
 polars-ops = { workspace = true }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
+polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
@@ -26,8 +27,7 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { version = "0.21", default-features = false }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods", "gil-refs"] }
-pyo3-built = { version = "0.5", optional = true }
+pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
@@ -56,6 +56,7 @@ features = [
   "ewma_by",
   "fmt",
   "interpolate",
+  "interpolate_by",
   "is_first_distinct",
   "is_last_distinct",
   "is_unique",
@@ -76,6 +77,7 @@ features = [
   "reinterpret",
   "replace",
   "rolling_window",
+  "rolling_window_by",
   "round_series",
   "row_hash",
   "rows",
@@ -97,19 +99,14 @@ features = [
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
 
-[target.'cfg(any(not(target_family = "unix"), use_mimalloc))'.dependencies]
+[target.'cfg(all(any(not(target_family = "unix"), allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
-[target.'cfg(all(target_family = "unix", not(use_mimalloc)))'.dependencies]
+[target.'cfg(all(target_family = "unix", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
-# features are only there to enable building a slim binary for the benchmark in CI
 [features]
-# needed for macro
-dtype-i8 = []
-dtype-i16 = []
-dtype-u8 = []
-dtype-u16 = []
+# Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
 parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
@@ -131,13 +128,12 @@ decompress = ["polars/decompress-fast"]
 regex = ["polars/regex"]
 csv = ["polars/csv"]
 clipboard = ["arboard"]
-object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
 top_k = ["polars/top_k"]
 propagate_nans = ["polars/propagate_nans"]
 sql = ["polars/sql"]
-build_info = ["dep:pyo3-built", "dep:built"]
+build_info = ["dep:built"]
 performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
@@ -160,11 +156,19 @@ peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
 
+dtype-i8 = []
+dtype-i16 = []
+dtype-u8 = []
+dtype-u16 = []
+dtype-array = []
+object = ["polars/object"]
+
 dtypes = [
-  "dtype-i8",
+  "dtype-array",
   "dtype-i16",
-  "dtype-u8",
+  "dtype-i8",
   "dtype-u16",
+  "dtype-u8",
   "object",
 ]
 

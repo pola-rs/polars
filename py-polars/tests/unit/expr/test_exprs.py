@@ -296,7 +296,7 @@ def test_expression_appends() -> None:
     assert df.select(pl.repeat(None, 3).append(pl.col("a"))).n_chunks() == 2
     assert df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()).n_chunks() == 1
 
-    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")]))
+    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")], rechunk=True))
 
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
@@ -407,6 +407,46 @@ def test_search_sorted() -> None:
     b = pl.Series([0, 1, 2, 4, 5])
     assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
+
+
+def test_search_sorted_multichunk() -> None:
+    for seed in [1, 2, 3]:
+        np.random.seed(seed)
+        arr = np.sort(np.random.randn(10) * 100)
+        q = len(arr) // 4
+        a, b, c, d = map(
+            pl.Series, (arr[:q], arr[q : 2 * q], arr[2 * q : 3 * q], arr[3 * q :])
+        )
+        s = pl.concat([a, b, c, d], rechunk=False)
+        assert s.n_chunks() == 4
+
+        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
+            assert np.searchsorted(arr, v) == s.search_sorted(v)
+
+    a = pl.concat(
+        [
+            pl.Series([None, None, None], dtype=pl.Int64),
+            pl.Series([None, 1, 1, 2, 3]),
+            pl.Series([4, 4, 5, 6, 7, 8, 8]),
+        ],
+        rechunk=False,
+    )
+    assert a.n_chunks() == 3
+    b = pl.Series([-10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, None])
+    left_ref = pl.Series(
+        [4, 4, 4, 6, 7, 8, 10, 11, 12, 13, 15, 0], dtype=pl.get_index_type()
+    )
+    right_ref = pl.Series(
+        [4, 4, 6, 7, 8, 10, 11, 12, 13, 15, 15, 4], dtype=pl.get_index_type()
+    )
+    assert_series_equal(a.search_sorted(b, side="left"), left_ref)
+    assert_series_equal(a.search_sorted(b, side="right"), right_ref)
+
+
+def test_search_sorted_right_nulls() -> None:
+    a = pl.Series([1, 2, None, None])
+    assert a.search_sorted(None, side="left") == 2
+    assert a.search_sorted(None, side="right") == 4
 
 
 def test_logical_boolean() -> None:
@@ -693,9 +733,9 @@ def test_repr_long_expression() -> None:
 
 def test_repr_gather() -> None:
     result = repr(pl.col("a").gather(0))
-    assert 'col("a").gather(0)' in result
+    assert 'col("a").gather(dyn int: 0)' in result
     result = repr(pl.col("a").get(0))
-    assert 'col("a").get(0)' in result
+    assert 'col("a").get(dyn int: 0)' in result
 
 
 def test_replace_no_cse() -> None:

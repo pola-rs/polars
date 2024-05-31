@@ -47,7 +47,7 @@ fn get_scan_columns(
             // we shouldn't project the row-count column, as that is generated
             // in the scan
             let push = match row_index {
-                Some(rc) if name.as_ref() != rc.name.as_str() => true,
+                Some(rc) if name != rc.name => true,
                 None => true,
                 _ => false,
             };
@@ -325,6 +325,8 @@ impl ProjectionPushDown {
         use IR::*;
 
         match logical_plan {
+            // Should not yet be here
+            Reduce { .. } => unreachable!(),
             Select { expr, input, .. } => process_projection(
                 self,
                 input,
@@ -649,10 +651,7 @@ impl ProjectionPushDown {
                     schema: Arc::new(new_schema),
                 })
             },
-            MapFunction {
-                input,
-                ref function,
-            } => functions::process_functions(
+            MapFunction { input, function } => functions::process_functions(
                 self,
                 input,
                 function,

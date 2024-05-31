@@ -1,4 +1,5 @@
 //! DataFrame module.
+#[cfg(feature = "zip_with")]
 use std::borrow::Cow;
 use std::{mem, ops};
 
@@ -22,7 +23,7 @@ pub mod row;
 mod top_k;
 mod upstream_traits;
 
-pub use chunks::*;
+use arrow::record_batch::RecordBatch;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -431,15 +432,6 @@ impl DataFrame {
         Ok(DataFrame { columns })
     }
 
-    /// Aggregate all chunks to contiguous memory.
-    #[must_use]
-    pub fn agg_chunks(&self) -> Self {
-        // Don't parallelize this. Memory overhead
-        let f = |s: &Series| s.rechunk();
-        let cols = self.columns.iter().map(f).collect();
-        unsafe { DataFrame::new_no_checks(cols) }
-    }
-
     /// Shrink the capacity of this DataFrame to fit its length.
     pub fn shrink_to_fit(&mut self) {
         // Don't parallelize this. Memory overhead
@@ -460,9 +452,10 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        if self.columns.iter().any(|s| s.n_chunks() > 1) {
-            self.columns = self._apply_columns_par(&|s| s.rechunk());
-        }
+        self.as_single_chunk();
+        // if self.columns.iter().any(|s| s.n_chunks() > 1) {
+        //     self.columns = self._apply_columns_par(&|s| s.rechunk());
+        // }
         self
     }
 
@@ -737,7 +730,7 @@ impl DataFrame {
         self.shape().0
     }
 
-    /// Check if the [`DataFrame`] is empty.
+    /// Returns `true` if the [`DataFrame`] contains no rows.
     ///
     /// # Example
     ///
@@ -752,7 +745,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.columns.is_empty()
+        self.height() == 0
     }
 
     /// Add columns horizontally.
@@ -787,7 +780,7 @@ impl DataFrame {
         // this DataFrame is already modified when an error occurs.
         for col in columns {
             polars_ensure!(
-                col.len() == self.height() || self.height() == 0,
+                col.len() == self.height() || self.is_empty(),
                 ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
                 col.len(), self.height(),
             );
@@ -1154,7 +1147,7 @@ impl DataFrame {
                 series = series.new_from_index(0, height);
             }
 
-            if series.len() == height || df.is_empty() {
+            if series.len() == height || df.get_columns().is_empty() {
                 df.add_column_by_search(series)?;
                 Ok(df)
             }
@@ -1227,7 +1220,7 @@ impl DataFrame {
             series = series.new_from_index(0, height);
         }
 
-        if series.len() == height || self.is_empty() {
+        if series.len() == height || self.columns.is_empty() {
             self.add_column_by_schema(series, schema)?;
             Ok(self)
         }
@@ -1635,7 +1628,7 @@ impl DataFrame {
         let n_threads = POOL.current_num_threads();
 
         let masks = split_ca(mask, n_threads).unwrap();
-        let dfs = split_df(self, n_threads).unwrap();
+        let dfs = split_df(self, n_threads, false);
         let dfs: PolarsResult<Vec<_>> = POOL.install(|| {
             masks
                 .par_iter()
@@ -1803,7 +1796,7 @@ impl DataFrame {
             });
         };
 
-        if self.height() == 0 {
+        if self.is_empty() {
             let mut out = self.clone();
             set_sorted(&mut out);
 
@@ -2256,6 +2249,9 @@ impl DataFrame {
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         if offset == 0 && length == self.height() {
             return self.clone();
+        }
+        if length == 0 {
+            return self.clear();
         }
         let col = self
             .columns
@@ -2831,7 +2827,7 @@ impl DataFrame {
         &mut self,
         hasher_builder: Option<ahash::RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
-        let dfs = split_df(self, POOL.current_num_threads())?;
+        let dfs = split_df(self, POOL.current_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
@@ -3001,7 +2997,7 @@ pub struct RecordBatchIter<'a> {
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
-    type Item = ArrowChunk;
+    type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx >= self.n_chunks {
@@ -3015,7 +3011,7 @@ impl<'a> Iterator for RecordBatchIter<'a> {
                 .collect();
             self.idx += 1;
 
-            Some(ArrowChunk::new(batch_cols))
+            Some(RecordBatch::new(batch_cols))
         }
     }
 
@@ -3030,14 +3026,14 @@ pub struct PhysRecordBatchIter<'a> {
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
-    type Item = ArrowChunk;
+    type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iters
             .iter_mut()
             .map(|phys_iter| phys_iter.next().cloned())
             .collect::<Option<Vec<_>>>()
-            .map(ArrowChunk::new)
+            .map(RecordBatch::new)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

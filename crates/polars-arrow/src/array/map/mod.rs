@@ -101,7 +101,7 @@ impl MapArray {
 impl MapArray {
     /// Returns a slice of this [`MapArray`].
     /// # Panics
-    /// panics iff `offset + length >= self.len()`
+    /// panics iff `offset + length > self.len()`
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),

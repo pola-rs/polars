@@ -32,7 +32,7 @@ def test_regex_expr_match(regex_op: str, expected: list[int]) -> None:
             "pat": ["^A", "^A", "^A", r"[AB]\d.*$", ".*xxx$"],
         }
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         out = ctx.execute(f"SELECT idx, str FROM df WHERE str {regex_op} pat")
         assert out.to_series().to_list() == expected
 
@@ -68,7 +68,7 @@ def test_regex_operators(
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+    with pl.SQLContext(foods=lf, eager=True) as ctx:
         out = ctx.execute(
             f"""
             SELECT DISTINCT category FROM foods
@@ -80,9 +80,9 @@ def test_regex_operators(
 
 def test_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
-            ComputeError, match="invalid pattern for '~' operator: 12345"
+            ComputeError, match="invalid pattern for '~' operator: dyn .*12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(
@@ -113,7 +113,7 @@ def test_regexp_like(
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
     flags = "" if flags is None else f",'{flags}'"
-    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+    with pl.SQLContext(foods=lf, eager=True) as ctx:
         out = ctx.execute(
             f"""
             SELECT DISTINCT category FROM foods

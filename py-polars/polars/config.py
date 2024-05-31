@@ -66,6 +66,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
+    "POLARS_MAX_EXPR_DEPTH",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -663,14 +664,14 @@ class Config(contextlib.ContextDecorator):
         ... )
         >>> df.with_columns(pl.col("txt").str.len_bytes().alias("len"))
         shape: (2, 2)
-        ┌───────────────────────────────────┬─────┐
-        │ txt                               ┆ len │
-        │ ---                               ┆ --- │
-        │ str                               ┆ u32 │
-        ╞═══════════════════════════════════╪═════╡
-        │ Play it, Sam. Play 'As Time Goes… ┆ 37  │
-        │ This is the beginning of a beaut… ┆ 48  │
-        └───────────────────────────────────┴─────┘
+        ┌─────────────────────────────────┬─────┐
+        │ txt                             ┆ len │
+        │ ---                             ┆ --- │
+        │ str                             ┆ u32 │
+        ╞═════════════════════════════════╪═════╡
+        │ Play it, Sam. Play 'As Time Go… ┆ 37  │
+        │ This is the beginning of a bea… ┆ 48  │
+        └─────────────────────────────────┴─────┘
         >>> with pl.Config(fmt_str_lengths=50):
         ...     print(df)
         shape: (2, 1)
@@ -1316,4 +1317,18 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_WARN_UNSTABLE", None)
         else:
             os.environ["POLARS_WARN_UNSTABLE"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_expr_depth_warning(cls, limit: int) -> type[Config]:
+        """
+        Set the the expression depth that Polars will accept without triggering a warning.
+
+        Having too deep expressions (several 1000s) can lead to overflowing the stack and might be worth a refactor.
+        """  # noqa: W505
+        if limit < 0:
+            msg = "limit should be positive"
+            raise ValueError(msg)
+
+        os.environ["POLARS_MAX_EXPR_DEPTH"] = str(limit)
         return cls

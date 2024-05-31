@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -16,7 +18,7 @@ def foods_ipc_path() -> Path:
 def test_group_by(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    ctx = pl.SQLContext(eager_execution=True)
+    ctx = pl.SQLContext(eager=True)
     ctx.register("foods", lf)
 
     out = ctx.execute(
@@ -65,7 +67,7 @@ def test_group_by(foods_ipc_path: Path) -> None:
     assert out.to_dict(as_series=False) == {"grp": ["c"], "n_dist_attr": [2]}
 
 
-def test_group_by_ordinal_position() -> None:
+def test_group_by_all() -> None:
     df = pl.DataFrame(
         {
             "a": ["xx", "yy", "xx", "yy", "xx", "zz"],
@@ -73,18 +75,130 @@ def test_group_by_ordinal_position() -> None:
             "c": [99, 99, 66, 66, 66, 66],
         }
     )
-    expected = pl.LazyFrame({"c": [66, 99], "total_b": [18, 3]})
+
+    # basic group/agg
+    res = df.sql(
+        """
+        SELECT
+            a,
+            SUM(b),
+            SUM(c),
+            COUNT(*) AS n
+        FROM self
+        GROUP BY ALL
+        ORDER BY a
+        """
+    )
+    expected = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "zz"],
+            "b": [9, 6, 6],
+            "c": [231, 165, 66],
+            "n": [3, 2, 1],
+        }
+    )
+    assert_frame_equal(expected, res, check_dtypes=False)
+
+    # more involved determination of agg/group columns
+    res = df.sql(
+        """
+        SELECT
+            SUM(b) AS sum_b,
+            SUM(c) AS sum_c,
+            (SUM(b) + SUM(c)) / 2.0 AS sum_bc_over_2,  -- nested agg
+            a as grp, --aliased group key
+        FROM self
+        GROUP BY ALL
+        ORDER BY grp
+        """
+    )
+    expected = pl.DataFrame(
+        {
+            "sum_b": [9, 6, 6],
+            "sum_c": [231, 165, 66],
+            "sum_bc_over_2": [120.0, 85.5, 36.0],
+            "grp": ["xx", "yy", "zz"],
+        }
+    )
+    assert_frame_equal(expected, res.sort(by="grp"))
+
+
+def test_group_by_all_multi() -> None:
+    dt1 = date(1999, 12, 31)
+    dt2 = date(2028, 7, 5)
+
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "xx", "yy", "xx", "xx"],
+            "dt": [dt1, dt1, dt1, dt2, dt2, dt2],
+            "value": [10.5, -5.5, 20.5, 8.0, -3.0, 5.0],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "dt": [dt1, dt1, dt2, dt2],
+            "key": ["xx", "yy", "xx", "yy"],
+            "sum_value": [31.0, -5.5, 2.0, 8.0],
+            "ninety_nine": [99, 99, 99, 99],
+        },
+        schema_overrides={"ninety_nine": pl.Int16},
+    )
+
+    # the following groupings should all be equivalent
+    for group in (
+        "ALL",
+        "1, 2",
+        "dt, key",
+    ):
+        res = df.sql(
+            f"""
+            SELECT dt, key, sum_value, ninety_nine::int2 FROM
+            (
+                SELECT
+                  dt,
+                  key,
+                  SUM(value) AS sum_value,
+                  99 AS ninety_nine
+                FROM self
+                GROUP BY {group}
+                ORDER BY dt, key
+            ) AS grp
+            """
+        )
+        assert_frame_equal(expected, res)
+
+
+def test_group_by_ordinal_position() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "xx", "yy", "xx", "zz"],
+            "b": [1, None, 3, 4, 5, 6],
+            "c": [99, 99, 66, 66, 66, 66],
+        }
+    )
+    expected = pl.LazyFrame(
+        {
+            "c": [66, 99],
+            "total_b": [18, 1],
+            "count_b": [4, 1],
+            "count_star": [4, 2],
+        }
+    )
 
     with pl.SQLContext(frame=df) as ctx:
         res1 = ctx.execute(
             """
-            SELECT c, SUM(b) AS total_b
+            SELECT
+              c,
+              SUM(b) AS total_b,
+              COUNT(b) AS count_b,
+              COUNT(*) AS count_star
             FROM frame
             GROUP BY 1
             ORDER BY c
             """
         )
-        assert_frame_equal(res1, expected)
+        assert_frame_equal(res1, expected, check_dtypes=False)
 
         res2 = ctx.execute(
             """
@@ -95,4 +209,32 @@ def test_group_by_ordinal_position() -> None:
             )
             SELECT c, total_b FROM grp ORDER BY c"""
         )
-        assert_frame_equal(res2, expected)
+        assert_frame_equal(res2, expected.select(expected.columns[:2]))
+
+
+def test_group_by_errors() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["xx", "yy", "xx"],
+            "b": [10, 20, 30],
+            "c": [99, 99, 66],
+        }
+    )
+
+    with pytest.raises(
+        ComputeError,
+        match=r"expected a positive integer or valid expression; got -99",
+    ):
+        df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
+
+    with pytest.raises(
+        ComputeError,
+        match=r"expected a positive integer or valid expression; got '!!!'",
+    ):
+        df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
+
+    with pytest.raises(
+        ComputeError,
+        match=r"'a' should participate in the GROUP BY clause or an aggregate function",
+    ):
+        df.sql("SELECT a, SUM(b) FROM self GROUP BY b")

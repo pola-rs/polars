@@ -391,8 +391,10 @@ fn test_scan_parquet_limit_9001() {
         ..Default::default()
     };
     let q = LazyFrame::scan_parquet(path, args).unwrap().limit(3);
-    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
-    (&lp_arena).iter(node).all(|(_, lp)| match lp {
+    let IRPlan {
+        lp_top, lp_arena, ..
+    } = q.to_alp_optimized().unwrap();
+    (&lp_arena).iter(lp_top).all(|(_, lp)| match lp {
         IR::Union { options, .. } => {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
@@ -449,13 +451,13 @@ fn test_csv_globbing() -> PolarsResult<()> {
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
-    let glob = "../../examples/datasets/*.csv";
+    let glob = "../../examples/datasets/foods*.csv";
     let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
 
     let df = lf.clone().collect()?;
-    assert_eq!(df.shape(), (100, 4));
+    assert_eq!(df, full_df.slice(0, 100));
     let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
-    assert!(full_df.slice(20, 60).equals(&df));
+    assert_eq!(df, full_df.slice(20, 60));
 
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
@@ -586,7 +588,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
             .with_row_index(Some(RowIndex {
-                name: "index".into(),
+                name: Arc::from("index"),
                 offset,
             }))
             .finish()?;
@@ -671,7 +673,7 @@ fn scan_small_dtypes() -> PolarsResult<()> {
     ];
     for dt in small_dt {
         let df = LazyCsvReader::new(FOODS_CSV)
-            .has_header(true)
+            .with_has_header(true)
             .with_dtype_overwrite(Some(Arc::new(Schema::from_iter([Field::new(
                 "sugars_g",
                 dt.clone(),

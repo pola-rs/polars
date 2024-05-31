@@ -24,6 +24,13 @@ pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResu
     Ok(polars_ops::prelude::interpolate(s, method))
 }
 
+#[cfg(feature = "interpolate_by")]
+pub(super) fn interpolate_by(s: &[Series]) -> PolarsResult<Series> {
+    let by = &s[1];
+    let by_is_sorted = by.is_sorted(Default::default())?;
+    polars_ops::prelude::interpolate_by(&s[0], by, by_is_sorted)
+}
+
 pub(super) fn to_physical(s: &Series) -> PolarsResult<Series> {
     Ok(s.to_physical_repr().into_owned())
 }
@@ -47,8 +54,13 @@ pub(super) fn replace_time_zone(
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResult<Series> {
-    s.value_counts(sort, parallel)
+pub(super) fn value_counts(
+    s: &Series,
+    sort: bool,
+    parallel: bool,
+    name: String,
+) -> PolarsResult<Series> {
+    s.value_counts(sort, parallel, name)
         .map(|df| df.into_struct(s.name()).into_series())
 }
 
@@ -57,8 +69,12 @@ pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::unique_counts(s)
 }
 
-pub(super) fn reshape(s: &Series, dimensions: Vec<i64>) -> PolarsResult<Series> {
-    s.reshape(&dimensions)
+pub(super) fn reshape(s: &Series, dimensions: &[i64], nested: &NestedType) -> PolarsResult<Series> {
+    match nested {
+        NestedType::List => s.reshape_list(dimensions),
+        #[cfg(feature = "dtype-array")]
+        NestedType::Array => s.reshape_array(dimensions),
+    }
 }
 
 #[cfg(feature = "repeat_by")]
