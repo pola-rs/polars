@@ -75,8 +75,12 @@ pub trait SeriesMethods: SeriesSealed {
         // for struct types we row-encode and recurse
         #[cfg(feature = "dtype-struct")]
         if matches!(s.dtype(), DataType::Struct(_)) {
-            let encoded =
-                _get_rows_encoded_ca("", &[s.clone()], &[options.descending], options.nulls_last)?;
+            let encoded = _get_rows_encoded_ca(
+                "",
+                &[s.clone()],
+                &[options.descending],
+                &[options.nulls_last],
+            )?;
             return encoded.into_series().is_sorted(options);
         }
 

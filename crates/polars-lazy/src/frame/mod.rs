@@ -292,7 +292,7 @@ impl LazyFrame {
     ///     df.lazy().sort(
     ///         &["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
-    ///             .with_order_descendings([false, true])
+    ///             .with_order_descending_multi([false, true])
     ///     )
     /// }
     /// ```

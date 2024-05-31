@@ -312,7 +312,7 @@ impl PyExpr {
         k: Self,
         by: Vec<Self>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
@@ -358,7 +358,7 @@ impl PyExpr {
         k: Self,
         by: Vec<Self>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
@@ -415,7 +415,7 @@ impl PyExpr {
         &self,
         by: Vec<Self>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         multithreaded: bool,
         maintain_order: bool,
     ) -> Self {

@@ -16,6 +16,7 @@ from polars._utils.parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import extend_bool
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
 
@@ -1640,7 +1641,7 @@ def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
-    nulls_last: bool = False,
+    nulls_last: bool | Sequence[bool] = False,
     multithreaded: bool = True,
     maintain_order: bool = False,
 ) -> Expr:
@@ -1725,12 +1726,8 @@ def arg_sort_by(
     └─────┘
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
-
-    if isinstance(descending, bool):
-        descending = [descending] * len(exprs)
-    elif len(exprs) != len(descending):
-        msg = f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
-        raise ValueError(msg)
+    descending = extend_bool(descending, len(exprs), "descending", "exprs")
+    nulls_last = extend_bool(nulls_last, len(exprs), "nulls_last", "exprs")
     return wrap_expr(
         plr.arg_sort_by(exprs, descending, nulls_last, multithreaded, maintain_order)
     )

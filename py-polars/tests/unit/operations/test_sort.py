@@ -74,34 +74,54 @@ def test_sort_by() -> None:
 
 
 def test_expr_sort_by_nulls_last() -> None:
+    df = pl.DataFrame({"a": [1, 2, None, None, 5], "b": [None, 1, 1, 2, None]})
+
     # nulls last
-    df = pl.DataFrame(
-        {"a": [1, 2, None, None, 5], "b": [None, 1, 1, 2, None], "c": [2, 3, 1, 2, 1]}
-    )
+    expected = pl.DataFrame({"a": [1, 2, 5, None, None], "b": [None, 1, None, 1, 2]})
+    out = df.select(pl.all().sort_by("a", nulls_last=True))
+    assert_frame_equal(out, expected)
 
-    out = df.select(pl.all().sort_by("a", nulls_last=True, maintain_order=True))
+    # nulls first (default)
+    expected = pl.DataFrame({"a": [None, None, 1, 2, 5], "b": [1, 2, None, 1, None]})
+    for out in (
+        df.select(pl.all().sort_by("a", nulls_last=False)),
+        df.select(pl.all().sort_by("a")),
+    ):
+        assert_frame_equal(out, expected)
 
-    excepted = pl.DataFrame(
-        {
-            "a": [1, 2, 5, None, None],
-            "b": [None, 1, None, 1, 2],
-            "c": [2, 3, 1, 1, 2],
-        }
-    )
 
-    assert_frame_equal(out, excepted)
+def test_expr_sort_by_multi_nulls_last() -> None:
+    df = pl.DataFrame({"x": [None, 1, None, 3], "y": [3, 2, None, 1]})
 
-    # nulls first
+    res = df.sort("x", "y", nulls_last=[False, True])
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 1, 3],
+        "y": [3, None, 2, 1],
+    }
 
-    out = df.select(pl.all().sort_by("a", nulls_last=False, maintain_order=True))
+    res = df.sort("x", "y", nulls_last=[True, False])
+    assert res.to_dict(as_series=False) == {
+        "x": [1, 3, None, None],
+        "y": [2, 1, None, 3],
+    }
 
-    excepted = pl.DataFrame(
-        {
-            "a": [None, None, 1, 2, 5],
-            "b": [1, 2, None, 1, None],
-            "c": [1, 2, 2, 3, 1],
-        }
-    )
+    res = df.sort("x", "y", nulls_last=[True, False], descending=True)
+    assert res.to_dict(as_series=False) == {
+        "x": [3, 1, None, None],
+        "y": [1, 2, None, 3],
+    }
+
+    res = df.sort("x", "y", nulls_last=[False, True], descending=True)
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 3, 1],
+        "y": [3, None, 1, 2],
+    }
+
+    res = df.sort("x", "y", nulls_last=[False, True], descending=[True, False])
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 3, 1],
+        "y": [3, None, 1, 2],
+    }
 
 
 def test_sort_by_exprs() -> None:
@@ -114,38 +134,41 @@ def test_sort_by_exprs() -> None:
 
 def test_arg_sort_nulls() -> None:
     a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
+
     assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 3, 4]
     assert a.arg_sort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
 
-    assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
-        None,
-        None,
-        1.0,
-        2.0,
-        3.0,
-    ]
-    assert a.to_frame().sort(by="a", nulls_last=True).to_series().to_list() == [
-        1.0,
-        2.0,
-        3.0,
-        None,
-        None,
-    ]
+    res = a.to_frame().sort(by="a", nulls_last=False).to_series().to_list()
+    assert res == [None, None, 1.0, 2.0, 3.0]
+
+    res = a.to_frame().sort(by="a", nulls_last=True).to_series().to_list()
+    assert res == [1.0, 2.0, 3.0, None, None]
 
 
-def test_expr_arg_sort_nulls_last() -> None:
+@pytest.mark.parametrize(
+    ("nulls_last", "expected"),
+    [
+        (True, [0, 1, 4, 3, 2]),
+        (False, [2, 3, 0, 1, 4]),
+        ([True, False], [0, 1, 4, 2, 3]),
+        ([False, True], [3, 2, 0, 1, 4]),
+    ],
+)
+def test_expr_arg_sort_nulls_last(
+    nulls_last: bool | list[bool], expected: list[int]
+) -> None:
     df = pl.DataFrame(
-        {"a": [1, 2, None, None, 5], "b": [None, 1, 2, 1, None], "c": [2, 3, 1, 2, 1]}
+        {
+            "a": [1, 2, None, None, 5],
+            "b": [1, 2, None, 1, None],
+            "c": [2, 3, 1, 2, 1],
+        },
     )
-
     out = (
-        df.select(pl.arg_sort_by("a", "b", nulls_last=True, maintain_order=True))
+        df.select(pl.arg_sort_by("a", "b", nulls_last=nulls_last, maintain_order=True))
         .to_series()
         .to_list()
     )
-
-    expected = [0, 1, 4, 3, 2]
-
     assert out == expected
 
 
@@ -157,7 +180,6 @@ def test_arg_sort_window_functions() -> None:
             pl.arg_sort_by("Age").over("Id").alias("arg_sort_by"),
         ]
     )
-
     assert (
         out["arg_sort"].to_list() == out["arg_sort_by"].to_list() == [0, 1, 0, 1, 0, 1]
     )

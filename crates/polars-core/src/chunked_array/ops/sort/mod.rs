@@ -277,14 +277,13 @@ where
 fn ordering_other_columns<'a>(
     compare_inner: &'a [Box<dyn TotalOrdInner + 'a>],
     descending: &[bool],
-    nulls_last: bool,
+    nulls_last: &[bool],
     idx_a: usize,
     idx_b: usize,
 ) -> Ordering {
-    for (cmp, descending) in compare_inner.iter().zip(descending) {
-        // SAFETY:
-        // indices are in bounds
-        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b, nulls_last ^ descending) };
+    for ((cmp, descending), null_last) in compare_inner.iter().zip(descending).zip(nulls_last) {
+        // SAFETY: indices are in bounds
+        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b, null_last ^ descending) };
         match (ordering, descending) {
             (Ordering::Equal, _) => continue,
             (_, true) => return ordering.reverse(),
@@ -557,7 +556,7 @@ impl StructChunked {
             self.name(),
             &[self.clone().into_series()],
             &[options.descending],
-            options.nulls_last,
+            &[options.nulls_last],
         )
         .unwrap();
         bin.arg_sort(Default::default())
@@ -670,10 +669,10 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
     Ok(out)
 }
 
-pub fn _broadcast_descending(n_cols: usize, descending: &mut Vec<bool>) {
-    if n_cols > descending.len() && descending.len() == 1 {
-        while n_cols != descending.len() {
-            descending.push(descending[0]);
+pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
+    if n_cols > values.len() && values.len() == 1 {
+        while n_cols != values.len() {
+            values.push(values[0]);
         }
     }
 }
@@ -689,10 +688,10 @@ pub(crate) fn prepare_arg_sort(
         .map(convert_sort_column_multi_sort)
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let first = columns.remove(0);
+    _broadcast_bools(n_cols, &mut sort_options.descending);
+    _broadcast_bools(n_cols, &mut sort_options.nulls_last);
 
-    // broadcast ordering
-    _broadcast_descending(n_cols, &mut sort_options.descending);
+    let first = columns.remove(0);
     Ok((first, columns))
 }
 
@@ -831,7 +830,7 @@ mod test {
 
         let out = df.sort(
             ["groups", "values"],
-            SortMultipleOptions::default().with_order_descendings([true, false]),
+            SortMultipleOptions::default().with_order_descending_multi([true, false]),
         )?;
         let expected = df!(
             "groups" => [3, 2, 1],
@@ -841,7 +840,7 @@ mod test {
 
         let out = df.sort(
             ["values", "groups"],
-            SortMultipleOptions::default().with_order_descendings([false, true]),
+            SortMultipleOptions::default().with_order_descending_multi([false, true]),
         )?;
         let expected = df!(
             "groups" => [2, 1, 3],

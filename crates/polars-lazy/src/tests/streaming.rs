@@ -104,7 +104,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             [col("sugars_g"), col("calories")],
-            SortMultipleOptions::default().with_order_descendings([false, false]),
+            SortMultipleOptions::default().with_order_descending_multi([false, false]),
         );
 
     assert_streaming_with_default(q, true, false);

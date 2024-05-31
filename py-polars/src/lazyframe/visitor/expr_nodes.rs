@@ -308,7 +308,7 @@ pub struct SortBy {
     by: Vec<usize>,
     #[pyo3(get)]
     /// maintain_order, nulls_last, descending
-    sort_options: (bool, bool, Vec<bool>),
+    sort_options: (bool, Vec<bool>, Vec<bool>),
 }
 
 #[pyclass]
@@ -594,7 +594,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             by: by.iter().map(|n| n.0).collect(),
             sort_options: (
                 sort_options.maintain_order,
-                sort_options.nulls_last,
+                sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
         }

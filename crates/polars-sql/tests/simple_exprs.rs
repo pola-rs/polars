@@ -560,7 +560,7 @@ fn test_group_by_2() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             vec![col("count"), col("category")],
-            SortMultipleOptions::default().with_order_descendings([false, true]),
+            SortMultipleOptions::default().with_order_descending_multi([false, true]),
         )
         .limit(2);
     let expected = expected.collect()?;

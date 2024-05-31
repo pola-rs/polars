@@ -4546,7 +4546,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | Sequence[bool] = False,
         multithreaded: bool = True,
         maintain_order: bool = False,
     ) -> DataFrame:
@@ -4564,7 +4564,8 @@ class DataFrame:
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Place null values last; can specify a single boolean applying to all columns
+            or a sequence of booleans for per-column control.
         multithreaded
             Sort using multiple threads.
         maintain_order
@@ -4750,7 +4751,7 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
+        nulls_last: bool | Sequence[bool] | None = None,
         maintain_order: bool | None = None,
     ) -> DataFrame:
         """
@@ -4851,7 +4852,7 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
+        nulls_last: bool | Sequence[bool] | None = None,
         maintain_order: bool | None = None,
     ) -> DataFrame:
         """

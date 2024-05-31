@@ -735,13 +735,19 @@ def test_struct_concat_self_no_rechunk() -> None:
 
 
 def test_sort_structs() -> None:
-    assert pl.DataFrame(
-        {"sex": ["male", "female", "female"], "age": [22, 38, 26]}
-    ).select(pl.struct(["sex", "age"]).sort()).unnest("sex").to_dict(
-        as_series=False
-    ) == {
-        "sex": ["female", "female", "male"],
-        "age": [26, 38, 22],
+    df = pl.DataFrame(
+        {
+            "sex": ["m", "f", "f", "f", "m", "m", "f"],
+            "age": [22, 38, 26, 24, 21, 46, 22],
+        },
+    )
+    df_sorted_as_struct = df.select(pl.struct(["sex", "age"]).sort()).unnest("sex")
+    df_expected = df.sort(by=["sex", "age"])
+
+    assert_frame_equal(df_expected, df_sorted_as_struct)
+    assert df_sorted_as_struct.to_dict(as_series=False) == {
+        "sex": ["f", "f", "f", "f", "m", "m", "m"],
+        "age": [22, 24, 26, 38, 21, 22, 46],
     }
 
 

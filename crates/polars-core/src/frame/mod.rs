@@ -1773,8 +1773,8 @@ impl DataFrame {
         mut sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
-        // note that the by_column argument also contains evaluated expression from polars-lazy
-        // that may not even be present in this dataframe.
+        // note that the by_column argument also contains evaluated expression from
+        // polars-lazy that may not even be present in this dataframe.
 
         // therefore when we try to set the first columns as sorted, we ignore the error
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
@@ -1782,9 +1782,8 @@ impl DataFrame {
         let first_by_column = by_column[0].name().to_string();
 
         let set_sorted = |df: &mut DataFrame| {
-            // Mark the first sort column as sorted
-            // if the column did not exists it is ok, because we sorted by an expression
-            // not present in the dataframe
+            // Mark the first sort column as sorted; if the column does not exist it
+            // is ok, because we sorted by an expression not present in the dataframe
             let _ = df.apply(&first_by_column, |s| {
                 let mut s = s.clone();
                 if first_descending {
@@ -1795,14 +1794,11 @@ impl DataFrame {
                 s
             });
         };
-
         if self.is_empty() {
             let mut out = self.clone();
             set_sorted(&mut out);
-
             return Ok(out);
         }
-
         if let Some((0, k)) = slice {
             return self.bottom_k_impl(k, by_column, sort_options);
         }
@@ -1824,7 +1820,7 @@ impl DataFrame {
                 let s = &by_column[0];
                 let options = SortOptions {
                     descending: sort_options.descending[0],
-                    nulls_last: sort_options.nulls_last,
+                    nulls_last: sort_options.nulls_last[0],
                     multithreaded: sort_options.multithreaded,
                     maintain_order: sort_options.maintain_order,
                 };
@@ -1836,13 +1832,12 @@ impl DataFrame {
                     if let Some((offset, len)) = slice {
                         out = out.slice(offset, len);
                     }
-
                     return Ok(out.into_frame());
                 }
                 s.arg_sort(options)
             },
             _ => {
-                if sort_options.nulls_last
+                if sort_options.nulls_last.iter().all(|&x| x)
                     || has_struct
                     || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
                 {
@@ -1899,7 +1894,7 @@ impl DataFrame {
     ///     df.sort(
     ///         &["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
-    ///             .with_order_descendings([false, true])
+    ///             .with_order_descending_multi([false, true])
     ///     )
     /// }
     /// ```

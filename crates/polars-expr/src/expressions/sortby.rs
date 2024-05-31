@@ -33,14 +33,14 @@ impl SortByExpr {
     }
 }
 
-fn prepare_descending(descending: &[bool], by_len: usize) -> Vec<bool> {
-    match (descending.len(), by_len) {
+fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
+    match (values.len(), by_len) {
         // Equal length.
-        (n_rdescending, n) if n_rdescending == n => descending.to_vec(),
+        (n_rvalues, n) if n_rvalues == n => values.to_vec(),
         // None given all false.
         (0, n) => vec![false; n],
         // Broadcast first.
-        (_, n) => vec![descending[0]; n],
+        (_, n) => vec![values[0]; n],
     }
 }
 
@@ -141,7 +141,7 @@ fn sort_by_groups_multiple_by(
 
             let options = SortMultipleOptions {
                 descending: descending.to_owned(),
-                nulls_last: false,
+                nulls_last: vec![false; descending.len()],
                 multithreaded,
                 maintain_order,
             };
@@ -157,7 +157,7 @@ fn sort_by_groups_multiple_by(
 
             let options = SortMultipleOptions {
                 descending: descending.to_owned(),
-                nulls_last: false,
+                nulls_last: vec![false; descending.len()],
                 multithreaded,
                 maintain_order,
             };
@@ -178,8 +178,6 @@ impl PhysicalExpr for SortByExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
-        let descending = prepare_descending(&self.sort_options.descending, self.by.len());
-
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
@@ -187,6 +185,9 @@ impl PhysicalExpr for SortByExpr {
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
+            let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
+            let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
+
             let sorted_idx_f = || {
                 let s_sort_by = self
                     .by
@@ -200,7 +201,12 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let options = self.sort_options.clone().with_order_descendings(descending);
+                let options = self
+                    .sort_options
+                    .clone()
+                    .with_order_descending_multi(descending)
+                    .with_nulls_last_multi(nulls_last);
+
                 s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
@@ -225,7 +231,7 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let descending = prepare_descending(&self.sort_options.descending, self.by.len());
+        let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
 
         let mut ac_sort_by = self
             .by
