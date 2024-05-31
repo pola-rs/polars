@@ -4567,6 +4567,9 @@ class Expr:
 
         The original order of the remaining elements is preserved.
 
+        Elements where the filter does not evaluate to True are discarded, including
+        nulls.
+
         Mostly useful in an aggregation context. If you want to filter on a DataFrame
         level, use `LazyFrame.filter`.
 

@@ -3177,6 +3177,9 @@ class Series:
 
         The original order of the remaining elements is preserved.
 
+        Elements where the filter does not evaluate to True are discarded, including
+        nulls.
+
         Parameters
         ----------
         predicate
