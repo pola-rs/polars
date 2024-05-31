@@ -50,7 +50,6 @@ Computation
     Series.peak_min
     Series.rank
     Series.replace
-    Series.replace_all
     Series.rolling_apply
     Series.rolling_map
     Series.rolling_max
