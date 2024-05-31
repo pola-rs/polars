@@ -628,7 +628,11 @@ class DataFrame:
     @property
     def height(self) -> int:
         """
-        Get the height of the DataFrame.
+        Get the number of rows.
+
+        Returns
+        -------
+        int
 
         Examples
         --------
@@ -641,13 +645,22 @@ class DataFrame:
     @property
     def width(self) -> int:
         """
-        Get the width of the DataFrame.
+        Get the number of columns.
+
+        Returns
+        -------
+        int
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4, 5, 6],
+        ...     }
+        ... )
         >>> df.width
-        1
+        2
         """
         return self._df.width()
 
@@ -655,6 +668,11 @@ class DataFrame:
     def columns(self) -> list[str]:
         """
         Get or set column names.
+
+        Returns
+        -------
+        list of str
+            A list containing the name of each column in order.
 
         Examples
         --------
@@ -701,13 +719,18 @@ class DataFrame:
     @property
     def dtypes(self) -> list[DataType]:
         """
-        Get the datatypes of the columns of this DataFrame.
+        Get the column data types.
 
-        The datatypes can also be found in column headers when printing the DataFrame.
+        The data types can also be found in column headers when printing the DataFrame.
+
+        Returns
+        -------
+        list of DataType
+            A list containing the data type of each column in order.
 
         See Also
         --------
-        schema : Returns a {colname:dtype} mapping.
+        schema
 
         Examples
         --------
@@ -749,7 +772,12 @@ class DataFrame:
     @property
     def schema(self) -> OrderedDict[str, DataType]:
         """
-        Get a dict[column name, DataType].
+        Get a mapping of column names to their data type.
+
+        Returns
+        -------
+        OrderedDict
+            An ordered mapping of column names to their data type.
 
         Examples
         --------
