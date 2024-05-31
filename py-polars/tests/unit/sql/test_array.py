@@ -8,7 +8,7 @@ from polars.testing import assert_frame_equal
 
 
 def test_array_literals() -> None:
-    with pl.SQLContext(df=None, eager_execution=True) as ctx:
+    with pl.SQLContext(df=None, eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -62,7 +62,7 @@ def test_array_to_string() -> None:
     ["ARRAY", ""],
 )
 def test_unnest_table_function(array_keyword: str) -> None:
-    with pl.SQLContext(df=None, eager_execution=True) as ctx:
+    with pl.SQLContext(df=None, eager=True) as ctx:
         res = ctx.execute(
             f"""
             SELECT * FROM
@@ -86,7 +86,7 @@ def test_unnest_table_function(array_keyword: str) -> None:
 
 
 def test_unnest_table_function_errors() -> None:
-    with pl.SQLContext(df=None, eager_execution=True) as ctx:
+    with pl.SQLContext(df=None, eager=True) as ctx:
         with pytest.raises(
             ComputeError,
             match=r'UNNEST table alias must also declare column names, eg: "frame data" \(a,b,c\)',
