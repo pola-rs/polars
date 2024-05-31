@@ -41,7 +41,9 @@ def test_scan_csv_overwrite_small_dtypes(
     io_files_path: Path, dtype: pl.DataType
 ) -> None:
     file_path = io_files_path / "foods1.csv"
-    df = pl.scan_csv(file_path, dtypes={"sugars_g": dtype}).collect(streaming=True)
+    df = pl.scan_csv(file_path, schema_overrides={"sugars_g": dtype}).collect(
+        streaming=True
+    )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
 

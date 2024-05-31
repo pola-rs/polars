@@ -6,7 +6,7 @@ import polars as pl
 # --8<-- [start:dataframe]
 url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv"
 
-dtypes = {
+schema_overrides = {
     "first_name": pl.Categorical,
     "gender": pl.Categorical,
     "type": pl.Categorical,
@@ -14,7 +14,7 @@ dtypes = {
     "party": pl.Categorical,
 }
 
-dataset = pl.read_csv(url, dtypes=dtypes).with_columns(
+dataset = pl.read_csv(url, schema_overrides=schema_overrides).with_columns(
     pl.col("birthday").str.to_date(strict=False)
 )
 # --8<-- [end:dataframe]

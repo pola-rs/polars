@@ -386,7 +386,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
-        read_options={"dtypes": {"cardinality": pl.UInt16}},
+        read_options={"schema_overrides": {"cardinality": pl.UInt16}},
     ).drop_nulls()
 
     assert df2.schema["cardinality"] == pl.UInt16
@@ -398,7 +398,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
         read_options={
-            "dtypes": {
+            "schema_overrides": {
                 "rows_by_key": pl.Float32,
                 "iter_groups": pl.Float32,
             },
@@ -439,7 +439,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             path_xlsx,
             sheet_name="test4",
             schema_overrides={"cardinality": pl.UInt16},
-            read_options={"dtypes": {"cardinality": pl.Int32}},
+            read_options={"schema_overrides": {"cardinality": pl.Int32}},
         )
 
     # read multiple sheets in conjunction with 'schema_overrides'

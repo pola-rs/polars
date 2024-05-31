@@ -702,13 +702,22 @@ def _csv_buffer_to_frame(
     if read_options is None:
         read_options = {}
     if schema_overrides:
-        if (csv_dtypes := read_options.get("dtypes", {})) and set(
-            csv_dtypes
-        ).intersection(schema_overrides):
+        csv_dtypes = read_options.get("dtypes", {})
+        if csv_dtypes:
+            issue_deprecation_warning(
+                "The `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
+                version="0.20.31",
+            )
+        csv_schema_overrides = read_options.get("schema_overrides", csv_dtypes)
+
+        if csv_schema_overrides and set(csv_schema_overrides).intersection(
+            schema_overrides
+        ):
             msg = "cannot specify columns in both `schema_overrides` and `read_options['dtypes']`"
             raise ParameterCollisionError(msg)
+
         read_options = read_options.copy()
-        read_options["dtypes"] = {**csv_dtypes, **schema_overrides}
+        read_options["schema_overrides"] = {**csv_schema_overrides, **schema_overrides}
 
     # otherwise rewind the buffer and parse as csv
     csv.seek(0)

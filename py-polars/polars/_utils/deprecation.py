@@ -156,7 +156,7 @@ def _rename_keyword_argument(
             )
             raise TypeError(msg)
         issue_deprecation_warning(
-            f"`the argument {old_name}` for `{func_name}` is deprecated."
+            f"The argument `{old_name}` for `{func_name}` is deprecated."
             f" It has been renamed to `{new_name}`.",
             version=version,
         )
