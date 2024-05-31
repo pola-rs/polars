@@ -392,7 +392,18 @@ class LazyFrame:
     @property
     def columns(self) -> list[str]:
         """
-        Get column names.
+        Get the column names.
+
+        Returns
+        -------
+        list of str
+            A list containing the name of each column in order.
+
+        Warnings
+        --------
+        Determining the column names of a LazyFrame requires resolving its schema.
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         Examples
         --------
@@ -411,11 +422,22 @@ class LazyFrame:
     @property
     def dtypes(self) -> list[DataType]:
         """
-        Get dtypes of columns in LazyFrame.
+        Get the column data types.
+
+        Returns
+        -------
+        list of DataType
+            A list containing the data type of each column in order.
+
+        Warnings
+        --------
+        Determining the data types of a LazyFrame requires resolving its schema.
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         See Also
         --------
-        schema : Returns a {colname:dtype} mapping.
+        schema
 
         Examples
         --------
@@ -434,7 +456,17 @@ class LazyFrame:
     @property
     def schema(self) -> OrderedDict[str, DataType]:
         """
-        Get a dict[column name, DataType].
+        Get a mapping of column names to their data type.
+
+        Returns
+        -------
+        OrderedDict
+            An ordered mapping of column names to their data type.
+
+        Warnings
+        --------
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         Examples
         --------
@@ -453,7 +485,17 @@ class LazyFrame:
     @property
     def width(self) -> int:
         """
-        Get the width of the LazyFrame.
+        Get the number of columns.
+
+        Returns
+        -------
+        int
+
+        Warnings
+        --------
+        Determining the width of a LazyFrame requires resolving its schema.
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         Examples
         --------
