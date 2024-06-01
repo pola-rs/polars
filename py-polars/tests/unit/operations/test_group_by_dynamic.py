@@ -333,11 +333,11 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
         pl.col("value").max().alias("max_value"),
         pl.col("value").sum().alias("sum_value"),
     ).to_dict(as_series=False) == {
-        "time": [-1, 0, 1, 2, 3],
-        "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
-        "min_value": [0, 0, 1, 2, 3],
-        "max_value": [1, 2, 3, 3, 3],
-        "sum_value": [1, 3, 6, 5, 3],
+        "time": [0, 1, 2, 3],
+        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
+        "min_value": [0, 1, 2, 3],
+        "max_value": [2, 3, 3, 3],
+        "sum_value": [3, 6, 5, 3],
     }
 
 
@@ -423,11 +423,10 @@ def test_group_by_dynamic_elementwise_following_mean_agg_6904(
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2020, 12, 31, 23, 59, 50),
                     datetime(2021, 1, 1, 0, 0),
                     datetime(2021, 1, 1, 0, 0, 10),
                 ],
-                "c": [0.9092974268256817, 0.9092974268256817, -0.7568024953079282],
+                "c": [0.9092974268256817, -0.7568024953079282],
             }
         ).with_columns(pl.col("a").dt.replace_time_zone(time_zone)),
     )
@@ -585,9 +584,8 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             "idx", every="2i", period="3i", include_boundaries=True
         ).agg(pl.col("A"))
 
-        assert out.shape == (4, 4)
+        assert out.shape == (3, 4)
         assert out["A"].to_list() == [
-            ["A"],
             ["A", "A", "B"],
             ["B", "B", "B"],
             ["B", "C"],
@@ -613,14 +611,13 @@ def test_groupy_by_dynamic_median_10695() -> None:
         period="3m",
     ).agg(pl.col("foo").median()).to_dict(as_series=False) == {
         "timestamp": [
-            datetime(2023, 8, 22, 15, 43),
             datetime(2023, 8, 22, 15, 44),
             datetime(2023, 8, 22, 15, 45),
             datetime(2023, 8, 22, 15, 46),
             datetime(2023, 8, 22, 15, 47),
             datetime(2023, 8, 22, 15, 48),
         ],
-        "foo": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        "foo": [1.0, 1.0, 1.0, 1.0, 1.0],
     }
 
 
