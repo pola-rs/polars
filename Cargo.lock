@@ -359,9 +359,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.31.0"
+version = "1.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67520cfee50a8a075a86e7960a6ff30a0a93f6b83ef36f7dff42a9fad9ec1818"
+checksum = "2924dd7efd0112a5a88ec7d1c2dbf371966f018e90f3f45db7c8027ef895662a"
 dependencies = [
  "ahash",
  "aws-credential-types",
