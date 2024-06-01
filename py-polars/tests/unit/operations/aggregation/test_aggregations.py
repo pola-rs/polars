@@ -650,7 +650,7 @@ def test_filter_aggregation_16642() -> None:
 
     ts_filter = pl.col("datetime").dt.time() <= pl.time(11, 3)
 
-    report = grouped.agg(pl.col("num").filter(ts_filter).max())
+    report = grouped.agg(pl.col("num").filter(ts_filter).max()).sort("datetime")
     assert report.to_dict(as_series=False) == {
         "datetime": [date(2022, 1, 1), date(2022, 1, 2)],
         "num": [3, 3],
