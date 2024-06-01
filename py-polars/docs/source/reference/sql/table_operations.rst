@@ -15,7 +15,7 @@ Table Operations
      - Returns logical plan of the query.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables in the context.
-   * - :ref:`UNNEST <unnest>`
+   * - :ref:`UNNEST <unnest_table_func>`
      - Unnest one or more arrays as columns in a new table.
    * - :ref:`TRUNCATE <truncate>`
      - Remove rows from table without deleting the table from context.
@@ -68,7 +68,7 @@ Display the list of tables in the context.
 
     SHOW TABLES
 
-.. _unnest:
+.. _unnest_table_func:
 
 UNNEST
 ------
