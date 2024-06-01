@@ -620,38 +620,6 @@ def test_upsample(
     assert_frame_equal(up, expected)
 
 
-def test_offset_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "time": [
-                datetime(2021, 2, 1),
-                datetime(2021, 4, 1),
-                datetime(2021, 5, 1),
-                datetime(2021, 6, 1),
-            ],
-            "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
-            "test2": [0, 1, 2, 3],
-        }
-    ).sort("time")
-
-    # truncate
-    with pytest.deprecated_call():
-        df.select(pl.col("time").dt.truncate(every="1mo", offset="1d"))
-
-    # round
-    with pytest.deprecated_call():
-        df.select(pl.col("time").dt.round(every="1mo", offset="1d"))
-
-    ser = df.to_series(0)
-    # truncate
-    with pytest.deprecated_call():
-        ser.dt.truncate(every="1mo", offset="1d")
-
-    # round
-    with pytest.deprecated_call():
-        ser.dt.round(every="1mo", offset="1d")
-
-
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("offset", "expected_time", "expected_values"),

@@ -47,7 +47,7 @@ pub enum TemporalFunction {
     #[cfg(feature = "timezones")]
     ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
-    Truncate(String),
+    Truncate,
     #[cfg(feature = "date_offset")]
     MonthStart,
     #[cfg(feature = "date_offset")]
@@ -56,7 +56,7 @@ pub enum TemporalFunction {
     BaseUtcOffset,
     #[cfg(feature = "timezones")]
     DSTOffset,
-    Round(String),
+    Round,
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>, NonExistent),
     Combine(TimeUnit),
@@ -100,7 +100,7 @@ impl TemporalFunction {
                 DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, None)),
                 dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
             }),
-            Truncate(_) => mapper.with_same_dtype(),
+            Truncate => mapper.with_same_dtype(),
             #[cfg(feature = "date_offset")]
             MonthStart => mapper.with_same_dtype(),
             #[cfg(feature = "date_offset")]
@@ -109,7 +109,7 @@ impl TemporalFunction {
             BaseUtcOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             #[cfg(feature = "timezones")]
             DSTOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
-            Round(..) => mapper.with_same_dtype(),
+            Round => mapper.with_same_dtype(),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, _non_existent) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
             DatetimeFunction {
@@ -168,7 +168,7 @@ impl Display for TemporalFunction {
             CastTimeUnit(_) => "cast_time_unit",
             WithTimeUnit(_) => "with_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
-            Truncate(..) => "truncate",
+            Truncate => "truncate",
             #[cfg(feature = "date_offset")]
             MonthStart => "month_start",
             #[cfg(feature = "date_offset")]
@@ -177,7 +177,7 @@ impl Display for TemporalFunction {
             BaseUtcOffset => "base_utc_offset",
             #[cfg(feature = "timezones")]
             DSTOffset => "dst_offset",
-            Round(..) => "round",
+            Round => "round",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
@@ -372,7 +372,7 @@ pub(super) fn cast_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
+pub(super) fn truncate(s: &[Series]) -> PolarsResult<Series> {
     let time_series = &s[0];
     let every = s[1].str()?;
 
@@ -381,17 +381,11 @@ pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
                 .datetime()?
-                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset)?
+                .truncate(tz.parse::<Tz>().ok().as_ref(), every)?
                 .into_series(),
-            _ => time_series
-                .datetime()?
-                .truncate(None, every, offset)?
-                .into_series(),
+            _ => time_series.datetime()?.truncate(None, every)?.into_series(),
         },
-        DataType::Date => time_series
-            .date()?
-            .truncate(None, every, offset)?
-            .into_series(),
+        DataType::Date => time_series.date()?.truncate(None, every)?.into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     };
     out.set_sorted_flag(time_series.is_sorted_flag());
@@ -465,9 +459,7 @@ pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn round(s: &[Series], offset: &str) -> PolarsResult<Series> {
-    let offset = Duration::parse(offset);
-
+pub(super) fn round(s: &[Series]) -> PolarsResult<Series> {
     let time_series = &s[0];
     let every = s[1].str()?;
 
@@ -477,18 +469,18 @@ pub(super) fn round(s: &[Series], offset: &str) -> PolarsResult<Series> {
             Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, tz.parse::<Tz>().ok().as_ref())?
+                .round(every, tz.parse::<Tz>().ok().as_ref())?
                 .into_series(),
             _ => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, None)?
+                .round(every, None)?
                 .into_series(),
         },
         DataType::Date => time_series
             .date()
             .unwrap()
-            .round(every, offset, None)?
+            .round(every, None)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })

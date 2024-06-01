@@ -7,14 +7,13 @@ use polars_utils::cache::FastFixedCache;
 use crate::prelude::*;
 
 pub trait PolarsTruncate {
-    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self>
+    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsTruncate for DatetimeChunked {
-    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self> {
-        let offset: Duration = Duration::parse(offset);
+    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         let time_zone = self.time_zone();
         let mut duration_cache_opt: Option<FastFixedCache<String, Duration>> = None;
 
@@ -82,7 +81,7 @@ impl PolarsTruncate for DatetimeChunked {
                     polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
                 }
 
-                let w = Window::new(every, every, offset);
+                let w = Window::new(every, every, Duration::new(0));
                 func(&w, timestamp, tz).map(Some)
             },
             _ => Ok(None),
@@ -92,13 +91,7 @@ impl PolarsTruncate for DatetimeChunked {
 }
 
 impl PolarsTruncate for DateChunked {
-    fn truncate(
-        &self,
-        _tz: Option<&Tz>,
-        every: &StringChunked,
-        offset: &str,
-    ) -> PolarsResult<Self> {
-        let offset = Duration::parse(offset);
+    fn truncate(&self, _tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         // A sqrt(n) cache is not too small, not too large.
         let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
         let out = broadcast_try_binary_elementwise(&self.0, every, |opt_t, opt_every| {
@@ -111,7 +104,7 @@ impl PolarsTruncate for DateChunked {
                         polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
                     }
 
-                    let w = Window::new(every, every, offset);
+                    let w = Window::new(every, every, Duration::new(0));
                     Ok(Some(
                         (w.truncate_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32,
                     ))
