@@ -1036,7 +1036,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("int"), col("flt")],
-            SortMultipleOptions::default().with_order_descendings([true, false]),
+            SortMultipleOptions::default().with_order_descending_multi([true, false]),
         )])
         .collect()?;
 
@@ -1054,7 +1054,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("str"), col("flt")],
-            SortMultipleOptions::default().with_order_descendings([true, false]),
+            SortMultipleOptions::default().with_order_descending_multi([true, false]),
         )])
         .collect()?;
     Ok(())

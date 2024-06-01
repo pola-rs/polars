@@ -485,6 +485,23 @@ def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
     )
 
 
+def extend_bool(
+    value: bool | Sequence[bool],
+    n_match: int,
+    value_name: str,
+    match_name: str,
+) -> Sequence[bool]:
+    """Ensure the given bool or sequence of bools is the correct length."""
+    values = [value] * n_match if isinstance(value, bool) else value
+    if n_match != len(values):
+        msg = (
+            f"the length of `{value_name}` ({len(values)}) "
+            f"does not match the length of `{match_name}` ({n_match})"
+        )
+        raise ValueError(msg)
+    return values
+
+
 def in_terminal_that_supports_colour() -> bool:
     """
     Determine (within reason) if we are in an interactive terminal that supports color.

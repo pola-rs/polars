@@ -44,6 +44,7 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    extend_bool,
     find_stacklevel,
     no_default,
     normalize_filepath,
@@ -2155,7 +2156,7 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
+        nulls_last: bool | Sequence[bool] | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -2319,11 +2320,8 @@ class Expr:
 
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
+        descending = extend_bool(descending, len(by), "descending", "by")
+        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyexpr(
             self._pyexpr.top_k_by(
                 k,
@@ -2454,7 +2452,7 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
+        nulls_last: bool | Sequence[bool] | None = None,
         maintain_order: bool | None = None,
         multithreaded: bool | None = None,
     ) -> Self:
@@ -2613,11 +2611,8 @@ class Expr:
 
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
+        descending = extend_bool(descending, len(by), "descending", "by")
+        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyexpr(
             self._pyexpr.bottom_k_by(
                 k,
@@ -2780,7 +2775,7 @@ class Expr:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | Sequence[bool] = False,
         multithreaded: bool = True,
         maintain_order: bool = False,
     ) -> Self:
@@ -2801,7 +2796,8 @@ class Expr:
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Place null values last; can specify a single boolean applying to all columns
+            or a sequence of booleans for per-column control.
         multithreaded
             Sort using multiple threads.
         maintain_order
@@ -2908,11 +2904,8 @@ class Expr:
         └───────┴────────┴────────┘
         """
         by = parse_as_list_of_expressions(by, *more_by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
+        descending = extend_bool(descending, len(by), "descending", "by")
+        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyexpr(
             self._pyexpr.sort_by(
                 by, descending, nulls_last, multithreaded, maintain_order

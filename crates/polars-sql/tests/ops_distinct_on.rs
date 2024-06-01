@@ -16,22 +16,22 @@ fn test_distinct_on() {
 
     ctx.register("df", df.clone());
     let sql = r#"
-  SELECT DISTINCT ON ("Name")
-      "Name",
-      "Record Date",
-      "Score"
-  FROM
-      df
-  ORDER BY
-      "Name",
-      "Record Date" DESC;"#;
+      SELECT DISTINCT ON ("Name")
+          "Name",
+          "Record Date",
+          "Score"
+      FROM
+          df
+      ORDER BY
+          "Name",
+          "Record Date" DESC;"#;
     let lf = ctx.execute(sql).unwrap();
     let actual = lf.collect().unwrap();
     let expected = df
         .sort_by_exprs(
             vec![col("Name"), col("Record Date")],
             SortMultipleOptions::default()
-                .with_order_descendings([false, true])
+                .with_order_descending_multi([false, true])
                 .with_maintain_order(true),
         )
         .group_by_stable(vec![col("Name")])

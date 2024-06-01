@@ -865,7 +865,7 @@ impl SQLContext {
         Ok(lf.sort_by_exprs(
             &by,
             SortMultipleOptions::default()
-                .with_order_descendings(descending)
+                .with_order_descending_multi(descending)
                 .with_maintain_order(true),
         ))
     }

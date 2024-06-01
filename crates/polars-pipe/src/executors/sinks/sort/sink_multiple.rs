@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use arrow::array::BinaryArray;
-use polars_core::prelude::sort::_broadcast_descending;
+use polars_core::prelude::sort::_broadcast_bools;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -16,10 +16,15 @@ const POLARS_SORT_COLUMN: &str = "__POLARS_SORT_COLUMN";
 
 fn get_sort_fields(sort_idx: &[usize], sort_options: &SortMultipleOptions) -> Vec<EncodingField> {
     let mut descending = sort_options.descending.clone();
-    _broadcast_descending(sort_idx.len(), &mut descending);
+    let mut nulls_last = sort_options.nulls_last.clone();
+
+    _broadcast_bools(sort_idx.len(), &mut descending);
+    _broadcast_bools(sort_idx.len(), &mut nulls_last);
+
     descending
         .into_iter()
-        .map(|descending| EncodingField::new_sorted(descending, sort_options.nulls_last))
+        .zip(nulls_last)
+        .map(|(descending, nulls_last)| EncodingField::new_sorted(descending, nulls_last))
         .collect()
 }
 

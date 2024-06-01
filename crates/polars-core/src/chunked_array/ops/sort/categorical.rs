@@ -177,7 +177,7 @@ mod test {
 
             let out = df.sort(
                 ["cat", "vals"],
-                SortMultipleOptions::default().with_order_descendings([false, false]),
+                SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
@@ -185,7 +185,7 @@ mod test {
 
             let out = df.sort(
                 ["vals", "cat"],
-                SortMultipleOptions::default().with_order_descendings([false, false]),
+                SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;

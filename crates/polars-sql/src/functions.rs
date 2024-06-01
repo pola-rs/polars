@@ -1143,7 +1143,7 @@ impl SQLFunctionVisitor<'_> {
                 cumulative_f(
                     e.sort_by(
                         &order_by,
-                        SortMultipleOptions::default().with_order_descendings(desc.clone()),
+                        SortMultipleOptions::default().with_order_descending_multi(desc.clone()),
                     ),
                     false,
                 )

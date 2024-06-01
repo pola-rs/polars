@@ -494,7 +494,7 @@ impl PyLazyFrame {
             [by_column],
             SortMultipleOptions {
                 descending: vec![descending],
-                nulls_last,
+                nulls_last: vec![nulls_last],
                 multithreaded,
                 maintain_order,
             },
@@ -506,7 +506,7 @@ impl PyLazyFrame {
         &self,
         by: Vec<PyExpr>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
@@ -529,7 +529,7 @@ impl PyLazyFrame {
         k: IdxSize,
         by: Vec<PyExpr>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
@@ -553,7 +553,7 @@ impl PyLazyFrame {
         k: IdxSize,
         by: Vec<PyExpr>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
