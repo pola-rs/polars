@@ -150,7 +150,7 @@ impl Operator for CrossJoinProbe {
                         self.in_process_left_df = self.df.slice(offset as i64, size);
                         self.in_process_right = Some((0..chunk.data.height()).step_by(size));
                         let iter_right = self.in_process_right.as_mut().unwrap();
-                        let offset = iter_right.next().unwrap();
+                        let offset = iter_right.next().unwrap_or(0);
                         let right_df = chunk.data.slice(offset as i64, size);
 
                         let (a, b) = if self.swapped {
