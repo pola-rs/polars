@@ -594,3 +594,64 @@ def test_multi_arg_structify_15834() -> None:
             {"a": 1, "value": 0.5896839894245691},
         ],
     }
+
+
+def test_filter_aggregation_16642() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": [
+                datetime(2022, 1, 1, 11, 0),
+                datetime(2022, 1, 1, 11, 1),
+                datetime(2022, 1, 1, 11, 2),
+                datetime(2022, 1, 1, 11, 3),
+                datetime(2022, 1, 1, 11, 4),
+                datetime(2022, 1, 1, 11, 5),
+                datetime(2022, 1, 1, 11, 6),
+                datetime(2022, 1, 1, 11, 7),
+                datetime(2022, 1, 1, 11, 8),
+                datetime(2022, 1, 1, 11, 9, 1),
+                datetime(2022, 1, 2, 11, 0),
+                datetime(2022, 1, 2, 11, 1),
+                datetime(2022, 1, 2, 11, 2),
+                datetime(2022, 1, 2, 11, 3),
+                datetime(2022, 1, 2, 11, 4),
+                datetime(2022, 1, 2, 11, 5),
+                datetime(2022, 1, 2, 11, 6),
+                datetime(2022, 1, 2, 11, 7),
+                datetime(2022, 1, 2, 11, 8),
+                datetime(2022, 1, 2, 11, 9, 1),
+            ],
+            "alpha": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H",
+                "I",
+                "J",
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H",
+                "I",
+                "J",
+            ],
+            "num": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }
+    )
+    grouped = df.group_by(pl.col("datetime").dt.date())
+
+    ts_filter = pl.col("datetime").dt.time() <= pl.time(11, 3)
+
+    report = grouped.agg(pl.col("num").filter(ts_filter).max())
+    assert report.to_dict(as_series=False) == {
+        "datetime": [date(2022, 1, 1), date(2022, 1, 2)],
+        "num": [3, 3],
+    }
