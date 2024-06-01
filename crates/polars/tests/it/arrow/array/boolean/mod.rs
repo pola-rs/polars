@@ -1,15 +1,17 @@
-use arrow::array::{Array, BooleanArray};
+use arrow::array::{Array, BooleanArray, Splitable};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 mod mutable;
 
+fn array() -> BooleanArray {
+    vec![Some(true), None, Some(false)].into_iter().collect()
+}
+
 #[test]
 fn basics() {
-    let data = vec![Some(true), None, Some(false)];
-
-    let array: BooleanArray = data.into_iter().collect();
+    let array = array();
 
     assert_eq!(array.data_type(), &ArrowDataType::Boolean);
 
@@ -36,6 +38,19 @@ fn basics() {
     let array = array.sliced(1, 2);
     assert!(!array.value(0));
     assert!(!array.value(1));
+}
+
+#[test]
+fn split_at() {
+    let (lhs, rhs) = array().split_at(1);
+
+    assert!(lhs.is_valid(0));
+    assert!(!rhs.is_valid(0));
+    assert!(rhs.is_valid(1));
+
+    assert!(lhs.value(0));
+    assert!(!rhs.value(0));
+    assert!(!rhs.value(1));
 }
 
 #[test]

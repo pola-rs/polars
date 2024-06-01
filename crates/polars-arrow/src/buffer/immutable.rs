@@ -5,7 +5,7 @@ use either::Either;
 use num_traits::Zero;
 
 use super::{Bytes, IntoIter};
-use crate::array::ArrayAccessor;
+use crate::array::{ArrayAccessor, Splitable};
 
 /// [`Buffer`] is a contiguous memory region that can be shared across
 /// thread boundaries.
@@ -327,5 +327,29 @@ unsafe impl<'a, T: 'a> ArrayAccessor<'a> for Buffer<T> {
 
     fn len(&self) -> usize {
         Buffer::len(self)
+    }
+}
+
+impl<T> Splitable for Buffer<T> {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let storage = &self.storage;
+
+        (
+            Self {
+                storage: storage.clone(),
+                ptr: self.ptr,
+                length: offset,
+            },
+            Self {
+                storage: storage.clone(),
+                ptr: self.ptr.wrapping_add(offset),
+                length: self.length - offset,
+            },
+        )
     }
 }

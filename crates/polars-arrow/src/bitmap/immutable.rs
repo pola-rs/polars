@@ -7,6 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, intersects_with, IntoIter, MutableBitmap};
+use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
@@ -63,6 +64,11 @@ pub struct Bitmap {
     unset_bit_count_cache: AtomicU64,
 }
 
+#[inline(always)]
+fn has_cached_unset_bit_count(ubcc: u64) -> bool {
+    ubcc >> 63 == 0
+}
+
 impl Clone for Bitmap {
     fn clone(&self) -> Self {
         Self {
@@ -117,7 +123,7 @@ impl Bitmap {
             length,
             offset: 0,
             bytes: Arc::new(bytes.into()),
-            unset_bit_count_cache: AtomicU64::new(UNKNOWN_BIT_COUNT),
+            unset_bit_count_cache: AtomicU64::new(if length == 0 { 0 } else { UNKNOWN_BIT_COUNT }),
         })
     }
 
@@ -216,15 +222,12 @@ impl Bitmap {
     /// This function counts the number of unset bits if it is not already
     /// computed. Repeated calls use the cached bitcount.
     pub fn unset_bits(&self) -> usize {
-        let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
-        if cache >> 63 != 0 {
+        self.lazy_unset_bits().unwrap_or_else(|| {
             let zeros = count_zeros(&self.bytes, self.offset, self.length);
             self.unset_bit_count_cache
                 .store(zeros as u64, Ordering::Relaxed);
             zeros
-        } else {
-            cache as usize
-        }
+        })
     }
 
     /// Returns the number of unset bits on this [`Bitmap`] if it is known.
@@ -232,11 +235,7 @@ impl Bitmap {
     /// Guaranteed to be `<= self.len()`.
     pub fn lazy_unset_bits(&self) -> Option<usize> {
         let cache = self.unset_bit_count_cache.load(Ordering::Relaxed);
-        if cache >> 63 != 0 {
-            None
-        } else {
-            Some(cache as usize)
-        }
+        has_cached_unset_bit_count(cache).then_some(cache as usize)
     }
 
     /// Updates the count of the number of set bits on this [`Bitmap`].
@@ -286,7 +285,7 @@ impl Bitmap {
             return;
         }
 
-        if *unset_bit_count_cache >> 63 == 0 {
+        if has_cached_unset_bit_count(*unset_bit_count_cache) {
             // If we keep all but a small portion of the array it is worth
             // doing an eager re-count since we can reuse the old count via the
             // inclusion-exclusion principle.
@@ -588,5 +587,76 @@ impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
         let buffer = arrow_buffer::buffer::BooleanBuffer::new(buffer, value.offset, value.length);
         // SAFETY: null count is accurate
         unsafe { arrow_buffer::buffer::NullBuffer::new_unchecked(buffer, null_count) }
+    }
+}
+
+impl Splitable for Bitmap {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let bytes = &self.bytes;
+
+        if offset == 0 {
+            return (Self::new(), self.clone());
+        }
+        if offset == self.len() {
+            return (self.clone(), Self::new());
+        }
+
+        let ubcc = self.unset_bit_count_cache.load(Ordering::Relaxed);
+
+        let lhs_length = offset;
+        let rhs_length = self.length - offset;
+
+        let mut lhs_ubcc = UNKNOWN_BIT_COUNT;
+        let mut rhs_ubcc = UNKNOWN_BIT_COUNT;
+
+        if has_cached_unset_bit_count(ubcc) {
+            if ubcc == 0 {
+                lhs_ubcc = 0;
+                rhs_ubcc = 0;
+            } else if ubcc == self.length as u64 {
+                lhs_ubcc = offset as u64;
+                rhs_ubcc = (self.length - offset) as u64;
+            } else {
+                // If we keep all but a small portion of the array it is worth
+                // doing an eager re-count since we can reuse the old count via the
+                // inclusion-exclusion principle.
+                let small_portion = (self.length / 4).max(32);
+
+                if lhs_length <= rhs_length {
+                    if rhs_length + small_portion >= self.length {
+                        let count = count_zeros(&self.bytes, self.offset, lhs_length) as u64;
+                        lhs_ubcc = count;
+                        rhs_ubcc = ubcc - count;
+                    }
+                } else if lhs_length + small_portion >= self.length {
+                    let count = count_zeros(&self.bytes, self.offset + offset, rhs_length) as u64;
+                    lhs_ubcc = ubcc - count;
+                    rhs_ubcc = count;
+                }
+            }
+        }
+
+        debug_assert!(lhs_ubcc == UNKNOWN_BIT_COUNT || lhs_ubcc <= ubcc);
+        debug_assert!(rhs_ubcc == UNKNOWN_BIT_COUNT || rhs_ubcc <= ubcc);
+
+        (
+            Self {
+                bytes: bytes.clone(),
+                offset: self.offset,
+                length: lhs_length,
+                unset_bit_count_cache: AtomicU64::new(lhs_ubcc),
+            },
+            Self {
+                bytes: bytes.clone(),
+                offset: self.offset + offset,
+                length: rhs_length,
+                unset_bit_count_cache: AtomicU64::new(rhs_ubcc),
+            },
+        )
     }
 }

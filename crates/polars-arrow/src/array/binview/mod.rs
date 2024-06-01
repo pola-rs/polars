@@ -36,6 +36,8 @@ pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 pub use view::{View, INLINE_VIEW_SIZE};
 
+use super::Splitable;
+
 pub type MutablePlString = MutableBinaryViewArray<str>;
 pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
 
@@ -476,6 +478,16 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         self.validity.as_ref()
     }
 
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = Splitable::split_at(self, offset);
+        (Box::new(lhs), Box::new(rhs))
+    }
+
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = unsafe { Splitable::split_at_unchecked(self, offset) };
+        (Box::new(lhs), Box::new(rhs))
+    }
+
     fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
@@ -503,5 +515,41 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(self.clone())
+    }
+}
+
+impl<T: ViewType + ?Sized> Splitable for BinaryViewArrayGeneric<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_views, rhs_views) = unsafe { self.views.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        unsafe {
+            (
+                Self::new_unchecked(
+                    self.data_type.clone(),
+                    lhs_views,
+                    self.buffers.clone(),
+                    lhs_validity,
+                    if offset == 0 { 0 } else { UNKNOWN_LEN as _ },
+                    self.total_buffer_len(),
+                ),
+                Self::new_unchecked(
+                    self.data_type.clone(),
+                    rhs_views,
+                    self.buffers.clone(),
+                    rhs_validity,
+                    if offset == self.len() {
+                        0
+                    } else {
+                        UNKNOWN_LEN as _
+                    },
+                    self.total_buffer_len(),
+                ),
+            )
+        }
     }
 }

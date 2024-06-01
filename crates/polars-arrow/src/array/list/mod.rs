@@ -1,5 +1,5 @@
 use super::specification::try_check_offsets_bounds;
-use super::{new_empty_array, Array};
+use super::{new_empty_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
@@ -235,5 +235,31 @@ impl<O: Offset> Array for ListArray<O> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<O: Offset> Splitable for ListArray<O> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_offsets, rhs_offsets) = unsafe { self.offsets.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                offsets: lhs_offsets,
+                validity: lhs_validity,
+                values: self.values.clone(),
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                offsets: rhs_offsets,
+                validity: rhs_validity,
+                values: self.values.clone(),
+            },
+        )
     }
 }
