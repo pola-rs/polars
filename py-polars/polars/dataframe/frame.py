@@ -5720,8 +5720,8 @@ class DataFrame:
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
 
-        The index count is based on actual values in a defined column and not on
-        consecutive rows as polars does not use indices:
+        If you use an index count in `period` or `offset`, then it's based on the
+        values in `index_column`:
 
         >>> df = pl.DataFrame({"int": [0, 4, 5, 6, 8], "value": [1, 4, 2, 4, 1]})
         >>> df.rolling("int", period="3i").agg(pl.col("int").alias("aggregated"))
@@ -5737,6 +5737,9 @@ class DataFrame:
         │ 6   ┆ [4, 5, 6]  │
         │ 8   ┆ [6, 8]     │
         └─────┴────────────┘
+
+        If you want the index count to be based on row number, then you may want to
+        combine `rolling` with :meth:`.with_row_index`.
         """
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
