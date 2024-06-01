@@ -4181,6 +4181,8 @@ class DataFrame:
 
         The original order of the remaining rows is preserved.
 
+        Rows where the filter does not evaluate to True are discarded, including nulls.
+
         Parameters
         ----------
         predicates
