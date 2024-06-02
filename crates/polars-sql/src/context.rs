@@ -197,6 +197,59 @@ impl SQLContext {
             })
     }
 
+    fn expr_or_ordinal(
+        &mut self,
+        e: &SQLExpr,
+        schema: Option<&Schema>,
+        exprs: &[Expr],
+        clause: &str,
+    ) -> PolarsResult<Expr> {
+        match e {
+            SQLExpr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr,
+            } if matches!(**expr, SQLExpr::Value(SQLValue::Number(_, _))) => {
+                if let SQLExpr::Value(SQLValue::Number(ref idx, _)) = **expr {
+                    Err(polars_err!(
+                    SQLSyntax:
+                    "negative ordinals values are invalid for {}; found -{}",
+                    clause,
+                    idx
+                    ))
+                } else {
+                    unreachable!()
+                }
+            },
+            SQLExpr::Value(SQLValue::Number(idx, _)) => {
+                // note: sql queries are 1-indexed
+                let idx = idx.parse::<usize>().map_err(|_| {
+                    polars_err!(
+                        SQLSyntax:
+                        "negative ordinals values are invalid for {}; found {}",
+                        clause,
+                        idx
+                    )
+                })?;
+                Ok(exprs
+                    .get(idx - 1)
+                    .ok_or_else(|| {
+                        polars_err!(
+                            SQLInterface:
+                            "{} ordinal value must refer to a valid column; found {}",
+                            clause,
+                            idx
+                        )
+                    })?
+                    .clone())
+            },
+            SQLExpr::Value(v) => Err(polars_err!(
+                SQLSyntax:
+                "{} requires a valid expression or positive ordinal; found {}", clause, v,
+            )),
+            _ => parse_sql_expr(e, self, schema),
+        }
+    }
+
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
         if self.joined_aliases.borrow().contains_key(tbl_name) {
             self.joined_aliases
@@ -473,36 +526,12 @@ impl SQLContext {
         // Check for "GROUP BY ..." (after projections, as there may be ordinal/position ints).
         let mut group_by_keys: Vec<Expr> = Vec::new();
         match &select_stmt.group_by {
-            // Standard "GROUP BY x, y, z" syntax
+            // Standard "GROUP BY x, y, z" syntax (also recognising ordinal values)
             GroupByExpr::Expressions(group_by_exprs) => {
+                // translate the group expressions, allowing ordinal values
                 group_by_keys = group_by_exprs
                     .iter()
-                    .map(|e| match e {
-                        SQLExpr::UnaryOp {
-                            op: UnaryOperator::Minus,
-                            expr,
-                        } if matches!(**expr, SQLExpr::Value(SQLValue::Number(_, _))) => {
-                            if let SQLExpr::Value(SQLValue::Number(ref idx, _)) = **expr {
-                                Err(polars_err!(
-                                SQLSyntax:
-                                "GROUP BY error: expected a positive integer or valid expression; got -{}",
-                                idx
-                                ))
-                            } else {
-                                unreachable!()
-                            }
-                        },
-                        SQLExpr::Value(SQLValue::Number(idx, _)) => {
-                            // note: sql queries are 1-indexed
-                            let idx = idx.parse::<usize>().unwrap();
-                            Ok(projections[idx - 1].clone())
-                        },
-                        SQLExpr::Value(v) => Err(polars_err!(
-                            SQLSyntax:
-                            "GROUP BY error: expected a positive integer or valid expression; got {}", v,
-                        )),
-                        _ => parse_sql_expr(e, self, schema.as_deref()),
-                    })
+                    .map(|e| self.expr_or_ordinal(e, schema.as_deref(), &projections, "GROUP BY"))
                     .collect::<PolarsResult<_>>()?
             },
             // "GROUP BY ALL" syntax; automatically adds expressions that do not contain
@@ -838,7 +867,6 @@ impl SQLContext {
             .unwrap_or_else(|| tbl_name);
 
         self.table_map.insert(tbl_name.clone(), lf.clone());
-
         Ok((tbl_name, lf))
     }
 
@@ -852,13 +880,22 @@ impl SQLContext {
         let mut nulls_last = Vec::with_capacity(ob.len());
 
         let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
+        let column_names = schema
+            .clone()
+            .unwrap()
+            .iter_names()
+            .map(|e| col(e))
+            .collect::<Vec<_>>();
+
         for ob in ob {
             // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
             // https://www.postgresql.org/docs/current/queries-order.html
-            by.push(parse_sql_expr(&ob.expr, self, schema.as_deref())?);
             let desc_order = !ob.asc.unwrap_or(true);
             nulls_last.push(!ob.nulls_first.unwrap_or(desc_order));
             descending.push(desc_order);
+
+            // translate order expression, allowing ordinal values
+            by.push(self.expr_or_ordinal(&ob.expr, schema.as_deref(), &column_names, "ORDER BY")?)
         }
         Ok(lf.sort_by_exprs(
             &by,
