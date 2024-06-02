@@ -147,6 +147,7 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%Y.%m.%d %H:%M",
     "%Y.%m.%d %H%M",
     "%Y.%m.%d",
+    "%Y-%m-%dT%H:%M:%S%.f", // ISO 8601 with dynamic precision and withouth timezone
 ];
 
 pub(super) static DATETIME_Y_M_D_Z: &[&str] = &[
