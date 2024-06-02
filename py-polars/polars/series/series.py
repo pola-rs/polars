@@ -5451,6 +5451,8 @@ class Series:
             - For mapping elements of a series, consider: `s.sqrt()`.
             - For mapping inner elements of lists, consider:
               `s.list.eval(pl.element().sqrt())`.
+            - For mapping elements of struct fields, consider:
+              `s.struct.field("field_name").sqrt()`.
 
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
