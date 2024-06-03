@@ -113,6 +113,7 @@ def dict_to_pydf(
             # threads running python and release the gil in pyo3 (it will deadlock).
 
             # (note: 'dummy' is threaded)
+            # We catch FileNotFoundError: see 16675
             try:
                 import multiprocessing.dummy
 
