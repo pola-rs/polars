@@ -34,22 +34,18 @@ impl StackExec {
                         self.options.run_parallel,
                     )?;
                     if !self.options.should_broadcast {
-                        for column in res.iter() {
-                            // Safety: this case only appears as a
-                            // result of CSE optimization, and the
-                            // usage there produces new, unique column
-                            // names.
-                            // It is immediately followed by a
-                            // projection which pulls out the possibly
-                            // mismatching column lengths.
-                            debug_assert!(
-                                column.name().starts_with("__POLARS_CSER_0x"),
-                                "non-broadcasting hstack should only be used for CSE columns"
-                            );
-                            unsafe {
-                                df.with_column_unchecked(column.clone());
-                            }
-                        }
+                        debug_assert!(
+                            res.iter()
+                                .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                            "non-broadcasting hstack should only be used for CSE columns"
+                        );
+                        // Safety: this case only appears as a result
+                        // of CSE optimization, and the usage there
+                        // produces new, unique column names. It is
+                        // immediately followed by a projection which
+                        // pulls out the possibly mismatching column
+                        // lengths.
+                        unsafe { df.get_columns_mut().extend(res) };
                     } else {
                         df._add_columns(res, schema)?;
                     }
@@ -69,22 +65,17 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 if !self.options.should_broadcast {
-                    for column in res.iter() {
-                        // Safety: this case only appears as a
-                        // result of CSE optimization, and the
-                        // usage there produces new, unique column
-                        // names.
-                        // It is immediately followed by a
-                        // projection which pulls out the possibly
-                        // mismatching column lengths.
-                        debug_assert!(
-                            column.name().starts_with("__POLARS_CSER_0x"),
-                            "non-broadcasting hstack should only be used for CSE columns"
-                        );
-                        unsafe {
-                            df.with_column_unchecked(column.clone());
-                        }
-                    }
+                    debug_assert!(
+                        res.iter()
+                            .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                        "non-broadcasting hstack should only be used for CSE columns"
+                    );
+                    // Safety: this case only appears as a result of
+                    // CSE optimization, and the usage there produces
+                    // new, unique column names. It is immediately
+                    // followed by a projection which pulls out the
+                    // possibly mismatching column lengths.
+                    unsafe { df.get_columns_mut().extend(res) };
                 } else {
                     df._add_columns(res, schema)?;
                 }

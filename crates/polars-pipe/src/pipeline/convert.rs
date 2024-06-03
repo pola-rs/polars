@@ -557,7 +557,7 @@ fn get_hstack<F>(
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
-    unchecked: bool,
+    options: ProjectionOptions,
 ) -> PolarsResult<HstackOperator>
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -565,7 +565,7 @@ where
     Ok(operators::HstackOperator {
         exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
         input_schema,
-        unchecked,
+        options,
     })
 }
 
@@ -586,14 +586,25 @@ where
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
-        Select { expr, input, .. } => {
+        Select {
+            expr,
+            input,
+            options,
+            ..
+        } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let op = operators::ProjectionOperator {
                 exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
+                options: *options,
             };
             Box::new(op) as Box<dyn Operator>
         },
-        HStack { exprs, input, .. } => {
+        HStack {
+            exprs,
+            input,
+            options,
+            ..
+        } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
             let op = get_hstack(
@@ -601,7 +612,7 @@ where
                 expr_arena,
                 to_physical,
                 (*input_schema).clone(),
-                false,
+                *options,
             )?;
 
             Box::new(op) as Box<dyn Operator>

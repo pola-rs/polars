@@ -234,11 +234,13 @@ pub(super) fn evaluate_physical_expressions(
 pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
-    duplicate_check: bool,
+    options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
         return Ok(DataFrame::empty());
     };
+    let duplicate_check = options.duplicate_check;
+    let should_broadcast = options.should_broadcast;
     let mut df_height = 0;
     let mut has_empty = false;
     let mut all_equal_len = true;
@@ -266,7 +268,7 @@ pub(super) fn check_expand_literals(
         }
     }
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
-    if !all_equal_len {
+    if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
             .map(|series| {
