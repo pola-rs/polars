@@ -39,6 +39,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT CEIL(column_1) from df;
     /// ```
     Ceil,
+    /// SQL 'div' function
+    /// Returns the integer quotient of the division.
+    /// ```sql
+    /// SELECT DIV(column_1, 2) from df;
+    /// ```
+    Div,
     /// SQL 'exp' function
     /// Computes the exponential of the given value.
     /// ```sql
@@ -670,6 +676,7 @@ impl PolarsSQLFunctions {
             "abs" => Self::Abs,
             "cbrt" => Self::Cbrt,
             "ceil" | "ceiling" => Self::Ceil,
+            "div" => Self::Div,
             "exp" => Self::Exp,
             "floor" => Self::Floor,
             "ln" => Self::Ln,
@@ -800,6 +807,7 @@ impl SQLFunctionVisitor<'_> {
             Abs => self.visit_unary(Expr::abs),
             Cbrt => self.visit_unary(Expr::cbrt),
             Ceil => self.visit_unary(Expr::ceil),
+            Div => self.visit_binary(|e, d| e.floor_div(d).cast(DataType::Int64),),
             Exp => self.visit_unary(Expr::exp),
             Floor => self.visit_unary(Expr::floor),
             Ln => self.visit_unary(|e| e.log(std::f64::consts::E)),

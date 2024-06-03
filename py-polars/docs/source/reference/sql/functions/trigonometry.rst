@@ -52,25 +52,19 @@ Compute inverse cosine of the input column (in radians).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-      }
-    )
-
-    df.sql("SELECT ACOS(a) AS ACOS FROM self")
-
-    # shape: (4, 1)
-    # ┌──────────┐
-    # │ ACOS     │
-    # │ ---      │
-    # │ f64      │
-    # ╞══════════╡
-    # │ 3.141593 │
-    # │ 2.094395 │
-    # │ 1.047198 │
-    # │ 0.0      │
-    # └──────────┘
+    df = pl.DataFrame({"rads": [-1.0, -0.5, 0.5, 1.0]})
+    df.sql("SELECT rads, ACOS(rads) AS acos FROM self")
+    # shape: (4, 2)
+    # ┌──────┬──────────┐
+    # │ rads ┆ acos     │
+    # │ ---  ┆ ---      │
+    # │ f64  ┆ f64      │
+    # ╞══════╪══════════╡
+    # │ -1.0 ┆ 3.141593 │
+    # │ -0.5 ┆ 2.094395 │
+    # │ 0.5  ┆ 1.047198 │
+    # │ 1.0  ┆ 0.0      │
+    # └──────┴──────────┘
 
 .. _acosd:
 
@@ -82,24 +76,18 @@ Compute inverse cosine of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-      }
-    )
-
-    df.sql("SELECT ACOSD(a) AS ACOSD FROM self")
-    # shape: (4, 1)
-    # ┌───────┐
-    # │ ACOSD │
-    # │ ---   │
-    # │ f64   │
-    # ╞═══════╡
-    # │ 180.0 │
-    # │ 120.0 │
-    # │ 60.0  │
-    # │ 0.0   │
-    # └───────┘
+    df = pl.DataFrame({"degs": [-0.5, 0.0, 0.5]})
+    df.sql("SELECT degs, ACOSD(degs) AS acosd FROM self")
+    # shape: (3, 2)
+    # ┌──────┬───────┐
+    # │ degs ┆ acosd │
+    # │ ---  ┆ ---   │
+    # │ f64  ┆ f64   │
+    # ╞══════╪═══════╡
+    # │ -0.5 ┆ 120.0 │
+    # │ 0.0  ┆ 90.0  │
+    # │ 0.5  ┆ 60.0  │
+    # └──────┴───────┘
 
 .. _asin:
 
@@ -111,24 +99,19 @@ Compute inverse sine of the input column (in radians).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-      }
-    )
-
-    df.sql("SELECT ASIN(a) AS ASIN FROM self")
-    # shape: (4, 1)
-    # ┌───────────┐
-    # │ ASIN      │
-    # │ ---       │
-    # │ f64       │
-    # ╞═══════════╡
-    # │ -1.570796 │
-    # │ -0.523599 │
-    # │ 0.523599  │
-    # │ 1.570796  │
-    # └───────────┘
+    df = pl.DataFrame({"rads": [-1.0, -0.75, -0.0, 0.5]})
+    df.sql("SELECT rads, ASIN(rads) AS asin FROM self")
+    # shape: (4, 2)
+    # ┌───────┬───────────┐
+    # │ rads  ┆ asin      │
+    # │ ---   ┆ ---       │
+    # │ f64   ┆ f64       │
+    # ╞═══════╪═══════════╡
+    # │ -1.0  ┆ -1.570796 │
+    # │ -0.75 ┆ -0.848062 │
+    # │ -0.0  ┆ -0.0      │
+    # │ 0.5   ┆ 0.523599  │
+    # └───────┴───────────┘
 
 .. _asind:
 
@@ -140,24 +123,18 @@ Compute inverse sine of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-      }
-    )
-
-    df.sql("SELECT ASIND(a) AS ASIND FROM self")
-    # shape: (4, 1)
-    # ┌───────┐
-    # │ ASIND │
-    # │ ---   │
-    # │ f64   │
-    # ╞═══════╡
-    # │ -90.0 │
-    # │ -30.0 │
-    # │ 30.0  │
-    # │ 90.0  │
-    # └───────┘
+    df = pl.DataFrame({"degs": [-0.5, 0.0, 0.5]})
+    df.sql("SELECT degs, ASIND(degs) AS asind FROM self")
+    # shape: (3, 2)
+    # ┌──────┬───────┐
+    # │ degs ┆ asind │
+    # │ ---  ┆ ---   │
+    # │ f64  ┆ f64   │
+    # ╞══════╪═══════╡
+    # │ -0.5 ┆ -30.0 │
+    # │ 0.0  ┆ 0.0   │
+    # │ 0.5  ┆ 30.0  │
+    # └──────┴───────┘
 
 .. _atan:
 
@@ -169,24 +146,19 @@ Compute inverse tangent of the input column (in radians).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-      }
-    )
-
-    df.sql("SELECT ATAN(a) AS ATAN FROM self")
-    # shape: (4, 1)
-    # ┌───────────┐
-    # │ ATAN      │
-    # │ ---       │
-    # │ f64       │
-    # ╞═══════════╡
-    # │ -0.785398 │
-    # │ -0.463648 │
-    # │ 0.463648  │
-    # │ 0.785398  │
-    # └───────────┘
+    df = pl.DataFrame({"rads": [-1.0, 0.0, 1.0, 2.0]})
+    df.sql("SELECT rads, ATAN(rads) AS atan FROM self")
+    # shape: (4, 2)
+    # ┌──────┬───────────┐
+    # │ rads ┆ atan      │
+    # │ ---  ┆ ---       │
+    # │ f64  ┆ f64       │
+    # ╞══════╪═══════════╡
+    # │ -1.0 ┆ -0.785398 │
+    # │ 0.0  ┆ 0.0       │
+    # │ 1.0  ┆ 0.785398  │
+    # │ 2.0  ┆ 1.107149  │
+    # └──────┴───────────┘
 
 .. _atand:
 
@@ -198,24 +170,18 @@ Compute inverse tangent of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-      }
-    )
-
-    df.sql("SELECT ATAND(a) AS ATAND FROM self")
-    # shape: (4, 1)
-    # ┌────────────┐
-    # │ ATAND      │
-    # │ ---        │
-    # │ f64        │
-    # ╞════════════╡
-    # │ -45.0      │
-    # │ -26.565051 │
-    # │ 26.565051  │
-    # │ 45.0       │
-    # └────────────┘
+    df = pl.DataFrame({"degs": [-1.0, 0.0, 1.0]})
+    df.sql("SELECT degs, ATAND(degs) AS atand FROM self")
+    # shape: (3, 2)
+    # ┌──────┬───────┐
+    # │ degs ┆ atand │
+    # │ ---  ┆ ---   │
+    # │ f64  ┆ f64   │
+    # ╞══════╪═══════╡
+    # │ -1.0 ┆ -45.0 │
+    # │ 0.0  ┆ 0.0   │
+    # │ 1.0  ┆ 45.0  │
+    # └──────┴───────┘
 
 .. _atan2:
 
@@ -228,24 +194,23 @@ Compute the inverse tangent of column_2/column_1 (in radians).
 .. code-block:: python
 
     df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-        "b": [10, 20, 30, 40],
-      }
+        {
+            "a": [-2.0, -1.0, 1.0, 2.0],
+            "b": [1.5, 1.0, 0.5, 0.0],
+        }
     )
-
-    df.sql("SELECT ATAN2(a, b) AS ATAN2 FROM self")
-    # shape: (4, 1)
-    # ┌───────────┐
-    # │ ATAN2     │
-    # │ ---       │
-    # │ f64       │
-    # ╞═══════════╡
-    # │ -0.099669 │
-    # │ -0.024995 │
-    # │ 0.016665  │
-    # │ 0.024995  │
-    # └───────────┘
+    df.sql("SELECT a, b, ATAN2(a, b) AS atan2_ab FROM self")
+    # shape: (4, 3)
+    # ┌──────┬─────┬───────────┐
+    # │ a    ┆ b   ┆ atan2_ab  │
+    # │ ---  ┆ --- ┆ ---       │
+    # │ f64  ┆ f64 ┆ f64       │
+    # ╞══════╪═════╪═══════════╡
+    # │ -2.0 ┆ 1.5 ┆ -0.927295 │
+    # │ -1.0 ┆ 1.0 ┆ -0.785398 │
+    # │ 1.0  ┆ 0.5 ┆ 1.107149  │
+    # │ 2.0  ┆ 0.0 ┆ 1.570796  │
+    # └──────┴─────┴───────────┘
 
 .. _atan2d:
 
@@ -258,24 +223,23 @@ Compute the inverse tangent of column_2/column_1 (in degrees).
 .. code-block:: python
 
     df = pl.DataFrame(
-      {
-        "a": [-1.0, -0.5, 0.5, 1],
-        "b": [10, 20, 30, 40],
-      }
+        {
+            "a": [0, 90, 180, 360],
+            "b": [360, 270, 180, 90],
+        }
     )
-
-    df.sql("SELECT ATAN2D(a, b) AS ATAN2D FROM self")
-    # shape: (4, 1)
-    # ┌───────────┐
-    # │ ATAN2D    │
-    # │ ---       │
-    # │ f64       │
-    # ╞═══════════╡
-    # │ -5.710593 │
-    # │ -1.432096 │
-    # │ 0.954841  │
-    # │ 1.432096  │
-    # └───────────┘
+    df.sql("SELECT a, b, ATAN2D(a, b) AS atan2d_ab FROM self")
+    # shape: (4, 3)
+    # ┌─────┬─────┬───────────┐
+    # │ a   ┆ b   ┆ atan2d_ab │
+    # │ --- ┆ --- ┆ ---       │
+    # │ i64 ┆ i64 ┆ f64       │
+    # ╞═════╪═════╪═══════════╡
+    # │ 0   ┆ 360 ┆ 0.0       │
+    # │ 90  ┆ 270 ┆ 18.434949 │
+    # │ 180 ┆ 180 ┆ 45.0      │
+    # │ 360 ┆ 90  ┆ 75.963757 │
+    # └─────┴─────┴───────────┘
 
 .. _cot:
 
@@ -287,26 +251,20 @@ Compute the cotangent of the input column (in radians).
 
 .. code-block:: python
 
-    import math
-
-    df = pl.DataFrame(
-      {
-        "angle": [0.0, math.pi/2, math.pi, 3*math.pi/2],
-      }
-    )
-
-    df.sql("SELECT COT(angle) AS COT FROM self")
-    # shape: (4, 1)
-    # ┌────────────┐
-    # │ COT        │
-    # │ ---        │
-    # │ f64        │
-    # ╞════════════╡
-    # │ inf        │
-    # │ 6.1232e-17 │
-    # │ -8.1656e15 │
-    # │ 1.8370e-16 │
-    # └────────────┘
+    df = pl.DataFrame({"rads": [-2.0, -1.0, 0.0, 1.0, 2.0]})
+    df.sql("SELECT rads, COT(rads) AS cot FROM self")
+    # shape: (5, 2)
+    # ┌──────┬───────────┐
+    # │ rads ┆ cot       │
+    # │ ---  ┆ ---       │
+    # │ f64  ┆ f64       │
+    # ╞══════╪═══════════╡
+    # │ -2.0 ┆ 0.457658  │
+    # │ -1.0 ┆ -0.642093 │
+    # │ 0.0  ┆ inf       │
+    # │ 1.0  ┆ 0.642093  │
+    # │ 2.0  ┆ -0.457658 │
+    # └──────┴───────────┘
 
 .. _cotd:
 
@@ -318,24 +276,20 @@ Compute cotangent of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "angle": [0, 90, 180, 270]
-      }
-    )
-
-    df.sql("SELECT COTD(angle) AS COTD FROM self")
-    # shape: (4, 1)
-    # ┌────────────┐
-    # │ COTD       │
-    # │ ---        │
-    # │ f64        │
-    # ╞════════════╡
-    # │ inf        │
-    # │ 6.1232e-17 │
-    # │ -8.1656e15 │
-    # | 1.8370e-16 │
-    # └────────────┘
+    df = pl.DataFrame({"degs": [0, 90, 180, 270, 360]})
+    df.sql("SELECT degs, COTD(degs) AS cotd FROM self")
+    # shape: (5, 2)
+    # ┌──────┬────────────┐
+    # │ degs ┆ cotd       │
+    # │ ---  ┆ ---        │
+    # │ f64  ┆ f64        │
+    # ╞══════╪════════════╡
+    # │ -2.0 ┆ -28.636253 │
+    # │ -1.0 ┆ -57.289962 │
+    # │ 0.0  ┆ inf        │
+    # │ 1.0  ┆ 57.289962  │
+    # │ 2.0  ┆ 28.636253  │
+    # └──────┴────────────┘
 
 .. _cos:
 
@@ -347,26 +301,20 @@ Compute the cosine of the input column (in radians).
 
 .. code-block:: python
 
-    import math
-
-    df = pl.DataFrame(
-      {
-        "angle": [0.0, math.pi/2, math.pi, 3*math.pi/2],
-      }
-    )
-
-    df.sql("SELECT COS(angle) AS COS FROM self")
-    # shape: (4, 1)
-    # ┌─────────────┐
-    # │ COS         │
-    # │ ---         │
-    # | f64         │
-    # ╞═════════════╡
-    # │ 1.0         │
-    # │ 6.1232e-17  │
-    # │ -1.0        │
-    # │ -1.8370e-16 │
-    # └─────────────┘
+    df = pl.DataFrame({"rads": [-2.0, -1.0, 0.0, 1.0, 2.0]})
+    df.sql("SELECT rads, COS(rads) AS cos FROM self")
+    # shape: (5, 2)
+    # ┌──────┬───────────┐
+    # │ rads ┆ cos       │
+    # │ ---  ┆ ---       │
+    # │ f64  ┆ f64       │
+    # ╞══════╪═══════════╡
+    # │ -2.0 ┆ -0.416147 │
+    # │ -1.0 ┆ 0.540302  │
+    # │ 0.0  ┆ 1.0       │
+    # │ 1.0  ┆ 0.540302  │
+    # │ 2.0  ┆ -0.416147 │
+    # └──────┴───────────┘
 
 .. _cosd:
 
@@ -378,24 +326,19 @@ Compute the cosine of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "angle": [0, 90, 180, 270]
-      }
-    )
-
-    df.sql("SELECT COSD(angle) AS COSD FROM self")
-    # shape: (4, 1)
-    # ┌─────────────┐
-    # │ COSD        │
-    # │ ---         │
-    # | f64         │
-    # ╞═════════════╡
-    # │ 1.0         │
-    # │ 6.1232e-17  │
-    # │ -1.0        │
-    # │ -1.8370e-16 │
-    # └─────────────┘
+    df = pl.DataFrame({"degs": [0, 45, 180, 225]})
+    df.sql("SELECT degs, COSD(degs) AS cosd FROM self")
+    # shape: (4, 2)
+    # ┌──────┬───────────┐
+    # │ degs ┆ cosd      │
+    # │ ---  ┆ ---       │
+    # │ i64  ┆ f64       │
+    # ╞══════╪═══════════╡
+    # │ 0    ┆ 1.0       │
+    # │ 45   ┆ 0.707107  │
+    # │ 180  ┆ -1.0      │
+    # │ 225  ┆ -0.707107 │
+    # └──────┴───────────┘
 
 .. _degrees:
 
@@ -409,24 +352,19 @@ Convert between radians and degrees.
 
     import math
 
-    df = pl.DataFrame(
-      {
-        "angle": [0.0, math.pi/2, math.pi, 3*math.pi/2],
-      }
-    )
-
-    df.sql("SELECT DEGREES(angle) AS DEGREES FROM self")
-    # shape: (4, 1)
-    # ┌─────────┐
-    # │ DEGREES │
-    # │ ---     │
-    # │ f64     │
-    # ╞═════════╡
-    # │ 0.0     │
-    # │ 90.0    │
-    # │ 180.0   │
-    # │ 270.0   │
-    # └─────────┘
+    df = pl.DataFrame({"rads": [0.0, math.pi/2, math.pi, 3*math.pi/2]})
+    df.sql("SELECT rads, DEGREES(rads) AS degs FROM self")
+    # shape: (4, 2)
+    # ┌──────────┬───────┐
+    # │ rads     ┆ degs  │
+    # │ ---      ┆ ---   │
+    # │ f64      ┆ f64   │
+    # ╞══════════╪═══════╡
+    # │ 0.0      ┆ 0.0   │
+    # │ 1.570796 ┆ 90.0  │
+    # │ 3.141593 ┆ 180.0 │
+    # │ 4.712389 ┆ 270.0 │
+    # └──────────┴───────┘
 
 .. _radians:
 
@@ -438,24 +376,19 @@ Convert between degrees and radians.
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "angle": [0, 90, 180, 270]
-      }
-    )
-
-    df.sql("SELECT RADIANS(angle_degrees) FROM self")
-    # shape: (4, 1)
-    # ┌───────────────┐
-    # │ angle_degrees │
-    # │ ---           │
-    # │ f64           │
-    # ╞═══════════════╡
-    # │ 0.0           │
-    # │ 1.570796      │
-    # │ 3.141593      │
-    # │ 4.712389      │
-    # └───────────────┘
+    df = pl.DataFrame({"degs": [0, 90, 180, 270]})
+    df.sql("SELECT degs, RADIANS(degs) AS rads FROM self")
+    # shape: (4, 2)
+    # ┌──────┬──────────┐
+    # │ degs ┆ rads     │
+    # │ ---  ┆ ---      │
+    # │ i64  ┆ f64      │
+    # ╞══════╪══════════╡
+    # │ 0    ┆ 0.0      │
+    # │ 90   ┆ 1.570796 │
+    # │ 180  ┆ 3.141593 │
+    # │ 270  ┆ 4.712389 │
+    # └──────┴──────────┘
 
 .. _sin:
 
@@ -469,24 +402,19 @@ Compute the sine of the input column (in radians).
 
     import math
 
-    df = pl.DataFrame(
-      {
-        "angle": [0.0, math.pi/2, math.pi, 3*math.pi/2],
-      }
-    )
-
-    df.sql("SELECT SIN(angle) AS SIN FROM self")
-    # shape: (4, 1)
-    # ┌────────────┐
-    # │ SIN        │
-    # │ ---        │
-    # │ f64        │
-    # ╞════════════╡
-    # │ 0.0        │
-    # │ 1.0        │
-    # │ 1.2246e-16 │
-    # │ -1.0       │
-    # └────────────┘
+    df = pl.DataFrame({"rads": [0.0, 1/4 * math.pi, 1/2 * math.pi, 3/4 * math.pi]})
+    df.sql("SELECT rads, SIN(rads) AS sin FROM self")
+    # shape: (4, 2)
+    # ┌──────────┬──────────┐
+    # │ rads     ┆ sin      │
+    # │ ---      ┆ ---      │
+    # │ f64      ┆ f64      │
+    # ╞══════════╪══════════╡
+    # │ 0.0      ┆ 0.0      │
+    # │ 0.785398 ┆ 0.707107 │
+    # │ 1.570796 ┆ 1.0      │
+    # │ 2.356194 ┆ 0.707107 │
+    # └──────────┴──────────┘
 
 .. _sind:
 
@@ -498,24 +426,19 @@ Compute the sine of the input column (in degrees).
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "angle": [0, 90, 180, 270]
-      }
-    )
-
-    df.sql("SELECT SIND(angle) FROM self")
-    # shape: (4, 1)
-    # ┌────────────┐
-    # │ SIND       │
-    # │ ---        │
-    # | f64        │
-    # ╞════════════╡
-    # │ 0.0        │
-    # │ 1.0        │
-    # │ 1.2246e-16 │
-    # │ -1.0       │
-    # └────────────┘
+    df = pl.DataFrame({"degs": [0, 90, 225, 270]})
+    df.sql("SELECT degs, SIND(degs) AS sind FROM self")
+    # shape: (4, 2)
+    # ┌──────┬───────────┐
+    # │ degs ┆ sind      │
+    # │ ---  ┆ ---       │
+    # │ i64  ┆ f64       │
+    # ╞══════╪═══════════╡
+    # │ 0    ┆ 0.0       │
+    # │ 90   ┆ 1.0       │
+    # │ 225  ┆ -0.707107 │
+    # │ 270  ┆ -1.0      │
+    # └──────┴───────────┘
 
 .. _tan:
 
@@ -529,24 +452,19 @@ Compute the tangent of the input column (in radians).
 
     import math
 
-    df = pl.DataFrame(
-      {
-        "angle": [0.0, math.pi/2, math.pi, 3*math.pi/2],
-      }
-    )
-
-    df.sql("SELECT TAN(angle) AS TAN FROM self")
-    # shape: (4, 1)
-    # ┌─────────────┐
-    # │ TAN         │
-    # │ ---         │
-    # │ f64         │
-    # ╞═════════════╡
-    # │ 0.0         │
-    # │ 1.6331e16   │
-    # │ -1.2246e-16 │
-    # │ 5.4437e15   │
-    # └─────────────┘
+    df = pl.DataFrame({"rads": [0.0, 1/4 * math.pi, 3/4 * math.pi]})
+    df.sql("SELECT rads, TAN(rads) AS tan FROM self")
+    # shape: (4, 2)
+    # ┌──────────┬───────────┐
+    # │ rads     ┆ tan       │
+    # │ ---      ┆ ---       │
+    # │ f64      ┆ f64       │
+    # ╞══════════╪═══════════╡
+    # │ 0.0      ┆ 0.0       │
+    # │ 0.785398 ┆ 1.0       │
+    # │ 1.570796 ┆ 1.6331e16 │
+    # │ 2.356194 ┆ -1.0      │
+    # └──────────┴───────────┘
 
 
 .. _tand:
@@ -559,22 +477,16 @@ Compute the tangent of the input column (in degrees).
 
 .. code-block:: python
 
-
-    df = pl.DataFrame(
-      {
-        "angle": [0, 90, 180, 270]
-      }
-    )
-
-    df.sql("SELECT TAND(angle) AS TAND FROM self")
-    # shape: (4, 1)
-    # ┌─────────────┐
-    # │ TAND        │
-    # │ ---         │
-    # │ f64         │
-    # ╞═════════════╡
-    # │ 0.0         │
-    # │ 1.6331e16   │
-    # │ -1.2246e-16 │
-    # │ 5.4437e15   │
-    # └─────────────┘
+    df = pl.DataFrame({"degs": [0, 45, 135, 225]})
+    df.sql("SELECT degs, TAND(degs) AS tand FROM self")
+    # shape: (4, 2)
+    # ┌──────┬──────┐
+    # │ degs ┆ tand │
+    # │ ---  ┆ ---  │
+    # │ i64  ┆ f64  │
+    # ╞══════╪══════╡
+    # │ 0    ┆ 0.0  │
+    # │ 45   ┆ 1.0  │
+    # │ 135  ┆ -1.0 │
+    # │ 225  ┆ 1.0  │
+    # └──────┴──────┘

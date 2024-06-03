@@ -13,6 +13,15 @@ if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
 
 
+def test_div() -> None:
+    df = pl.DataFrame({"a": [20.5, None, 10.0, 5.0, 2.5], "b": [6, 12, 24, None, 5]})
+    res = df.sql("SELECT DIV(a, b) AS a_div_b, DIV(b, a) AS b_div_a FROM self")
+    assert res.to_dict(as_series=False) == {
+        "a_div_b": [3, None, 0, None, 0],
+        "b_div_a": [0, None, 2, None, 2],
+    }
+
+
 def test_modulo() -> None:
     df = pl.DataFrame(
         {
@@ -32,7 +41,6 @@ def test_modulo() -> None:
         FROM self
         """
     )
-
     assert_frame_equal(
         out,
         pl.DataFrame(
