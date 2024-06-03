@@ -41,8 +41,8 @@ NE = Endianness.NATIVE
         (pl.Datetime, (DtypeKind.DATETIME, 64, "tsu:", NE)),
         (pl.Datetime(time_unit="ms"), (DtypeKind.DATETIME, 64, "tsm:", NE)),
         (
-            pl.Datetime(time_zone="Amsterdam/Europe"),
-            (DtypeKind.DATETIME, 64, "tsu:Amsterdam/Europe", NE),
+            pl.Datetime(time_zone="Europe/Amsterdam"),
+            (DtypeKind.DATETIME, 64, "tsu:Europe/Amsterdam", NE),
         ),
         (
             pl.Datetime(time_unit="ns", time_zone="Asia/Seoul"),

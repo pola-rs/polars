@@ -505,7 +505,7 @@ def test_err_on_time_datetime_cast() -> None:
 
 def test_err_on_invalid_time_zone_cast() -> None:
     s = pl.Series([datetime(2021, 1, 1)])
-    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+    with pytest.raises(ValueError, match=r"invalid time zone: 'qwerty'"):
         s.cast(pl.Datetime("us", "qwerty"))
 
 
