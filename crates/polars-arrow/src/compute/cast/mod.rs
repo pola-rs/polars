@@ -266,6 +266,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 /// * Time32 and Time64: precision lost when going to higher interval
 /// * Timestamp and Date{32|64}: precision lost when going to higher interval
 /// * Temporal to/from backing primitive: zero-copy with data type change
+///
 /// Unsupported Casts
 /// * non-`StructArray` to `StructArray` or `StructArray` to non-`StructArray`
 /// * List to primitive

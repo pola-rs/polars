@@ -196,7 +196,7 @@ impl<'a> AggregationContext<'a> {
 
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
-    /// the columns dtype)
+    ///   the columns dtype)
     fn new(
         series: Series,
         groups: Cow<'a, GroupsProxy>,
@@ -319,7 +319,7 @@ impl<'a> AggregationContext<'a> {
 
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
-    /// the columns dtype)
+    ///   the columns dtype)
     pub(crate) fn with_series(
         &mut self,
         series: Series,

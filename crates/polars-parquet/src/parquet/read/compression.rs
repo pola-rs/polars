@@ -134,27 +134,37 @@ fn decompress_reuse<P: PageIterator>(
 }
 
 /// Decompressor that allows re-using the page buffer of [`PageIterator`].
+///
 /// # Implementation
+///
 /// The implementation depends on whether a page is compressed or not.
+///
 /// > `PageReader(a)`, `CompressedPage(b)`, `Decompressor(c)`, `DecompressedPage(d)`
+///
 /// ### un-compressed pages:
+///
 /// > page iter: `a` is swapped with `b`
 /// > decompress iter: `b` is swapped with `d`, `b` is swapped with `a`
+///
 /// therefore:
 /// * `PageReader` has its buffer back
 /// * `Decompressor`'s buffer is un-used
 /// * `DecompressedPage` has the same data as `CompressedPage` had
+///
 /// ### compressed pages:
+///
 /// > page iter: `a` is swapped with `b`
 /// > decompress iter:
 /// > * `b` is decompressed into `c`
 /// > * `b` is swapped with `a`
 /// > * `c` is moved to `d`
 /// > * (next iteration): `d` is moved to `c`
+///
 /// therefore, while the page is available:
 /// * `PageReader` has its buffer back
 /// * `Decompressor`'s buffer empty
 /// * `DecompressedPage` has the decompressed buffer
+///
 /// after the page is used:
 /// * `PageReader` has its buffer back
 /// * `Decompressor` has its buffer back
