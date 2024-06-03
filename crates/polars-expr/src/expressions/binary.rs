@@ -53,15 +53,15 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::LtEq => ChunkCompare::lt_eq(left, right).map(|ca| ca.into_series()),
         Operator::Eq => ChunkCompare::equal(left, right).map(|ca| ca.into_series()),
         Operator::NotEq => ChunkCompare::not_equal(left, right).map(|ca| ca.into_series()),
-        Operator::Plus => Ok(left + right),
-        Operator::Minus => Ok(left - right),
-        Operator::Multiply => Ok(left * right),
-        Operator::Divide => Ok(left / right),
+        Operator::Plus => left.try_add(right),
+        Operator::Minus => left.try_sub(right),
+        Operator::Multiply => left.try_mul(right),
+        Operator::Divide => left.try_div(right),
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => Ok(left / right),
-            Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
-            _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
+            Decimal(_, _) => left.try_div(right),
+            Date | Datetime(_, _) | Float32 | Float64 => left.try_div(right),
+            _ => left.cast(&Float64)?.try_div(&right.cast(&Float64)?),
         },
         Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
@@ -82,7 +82,7 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             .cast(&DataType::Boolean)?
             .bitand(&right.cast(&DataType::Boolean)?),
         Operator::Xor => left.bitxor(right),
-        Operator::Modulus => Ok(left % right),
+        Operator::Modulus => left.try_rem(right),
         Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_series()),
         Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_series()),
     }
