@@ -16,8 +16,7 @@ from polars.testing.parametric import series
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars._typing import TemporalLiteral, TimeUnit
-    from polars.datatypes import PolarsDataType
+    from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -1421,7 +1420,7 @@ def test_literal_from_datetime(
         value = value.date()  # type: ignore[assignment]
     elif dtype.time_zone is None and value.tzinfo is not None:  # type: ignore[union-attr]
         # update the dtype with the supplied time zone in the value
-        dtype = pl.Datetime(dtype.time_unit, str(value.tzinfo))  # type: ignore[arg-type, union-attr]
+        dtype = pl.Datetime(dtype.time_unit, str(value.tzinfo))  # type: ignore[union-attr]
     elif dtype.time_zone is not None and value.tzinfo is None:  # type: ignore[union-attr]
         # cast from dt without tz to dtype with tz
         value = value.replace(tzinfo=ZoneInfo(dtype.time_zone))  # type: ignore[union-attr]
