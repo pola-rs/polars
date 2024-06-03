@@ -252,8 +252,15 @@ impl SeriesTrait for NullChunked {
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        let len = filter.sum().unwrap_or(0);
-        Ok(NullChunked::new(self.name.clone(), len as usize).into_series())
+        let len = if self.is_empty() {
+            // We still allow a length of `1` because it could be `lit(true)`.
+            polars_ensure!(filter.len() <= 1, ShapeMismatch: "filter's length: {} differs from that of the series: 0", filter.len());
+            0
+        } else {
+            polars_ensure!(filter.len() == self.len(), ShapeMismatch: "filter's length: {} differs from that of the series: {}", filter.len(), self.len());
+            filter.sum().unwrap_or(0) as usize
+        };
+        Ok(NullChunked::new(self.name.clone(), len).into_series())
     }
 
     fn shift(&self, _periods: i64) -> Series {
