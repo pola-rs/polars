@@ -3,13 +3,38 @@ use polars_utils::vec::CapacityByFactor;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
-use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
 use ahash::RandomState;
 use polars_core::hashing::_boost_hash_combine;
+
+#[derive(Debug, Clone)]
+struct ProjectionExprs {
+    expr: Vec<ExprIR>,
+    /// offset from the back
+    /// `expr[expr.len() - common_sub_offset..]`
+    /// are the common sub expressions
+    common_sub_offset: usize,
+}
+
+impl ProjectionExprs {
+    fn default_exprs(&self) -> &[ExprIR] {
+        &self.expr[..self.expr.len() - self.common_sub_offset]
+    }
+
+    fn cse_exprs(&self) -> &[ExprIR] {
+        &self.expr[self.expr.len() - self.common_sub_offset..]
+    }
+
+    fn new_with_cse(expr: Vec<ExprIR>, common_sub_offset: usize) -> Self {
+        Self {
+            expr,
+            common_sub_offset,
+        }
+    }
+}
 
 /// Identifier that shows the sub-expression path.
 /// Must implement hash and equality and ideally
