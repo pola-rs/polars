@@ -291,68 +291,70 @@ pub(super) fn process_binary(
         (Struct(_), Struct(_), _op) => return Ok(None),
         _ => {},
     }
-    let compare_cat_to_string = compares_cat_to_string(&type_left, &type_right, op);
-    let datetime_arithmetic = is_datetime_arithmetic(&type_left, &type_right, op);
-    let list_arithmetic = is_list_arithmetic(&type_left, &type_right, op);
-    str_numeric_arithmetic(&type_left, &type_right)?;
 
-    // Special path for list arithmetic
-    if list_arithmetic {
-        return process_list_arithmetic(
-            type_left, type_right, node_left, node_right, op, expr_arena,
-        );
-    }
+    // ensure we don't enter this branch for common numeric arithmetic.
+    if op.is_arithmetic() {
+        if !(type_left.is_numeric() && type_right.is_numeric()) {
+            str_numeric_arithmetic(&type_left, &type_right)?;
 
-    #[cfg(feature = "dtype-struct")]
-    {
-        let is_struct_numeric_arithmetic =
-            is_struct_numeric_arithmetic(&type_left, &type_right, op);
-        if is_struct_numeric_arithmetic {
-            return process_struct_numeric_arithmetic(
-                type_left, type_right, node_left, node_right, op, expr_arena,
-            );
+            if is_datetime_arithmetic(&type_left, &type_right, op) {
+                return Ok(None);
+            }
+            // Special path for list arithmetic
+            if is_list_arithmetic(&type_left, &type_right, op) {
+                return process_list_arithmetic(
+                    type_left, type_right, node_left, node_right, op, expr_arena,
+                );
+            }
+            #[cfg(feature = "dtype-struct")]
+            {
+                let is_struct_numeric_arithmetic =
+                    is_struct_numeric_arithmetic(&type_left, &type_right, op);
+                if is_struct_numeric_arithmetic {
+                    return process_struct_numeric_arithmetic(
+                        type_left, type_right, node_left, node_right, op, expr_arena,
+                    );
+                }
+            }
         }
+    } else if compares_cat_to_string(&type_left, &type_right, op) {
+        return Ok(None);
     }
 
-    // All early return paths
-    if compare_cat_to_string || datetime_arithmetic {
-        Ok(None)
+    // Coerce types:
+    let st = unpack!(get_supertype(&type_left, &type_right));
+    let mut st = modify_supertype(st, left, right, &type_left, &type_right);
+
+    if is_cat_str_binary(&type_left, &type_right) {
+        st = String
+    }
+
+    // only cast if the type is not already the super type.
+    // this can prevent an expensive flattening and subsequent aggregation
+    // in a group_by context. To be able to cast the groups need to be
+    // flattened
+    let new_node_left = if type_left != st {
+        expr_arena.add(AExpr::Cast {
+            expr: node_left,
+            data_type: st.clone(),
+            strict: false,
+        })
     } else {
-        // Coerce types:
-        let st = unpack!(get_supertype(&type_left, &type_right));
-        let mut st = modify_supertype(st, left, right, &type_left, &type_right);
+        node_left
+    };
+    let new_node_right = if type_right != st {
+        expr_arena.add(AExpr::Cast {
+            expr: node_right,
+            data_type: st,
+            strict: false,
+        })
+    } else {
+        node_right
+    };
 
-        if is_cat_str_binary(&type_left, &type_right) {
-            st = String
-        }
-
-        // only cast if the type is not already the super type.
-        // this can prevent an expensive flattening and subsequent aggregation
-        // in a group_by context. To be able to cast the groups need to be
-        // flattened
-        let new_node_left = if type_left != st {
-            expr_arena.add(AExpr::Cast {
-                expr: node_left,
-                data_type: st.clone(),
-                strict: false,
-            })
-        } else {
-            node_left
-        };
-        let new_node_right = if type_right != st {
-            expr_arena.add(AExpr::Cast {
-                expr: node_right,
-                data_type: st,
-                strict: false,
-            })
-        } else {
-            node_right
-        };
-
-        Ok(Some(AExpr::BinaryExpr {
-            left: new_node_left,
-            op,
-            right: new_node_right,
-        }))
-    }
+    Ok(Some(AExpr::BinaryExpr {
+        left: new_node_left,
+        op,
+        right: new_node_right,
+    }))
 }
