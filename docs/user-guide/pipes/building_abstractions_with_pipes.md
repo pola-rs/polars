@@ -18,7 +18,7 @@ Suppose, for example, that you frequently have to apply the Pythagorean theorem 
 
 ... and apply it with `pipe`:
 
-{{code_block('user-guide/pipes/building_abstractions_with_pipes','pipe',['pipe'])}}
+{{code_block('user-guide/pipes/building_abstractions_with_pipes','pipe',[])}}
 
 ```python exec="on" result="text" session="user-guide/pipes/building_abstractions_with_pipes"
 --8<-- "python/user-guide/pipes/building_abstractions_with_pipes.py:pipe"

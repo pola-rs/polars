@@ -17,7 +17,6 @@ This page gives an overview of all public DataFrame methods.
    modify_select
    miscellaneous
    plot
-   pipe
 
 .. currentmodule:: polars
 
