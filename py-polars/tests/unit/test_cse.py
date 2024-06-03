@@ -12,6 +12,11 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+def num_cse_occurrences(explanation: str) -> int:
+    """The number of unique CSE columns in an explain string."""
+    return len(set(re.findall('__POLARS_CSER_0x[^"]+"', explanation)))
+
+
 # https://github.com/pola-rs/polars/issues/5405
 def test_cse_rename_cross_join_5405() -> None:
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
@@ -174,8 +179,7 @@ Gr1,B
 
 
 @pytest.mark.debug()
-def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_cse_expr_selection_context() -> None:
     q = pl.LazyFrame(
         {
             "a": [1, 2, 3, 4],
@@ -195,6 +199,7 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     ]
 
     result = q.select(exprs).collect(comm_subexpr_elim=True)
+    assert num_cse_occurrences(q.select(exprs).explain(comm_subexpr_elim=True)) == 2
     expected = pl.DataFrame(
         {
             "d1": [30],
@@ -206,6 +211,9 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
     assert_frame_equal(result, expected)
 
     result = q.with_columns(exprs).collect(comm_subexpr_elim=True)
+    assert (
+        num_cse_occurrences(q.with_columns(exprs).explain(comm_subexpr_elim=True)) == 2
+    )
     expected = pl.DataFrame(
         {
             "a": [1, 2, 3, 4],
@@ -218,10 +226,6 @@ def test_cse_expr_selection_context(monkeypatch: Any, capfd: Any) -> None:
         }
     )
     assert_frame_equal(result, expected)
-
-    out = capfd.readouterr().err
-    assert "run ProjectionExec with 2 CSE" in out
-    assert "run StackExec with 2 CSE" in out
 
 
 def test_windows_cse_excluded() -> None:
@@ -670,20 +674,23 @@ def test_cse_15548() -> None:
 
 
 @pytest.mark.debug()
-def test_cse_and_schema_update_projection_pd(capfd: Any, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_cse_and_schema_update_projection_pd() -> None:
     df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
 
-    assert df.lazy().with_row_index().select(
-        pl.when(pl.col("b") < 10)
-        .then(0.1 * pl.col("b"))
-        .when(pl.col("b") < 100)
-        .then(0.2 * pl.col("b"))
-    ).collect(comm_subplan_elim=False).to_dict(as_series=False) == {
+    q = (
+        df.lazy()
+        .with_row_index()
+        .select(
+            pl.when(pl.col("b") < 10)
+            .then(0.1 * pl.col("b"))
+            .when(pl.col("b") < 100)
+            .then(0.2 * pl.col("b"))
+        )
+    )
+    assert q.collect(comm_subplan_elim=False).to_dict(as_series=False) == {
         "literal": [19.8, 19.8]
     }
-    captured = capfd.readouterr().err
-    assert "1 CSE" in captured
+    assert num_cse_occurrences(q.explain(comm_subexpr_elim=True)) == 1
 
 
 @pytest.mark.debug()
@@ -735,8 +742,7 @@ def test_cse_no_projection_15980() -> None:
 
 
 @pytest.mark.debug()
-def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_cse_series_collision_16138() -> None:
     holdings = pl.DataFrame(
         {
             "fund_currency": ["CLP", "CLP"],
@@ -766,8 +772,7 @@ def test_cse_series_collision_16138(capfd: Any, monkeypatch: Any) -> None:
         "asset_currency": ["EUR", "USA"],
         "currency_factor": [True, False],
     }
-    captured = capfd.readouterr().err
-    assert "3 CSE" in captured
+    assert num_cse_occurrences(factor_holdings.explain(comm_subexpr_elim=True)) == 3
 
 
 def test_nested_cache_no_panic_16553() -> None:
