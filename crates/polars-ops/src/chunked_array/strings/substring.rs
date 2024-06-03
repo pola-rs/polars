@@ -94,9 +94,6 @@ fn substring_ternary(
         // If we didn't find our char that means our offset was so negative it
         // is before the start of our string. This means our length must be
         // reduced, assuming it is finite.
-        // TODO: Clippy lint is broken, remove attr once fixed.
-        // https://github.com/rust-lang/rust-clippy/issues/12580
-        #[cfg_attr(feature = "nightly", allow(clippy::manual_unwrap_or_default))]
         if let Some(off) = found {
             off
         } else {

@@ -101,9 +101,6 @@ where
                 unsafe { agg_window.update(start as usize, end as usize) }
             };
 
-            // TODO: Clippy lint is broken, remove attr once fixed.
-            // https://github.com/rust-lang/rust-clippy/issues/12580
-            #[cfg_attr(feature = "nightly", allow(clippy::manual_unwrap_or_default))]
             match agg {
                 Some(val) => val,
                 None => {

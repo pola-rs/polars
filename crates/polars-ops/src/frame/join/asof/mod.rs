@@ -148,11 +148,10 @@ pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
     pub tolerance: Option<AnyValue<'static>>,
-    /// An timedelta given as
+    /// A time duration specified as a string, for example:
     /// - "5m"
     /// - "2h15m"
     /// - "1d6h"
-    /// etc
     pub tolerance_str: Option<SmartString>,
     pub left_by: Option<Vec<SmartString>>,
     pub right_by: Option<Vec<SmartString>>,

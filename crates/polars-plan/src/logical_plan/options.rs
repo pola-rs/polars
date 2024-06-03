@@ -114,18 +114,14 @@ pub struct FunctionOptions {
     pub fmt_str: &'static str,
     /// There can be two ways of expanding wildcards:
     ///
-    /// Say the schema is 'a', 'b' and there is a function f
-    /// f('*')
-    /// can expand to:
-    /// 1.
-    ///     f('a', 'b')
-    /// or
-    /// 2.
-    ///     f('a'), f('b')
+    /// Say the schema is 'a', 'b' and there is a function `f`. In this case, `f('*')` can expand
+    /// to:
+    /// 1. `f('a', 'b')`
+    /// 2. `f('a'), f('b')`
     ///
-    /// setting this to true, will lead to behavior 1.
+    /// Setting this to true, will lead to behavior 1.
     ///
-    /// this also accounts for regex expansion
+    /// This also accounts for regex expansion.
     pub input_wildcard_expansion: bool,
     /// Automatically explode on unit length if it ran as final aggregation.
     ///

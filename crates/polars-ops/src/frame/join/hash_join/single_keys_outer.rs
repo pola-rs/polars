@@ -24,6 +24,7 @@ where
             .into_par_iter()
             .map(|iter| {
                 // create hashes and keys
+                #[allow(clippy::needless_borrows_for_generic_args)]
                 iter.into_iter()
                     .map(|val| (build_hasher.hash_one(&val.to_total_ord()), val))
                     .collect_trusted::<Vec<_>>()
