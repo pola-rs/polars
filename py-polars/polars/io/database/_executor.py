@@ -105,8 +105,11 @@ class ConnectionExecutor:
     ) -> None:
         # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
-        if type(self.cursor).__name__ == "AsyncConnection":
-            _run_async(self._close_async_cursor())
+        if self._is_alchemy_async():
+            from sqlalchemy.ext.asyncio import AsyncConnection
+
+            if isinstance(self.cursor, AsyncConnection):
+                _run_async(self._close_async_cursor())
         elif self.can_close_cursor and hasattr(self.cursor, "close"):
             self.cursor.close()
 
