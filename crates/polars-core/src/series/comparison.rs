@@ -79,7 +79,7 @@ macro_rules! impl_compare {
             _ => unimplemented!(),
         };
         out.rename(lhs.name());
-        Ok(out) as PolarsResult<BooleanChunked>
+        PolarsResult::Ok(out)
     }};
 }
 

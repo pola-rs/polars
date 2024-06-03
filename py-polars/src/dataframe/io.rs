@@ -6,6 +6,8 @@ use std::ops::Deref;
 use polars::io::avro::AvroCompression;
 use polars::io::mmap::{try_create_file, ReaderBytes};
 use polars::io::RowIndex;
+#[cfg(feature = "parquet")]
+use polars_parquet::arrow::write::StatisticsOptions;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
@@ -442,7 +444,7 @@ impl PyDataFrame {
         py_f: PyObject,
         compression: &str,
         compression_level: Option<i32>,
-        statistics: bool,
+        statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
     ) -> PyResult<()> {
@@ -453,7 +455,7 @@ impl PyDataFrame {
             py.allow_threads(|| {
                 ParquetWriter::new(f)
                     .with_compression(compression)
-                    .with_statistics(statistics)
+                    .with_statistics(statistics.0)
                     .with_row_group_size(row_group_size)
                     .with_data_page_size(data_page_size)
                     .finish(&mut self.df)
@@ -463,7 +465,7 @@ impl PyDataFrame {
             let buf = get_file_like(py_f, true)?;
             ParquetWriter::new(buf)
                 .with_compression(compression)
-                .with_statistics(statistics)
+                .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
                 .finish(&mut self.df)

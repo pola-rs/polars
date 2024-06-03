@@ -45,7 +45,7 @@ fn round_trip_opt_stats(
     let schema = ArrowSchema::from(vec![field]);
 
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: StatisticsOptions::full(),
         compression,
         version,
         data_pagesize_limit: None,

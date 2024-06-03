@@ -564,7 +564,7 @@ pub fn pyarrow_nullable_statistics(column: &str) -> Statistics {
             max_value: Box::new(Utf8ViewArray::from_slice([Some("def")])),
         },
         "bool" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
+            distinct_count: UInt64Array::from([Some(2)]).boxed(),
             null_count: UInt64Array::from([Some(4)]).boxed(),
             min_value: Box::new(BooleanArray::from_slice([false])),
             max_value: Box::new(BooleanArray::from_slice([true])),
@@ -701,7 +701,7 @@ pub fn pyarrow_nested_nullable_statistics(column: &str) -> Statistics {
             max_value: new_list(Box::new(Int16Array::from_slice([10])), true).boxed(),
         },
         "list_bool" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
+            distinct_count: new_list(UInt64Array::from([Some(2)]).boxed(), true).boxed(),
             null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
             min_value: new_list(Box::new(BooleanArray::from_slice([false])), true).boxed(),
             max_value: new_list(Box::new(BooleanArray::from_slice([true])), true).boxed(),
@@ -1096,7 +1096,7 @@ pub fn pyarrow_struct_statistics(column: &str) -> Statistics {
             distinct_count: new_struct(
                 vec![
                     Box::new(UInt64Array::from([None])),
-                    Box::new(UInt64Array::from([None])),
+                    Box::new(UInt64Array::from([Some(2)])),
                 ],
                 names.clone(),
             )
@@ -1130,7 +1130,7 @@ pub fn pyarrow_struct_statistics(column: &str) -> Statistics {
                     new_struct(
                         vec![
                             Box::new(UInt64Array::from([None])),
-                            Box::new(UInt64Array::from([None])),
+                            Box::new(UInt64Array::from([Some(2)])),
                         ],
                         names.clone(),
                     )
@@ -1257,7 +1257,7 @@ fn integration_write(
     chunks: &[RecordBatchT<Box<dyn Array>>],
 ) -> PolarsResult<Vec<u8>> {
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: StatisticsOptions::full(),
         compression: CompressionOptions::Uncompressed,
         version: Version::V1,
         data_pagesize_limit: None,

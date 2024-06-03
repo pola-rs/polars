@@ -50,11 +50,32 @@ pub use crate::parquet::write::{
 };
 pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
 
+/// The statistics to write
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StatisticsOptions {
+    pub min_value: bool,
+    pub max_value: bool,
+    pub distinct_count: bool,
+    pub null_count: bool,
+}
+
+impl Default for StatisticsOptions {
+    fn default() -> Self {
+        Self {
+            min_value: true,
+            max_value: true,
+            distinct_count: false,
+            null_count: true,
+        }
+    }
+}
+
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOptions {
     /// Whether to write statistics
-    pub write_statistics: bool,
+    pub statistics: StatisticsOptions,
     /// The page and file version to use
     pub version: Version,
     /// The compression to apply to every page
@@ -74,6 +95,40 @@ pub use schema::to_parquet_type;
 pub use sink::FileSink;
 
 use crate::write::dictionary::encode_as_dictionary_optional;
+
+impl StatisticsOptions {
+    pub fn empty() -> Self {
+        Self {
+            min_value: false,
+            max_value: false,
+            distinct_count: false,
+            null_count: false,
+        }
+    }
+
+    pub fn full() -> Self {
+        Self {
+            min_value: true,
+            max_value: true,
+            distinct_count: true,
+            null_count: true,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !(self.min_value || self.max_value || self.distinct_count || self.null_count)
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.min_value && self.max_value && self.distinct_count && self.null_count
+    }
+}
+
+impl WriteOptions {
+    pub fn has_statistics(&self) -> bool {
+        !self.statistics.is_empty()
+    }
+}
 
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
@@ -441,8 +496,12 @@ pub fn array_to_page_simple(
                 values.into(),
                 array.validity().cloned(),
             );
-            let statistics = if options.write_statistics {
-                Some(fixed_len_bytes::build_statistics(&array, type_.clone()))
+            let statistics = if options.has_statistics() {
+                Some(fixed_len_bytes::build_statistics(
+                    &array,
+                    type_.clone(),
+                    &options.statistics,
+                ))
             } else {
                 None
             };
@@ -464,8 +523,12 @@ pub fn array_to_page_simple(
                 values.into(),
                 array.validity().cloned(),
             );
-            let statistics = if options.write_statistics {
-                Some(fixed_len_bytes::build_statistics(&array, type_.clone()))
+            let statistics = if options.has_statistics() {
+                Some(fixed_len_bytes::build_statistics(
+                    &array,
+                    type_.clone(),
+                    &options.statistics,
+                ))
             } else {
                 None
             };
@@ -473,8 +536,12 @@ pub fn array_to_page_simple(
         },
         ArrowDataType::FixedSizeBinary(_) => {
             let array = array.as_any().downcast_ref().unwrap();
-            let statistics = if options.write_statistics {
-                Some(fixed_len_bytes::build_statistics(array, type_.clone()))
+            let statistics = if options.has_statistics() {
+                Some(fixed_len_bytes::build_statistics(
+                    array,
+                    type_.clone(),
+                    &options.statistics,
+                ))
             } else {
                 None
             };
@@ -521,11 +588,12 @@ pub fn array_to_page_simple(
                 );
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
-                let statistics = if options.write_statistics {
+                let statistics = if options.has_statistics() {
                     let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
+                        &options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -549,9 +617,13 @@ pub fn array_to_page_simple(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal256(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None
@@ -611,9 +683,13 @@ pub fn array_to_page_simple(
             } else {
                 let size = decimal_length_from_precision(precision);
 
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None
@@ -750,9 +826,13 @@ fn array_to_page_nested(
             } else {
                 let size = decimal_length_from_precision(precision);
 
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None
@@ -807,11 +887,12 @@ fn array_to_page_nested(
                 primitive::nested_array_to_page::<i64, i64>(&array, options, type_, nested)
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
-                let statistics = if options.write_statistics {
+                let statistics = if options.has_statistics() {
                     let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
+                        &options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -835,9 +916,13 @@ fn array_to_page_nested(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal256(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None

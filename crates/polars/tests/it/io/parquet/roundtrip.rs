@@ -6,7 +6,9 @@ use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};
 use polars_parquet::read::read_metadata;
-use polars_parquet::write::{CompressionOptions, Encoding, RowGroupIterator, Version};
+use polars_parquet::write::{
+    CompressionOptions, Encoding, RowGroupIterator, StatisticsOptions, Version,
+};
 
 fn round_trip(
     array: &ArrayRef,
@@ -18,7 +20,7 @@ fn round_trip(
     let schema = ArrowSchema::from(vec![field]);
 
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: StatisticsOptions::full(),
         compression,
         version,
         data_pagesize_limit: None,

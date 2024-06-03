@@ -11,6 +11,8 @@ use polars::io::cloud::CloudOptions;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_parquet::arrow::write::StatisticsOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
@@ -659,7 +661,7 @@ impl PyLazyFrame {
         path: PathBuf,
         compression: &str,
         compression_level: Option<i32>,
-        statistics: bool,
+        statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
         data_pagesize_limit: Option<usize>,
         maintain_order: bool,
@@ -668,7 +670,7 @@ impl PyLazyFrame {
 
         let options = ParquetWriteOptions {
             compression,
-            statistics,
+            statistics: statistics.0,
             row_group_size,
             data_pagesize_limit,
             maintain_order,
