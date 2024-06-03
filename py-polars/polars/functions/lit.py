@@ -112,7 +112,6 @@ def lit(
         dt_int = datetime_to_int(dt_utc, time_unit)
         expr = lit(dt_int).cast(Datetime(time_unit))
         if tz is not None:
-            print(f"tz is {tz}")
             expr = expr.dt.replace_time_zone(
                 tz, ambiguous="earliest" if value.fold == 0 else "latest"
             )
