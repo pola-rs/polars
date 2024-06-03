@@ -793,7 +793,21 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     let options = *options;
 
                     let lp = IRBuilder::new(*input, &mut arena.1, &mut arena.0)
-                        .with_columns(expr.cse_exprs().to_vec(), options)
+                        .with_columns(
+                            expr.cse_exprs().to_vec(),
+                            ProjectionOptions {
+                                run_parallel: options.run_parallel,
+                                duplicate_check: options.duplicate_check,
+                                // TODO: Somewhat of a hack, we're
+                                // going to extend the input dataframe
+                                // with the result of evaluating these
+                                // expressions and then select them
+                                // out again. That means that we don't
+                                // want to broadcast them if they turn
+                                // out to be scalars.
+                                should_broadcast: false,
+                            },
+                        )
                         .build();
                     let input = arena.0.add(lp);
 
