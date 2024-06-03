@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::path::PathBuf;
 
 use either::Either;
@@ -123,10 +122,11 @@ pub(super) fn csv_file_info(
     paths: &[PathBuf],
     file_options: &FileScanOptions,
     csv_options: &mut CsvReadOptions,
+    cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
-    use std::io::Seek;
+    use std::io::{Read, Seek};
 
-    use polars_core::POOL;
+    use polars_core::{config, POOL};
     use polars_io::csv::read::is_compressed;
     use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
@@ -137,10 +137,36 @@ pub(super) fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    get_path(paths)?;
+    let first_path = get_path(paths)?;
+    let run_async = is_cloud_url(first_path) || config::force_async();
 
-    let infer_schema_func = |path| {
-        let mut file = polars_utils::open_file(path)?;
+    let cache_entries = if run_async {
+        #[cfg(feature = "async")]
+        {
+            Some(polars_io::file_cache::init_entries_from_uri_list(
+                paths
+                    .iter()
+                    .map(|path| Arc::from(path.to_str().unwrap()))
+                    .collect::<Box<[_]>>(),
+                cloud_options,
+            )?)
+        }
+        #[cfg(not(feature = "async"))]
+        {
+            panic!("required feature `async` is not enabled")
+        }
+    } else {
+        None
+    };
+
+    let infer_schema_func = |i| {
+        let mut file = if run_async {
+            let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
+                cache_entries.as_ref().unwrap().get(i).unwrap();
+            entry.try_open_check_latest()?
+        } else {
+            polars_utils::open_file(paths.get(i).unwrap())?
+        };
 
         let mut magic_nr = [0u8; 4];
         let res_len = file.read(&mut magic_nr)?;
@@ -191,11 +217,9 @@ pub(super) fn csv_file_info(
     };
 
     let si_results = POOL.join(
-        || infer_schema_func(paths.first().unwrap()),
+        || infer_schema_func(0),
         || {
-            paths
-                .get(1..)
-                .unwrap()
+            (1..paths.len())
                 .into_par_iter()
                 .map(infer_schema_func)
                 .reduce(|| Ok(Default::default()), merge_func)

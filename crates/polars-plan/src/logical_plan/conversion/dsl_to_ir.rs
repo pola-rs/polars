@@ -116,8 +116,11 @@ pub fn to_alp_impl(
                         file_info
                     },
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { options, .. } => {
-                        scans::csv_file_info(&paths, &file_options, options)
+                    FileScan::Csv {
+                        options,
+                        cloud_options,
+                    } => {
+                        scans::csv_file_info(&paths, &file_options, options, cloud_options.as_ref())
                             .map_err(|e| e.context(failed_here!(csv scan)))?
                     },
                     // FileInfo should be set.

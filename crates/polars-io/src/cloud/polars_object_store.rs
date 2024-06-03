@@ -2,12 +2,14 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use futures::StreamExt;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_error::{to_compute_err, PolarsResult};
+use tokio::io::AsyncWriteExt;
 
 use crate::pl_async::{
-    tune_with_concurrency_budget, with_concurrency_budget, MAX_BUDGET_PER_REQUEST,
+    self, tune_with_concurrency_budget, with_concurrency_budget, MAX_BUDGET_PER_REQUEST,
 };
 
 /// Polars specific wrapper for `Arc<dyn ObjectStore>` that limits the number of
@@ -50,6 +52,32 @@ impl PolarsObjectStore {
         )
         .await
         .map_err(to_compute_err)
+    }
+
+    pub async fn download<F: tokio::io::AsyncWrite + std::marker::Unpin>(
+        &self,
+        path: &Path,
+        file: &mut F,
+    ) -> PolarsResult<()> {
+        tune_with_concurrency_budget(1, || async {
+            let mut stream = self
+                .0
+                .get(path)
+                .await
+                .map_err(to_compute_err)?
+                .into_stream();
+
+            let mut len = 0;
+            while let Some(bytes) = stream.next().await {
+                let bytes = bytes.map_err(to_compute_err)?;
+                len += bytes.len();
+                file.write(bytes.as_ref()).await.map_err(to_compute_err)?;
+            }
+
+            PolarsResult::Ok(pl_async::Size::from(len as u64))
+        })
+        .await?;
+        Ok(())
     }
 
     /// Fetch the metadata of the parquet file, do not memoize it.

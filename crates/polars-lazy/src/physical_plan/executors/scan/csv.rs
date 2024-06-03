@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use polars_core::config::verbose;
+use polars_core::config;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
@@ -42,7 +42,51 @@ impl CsvExec {
             .with_row_index(None)
             .with_path::<&str>(None);
 
-        let verbose = verbose();
+        if self.paths.is_empty() {
+            let out = if let Some(schema) = options_base.schema {
+                DataFrame::from_rows_and_schema(&[], schema.as_ref())?
+            } else {
+                Default::default()
+            };
+            return Ok(out);
+        }
+
+        let verbose = config::verbose();
+        let force_async = config::force_async();
+        let run_async = force_async || is_cloud_url(self.paths.first().unwrap());
+
+        if force_async && verbose {
+            eprintln!("ASYNC READING FORCED");
+        }
+
+        let finish_read =
+            |i: usize, options: CsvReadOptions, predicate: Option<Arc<dyn PhysicalIoExpr>>| {
+                if run_async {
+                    #[cfg(feature = "async")]
+                    {
+                        options
+                            .into_reader_with_file_handle(
+                                polars_io::file_cache::FILE_CACHE
+                                    .get_entry(self.paths.get(i).unwrap().to_str().unwrap())
+                                    // Safety: This was initialized by schema inference.
+                                    .unwrap()
+                                    .try_open_assume_latest()?,
+                            )
+                            ._with_predicate(predicate.clone())
+                            .finish()
+                    }
+                    #[cfg(not(feature = "async"))]
+                    {
+                        panic!("required feature `async` is not enabled")
+                    }
+                } else {
+                    options
+                        .try_into_reader_with_file_path(Some(self.paths.get(i).unwrap().clone()))
+                        .unwrap()
+                        ._with_predicate(predicate.clone())
+                        .finish()
+                }
+            };
 
         let mut df = if n_rows.is_some()
             || (predicate.is_some() && self.file_options.row_index.is_some())
@@ -62,19 +106,15 @@ impl CsvExec {
                 .filter(|_| n_rows.is_none() && self.file_options.row_index.is_none());
 
             for i in 0..self.paths.len() {
-                let path = &self.paths[i];
-
-                let mut df = options_base
+                let opts = options_base
                     .clone()
                     .with_row_index(self.file_options.row_index.clone().map(|mut ri| {
                         ri.offset += n_rows_read as IdxSize;
                         ri
                     }))
-                    .with_n_rows(n_rows.map(|n| n - n_rows_read))
-                    .try_into_reader_with_file_path(Some(path.clone()))
-                    .unwrap()
-                    ._with_predicate(predicate_during_read.clone())
-                    .finish()?;
+                    .with_n_rows(n_rows.map(|n| n - n_rows_read));
+
+                let mut df = finish_read(i, opts, predicate_during_read.clone())?;
 
                 n_rows_read = n_rows_read.saturating_add(df.height());
 
@@ -136,19 +176,14 @@ impl CsvExec {
             }
 
             let dfs = POOL.install(|| {
-                self.paths
-                    .chunks(std::cmp::min(POOL.current_num_threads(), 128))
-                    .map(|paths| {
-                        paths
+                let step = std::cmp::min(POOL.current_num_threads(), 128);
+
+                (0..self.paths.len())
+                    .step_by(step)
+                    .map(|start| {
+                        (start..std::cmp::min(start.saturating_add(step), self.paths.len()))
                             .into_par_iter()
-                            .map(|path| {
-                                options_base
-                                    .clone()
-                                    .try_into_reader_with_file_path(Some(path.clone()))
-                                    .unwrap()
-                                    ._with_predicate(predicate.clone())
-                                    .finish()
-                            })
+                            .map(|i| finish_read(i, options_base.clone(), predicate.clone()))
                             .collect::<PolarsResult<Vec<_>>>()
                     })
                     .collect::<PolarsResult<Vec<_>>>()

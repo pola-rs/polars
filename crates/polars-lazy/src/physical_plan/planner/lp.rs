@@ -254,7 +254,7 @@ fn create_physical_plan_impl(
 
             match scan_type {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options } => Ok(Box::new(executors::CsvExec {
+                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
                     paths,
                     file_info,
                     options,

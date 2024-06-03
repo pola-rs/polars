@@ -15,7 +15,10 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FileScan {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv {
+        options: CsvReadOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
@@ -41,7 +44,16 @@ impl PartialEq for FileScan {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             #[cfg(feature = "csv")]
-            (FileScan::Csv { options: l }, FileScan::Csv { options: r }) => l == r,
+            (
+                FileScan::Csv {
+                    options: l,
+                    cloud_options: c_l,
+                },
+                FileScan::Csv {
+                    options: r,
+                    cloud_options: c_r,
+                },
+            ) => l == r && c_l == c_r,
             #[cfg(feature = "parquet")]
             (
                 FileScan::Parquet {
@@ -80,7 +92,13 @@ impl Hash for FileScan {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "csv")]
-            FileScan::Csv { options } => options.hash(state),
+            FileScan::Csv {
+                options,
+                cloud_options,
+            } => {
+                options.hash(state);
+                cloud_options.hash(state);
+            },
             #[cfg(feature = "parquet")]
             FileScan::Parquet {
                 options,
@@ -88,7 +106,7 @@ impl Hash for FileScan {
                 metadata: _,
             } => {
                 options.hash(state);
-                cloud_options.hash(state)
+                cloud_options.hash(state);
             },
             #[cfg(feature = "ipc")]
             FileScan::Ipc {

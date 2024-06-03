@@ -21,7 +21,10 @@ use super::*;
 pub fn count_rows(paths: &Arc<[PathBuf]>, scan_type: &FileScan) -> PolarsResult<DataFrame> {
     match scan_type {
         #[cfg(feature = "csv")]
-        FileScan::Csv { options } => {
+        FileScan::Csv {
+            options,
+            cloud_options,
+        } => {
             let parse_options = options.get_parse_options();
             let n_rows: PolarsResult<usize> = paths
                 .iter()
