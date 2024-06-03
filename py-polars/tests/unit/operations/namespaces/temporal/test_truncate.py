@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
+import pytest
 from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import TimeUnit
 
 
 @given(
@@ -65,3 +72,23 @@ def test_truncate_date() -> None:
     result = df.select(a=pl.lit(None, dtype=pl.Date).dt.truncate(pl.col("b")))["a"]
     expected = pl.Series("a", [None, None, None], dtype=pl.Date)
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_truncate_datetime_simple(time_unit: TimeUnit) -> None:
+    s = pl.Series([datetime(2020, 1, 2, 6)], dtype=pl.Datetime(time_unit))
+    result = s.dt.truncate("1mo").item()
+    assert result == datetime(2020, 1, 1)
+    result = s.dt.truncate("1d").item()
+    assert result == datetime(2020, 1, 2)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_truncate_datetime_w_expression(time_unit: TimeUnit) -> None:
+    df = pl.DataFrame(
+        {"a": [datetime(2020, 1, 2, 6), datetime(2020, 1, 3, 7)], "b": ["1mo", "1d"]},
+        schema_overrides={"a": pl.Datetime(time_unit)},
+    )
+    result = df.select(pl.col("a").dt.truncate(pl.col("b")))["a"]
+    assert result[0] == datetime(2020, 1, 1)
+    assert result[1] == datetime(2020, 1, 3)
