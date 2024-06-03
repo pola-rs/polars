@@ -40,7 +40,7 @@ impl IR {
                 schema, options, ..
             } => Select {
                 input: inputs[0],
-                expr: ProjectionExprs::new(exprs),
+                expr: exprs,
                 schema: schema.clone(),
                 options: *options,
             },
@@ -97,7 +97,7 @@ impl IR {
                 schema, options, ..
             } => HStack {
                 input: inputs[0],
-                exprs: ProjectionExprs::new(exprs),
+                exprs,
                 schema: schema.clone(),
                 options: *options,
             },

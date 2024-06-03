@@ -47,7 +47,6 @@ impl Operator for SimpleProjectionOperator {
 #[derive(Clone)]
 pub(crate) struct ProjectionOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
-    pub(crate) cse_exprs: Option<HstackOperator>,
 }
 
 impl Operator for ProjectionOperator {
@@ -56,18 +55,6 @@ impl Operator for ProjectionOperator {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        // add temporary cse column to the chunk
-        let cse_owned_chunk;
-        let chunk = if let Some(hstack) = &mut self.cse_exprs {
-            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else {
-                unreachable!()
-            };
-            cse_owned_chunk = out;
-            &cse_owned_chunk
-        } else {
-            chunk
-        };
-
         let mut has_literals = false;
         let mut has_empty = false;
         let mut projected = self
@@ -105,11 +92,7 @@ impl Operator for ProjectionOperator {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        if self.cse_exprs.is_some() {
-            "projection[cse]"
-        } else {
-            "projection"
-        }
+        "projection"
     }
 }
 
@@ -117,7 +100,6 @@ impl Operator for ProjectionOperator {
 pub(crate) struct HstackOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
     pub(crate) input_schema: SchemaRef,
-    pub(crate) cse_exprs: Option<Box<Self>>,
     // add columns without any checks
     // this is needed for cse, as the temporary columns
     // may have a different size
@@ -132,17 +114,6 @@ impl Operator for HstackOperator {
     ) -> PolarsResult<OperatorResult> {
         // add temporary cse column to the chunk
         let width = chunk.data.width();
-        let cse_owned_chunk;
-        let chunk = if let Some(hstack) = &mut self.cse_exprs {
-            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else {
-                unreachable!()
-            };
-            cse_owned_chunk = out;
-            &cse_owned_chunk
-        } else {
-            chunk
-        };
-
         let projected = self
             .exprs
             .iter()
@@ -166,10 +137,6 @@ impl Operator for HstackOperator {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        if self.cse_exprs.is_some() {
-            "hstack[cse]"
-        } else {
-            "hstack"
-        }
+        "hstack"
     }
 }

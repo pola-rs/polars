@@ -1,7 +1,6 @@
 use polars_core::prelude::*;
 use recursive::recursive;
 
-use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::*;
 
 pub(super) struct SlicePushDown {
@@ -21,10 +20,7 @@ struct State {
 /// * projections not based on any column project as scalars
 ///
 /// Returns (all_elementwise, all_elementwise_and_any_expr_has_column)
-fn can_pushdown_slice_past_projections(
-    exprs: &ProjectionExprs,
-    arena: &Arena<AExpr>,
-) -> (bool, bool) {
+fn can_pushdown_slice_past_projections(exprs: &[ExprIR], arena: &Arena<AExpr>) -> (bool, bool) {
     let mut all_elementwise_and_any_expr_has_column = false;
     for expr_ir in exprs.iter() {
         // `select(c = Literal([1, 2, 3])).slice(0, 0)` must block slice pushdown,

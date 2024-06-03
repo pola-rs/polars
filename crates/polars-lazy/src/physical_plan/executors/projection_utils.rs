@@ -7,15 +7,10 @@ use super::*;
 pub(super) fn profile_name(
     s: &dyn PhysicalExpr,
     input_schema: &Schema,
-    has_cse: bool,
 ) -> PolarsResult<SmartString> {
-    match (has_cse, s.to_field(input_schema)) {
-        (false, Err(e)) => Err(e),
-        (true, Err(_)) => Ok(expr_to_leaf_column_names_iter(s.as_expression().unwrap())
-            .map(|n| n.as_ref().into())
-            .next()
-            .unwrap()),
-        (_, Ok(fld)) => Ok(fld.name),
+    match s.to_field(input_schema) {
+        Err(e) => Err(e),
+        Ok(fld) => Ok(fld.name),
     }
 }
 
@@ -214,7 +209,6 @@ fn run_exprs_seq(
 
 pub(super) fn evaluate_physical_expressions(
     df: &mut DataFrame,
-    cse_exprs: &[Arc<dyn PhysicalExpr>],
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
     has_windows: bool,
@@ -228,36 +222,7 @@ pub(super) fn evaluate_physical_expressions(
         run_exprs_seq
     };
 
-    let cse_expr_runner = if has_windows {
-        execute_projection_cached_window_fns
-    } else if run_parallel && cse_exprs.len() > 1 {
-        run_exprs_par
-    } else {
-        run_exprs_seq
-    };
-
-    let selected_columns = if !cse_exprs.is_empty() {
-        let tmp_cols = cse_expr_runner(df, cse_exprs, state)?;
-        if has_windows {
-            state.clear_window_expr_cache();
-        }
-
-        let width = df.width();
-
-        // put the cse expressions at the end
-        unsafe {
-            df.hstack_mut_unchecked(&tmp_cols);
-        }
-        let result = expr_runner(df, exprs, state)?;
-        // restore original df
-        unsafe {
-            df.get_columns_mut().truncate(width);
-        }
-
-        result
-    } else {
-        expr_runner(df, exprs, state)?
-    };
+    let selected_columns = expr_runner(df, exprs, state)?;
 
     if has_windows {
         state.clear_window_expr_cache();

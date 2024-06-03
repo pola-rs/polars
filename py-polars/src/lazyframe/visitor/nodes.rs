@@ -128,8 +128,6 @@ pub struct Select {
     #[pyo3(get)]
     expr: Vec<PyExprIR>,
     #[pyo3(get)]
-    cse_expr: Vec<PyExprIR>,
-    #[pyo3(get)]
     options: (), //ProjectionOptions,
 }
 
@@ -196,8 +194,6 @@ pub struct HStack {
     input: usize,
     #[pyo3(get)]
     exprs: Vec<PyExprIR>,
-    #[pyo3(get)]
-    cse_exprs: Vec<PyExprIR>,
     #[pyo3(get)]
     options: (), // ProjectionOptions,
 }
@@ -344,8 +340,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             schema: _,
             options: _,
         } => Select {
-            expr: expr.default_exprs().iter().map(|e| e.into()).collect(),
-            cse_expr: expr.cse_exprs().iter().map(|e| e.into()).collect(),
+            expr: expr.iter().map(|e| e.into()).collect(),
             input: input.0,
             options: (),
         }
@@ -436,8 +431,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             options: _,
         } => HStack {
             input: input.0,
-            exprs: exprs.default_exprs().iter().map(|e| e.into()).collect(),
-            cse_exprs: exprs.cse_exprs().iter().map(|e| e.into()).collect(),
+            exprs: exprs.iter().map(|e| e.into()).collect(),
             options: (),
         }
         .into_py(py),

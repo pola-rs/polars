@@ -6,7 +6,6 @@ use super::*;
 /// and a multiple PhysicalExpressions (create the output Series)
 pub struct ProjectionExec {
     pub(crate) input: Box<dyn Executor>,
-    pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
     pub(crate) input_schema: SchemaRef,
@@ -33,7 +32,6 @@ impl ProjectionExec {
             let iter = chunks.into_par_iter().map(|mut df| {
                 let selected_cols = evaluate_physical_expressions(
                     &mut df,
-                    &self.cse_exprs,
                     &self.expr,
                     state,
                     self.has_windows,
@@ -50,7 +48,6 @@ impl ProjectionExec {
             #[allow(clippy::let_and_return)]
             let selected_cols = evaluate_physical_expressions(
                 &mut df,
-                &self.cse_exprs,
                 &self.expr,
                 state,
                 self.has_windows,
@@ -79,11 +76,7 @@ impl Executor for ProjectionExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                if self.cse_exprs.is_empty() {
-                    eprintln!("run ProjectionExec");
-                } else {
-                    eprintln!("run ProjectionExec with {} CSE", self.cse_exprs.len())
-                };
+                eprintln!("run ProjectionExec");
             }
         }
         let df = self.input.execute(state)?;
@@ -92,13 +85,7 @@ impl Executor for ProjectionExec {
             let by = self
                 .expr
                 .iter()
-                .map(|s| {
-                    profile_name(
-                        s.as_ref(),
-                        self.input_schema.as_ref(),
-                        !self.cse_exprs.is_empty(),
-                    )
-                })
+                .map(|s| profile_name(s.as_ref(), self.input_schema.as_ref()))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("select".to_string(), &by);
             Cow::Owned(name)

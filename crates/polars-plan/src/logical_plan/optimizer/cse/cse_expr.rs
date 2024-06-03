@@ -764,11 +764,19 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     false,
                     input_schema.as_ref().as_ref(),
                 )? {
+                    let schema = schema.clone();
+                    let options = *options;
+
+                    let lp = IRBuilder::new(*input, &mut arena.1, &mut arena.0)
+                        .with_columns(expr.cse_exprs().to_vec(), options)
+                        .build();
+                    let input = arena.0.add(lp);
+
                     let lp = IR::Select {
-                        input: *input,
-                        expr,
-                        schema: schema.clone(),
-                        options: *options,
+                        input,
+                        expr: expr.default_exprs().to_vec(),
+                        schema,
+                        options,
                     };
                     arena.0.replace(arena_idx, lp);
                 }
@@ -787,11 +795,19 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     false,
                     input_schema.as_ref().as_ref(),
                 )? {
-                    let lp = IR::HStack {
-                        input: *input,
-                        exprs,
-                        schema: schema.clone(),
-                        options: *options,
+                    let schema = schema.clone();
+                    let options = *options;
+                    let input = *input;
+
+                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                        .with_columns(exprs.cse_exprs().to_vec(), options)
+                        .with_columns(exprs.default_exprs().to_vec(), options)
+                        .build();
+                    let input = arena.0.add(lp);
+
+                    let lp = IR::SimpleProjection {
+                        input,
+                        columns: schema,
                     };
                     arena.0.replace(arena_idx, lp);
                 }

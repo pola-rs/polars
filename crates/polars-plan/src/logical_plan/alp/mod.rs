@@ -14,7 +14,6 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
-use super::projection_expr::*;
 use crate::prelude::*;
 
 pub struct IRPlan {
@@ -81,7 +80,7 @@ pub enum IR {
     // Polars' `select` operation. This may access full materialized data.
     Select {
         input: Node,
-        expr: ProjectionExprs,
+        expr: Vec<ExprIR>,
         schema: SchemaRef,
         options: ProjectionOptions,
     },
@@ -117,7 +116,7 @@ pub enum IR {
     },
     HStack {
         input: Node,
-        exprs: ProjectionExprs,
+        exprs: Vec<ExprIR>,
         schema: SchemaRef,
         options: ProjectionOptions,
     },
