@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::JoinType;
+use polars_ops::prelude::{JoinArgs, JoinType};
 use polars_utils::nulls::IsNull;
 use smartstring::alias::String as SmartString;
 
@@ -48,7 +48,7 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     swapped_or_left: bool,
     /// cached output names
     output_names: Option<Vec<SmartString>>,
-    how: JoinType,
+    args: JoinArgs,
     join_nulls: bool,
     row_values: RowValues,
 }
@@ -67,14 +67,15 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         // Re-use the hashes allocation of the build side.
         amortized_hashes: Vec<u64>,
         context: &PExecutionContext,
-        how: JoinType,
+        args: JoinArgs,
         join_nulls: bool,
     ) -> Self {
-        if swapped_or_left {
+        if swapped_or_left && args.should_coalesce() {
             let tmp = DataChunk {
                 data: df_a.slice(0, 1),
                 chunk_index: 0,
             };
+
             // remove duplicate_names caused by joining
             // on the same column
             let names = join_columns_left
@@ -100,7 +101,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
             hashes: amortized_hashes,
             swapped_or_left,
             output_names: None,
-            how,
+            args,
             join_nulls,
             row_values: RowValues::new(join_columns_right, !swapped_or_left),
         }
@@ -309,7 +310,7 @@ impl<K: ExtraPayload> Operator for GenericJoinProbe<K> {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        match self.how {
+        match self.args.how {
             JoinType::Inner => self.execute_inner(context, chunk),
             JoinType::Left => self.execute_left(context, chunk),
             _ => unreachable!(),

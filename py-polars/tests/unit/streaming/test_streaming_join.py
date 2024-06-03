@@ -255,3 +255,18 @@ def test_streaming_join_and_union() -> None:
     out = q.collect(streaming=True)
     assert_frame_equal(out, q.collect(streaming=False))
     assert out.to_series().to_list() == [1, 2, 1, 2, 4, 8, 1, 2]
+
+
+def test_non_coalescing_streaming_left_join() -> None:
+    df1 = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+
+    df2 = pl.LazyFrame({"a": [1, 2], "c": ["j", "i"]})
+
+    q = df1.join(df2, on="a", how="left", coalesce=False)
+    assert q.explain(streaming=True).startswith("STREAMING")
+    assert q.collect(streaming=True).to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": ["a", "b", "c"],
+        "a_right": [1, 2, None],
+        "c": ["j", "i", None],
+    }
