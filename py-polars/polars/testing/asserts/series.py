@@ -123,15 +123,13 @@ def _assert_series_values_equal(
     atol: float,
     categorical_as_str: bool,
 ) -> None:
+    """Assert that the values in both Series are equal."""
     __tracebackhide__ = True
 
-    """Assert that the values in both Series are equal."""
     # Handle categoricals
     if categorical_as_str:
-        if left.dtype == Categorical:
-            left = left.cast(String)
-        if right.dtype == Categorical:
-            right = right.cast(String)
+        left = _categorical_series_to_string(left)
+        right = _categorical_series_to_string(right)
 
     # Determine unequal elements
     try:
@@ -295,6 +293,35 @@ def _assert_series_values_within_tolerance(
             left.to_list(),
             right.to_list(),
         )
+
+
+def _categorical_series_to_string(s: Series) -> Series:
+    """Cast a (possibly nested) Categorical Series to a String Series."""
+    dtype = s.dtype
+    noncat_dtype = _categorical_dtype_to_string_dtype(dtype)
+    if dtype != noncat_dtype:
+        s = s.cast(noncat_dtype)
+    return s
+
+
+def _categorical_dtype_to_string_dtype(dtype: DataType) -> DataType:
+    """Change a (possibly nested) Categorical data type to a String data type."""
+    if isinstance(dtype, Categorical):
+        return String()
+    elif isinstance(dtype, List):
+        inner_cast = _categorical_dtype_to_string_dtype(dtype.inner)  # type: ignore[arg-type]
+        return List(inner_cast)
+    elif isinstance(dtype, Array):
+        inner_cast = _categorical_dtype_to_string_dtype(dtype.inner)  # type: ignore[arg-type]
+        return Array(inner_cast, dtype.width)
+    elif isinstance(dtype, Struct):
+        fields = {
+            f.name: _categorical_dtype_to_string_dtype(f.dtype)  # type: ignore[arg-type]
+            for f in dtype.fields
+        }
+        return Struct(fields)
+    else:
+        return dtype
 
 
 @deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
