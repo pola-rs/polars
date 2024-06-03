@@ -1,11 +1,6 @@
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
-use polars_core::utils::_split_offsets;
-use polars_core::POOL;
-use polars_ops::prelude::*;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
-use rayon::prelude::*;
 
 use crate::expressions as phys_expr;
 use crate::expressions::*;
@@ -97,7 +92,6 @@ pub struct ExpressionConversionState {
     // settings per context
     // they remain activate between
     // expressions
-    has_cache: bool,
     pub allow_threading: bool,
     pub has_windows: bool,
     // settings per expression
@@ -131,7 +125,6 @@ impl ExpressionConversionState {
     pub fn new(allow_threading: bool, depth_limit: u16) -> Self {
         Self {
             depth_limit,
-            has_cache: false,
             allow_threading,
             has_windows: false,
             local: LocalConversionState {
@@ -350,197 +343,52 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
             state.local.has_implode |= matches!(agg, IRAggExpr::Implode(_));
+            let allow_threading = state.allow_threading;
 
             match ctxt {
-                // TODO!: implement these functions somewhere else
-                // this should not be in the planner.
                 Context::Default if !matches!(agg, IRAggExpr::Quantile { .. }) => {
-                    let function = match agg {
-                        IRAggExpr::Min { propagate_nans, .. } => {
-                            let propagate_nans = *propagate_nans;
-                            let state = *state;
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
+                    use {GroupByMethod as GBM, IRAggExpr as I};
 
-                                if propagate_nans && s.dtype().is_float() {
-                                    #[cfg(feature = "propagate_nans")]
-                                    {
-                                        return parallel_op_series(
-                                            |s| {
-                                                Ok(polars_ops::prelude::nan_propagating_aggregate::nan_min_s(&s, s.name()))
-                                            },
-                                            s,
-                                            None,
-                                            state,
-                                        );
-                                    }
-                                    #[cfg(not(feature = "propagate_nans"))]
-                                    {
-                                        panic!("activate 'propagate_nans' feature")
-                                    }
-                                }
-
-                                match s.is_sorted_flag() {
-                                    IsSorted::Ascending | IsSorted::Descending => {
-                                        s.min_reduce().map(|sc| Some(sc.into_series(s.name())))
-                                    },
-                                    IsSorted::Not => parallel_op_series(
-                                        |s| s.min_reduce().map(|sc| sc.into_series(s.name())),
-                                        s,
-                                        None,
-                                        state,
-                                    ),
-                                }
-                            }) as Arc<dyn SeriesUdf>)
+                    let groupby = match agg {
+                        I::Min { propagate_nans, .. } if *propagate_nans => GBM::NanMin,
+                        I::Min { .. } => GBM::Min,
+                        I::Max { propagate_nans, .. } if *propagate_nans => GBM::NanMax,
+                        I::Max { .. } => GBM::Max,
+                        I::Median(_) => GBM::Median,
+                        I::NUnique(_) => GBM::NUnique,
+                        I::First(_) => GBM::First,
+                        I::Last(_) => GBM::Last,
+                        I::Mean(_) => GBM::Mean,
+                        I::Implode(_) => GBM::Implode,
+                        I::Quantile { .. } => unreachable!(),
+                        I::Sum(_) => GBM::Sum,
+                        I::Count(_, include_nulls) => GBM::Count {
+                            include_nulls: *include_nulls,
                         },
-                        IRAggExpr::Max { propagate_nans, .. } => {
-                            let propagate_nans = *propagate_nans;
-                            let state = *state;
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-
-                                if propagate_nans && s.dtype().is_float() {
-                                    #[cfg(feature = "propagate_nans")]
-                                    {
-                                        return parallel_op_series(
-                                            |s| {
-                                                Ok(polars_ops::prelude::nan_propagating_aggregate::nan_max_s(&s, s.name()))
-                                            },
-                                            s,
-                                            None,
-                                            state,
-                                        );
-                                    }
-                                    #[cfg(not(feature = "propagate_nans"))]
-                                    {
-                                        panic!("activate 'propagate_nans' feature")
-                                    }
-                                }
-
-                                match s.is_sorted_flag() {
-                                    IsSorted::Ascending | IsSorted::Descending => {
-                                        s.max_reduce().map(|sc| Some(sc.into_series(s.name())))
-                                    },
-                                    IsSorted::Not => parallel_op_series(
-                                        |s| s.max_reduce().map(|sc| sc.into_series(s.name())),
-                                        s,
-                                        None,
-                                        state,
-                                    ),
-                                }
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::Median(_) => {
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                s.median_reduce().map(|sc| Some(sc.into_series(s.name())))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::NUnique(_) => {
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                s.n_unique().map(|count| {
-                                    Some(
-                                        UInt32Chunked::from_slice(s.name(), &[count as u32])
-                                            .into_series(),
-                                    )
-                                })
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            let out = if s.is_empty() {
-                                Series::full_null(s.name(), 1, s.dtype())
-                            } else {
-                                s.head(Some(1))
-                            };
-                            Ok(Some(out))
-                        })
-                            as Arc<dyn SeriesUdf>),
-                        IRAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            let out = if s.is_empty() {
-                                Series::full_null(s.name(), 1, s.dtype())
-                            } else {
-                                s.tail(Some(1))
-                            };
-                            Ok(Some(out))
-                        })
-                            as Arc<dyn SeriesUdf>),
-                        IRAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.mean_reduce().into_series(s.name())))
-                        })
-                            as Arc<dyn SeriesUdf>),
-                        IRAggExpr::Implode(_) => {
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = &s[0];
-                                s.implode().map(|ca| Some(ca.into_series()))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::Quantile { .. } => {
-                            unreachable!()
-                        },
-                        IRAggExpr::Sum(_) => {
-                            let state = *state;
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                parallel_op_series(
-                                    |s| s.sum_reduce().map(|sc| sc.into_series(s.name())),
-                                    s,
-                                    None,
-                                    state,
-                                )
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::Count(_, include_nulls) => {
-                            let include_nulls = *include_nulls;
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                let count = s.len() - s.null_count() * !include_nulls as usize;
-                                Ok(Some(
-                                    IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series(),
-                                ))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::Std(_, ddof) => {
-                            let ddof = *ddof;
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                s.std_reduce(ddof).map(|sc| Some(sc.into_series(s.name())))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::Var(_, ddof) => {
-                            let ddof = *ddof;
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                s.var_reduce(ddof).map(|sc| Some(sc.into_series(s.name())))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        IRAggExpr::AggGroups(_) => {
+                        I::Std(_, ddof) => GBM::Std(*ddof),
+                        I::Var(_, ddof) => GBM::Var(*ddof),
+                        I::AggGroups(_) => {
                             panic!("agg groups expression only supported in aggregation context")
                         },
                     };
-                    Ok(Arc::new(ApplyExpr::new_minimal(
-                        vec![input],
-                        function,
-                        node_to_expr(expression, expr_arena),
-                        ApplyOptions::ElementWise,
-                    )))
+
+                    let agg_type = AggregationType {
+                        groupby,
+                        allow_threading,
+                    };
+
+                    Ok(Arc::new(AggregationExpr::new(input, agg_type, None)))
                 },
                 _ => {
                     if let IRAggExpr::Quantile {
-                        expr,
-                        quantile,
-                        interpol,
+                        quantile, interpol, ..
                     } = agg
                     {
-                        let input =
-                            create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
                         let quantile =
                             create_physical_expr_inner(*quantile, ctxt, expr_arena, schema, state)?;
                         return Ok(Arc::new(AggQuantileExpr::new(input, quantile, *interpol)));
                     }
+
                     let field = schema
                         .map(|schema| {
                             expr_arena.get(expression).to_field(
@@ -550,8 +398,13 @@ fn create_physical_expr_inner(
                             )
                         })
                         .transpose()?;
-                    let agg_method: GroupByMethod = agg.clone().into();
-                    Ok(Arc::new(AggregationExpr::new(input, agg_method, field)))
+
+                    let groupby = GroupByMethod::from(agg.clone());
+                    let agg_type = AggregationType {
+                        groupby,
+                        allow_threading: false,
+                    };
+                    Ok(Arc::new(AggregationExpr::new(input, agg_type, field)))
                 },
             }
         },
@@ -626,7 +479,7 @@ fn create_physical_expr_inner(
                 function.clone(),
                 node_to_expr(expression, expr_arena),
                 *options,
-                !state.has_cache,
+                true,
                 schema.cloned(),
                 output_dtype,
             )))
@@ -664,7 +517,7 @@ fn create_physical_expr_inner(
                 function.clone().into(),
                 node_to_expr(expression, expr_arena),
                 *options,
-                !state.has_cache,
+                true,
                 schema.cloned(),
                 output_dtype,
             )))
@@ -712,55 +565,4 @@ fn create_physical_expr_inner(
             polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
         },
     }
-}
-
-/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
-/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-fn parallel_op_series<F>(
-    f: F,
-    s: Series,
-    n_threads: Option<usize>,
-    state: ExpressionConversionState,
-) -> PolarsResult<Option<Series>>
-where
-    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
-{
-    // set during debug low so
-    // we mimic production size data behavior
-    #[cfg(debug_assertions)]
-    let thread_boundary = 0;
-
-    #[cfg(not(debug_assertions))]
-    let thread_boundary = 100_000;
-
-    // threading overhead/ splitting work stealing is costly..
-    if !state.allow_threading
-        || s.len() < thread_boundary
-        || state.has_cache
-        || POOL.current_thread_has_pending_tasks().unwrap_or(false)
-    {
-        return f(s).map(Some);
-    }
-    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = _split_offsets(s.len(), n_threads);
-
-    let chunks = POOL.install(|| {
-        splits
-            .into_par_iter()
-            .map(|(offset, len)| {
-                let s = s.slice(offset as i64, len);
-                f(s)
-            })
-            .collect::<PolarsResult<Vec<_>>>()
-    })?;
-
-    let mut iter = chunks.into_iter();
-    let first = iter.next().unwrap();
-    let dtype = first.dtype();
-    let out = iter.fold(first.to_physical_repr().into_owned(), |mut acc, s| {
-        acc.append(&s.to_physical_repr()).unwrap();
-        acc
-    });
-
-    unsafe { f(out.cast_unchecked(dtype).unwrap()).map(Some) }
 }
