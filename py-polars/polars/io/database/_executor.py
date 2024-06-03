@@ -312,11 +312,18 @@ class ConnectionExecutor:
 
         return schema_overrides
 
+    def _is_async_connection(self) -> bool:
+        """Check if the cursor/connection/session object is async."""
+        return type(self.cursor).__name__ in (
+            "AsyncConnection",
+            "AsyncSession",
+            "async_sessionmaker",
+        )
+
     def _normalise_cursor(self, conn: Any) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver_name == "sqlalchemy":
-            conn_type = type(conn).__name__
-            if conn_type in ("Session", "async_sessionmaker"):
+            if "session" in (conn_type := type(conn).__name__).lower():
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
@@ -348,9 +355,11 @@ class ConnectionExecutor:
 
     async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
         """Execute a query using an async SQLAlchemy connection."""
-        is_session = type(self.cursor).__name__ == "async_sessionmaker"
+        is_session = "session" in type(self.cursor).__name__.lower()
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
         async with cursor as conn:
+            if is_session and not hasattr(conn, "execute"):
+                conn = conn.session
             result = await conn.execute(query, **options)
             return result
 
@@ -362,10 +371,6 @@ class ConnectionExecutor:
         from sqlalchemy.sql import text
         from sqlalchemy.sql.elements import TextClause
 
-        is_async = type(self.cursor).__name__ in (
-            "AsyncConnection",
-            "async_sessionmaker",
-        )
         param_key = "parameters"
         cursor_execute = None
         if (
@@ -378,6 +383,7 @@ class ConnectionExecutor:
             param_key = "params"
 
         params = options.get(param_key)
+        is_async = self._is_async_connection()
         if (
             not is_async
             and isinstance(params, Sequence)
