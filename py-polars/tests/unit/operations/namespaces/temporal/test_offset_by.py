@@ -40,6 +40,11 @@ if TYPE_CHECKING:
             "2d24h",
             [date(2020, 1, 4), date(2020, 1, 5)],
         ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2)],
+            "-2mo",
+            [date(2019, 11, 1), date(2019, 11, 2)],
+        ),
     ],
 )
 def test_date_offset_by(inputs: list[date], offset: str, outputs: list[date]) -> None:
@@ -85,6 +90,11 @@ def test_date_offset_by(inputs: list[date], offset: str, outputs: list[date]) ->
             [date(2020, 1, 1), date(2020, 1, 2)],
             "-3m",
             [datetime(2019, 12, 31, 23, 57), datetime(2020, 1, 1, 23, 57)],
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2)],
+            "2mo",
+            [datetime(2020, 3, 1), datetime(2020, 3, 2)],
         ),
     ],
 )
