@@ -44,13 +44,13 @@ def test_unique_counts_null() -> None:
 
 
 def test_unique_counts_on_bool_only_true() -> None:
-    s = pl.Series("bool", [True, True, True])
+    s = pl.Series("bool", [True, True, True], dtype=pl.Boolean)
     expected = pl.Series("bool", [3], dtype=pl.UInt32)
     assert_series_equal(s.unique_counts(), expected)
 
 
 def test_unique_counts_on_bool_only_false() -> None:
-    s = pl.Series("bool", [False, False, False])
+    s = pl.Series("bool", [False, False, False], dtype=pl.Boolean)
     expected = pl.Series("bool", [3], dtype=pl.UInt32)
     assert_series_equal(s.unique_counts(), expected)
 
@@ -62,24 +62,56 @@ def test_unique_counts_on_bool_only_null() -> None:
 
 
 def test_unique_counts_on_bool_true_false() -> None:
-    s = pl.Series("bool", [True, False, False, True, True, True])
-    expected = pl.Series("bool", [4, 2], dtype=pl.UInt32)
-    assert_series_equal(s.unique_counts(), expected)
+    true_first = pl.Series("bool", [True, False, False, True, True], dtype=pl.Boolean)
+    expected = pl.Series("bool", [3, 2], dtype=pl.UInt32)
+    assert_series_equal(true_first.unique_counts(), expected)
+
+    false_first = pl.Series("bool", [False, True, False, True, True], dtype=pl.Boolean)
+    expected = pl.Series("bool", [2, 3], dtype=pl.UInt32)
+    assert_series_equal(false_first.unique_counts(), expected)
 
 
 def test_unique_counts_on_bool_true_null() -> None:
-    s = pl.Series("bool", [True, None, True, None, None], dtype=pl.Boolean)
+    true_first = pl.Series("bool", [True, None, True, None, None], dtype=pl.Boolean)
     expected = pl.Series("bool", [2, 3], dtype=pl.UInt32)
-    assert_series_equal(s.unique_counts(), expected)
+    assert_series_equal(true_first.unique_counts(), expected)
+
+    null_first = pl.Series("bool", [None, True, None, True, True], dtype=pl.Boolean)
+    expected = pl.Series("bool", [2, 3], dtype=pl.UInt32)
+    assert_series_equal(null_first.unique_counts(), expected)
 
 
 def test_unique_counts_on_bool_false_null() -> None:
-    s = pl.Series("bool", [False, None, False, None, None], dtype=pl.Boolean)
+    false_first = pl.Series("bool", [False, None, False, None, None], dtype=pl.Boolean)
     expected = pl.Series("bool", [2, 3], dtype=pl.UInt32)
-    assert_series_equal(s.unique_counts(), expected)
+    assert_series_equal(false_first.unique_counts(), expected)
+
+    null_first = pl.Series("bool", [None, False, None, False, False], dtype=pl.Boolean)
+    expected = pl.Series("bool", [2, 3], dtype=pl.UInt32)
+    assert_series_equal(null_first.unique_counts(), expected)
 
 
 def test_unique_counts_on_bool_true_false_null() -> None:
-    s = pl.Series("bool", [True, None, False, False, True, True])
-    expected = pl.Series("bool", [3, 1, 2], dtype=pl.UInt32)
+    true_first = pl.Series(
+        "bool", [True, None, False, False, None, False], dtype=pl.Boolean
+    )
+    expected = pl.Series("bool", [1, 2, 3], dtype=pl.UInt32)
+    assert_series_equal(true_first.unique_counts(), expected)
+
+    false_first = pl.Series(
+        "bool", [False, None, True, True, None, True], dtype=pl.Boolean
+    )
+    expected = pl.Series("bool", [1, 2, 3], dtype=pl.UInt32)
+    assert_series_equal(false_first.unique_counts(), expected)
+
+    null_first = pl.Series(
+        "bool", [None, False, True, False, True, True], dtype=pl.Boolean
+    )
+    expected = pl.Series("bool", [1, 2, 3], dtype=pl.UInt32)
+    assert_series_equal(null_first.unique_counts(), expected)
+
+
+def test_unique_counts_on_bool_empty() -> None:
+    s = pl.Series("bool", [], dtype=pl.Boolean)
+    expected = pl.Series("bool", [], dtype=pl.UInt32)
     assert_series_equal(s.unique_counts(), expected)
