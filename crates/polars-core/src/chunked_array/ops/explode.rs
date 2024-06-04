@@ -6,6 +6,7 @@ use arrow::legacy::array::list::AnonymousBuilder;
 use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::prelude::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
+use polars_utils::slice::GetSaferUnchecked;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
@@ -122,12 +123,8 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        #[cfg(debug_assertions)]
-                        new_values.extend_from_slice(&values[start..last]);
-
-                        #[cfg(not(debug_assertions))]
                         unsafe {
-                            new_values.extend_from_slice(values.get_unchecked(start..last))
+                            new_values.extend_from_slice(values.get_unchecked_release(start..last))
                         };
                     }
 

@@ -112,9 +112,7 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
         let fill_length = abs(periods) as usize;
         let mut fill = match fill_value {
             Some(val) => Self::full(self.name(), val, fill_length),
-            None => {
-                ListChunked::full_null_with_dtype(self.name(), fill_length, &self.inner_dtype())
-            },
+            None => ListChunked::full_null_with_dtype(self.name(), fill_length, self.inner_dtype()),
         };
 
         if periods < 0 {

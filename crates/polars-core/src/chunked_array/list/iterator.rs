@@ -162,7 +162,7 @@ impl ListChunked {
             series_container,
             NonNull::new(ptr).unwrap(),
             self.downcast_iter().flat_map(|arr| arr.iter()),
-            inner_dtype,
+            inner_dtype.clone(),
         )
     }
 
