@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -296,8 +296,8 @@ def test_join_misc_16255() -> None:
 def test_non_equi_joins(constraint: str) -> None:
     # no support (yet) for non equi-joins in polars joins
     with pytest.raises(
-        InvalidOperationError,
-        match=r"SQL interface \(currently\) only supports basic equi-join constraints",
+        SQLInterfaceError,
+        match=r"only equi-join constraints are supported",
     ), pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx:
         ctx.execute(
             f"""

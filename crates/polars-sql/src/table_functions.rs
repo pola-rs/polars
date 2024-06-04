@@ -56,7 +56,7 @@ impl FromStr for PolarsTableFunctions {
             "read_ipc" => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             "read_json" => PolarsTableFunctions::ReadJson,
-            _ => polars_bail!(ComputeError: "'{}' is not a supported table function", s),
+            _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
         })
     }
 }
@@ -79,7 +79,7 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "csv")]
     fn read_csv(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        polars_ensure!(!args.is_empty(), ComputeError: "read_csv expected a path");
+        polars_ensure!(!args.is_empty(), SQLSyntax: "`read_csv` expected a path");
 
         use polars_lazy::frame::LazyFileListReader;
         let path = self.get_file_path_from_arg(&args[0])?;
@@ -89,7 +89,7 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "parquet")]
     fn read_parquet(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        polars_ensure!(!args.is_empty(), ComputeError: "read_parquet expected a path");
+        polars_ensure!(!args.is_empty(), SQLSyntax: "`read_parquet` expected a path");
 
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_parquet(&path, Default::default())?;
@@ -98,7 +98,7 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "ipc")]
     fn read_ipc(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        polars_ensure!(!args.is_empty(), ComputeError: "read_ipc expected a path");
+        polars_ensure!(!args.is_empty(), SQLSyntax: "`read_ipc` expected a path");
 
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_ipc(&path, Default::default())?;
@@ -106,7 +106,7 @@ impl PolarsTableFunctions {
     }
     #[cfg(feature = "json")]
     fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        polars_ensure!(!args.is_empty(), ComputeError: "read_json expected a path");
+        polars_ensure!(!args.is_empty(), SQLSyntax: "`read_json` expected a path");
 
         use polars_lazy::frame::LazyFileListReader;
         use polars_lazy::prelude::LazyJsonLineReader;
@@ -124,8 +124,8 @@ impl PolarsTableFunctions {
                 SQLValue::SingleQuotedString(s),
             ))) => Ok(s.to_string()),
             _ => polars_bail!(
-                ComputeError:
-                "only a single quoted string is accepted as the first parameter; received: {}", arg,
+                SQLSyntax:
+                "only a single quoted string is accepted for the parameter; found: {}", arg,
             ),
         }
     }

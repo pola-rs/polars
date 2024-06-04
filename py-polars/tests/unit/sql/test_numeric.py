@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -114,11 +114,11 @@ def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
-            InvalidOperationError, match="invalid 'decimals' for Round: ??"
+            SQLSyntaxError, match=r"invalid 'n_decimals' for ROUND \('!!'\)"
         ):
-            ctx.execute("SELECT ROUND(n,'??') AS n FROM df")
+            ctx.execute("SELECT ROUND(n,'!!') AS n FROM df")
         with pytest.raises(
-            InvalidOperationError, match="Round .* negative 'decimals': -1"
+            SQLInterfaceError, match=r"ROUND .* negative 'n_decimals' \(-1\)"
         ):
             ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 

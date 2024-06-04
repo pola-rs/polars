@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -238,7 +238,7 @@ def test_timestamp_time_unit_errors() -> None:
     with pl.SQLContext(frame_data=df, eager=True) as ctx:
         for prec in (0, 15):
             with pytest.raises(
-                ComputeError,
+                SQLSyntaxError,
                 match=f"invalid temporal type precision; expected 1-9, found {prec}",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")

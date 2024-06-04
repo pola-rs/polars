@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -222,19 +222,19 @@ def test_group_by_errors() -> None:
     )
 
     with pytest.raises(
-        ComputeError,
+        SQLSyntaxError,
         match=r"expected a positive integer or valid expression; got -99",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
 
     with pytest.raises(
-        ComputeError,
+        SQLSyntaxError,
         match=r"expected a positive integer or valid expression; got '!!!'",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
 
     with pytest.raises(
-        ComputeError,
+        SQLSyntaxError,
         match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY b")
