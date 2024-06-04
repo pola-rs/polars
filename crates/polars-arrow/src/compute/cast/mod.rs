@@ -175,7 +175,8 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     let null_cnt = list.null_count();
     let new_values = if null_cnt == 0 {
         let offsets = list.offsets().buffer().iter();
-        let expected = (0..list.len()).map(|ix| O::from_as_usize(ix * size));
+        let expected =
+            (list.offsets().first().to_usize()..list.len()).map(|ix| O::from_as_usize(ix * size));
 
         match offsets
             .zip(expected)
@@ -266,7 +267,6 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 /// * Time32 and Time64: precision lost when going to higher interval
 /// * Timestamp and Date{32|64}: precision lost when going to higher interval
 /// * Temporal to/from backing primitive: zero-copy with data type change
-///
 /// Unsupported Casts
 /// * non-`StructArray` to `StructArray` or `StructArray` to non-`StructArray`
 /// * List to primitive
