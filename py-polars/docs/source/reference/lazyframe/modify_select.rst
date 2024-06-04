@@ -41,7 +41,6 @@ Manipulation/selection
     LazyFrame.select_seq
     LazyFrame.set_sorted
     LazyFrame.shift
-    LazyFrame.shift_and_fill
     LazyFrame.slice
     LazyFrame.sort
     LazyFrame.sql

@@ -11108,29 +11108,6 @@ class DataFrame:
         """
         return self.map_rows(function, return_dtype, inference_size=inference_size)
 
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: int | str | float,
-        *,
-        n: int = 1,
-    ) -> DataFrame:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            fill None values with this value.
-        n
-            Number of places to shift (may be negative).
-        """
-        return self.shift(n, fill_value=fill_value)
-
     @deprecate_renamed_function("gather_every", version="0.19.12")
     def take_every(self, n: int, offset: int = 0) -> DataFrame:
         """

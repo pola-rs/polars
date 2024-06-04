@@ -49,7 +49,6 @@ Manipulation/selection
     Series.set
     Series.set_at_idx
     Series.shift
-    Series.shift_and_fill
     Series.shrink_dtype
     Series.shrink_to_fit
     Series.shuffle

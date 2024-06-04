@@ -61,7 +61,6 @@ Manipulation/selection
     DataFrame.select_seq
     DataFrame.set_sorted
     DataFrame.shift
-    DataFrame.shift_and_fill
     DataFrame.shrink_to_fit
     DataFrame.slice
     DataFrame.sort

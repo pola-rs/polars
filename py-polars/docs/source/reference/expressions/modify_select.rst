@@ -52,7 +52,6 @@ Manipulation/selection
     Expr.round_sig_figs
     Expr.sample
     Expr.shift
-    Expr.shift_and_fill
     Expr.shrink_dtype
     Expr.shuffle
     Expr.slice
