@@ -696,14 +696,6 @@ def test_series_to_list() -> None:
     assert a.to_list() == [1, None, 2]
 
 
-def test_series_to_list_use_pyarrow_deprecated() -> None:
-    s = pl.Series("a", range(20))
-    with pytest.deprecated_call():
-        result = s.to_list(use_pyarrow=True)
-    assert isinstance(result, list)
-    assert len(result) == 20
-
-
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
