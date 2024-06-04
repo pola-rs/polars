@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import issue_deprecation_warning
 from polars.exceptions import ComputeError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -187,20 +186,3 @@ def _combine_predicates(predicates: list[PyExpr]) -> PyExpr:
         return predicates[0]
 
     return plr.all_horizontal(predicates)
-
-
-def parse_when_inputs(
-    *predicates: IntoExpr | Iterable[IntoExpr],
-    **constraints: Any,
-) -> PyExpr:
-    if "condition" in constraints:
-        if isinstance(constraints["condition"], pl.Expr):
-            issue_deprecation_warning(
-                "`when` no longer takes a 'condition' parameter."
-                " To silence this warning, omit the keyword and pass"
-                " as a positional argument instead.",
-                version="0.19.16",
-            )
-            predicates = (*predicates, constraints.pop("condition"))
-
-    return parse_predicates_constraints_as_expression(*predicates, **constraints)
