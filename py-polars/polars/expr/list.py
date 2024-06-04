@@ -1363,16 +1363,6 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
-    @deprecate_renamed_function("len", version="0.19.8")
-    def lengths(self) -> Expr:
-        """
-        Return the number of elements in each list.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :meth:`.len`.
-        """
-        return self.len()
-
     @deprecate_renamed_function("gather", version="0.19.14")
     @deprecate_renamed_parameter("index", "indices", version="0.19.14")
     def take(

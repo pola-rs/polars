@@ -27,7 +27,6 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.join
     Expr.list.last
     Expr.list.len
-    Expr.list.lengths
     Expr.list.max
     Expr.list.mean
     Expr.list.median

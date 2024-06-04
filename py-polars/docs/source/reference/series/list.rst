@@ -27,7 +27,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.join
     Series.list.last
     Series.list.len
-    Series.list.lengths
     Series.list.max
     Series.list.mean
     Series.list.median
