@@ -48,7 +48,6 @@ Manipulation/selection
     DataFrame.pivot
     DataFrame.rechunk
     DataFrame.rename
-    DataFrame.replace_at_idx
     DataFrame.replace_column
     DataFrame.reverse
     DataFrame.rolling
