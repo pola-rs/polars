@@ -3010,24 +3010,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
                 )
 
-        # identify deprecated usage of 'predicate' parameter
-        if "predicate" in constraints:
-            is_mask = False
-            if isinstance(p := constraints["predicate"], pl.Expr) or (
-                is_mask := is_bool_sequence(p)
-            ):
-                p = constraints.pop("predicate")
-                issue_deprecation_warning(
-                    "`filter` no longer takes a 'predicate' parameter.\n"
-                    "To silence this warning you should omit the keyword and pass "
-                    "as a positional argument instead.",
-                    version="0.19.9",
-                )
-                if is_mask:
-                    boolean_masks.append(pl.Series(p, dtype=Boolean))
-                else:
-                    all_predicates.append(p)  # type: ignore[arg-type]
-
         # unpack equality constraints from kwargs
         all_predicates.extend(
             F.col(name).eq(value) for name, value in constraints.items()

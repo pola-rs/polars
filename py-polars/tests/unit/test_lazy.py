@@ -194,14 +194,6 @@ def test_filter_multiple_predicates() -> None:
         pl.DataFrame({"a": [2], "b": [2], "c": [3]}),
     )
 
-    # check 'predicate' keyword deprecation:
-    # note: we can disambiguate new/old usage (only expect warning on old-style usage)
-    with pytest.warns(
-        DeprecationWarning,
-        match="`filter` no longer takes a 'predicate' parameter",
-    ):
-        ldf.filter(predicate=pl.col("a").ge(1)).collect()
-
     ldf = pl.LazyFrame(
         {
             "description": ["eq", "gt", "ge"],

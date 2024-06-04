@@ -4412,16 +4412,6 @@ class Expr:
         │ b   ┆ 1   ┆ 2   ┆ 9   │
         └─────┴─────┴─────┴─────┘
         """
-        if "predicate" in constraints:
-            if isinstance(constraints["predicate"], pl.Expr):
-                issue_deprecation_warning(
-                    "`filter` no longer takes a 'predicate' parameter.\n"
-                    "To silence this warning you should omit the keyword and pass "
-                    "as a positional argument instead.",
-                    version="0.19.17",
-                )
-                predicates = (*predicates, constraints.pop("predicate"))
-
         predicate = parse_predicates_constraints_as_expression(
             *predicates, **constraints
         )
