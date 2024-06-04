@@ -7,7 +7,6 @@ Exceptions
     :toctree: api/
     :nosignatures:
 
-    ArrowError
     ColumnNotFoundError
     ComputeError
     DuplicateError

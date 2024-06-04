@@ -73,7 +73,6 @@ from polars.datatypes import (
     Utf8,
 )
 from polars.exceptions import (
-    ArrowError,
     CategoricalRemappingWarning,
     ChronoFormatWarning,
     ColumnNotFoundError,
@@ -228,7 +227,6 @@ __all__ = [
     "exceptions",
     "plugins",
     # exceptions/errors
-    "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
