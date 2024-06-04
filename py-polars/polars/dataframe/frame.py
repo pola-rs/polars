@@ -10727,7 +10727,7 @@ class DataFrame:
             at any point without it being considered a breaking change.
 
         By default, null values in the right frame are ignored. Use
-        `include_nulls=False` to overwrite values in this frame with
+        `include_nulls=True` to overwrite values in this frame with
         null values in the other frame.
 
         Parameters
