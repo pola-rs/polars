@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
 
 import hypothesis.strategies as st
+from hypothesis import reject
 from hypothesis.errors import InvalidArgument
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
 from polars.datatypes import DataType, DataTypeClass, Null
+from polars.exceptions import ComputeError
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
@@ -203,7 +205,11 @@ def series(  # noqa: D417
             )
         )
 
-    s = Series(name=name, values=values, dtype=dtype)
+    try:
+        s = Series(name=name, values=values, dtype=dtype)
+    except ComputeError as exc:
+        assert "is ambiguous" in str(exc) or "is non-existent" in str(exc)  # noqa: PT017
+        reject()
 
     # Apply chunking
     if allow_chunks and size > 1 and draw(st.booleans()):
