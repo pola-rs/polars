@@ -2748,7 +2748,7 @@ class Series:
 
     @unstable()
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
+        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -5587,8 +5587,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5639,7 +5639,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_min(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods=min_periods, center=center
                 )
             )
             .to_series()
@@ -5650,8 +5650,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5702,7 +5702,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_max(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods=min_periods, center=center
                 )
             )
             .to_series()
@@ -5713,8 +5713,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5765,7 +5765,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_mean(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods=min_periods, center=center
                 )
             )
             .to_series()
@@ -5776,8 +5776,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5828,7 +5828,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_sum(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods=min_periods, center=center
                 )
             )
             .to_series()
@@ -5839,8 +5839,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
@@ -5895,7 +5895,11 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_std(
-                    window_size, weights, min_periods, center=center, ddof=ddof
+                    window_size,
+                    weights,
+                    min_periods=min_periods,
+                    center=center,
+                    ddof=ddof,
                 )
             )
             .to_series()
@@ -5906,8 +5910,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
@@ -5962,7 +5966,11 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_var(
-                    window_size, weights, min_periods, center=center, ddof=ddof
+                    window_size,
+                    weights,
+                    min_periods=min_periods,
+                    center=center,
+                    ddof=ddof,
                 )
             )
             .to_series()
@@ -5974,8 +5982,8 @@ class Series:
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -6030,8 +6038,8 @@ class Series:
         self,
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -6082,7 +6090,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_median(
-                    window_size, weights, min_periods, center=center
+                    window_size, weights, min_periods=min_periods, center=center
                 )
             )
             .to_series()
@@ -6095,8 +6103,8 @@ class Series:
         interpolation: RollingInterpolationMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -6166,7 +6174,7 @@ class Series:
                     interpolation,
                     window_size,
                     weights,
-                    min_periods,
+                    min_periods=min_periods,
                     center=center,
                 )
             )
