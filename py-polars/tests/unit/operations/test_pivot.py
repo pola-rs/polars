@@ -48,16 +48,16 @@ def test_pivot_no_values() -> None:
     expected = pl.DataFrame(
         {
             "foo": ["A", "B", "C"],
-            "N1_bar_k": [1, None, None],
-            "N1_bar_l": [2, None, None],
-            "N1_bar_m": [None, 2, None],
-            "N1_bar_n": [None, 4, None],
-            "N1_bar_o": [None, None, 2],
-            "N2_bar_k": [1, None, None],
-            "N2_bar_l": [2, None, None],
-            "N2_bar_m": [None, 2, None],
-            "N2_bar_n": [None, 4, None],
-            "N2_bar_o": [None, None, 2],
+            "N1_k": [1, None, None],
+            "N1_l": [2, None, None],
+            "N1_m": [None, 2, None],
+            "N1_n": [None, 4, None],
+            "N1_o": [None, None, 2],
+            "N2_k": [1, None, None],
+            "N2_l": [2, None, None],
+            "N2_m": [None, 2, None],
+            "N2_n": [None, 4, None],
+            "N2_o": [None, None, 2],
         }
     )
 
@@ -195,10 +195,10 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
     expected = {
         "c1": ["A", "B"],
-        "x1|c2|C": [1, 2],
-        "x1|c2|D": [3, 4],
-        "x2|c2|C": [8, 7],
-        "x2|c2|D": [6, 5],
+        "x1|C": [1, 2],
+        "x1|D": [3, 4],
+        "x2|C": [8, 7],
+        "x2|D": [6, 5],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -221,10 +221,10 @@ def test_pivot_duplicate_names_7731() -> None:
     ).to_dict(as_series=False)
     expected = {
         "b": [1.5, 2.5],
-        'a_{"c","e"}_{"x","x"}': [1, None],
-        'a_{"c","e"}_{"x","y"}': [None, 4],
-        'd_{"c","e"}_{"x","x"}': [7, None],
-        'd_{"c","e"}_{"x","y"}': [None, 8],
+        'a_{"x","x"}': [1, None],
+        'a_{"x","y"}': [None, 4],
+        'd_{"x","x"}': [7, None],
+        'd_{"x","y"}': [None, 8],
     }
     assert result == expected
 
