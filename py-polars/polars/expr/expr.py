@@ -30,7 +30,6 @@ from polars._utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
-    deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
     validate_rolling_aggs_arguments,
@@ -12092,41 +12091,6 @@ class Expr:
             Reverse the operation.
         """
         return self.cum_count(reverse=reverse)
-
-    @deprecate_function(
-        "It has been renamed to `replace`."
-        " The default behavior has changed to keep any values not present in the mapping unchanged."
-        " Pass `default=None` to keep existing behavior.",
-        version="0.19.16",
-    )
-    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
-    def map_dict(
-        self,
-        mapping: dict[Any, Any],
-        *,
-        default: Any = None,
-        return_dtype: PolarsDataType | None = None,
-    ) -> Self:
-        """
-        Replace values in column according to remapping dictionary.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :meth:`replace`. The default behavior
-            has changed to keep any values not present in the mapping unchanged.
-            Pass `default=None` to keep existing behavior.
-
-        Parameters
-        ----------
-        mapping
-            Dictionary containing the before/after values to map.
-        default
-            Value to use when the remapping dict does not contain the lookup value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Use `pl.first()`, to keep the original value.
-        return_dtype
-            Set return dtype to override automatic return dtype determination.
-        """
-        return self.replace(mapping, default=default, return_dtype=return_dtype)
 
     @classmethod
     def from_json(cls, value: str) -> Self:

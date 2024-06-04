@@ -35,7 +35,6 @@ Manipulation/selection
     Expr.interpolate_by
     Expr.limit
     Expr.lower_bound
-    Expr.map_dict
     Expr.pipe
     Expr.qcut
     Expr.rechunk
