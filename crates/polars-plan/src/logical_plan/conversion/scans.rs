@@ -140,36 +140,40 @@ pub(super) fn csv_file_info(
     let first_path = get_path(paths)?;
     let run_async = is_cloud_url(first_path) || config::force_async();
 
-    let cache_entries = if run_async {
-        #[cfg(feature = "async")]
+    let cache_entries = {
+        #[cfg(feature = "cloud")]
         {
-            Some(polars_io::file_cache::init_entries_from_uri_list(
-                paths
-                    .iter()
-                    .map(|path| Arc::from(path.to_str().unwrap()))
-                    .collect::<Box<[_]>>(),
-                cloud_options,
-            )?)
+            if run_async {
+                Some(polars_io::file_cache::init_entries_from_uri_list(
+                    paths
+                        .iter()
+                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .collect::<Box<[_]>>(),
+                    cloud_options,
+                )?)
+            } else {
+                None
+            }
         }
-        #[cfg(not(feature = "async"))]
+        #[cfg(not(feature = "cloud"))]
         {
-            panic!("required feature `async` is not enabled")
+            if run_async {
+                panic!("required feature `cloud` is not enabled")
+            }
         }
-    } else {
-        None
     };
 
     let infer_schema_func = |i| {
         let mut file = if run_async {
-            #[cfg(feature = "async")]
+            #[cfg(feature = "cloud")]
             {
                 let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
                     cache_entries.as_ref().unwrap().get(i).unwrap();
                 entry.try_open_check_latest()?
             }
-            #[cfg(not(feature = "async"))]
+            #[cfg(not(feature = "cloud"))]
             {
-                panic!("required feature `async` is not enabled")
+                panic!("required feature `cloud` is not enabled")
             }
         } else {
             polars_utils::open_file(paths.get(i).unwrap())?

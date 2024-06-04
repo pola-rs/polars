@@ -98,7 +98,7 @@ impl CsvSource {
             .with_row_index(row_index);
 
         let reader: CsvReader<File> = if run_async {
-            #[cfg(feature = "async")]
+            #[cfg(feature = "cloud")]
             {
                 options.into_reader_with_file_handle(
                     FILE_CACHE
@@ -108,9 +108,9 @@ impl CsvSource {
                         .try_open_assume_latest()?,
                 )
             }
-            #[cfg(not(feature = "async"))]
+            #[cfg(not(feature = "cloud"))]
             {
-                panic!("required feature `async` is not enabled")
+                panic!("required feature `cloud` is not enabled")
             }
         } else {
             options

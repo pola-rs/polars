@@ -28,7 +28,7 @@ pub fn count_rows(
     has_header: bool,
 ) -> PolarsResult<usize> {
     let mut reader = if is_cloud_url(path) || config::force_async() {
-        #[cfg(feature = "async")]
+        #[cfg(feature = "cloud")]
         {
             FILE_CACHE
                 .get_entry(path.to_str().unwrap())
@@ -36,9 +36,9 @@ pub fn count_rows(
                 .unwrap()
                 .try_open_assume_latest()?
         }
-        #[cfg(not(feature = "async"))]
+        #[cfg(not(feature = "cloud"))]
         {
-            panic!("required feature `async` is not enabled")
+            panic!("required feature `cloud` is not enabled")
         }
     } else {
         polars_utils::open_file(path)?
@@ -62,7 +62,7 @@ pub fn count_rows(
     })
     .unwrap_or(1);
 
-    let file_chunks = get_file_chunks(
+    let file_chunks: Vec<(usize, usize)> = get_file_chunks(
         &reader_bytes,
         n_threads,
         None,

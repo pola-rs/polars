@@ -62,7 +62,7 @@ impl CsvExec {
         let finish_read =
             |i: usize, options: CsvReadOptions, predicate: Option<Arc<dyn PhysicalIoExpr>>| {
                 if run_async {
-                    #[cfg(feature = "async")]
+                    #[cfg(feature = "cloud")]
                     {
                         options
                             .into_reader_with_file_handle(
@@ -75,9 +75,9 @@ impl CsvExec {
                             ._with_predicate(predicate.clone())
                             .finish()
                     }
-                    #[cfg(not(feature = "async"))]
+                    #[cfg(not(feature = "cloud"))]
                     {
-                        panic!("required feature `async` is not enabled")
+                        panic!("required feature `cloud` is not enabled")
                     }
                 } else {
                     options
