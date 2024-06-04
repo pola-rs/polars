@@ -11,6 +11,7 @@ on:
     paths:
       - crates/**
       - .github/workflows/docs-rust.yml
+# test
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
