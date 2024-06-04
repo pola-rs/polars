@@ -146,15 +146,32 @@ def test_json_deserialize_empty_list_10458() -> None:
     assert df.schema == schema
 
 
-def test_df_write_json_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.deprecated_call():
-        result = df.write_json()
-    assert result == df.serialize()
-
-
-def test_df_write_json_pretty_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.deprecated_call():
-        result = df.write_json(pretty=True)
-    assert isinstance(result, str)
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.DataFrame.deserialize(f)

@@ -11,9 +11,9 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-def test_write_json_row_oriented() -> None:
+def test_write_json() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
-    out = df.write_json(row_oriented=True)
+    out = df.write_json()
     assert out == '[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]'
 
     # Test round trip
@@ -27,11 +27,10 @@ def test_write_json_row_oriented() -> None:
 def test_write_json_categoricals() -> None:
     data = {"column": ["test1", "test2", "test3", "test4"]}
     df = pl.DataFrame(data).with_columns(pl.col("column").cast(pl.Categorical))
-
-    assert (
-        df.write_json(row_oriented=True, file=None)
-        == '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
+    expected = (
+        '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
     )
+    assert df.write_json() == expected
 
 
 def test_write_json_duration() -> None:
@@ -44,8 +43,9 @@ def test_write_json_duration() -> None:
     )
 
     # we don't guarantee a format, just round-circling
-    value = str(df.write_json(row_oriented=True))
-    assert value == """[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]"""
+    value = df.write_json()
+    expected = '[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]'
+    assert value == expected
 
 
 def test_json_infer_schema_length_11148() -> None:

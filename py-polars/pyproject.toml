@@ -238,9 +238,6 @@ filterwarnings = [
   # TODO: Remove when behavior is updated
   # https://github.com/pola-rs/polars/issues/13441
   "ignore:.*default coalesce behavior of left join.*:DeprecationWarning",
-  # TODO: Remove when default is updated
-  # https://github.com/pola-rs/polars/issues/14526
-  "ignore:.*will only write row-oriented JSON.*:DeprecationWarning",
 ]
 xfail_strict = true
 
