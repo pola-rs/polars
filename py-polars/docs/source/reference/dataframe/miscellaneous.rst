@@ -9,7 +9,6 @@ Miscellaneous
     DataFrame.apply
     DataFrame.corr
     DataFrame.equals
-    DataFrame.frame_equal
     DataFrame.lazy
     DataFrame.map_rows
 
