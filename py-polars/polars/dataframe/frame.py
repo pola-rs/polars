@@ -144,7 +144,6 @@ if TYPE_CHECKING:
         Label,
         MultiColSelector,
         MultiIndexSelector,
-        NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
@@ -8654,28 +8653,9 @@ class DataFrame:
             )
             raise ValueError(msg)
 
-    @overload
-    def max(self, axis: Literal[0] = ...) -> Self: ...
-
-    @overload
-    def max(self, axis: Literal[1]) -> Series: ...
-
-    @overload
-    def max(self, axis: int = 0) -> Self | Series: ...
-
-    def max(self, axis: int | None = None) -> Self | Series:
+    def max(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their maximum value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`max_horizontal`.
 
         Examples
         --------
@@ -8696,21 +8676,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.max` is deprecated."
-                " Use `DataFrame.max_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().max().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            return wrap_s(self._df.max_horizontal())
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().max().collect(_eager=True)
 
     def max_horizontal(self) -> Series:
         """
@@ -8740,28 +8706,9 @@ class DataFrame:
         """
         return self.select(max=F.max_horizontal(F.all())).to_series()
 
-    @overload
-    def min(self, axis: Literal[0] | None = ...) -> Self: ...
-
-    @overload
-    def min(self, axis: Literal[1]) -> Series: ...
-
-    @overload
-    def min(self, axis: int) -> Self | Series: ...
-
-    def min(self, axis: int | None = None) -> Self | Series:
+    def min(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their minimum value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`min_horizontal`.
 
         Examples
         --------
@@ -8782,21 +8729,7 @@ class DataFrame:
         │ 1   ┆ 6   ┆ a   │
         └─────┴─────┴─────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.min` is deprecated."
-                " Use `DataFrame.min_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().min().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            return wrap_s(self._df.min_horizontal())
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().min().collect(_eager=True)
 
     def min_horizontal(self) -> Series:
         """
@@ -8826,53 +8759,9 @@ class DataFrame:
         """
         return self.select(min=F.min_horizontal(F.all())).to_series()
 
-    @overload
-    def sum(
-        self,
-        *,
-        axis: Literal[0] = ...,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self: ...
-
-    @overload
-    def sum(
-        self,
-        *,
-        axis: Literal[1],
-        null_strategy: NullStrategy = "ignore",
-    ) -> Series: ...
-
-    @overload
-    def sum(
-        self,
-        *,
-        axis: int,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series: ...
-
-    def sum(
-        self,
-        *,
-        axis: int | None = None,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
+    def sum(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their sum value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`sum_horizontal`.
-        null_strategy : {'ignore', 'propagate'}
-            This argument is only used if `axis == 1`.
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version.
 
         Examples
         --------
@@ -8893,28 +8782,7 @@ class DataFrame:
         │ 6   ┆ 21  ┆ null │
         └─────┴─────┴──────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.sum` is deprecated."
-                " Use `DataFrame.sum_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().sum().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            if null_strategy == "ignore":
-                ignore_nulls = True
-            elif null_strategy == "propagate":
-                ignore_nulls = False
-            else:
-                msg = f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
-                raise ValueError(msg)
-            return self.sum_horizontal(ignore_nulls=ignore_nulls)
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().sum().collect(_eager=True)
 
     def sum_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -8950,53 +8818,9 @@ class DataFrame:
         """
         return wrap_s(self._df.sum_horizontal(ignore_nulls)).alias("sum")
 
-    @overload
-    def mean(
-        self,
-        *,
-        axis: Literal[0] = ...,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self: ...
-
-    @overload
-    def mean(
-        self,
-        *,
-        axis: Literal[1],
-        null_strategy: NullStrategy = "ignore",
-    ) -> Series: ...
-
-    @overload
-    def mean(
-        self,
-        *,
-        axis: int,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series: ...
-
-    def mean(
-        self,
-        *,
-        axis: int | None = None,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
+    def mean(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their mean value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`mean_horizontal`.
-        null_strategy : {'ignore', 'propagate'}
-            This argument is only used if `axis == 1`.
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version.
 
         Examples
         --------
@@ -9018,28 +8842,7 @@ class DataFrame:
         │ 2.0 ┆ 7.0 ┆ null ┆ 0.5  │
         └─────┴─────┴──────┴──────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.mean` is deprecated."
-                " Use `DataFrame.mean_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().mean().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            if null_strategy == "ignore":
-                ignore_nulls = True
-            elif null_strategy == "propagate":
-                ignore_nulls = False
-            else:
-                msg = f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
-                raise ValueError(msg)
-            return self.mean_horizontal(ignore_nulls=ignore_nulls)
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().mean().collect(_eager=True)
 
     def mean_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """

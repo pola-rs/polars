@@ -97,7 +97,6 @@ JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
-NullStrategy: TypeAlias = Literal["ignore", "propagate"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
