@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable
 
 from polars._utils.convert import to_py_date, to_py_datetime
-from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.datatypes import Date, Datetime, Duration, Time
@@ -2107,73 +2107,3 @@ class DateTimeNameSpace:
                 0ms
         ]
         """
-
-    @deprecate_renamed_function("total_days", version="0.19.13")
-    def days(self) -> Series:
-        """
-        Extract the total days from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_days` instead.
-        """
-        return self.total_days()
-
-    @deprecate_renamed_function("total_hours", version="0.19.13")
-    def hours(self) -> Series:
-        """
-        Extract the total hours from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_hours` instead.
-        """
-        return self.total_hours()
-
-    @deprecate_renamed_function("total_minutes", version="0.19.13")
-    def minutes(self) -> Series:
-        """
-        Extract the total minutes from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_minutes` instead.
-        """
-        return self.total_minutes()
-
-    @deprecate_renamed_function("total_seconds", version="0.19.13")
-    def seconds(self) -> Series:
-        """
-        Extract the total seconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_seconds` instead.
-        """
-        return self.total_seconds()
-
-    @deprecate_renamed_function("total_milliseconds", version="0.19.13")
-    def milliseconds(self) -> Series:
-        """
-        Extract the total milliseconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_milliseconds` instead.
-        """
-        return self.total_milliseconds()
-
-    @deprecate_renamed_function("total_microseconds", version="0.19.13")
-    def microseconds(self) -> Series:
-        """
-        Extract the total microseconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_microseconds` instead.
-        """
-        return self.total_microseconds()
-
-    @deprecate_renamed_function("total_nanoseconds", version="0.19.13")
-    def nanoseconds(self) -> Series:
-        """
-        Extract the total nanoseconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_nanoseconds` instead.
-        """
-        return self.total_nanoseconds()
