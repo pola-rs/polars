@@ -29,38 +29,35 @@ impl LogicalType for DurationChunked {
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
-        match (self.dtype(), dtype) {
-            (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {
-                Ok((self.0.as_ref() * 1_000_000i64)
-                    .into_duration(TimeUnit::Nanoseconds)
-                    .into_series())
+        use TimeUnit::*;
+        match dtype {
+            Duration(tu) => {
+                let to_unit = *tu;
+                let out = match (self.time_unit(), to_unit) {
+                    (Milliseconds, Microseconds) => self.0.as_ref() * 1_000i64,
+                    (Milliseconds, Nanoseconds) => self.0.as_ref() * 1_000_000i64,
+                    (Microseconds, Milliseconds) => {
+                        self.0.as_ref().wrapping_trunc_div_scalar(1_000i64)
+                    },
+                    (Microseconds, Nanoseconds) => self.0.as_ref() * 1_000i64,
+                    (Nanoseconds, Milliseconds) => {
+                        self.0.as_ref().wrapping_trunc_div_scalar(1_000_000i64)
+                    },
+                    (Nanoseconds, Microseconds) => {
+                        self.0.as_ref().wrapping_trunc_div_scalar(1_000i64)
+                    },
+                    _ => return Ok(self.clone().into_series()),
+                };
+                Ok(out.into_duration(to_unit).into_series())
             },
-            (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Microseconds)) => {
-                Ok((self.0.as_ref() * 1_000i64)
-                    .into_duration(TimeUnit::Microseconds)
-                    .into_series())
+            dt if dt.is_numeric() => self.0.cast(dtype),
+            dt => {
+                polars_bail!(
+                    InvalidOperation:
+                    "casting from {:?} to {:?} not supported",
+                    self.dtype(), dt
+                )
             },
-            (Duration(TimeUnit::Microseconds), Duration(TimeUnit::Milliseconds)) => {
-                Ok((self.0.as_ref().wrapping_trunc_div_scalar(1_000i64))
-                    .into_duration(TimeUnit::Milliseconds)
-                    .into_series())
-            },
-            (Duration(TimeUnit::Microseconds), Duration(TimeUnit::Nanoseconds)) => {
-                Ok((self.0.as_ref() * 1_000i64)
-                    .into_duration(TimeUnit::Nanoseconds)
-                    .into_series())
-            },
-            (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds)) => {
-                Ok((self.0.as_ref().wrapping_trunc_div_scalar(1_000_000i64))
-                    .into_duration(TimeUnit::Milliseconds)
-                    .into_series())
-            },
-            (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Microseconds)) => {
-                Ok((self.0.as_ref().wrapping_trunc_div_scalar(1_000i64))
-                    .into_duration(TimeUnit::Microseconds)
-                    .into_series())
-            },
-            _ => self.0.cast(dtype),
         }
     }
 }

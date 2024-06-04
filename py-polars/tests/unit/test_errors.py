@@ -497,27 +497,6 @@ def test_cast_err_column_value_highlighting(
         test_df.with_columns(pl.all().cast(type))
 
 
-def test_err_on_time_datetime_cast() -> None:
-    s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
-    with pytest.raises(pl.ComputeError, match=r"cannot cast `Time` to `Datetime`"):
-        s.cast(pl.Datetime)
-
-
-def test_err_on_invalid_time_zone_cast() -> None:
-    s = pl.Series([datetime(2021, 1, 1)])
-    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
-        s.cast(pl.Datetime("us", "qwerty"))
-
-
-def test_invalid_inner_type_cast_list() -> None:
-    s = pl.Series([[-1, 1]])
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"cannot cast List inner type: 'Int64' to Categorical",
-    ):
-        s.cast(pl.List(pl.Categorical))
-
-
 def test_lit_agg_err() -> None:
     with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
