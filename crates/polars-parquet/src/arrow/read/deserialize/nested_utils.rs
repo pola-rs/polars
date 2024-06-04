@@ -479,8 +479,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
         // SAFETY: only bound check elision.
         unsafe {
             for depth in 0..max_depth {
-                let right_level = rep <= *cum_rep.get_unchecked_release(depth)
-                    && def >= *cum_sum.get_unchecked_release(depth);
+                let right_level = rep <= *cum_rep.get_unchecked_release(depth);
                 if is_required || right_level {
                     let length = nested
                         .get(depth + 1)
@@ -498,7 +497,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
                     if depth == max_depth - 1 {
                         // the leaf / primitive
                         let is_valid =
-                            (def != *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
+                            (def >= *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
                         if right_level && is_valid {
                             decoder.push_valid(values_state, decoded)?;
                         } else {
