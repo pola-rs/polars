@@ -67,14 +67,10 @@ def deprecate_function(
 
 
 def deprecate_renamed_function(
-    new_name: str, *, version: str, moved: bool = False
+    new_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to mark a function as deprecated due to being renamed (or moved)."""
-    moved_or_renamed = "moved" if moved else "renamed"
-    return deprecate_function(
-        f"It has been {moved_or_renamed} to `{new_name}`.",
-        version=version,
-    )
+    return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
 
 
 def deprecate_parameter_as_positional(
