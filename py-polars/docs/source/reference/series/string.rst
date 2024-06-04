@@ -30,7 +30,6 @@ The following methods are available under the `Series.str` attribute.
     Series.str.len_chars
     Series.str.lengths
     Series.str.ljust
-    Series.str.lstrip
     Series.str.n_chars
     Series.str.pad_end
     Series.str.pad_start
@@ -39,13 +38,11 @@ The following methods are available under the `Series.str` attribute.
     Series.str.replace_many
     Series.str.reverse
     Series.str.rjust
-    Series.str.rstrip
     Series.str.slice
     Series.str.split
     Series.str.split_exact
     Series.str.splitn
     Series.str.starts_with
-    Series.str.strip
     Series.str.strip_chars
     Series.str.strip_chars_start
     Series.str.strip_chars_end

@@ -30,7 +30,6 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.len_chars
     Expr.str.lengths
     Expr.str.ljust
-    Expr.str.lstrip
     Expr.str.n_chars
     Expr.str.pad_end
     Expr.str.pad_start
@@ -39,13 +38,11 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.replace_many
     Expr.str.reverse
     Expr.str.rjust
-    Expr.str.rstrip
     Expr.str.slice
     Expr.str.split
     Expr.str.split_exact
     Expr.str.splitn
     Expr.str.starts_with
-    Expr.str.strip
     Expr.str.strip_chars
     Expr.str.strip_chars_start
     Expr.str.strip_chars_end

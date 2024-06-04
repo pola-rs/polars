@@ -563,22 +563,6 @@ def test_str_strip_whitespace() -> None:
     assert_series_equal(s.str.strip_chars(), expected)
 
 
-def test_str_strip_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").str.strip()
-    with pytest.deprecated_call():
-        pl.col("a").str.lstrip()
-    with pytest.deprecated_call():
-        pl.col("a").str.rstrip()
-
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.strip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.lstrip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.rstrip()
-
-
 def test_str_strip_prefix_literal() -> None:
     s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", "", None])
     expected = pl.Series([":bar", "foo:bar", "bar:bar", "", "", None])
