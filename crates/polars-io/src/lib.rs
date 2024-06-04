@@ -15,7 +15,7 @@ pub mod mmap;
 #[cfg(feature = "json")]
 pub mod ndjson;
 mod options;
-#[cfg(feature = "parquet")]
+#[cfg(feature = "polars-parquet")]
 pub mod parquet;
 #[cfg(feature = "partition")]
 pub mod partition;

@@ -1,11 +1,11 @@
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
+#[cfg(any(feature = "ipc_streaming", feature = "polars-parquet"))]
 use std::borrow::Cow;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
+#[cfg(any(feature = "ipc_streaming", feature = "polars-parquet"))]
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use regex::{Regex, RegexBuilder};
 
@@ -54,7 +54,7 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",
-    feature = "parquet",
+    feature = "polars-parquet",
     feature = "avro"
 ))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
@@ -70,7 +70,7 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     feature = "ipc",
     feature = "ipc_streaming",
     feature = "avro",
-    feature = "parquet"
+    feature = "polars-parquet"
 ))]
 pub(crate) fn columns_to_projection(
     columns: &[String],
@@ -268,7 +268,7 @@ pub fn check_projected_schema(
 /// maximum number of rows per chunk to ensure reasonable memory efficiency when
 /// reading the resulting file, and a minimum size per chunk to ensure
 /// reasonable performance when writing.
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
+#[cfg(any(feature = "ipc_streaming", feature = "polars-parquet"))]
 pub(crate) fn chunk_df_for_writing(
     df: &mut DataFrame,
     row_group_size: usize,
