@@ -118,7 +118,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
             nan_to_null=True,
         ),
     ):
-        assert res.dtype == pl.List(pl.Float32)
+        assert res.dtype == pl.Array(pl.Float32, shape=2)
         assert res[0].to_list() == [1.0, 2.0]
         assert res[1].to_list() == [3.0, None]
 
@@ -134,7 +134,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
     assert pl.Series(
         values=np.array([["foo", "bar"], ["foo2", "bar2"]])
-    ).dtype == pl.List(pl.String)
+    ).dtype == pl.Array(pl.String, shape=2)
 
     # lists
     assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
