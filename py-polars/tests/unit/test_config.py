@@ -733,12 +733,9 @@ def test_config_state_env_only() -> None:
     assert "set_fmt_float" not in state_env_only
 
 
-def test_activate_decimals() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals(True)
-        assert os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1"
-        cfg.activate_decimals(False)
-        assert "POLARS_ACTIVATE_DECIMAL" not in os.environ
+def test_activate_decimals_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.Config().activate_decimals(True)
 
 
 def test_set_streaming_chunk_size() -> None:
@@ -776,7 +773,6 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
-        ("POLARS_ACTIVATE_DECIMAL", "activate_decimals", True, "1"),
         ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),

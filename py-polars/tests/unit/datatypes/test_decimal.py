@@ -49,8 +49,6 @@ def test_series_from_pydecimal_and_ints(
 def test_frame_from_pydecimal_and_ints(
     permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
 ) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-
     class X(NamedTuple):
         a: int | D | None
 
@@ -152,7 +150,6 @@ def test_decimal_cast_no_scale() -> None:
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
 
 
@@ -184,7 +181,6 @@ def test_string_to_decimal() -> None:
 
 
 def test_read_csv_decimal(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     csv = """a,b
 123.12,a
 1.1,a
@@ -407,41 +403,36 @@ def test_decimal_write_parquet_12375() -> None:
 
 
 def test_decimal_list_get_13847() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals()
-        df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
-        out = df.select(pl.col("a").list.get(0))
-        expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
-        assert_frame_equal(out, expected)
+    df = pl.DataFrame({"a": [[D("1.1"), D("1.2")], [D("2.1")]]})
+    out = df.select(pl.col("a").list.get(0))
+    expected = pl.DataFrame({"a": [D("1.1"), D("2.1")]})
+    assert_frame_equal(out, expected)
 
 
 def test_decimal_explode() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals()
+    nested_decimal_df = pl.DataFrame(
+        {
+            "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
+        }
+    )
+    df = nested_decimal_df.explode("bar")
+    expected_df = pl.DataFrame(
+        {
+            "bar": [D("3.4"), D("3.4"), D("4.5")],
+        }
+    )
+    assert_frame_equal(df, expected_df)
 
-        nested_decimal_df = pl.DataFrame(
-            {
-                "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
-            }
-        )
-        df = nested_decimal_df.explode("bar")
-        expected_df = pl.DataFrame(
-            {
-                "bar": [D("3.4"), D("3.4"), D("4.5")],
-            }
-        )
-        assert_frame_equal(df, expected_df)
-
-        # test group-by head #15330
-        df = pl.DataFrame(
-            {
-                "foo": [1, 1, 2],
-                "bar": [D("3.4"), D("3.4"), D("4.5")],
-            }
-        )
-        head_df = df.group_by("foo", maintain_order=True).head(1)
-        expected_df = pl.DataFrame({"foo": [1, 2], "bar": [D("3.4"), D("4.5")]})
-        assert_frame_equal(head_df, expected_df)
+    # test group-by head #15330
+    df = pl.DataFrame(
+        {
+            "foo": [1, 1, 2],
+            "bar": [D("3.4"), D("3.4"), D("4.5")],
+        }
+    )
+    head_df = df.group_by("foo", maintain_order=True).head(1)
+    expected_df = pl.DataFrame({"foo": [1, 2], "bar": [D("3.4"), D("4.5")]})
+    assert_frame_equal(head_df, expected_df)
 
 
 def test_decimal_streaming() -> None:
@@ -464,10 +455,7 @@ def test_decimal_streaming() -> None:
 
 
 def test_decimal_supertype() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals()
-        pl.Config.activate_decimals()
-        q = pl.LazyFrame([0.12345678]).select(
-            pl.col("column_0").cast(pl.Decimal(scale=6)) * 1
-        )
-        assert q.collect().dtypes[0].is_decimal()
+    q = pl.LazyFrame([0.12345678]).select(
+        pl.col("column_0").cast(pl.Decimal(scale=6)) * 1
+    )
+    assert q.collect().dtypes[0].is_decimal()
