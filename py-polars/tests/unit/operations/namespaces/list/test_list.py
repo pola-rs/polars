@@ -466,7 +466,9 @@ def test_list_sliced_get_5186() -> None:
     df = pl.from_dict(
         {
             "ind": pl.arange(0, n, eager=True),
-            "inds": np.stack([np.arange(n), -np.arange(n)], axis=-1),
+            "inds": pl.Series(
+                np.stack([np.arange(n), -np.arange(n)], axis=-1), dtype=pl.List
+            ),
         }
     )
 

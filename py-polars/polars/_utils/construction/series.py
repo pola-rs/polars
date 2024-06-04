@@ -499,9 +499,7 @@ def numpy_to_pyseries(
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
-    # TODO: remove this branch on 1.0.
-    # This returns a List whereas we should return an Array type
-    elif values.ndim == 2:
+    elif sum(values.shape) == 0:
         # Optimize by ingesting 1D and reshaping in Rust
         original_shape = values.shape
         values = values.reshape(-1)
