@@ -8,7 +8,7 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
 
     while let Some(a) = inner.inner_dtype() {
         nested_count += 1;
-        inner = a.clone()
+        inner = a;
     }
 
     if matches!(inner, DataType::Object(_, _)) {

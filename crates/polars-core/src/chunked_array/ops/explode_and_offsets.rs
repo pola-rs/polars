@@ -123,7 +123,7 @@ impl ChunkExplode for ListChunked {
         debug_assert_eq!(s.name(), self.name());
         // restore logical type
         unsafe {
-            s = s.cast_unchecked(&self.inner_dtype()).unwrap();
+            s = s.cast_unchecked(self.inner_dtype()).unwrap();
         }
 
         Ok((s, offsets))

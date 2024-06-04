@@ -387,7 +387,7 @@ impl ChunkCast for ListChunked {
         match data_type {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {
-                    (old, new) if old == *new => Ok(self.clone().into_series()),
+                    (old, new) if old == new => Ok(self.clone().into_series()),
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _) | Enum(_, _))
                         if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
@@ -520,7 +520,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
     let arr = ca.downcast_iter().next().unwrap();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
+        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], ca.inner_dtype())
     };
     let new_inner = s.cast(child_type)?;
 
@@ -545,7 +545,7 @@ unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> Polars
     let arr = ca.downcast_iter().next().unwrap();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
+        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], ca.inner_dtype())
     };
     let new_inner = s.cast_unchecked(child_type)?;
     let new_values = new_inner.array_ref(0).clone();

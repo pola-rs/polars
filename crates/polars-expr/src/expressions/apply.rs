@@ -150,7 +150,7 @@ impl ApplyExpr {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-            let input = Series::full_null("", 0, &input_dtype);
+            let input = Series::full_null("", 0, input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
             let ca = ListChunked::full(&name, &output, 0);

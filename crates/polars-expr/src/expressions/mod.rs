@@ -121,7 +121,7 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn dtype(&self) -> DataType {
         match &self.state {
             AggState::Literal(s) => s.dtype().clone(),
-            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype(),
+            AggState::AggregatedList(s) => s.list().unwrap().inner_dtype().clone(),
             AggState::AggregatedScalar(s) => s.dtype().clone(),
             AggState::NotAggregated(s) => s.dtype().clone(),
         }

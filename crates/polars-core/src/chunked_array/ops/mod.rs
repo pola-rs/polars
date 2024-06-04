@@ -509,10 +509,10 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                unsafe { ca.to_logical(self.inner_dtype()) };
+                unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
-            None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
+            None => ListChunked::full_null_with_dtype(self.name(), length, self.inner_dtype()),
         }
     }
 }
