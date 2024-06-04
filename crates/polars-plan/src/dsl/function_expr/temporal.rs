@@ -1,7 +1,7 @@
 #[cfg(feature = "date_offset")]
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "date_offset")]
-use polars_core::chunked_array::ops::arity::try_binary_elementwise;
+use polars_core::chunked_array::ops::arity::broadcast_try_binary_elementwise;
 #[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
@@ -189,33 +189,53 @@ pub(super) fn datetime(
 fn apply_offsets_to_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
     offsets: &StringChunked,
-    offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
-    match (datetime.len(), offsets.len()) {
-        (1, _) => match datetime.0.get(0) {
-            Some(dt) => offsets.try_apply_nonnull_values_generic(|offset| {
-                offset_fn(&Duration::parse(offset), dt, time_zone)
-            }),
-            _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
-        },
-        (_, 1) => match offsets.get(0) {
+    match offsets.len() {
+        1 => match offsets.get(0) {
             Some(offset) => {
                 let offset = &Duration::parse(offset);
-                datetime
-                    .0
-                    .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
+                if offset.is_constant_duration(datetime.time_zone().as_deref()) {
+                    // fastpath!
+                    let duration = match datetime.time_unit() {
+                        TimeUnit::Milliseconds => offset.duration_ms(),
+                        TimeUnit::Microseconds => offset.duration_us(),
+                        TimeUnit::Nanoseconds => offset.duration_ns(),
+                    };
+                    if offset.negative() {
+                        Ok(datetime.0.apply_values(|v| v - duration))
+                    } else {
+                        Ok(datetime.0.apply_values(|v| v + duration))
+                    }
+                } else {
+                    let offset_fn = match datetime.time_unit() {
+                        TimeUnit::Milliseconds => Duration::add_ms,
+                        TimeUnit::Microseconds => Duration::add_us,
+                        TimeUnit::Nanoseconds => Duration::add_ns,
+                    };
+                    datetime
+                        .0
+                        .try_apply_nonnull_values_generic(|v| offset_fn(offset, v, time_zone))
+                }
             },
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {
-            match (timestamp_opt, offset_opt) {
+        _ => {
+            let offset_fn = match datetime.time_unit() {
+                TimeUnit::Milliseconds => Duration::add_ms,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Nanoseconds => Duration::add_ns,
+            };
+            broadcast_try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| match (
+                timestamp_opt,
+                offset_opt,
+            ) {
                 (Some(timestamp), Some(offset)) => {
                     offset_fn(&Duration::parse(offset), timestamp, time_zone).map(Some)
                 },
                 _ => Ok(None),
-            }
-        }),
+            })
+        },
     }
 }
 
@@ -231,7 +251,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                 .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                 .unwrap();
             let datetime = ts.datetime().unwrap();
-            let out = apply_offsets_to_datetime(datetime, offsets, Duration::add_ms, None)?;
+            let out = apply_offsets_to_datetime(datetime, offsets, None)?;
             // sortedness is only guaranteed to be preserved if a constant offset is being added to every datetime
             preserve_sortedness = match offsets.len() {
                 1 => offsets.get(0).is_some(),
@@ -244,21 +264,12 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
         DataType::Datetime(tu, tz) => {
             let datetime = ts.datetime().unwrap();
 
-            let offset_fn = match tu {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
-            };
-
             let out = match tz {
                 #[cfg(feature = "timezones")]
-                Some(ref tz) => apply_offsets_to_datetime(
-                    datetime,
-                    offsets,
-                    offset_fn,
-                    tz.parse::<Tz>().ok().as_ref(),
-                )?,
-                _ => apply_offsets_to_datetime(datetime, offsets, offset_fn, None)?,
+                Some(ref tz) => {
+                    apply_offsets_to_datetime(datetime, offsets, tz.parse::<Tz>().ok().as_ref())?
+                },
+                _ => apply_offsets_to_datetime(datetime, offsets, None)?,
             };
             // Sortedness may not be preserved when crossing daylight savings time boundaries
             // for calendar-aware durations.
