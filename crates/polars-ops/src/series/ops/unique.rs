@@ -37,7 +37,11 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
     let (true_count, null_count);
     if let Some(validity) = arr.validity() {
         null_count = validity.unset_bits();
-        true_count = (arr.values() & validity).set_bits();
+        if null_count < arr.len() {
+            true_count = (arr.values() & validity).set_bits();
+        } else {
+            true_count = 0;
+        }
     } else {
         null_count = 0;
         true_count = arr.values().set_bits();
@@ -109,7 +113,7 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
             .unwrap()
             .iter()
             .zip(arr.values())
-            .position(|(v, val)| (v && !val) || !v)
+            .position(|(v, val)| !v || !val)
             .unwrap();
         match arr.is_null(first_non_true) {
             true => {
@@ -139,7 +143,7 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
             .unwrap()
             .iter()
             .zip(arr.values())
-            .position(|(v, val)| (v && val) || !v)
+            .position(|(v, val)| !v || val)
             .unwrap();
         match arr.is_null(first_non_false) {
             true => {
