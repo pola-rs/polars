@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use arrow::legacy::bit_util::find_first_true_false_null;
+use arrow::array::Array;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
@@ -34,48 +34,134 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
 
+    let (true_count, null_count);
     if let Some(validity) = arr.validity() {
-        let num_true = arr.values().set_bits();
-        let num_null = validity.unset_bits();
-        let num_false = arr.len() - num_true - num_null;
-
-        let (true_index, false_index, null_index) = find_first_true_false_null(
-            arr.values().chunks::<u64>(),
-            arr.validity().unwrap().chunks::<u64>(),
-        );
-
-        let mut idx_vec = vec![
-            (true_index, num_true),
-            (false_index, num_false),
-            (null_index, num_null),
-        ];
-
-        idx_vec.retain(|(idx, _)| idx.is_some());
-        idx_vec.sort_by_key(|(idx, _)| idx.unwrap());
-
-        let out = idx_vec
-            .into_iter()
-            .map(|(_, cnt)| cnt as IdxSize)
-            .collect::<Vec<IdxSize>>();
-
-        IdxCa::from_vec(ca.name(), out)
+        null_count = validity.unset_bits();
+        true_count = (arr.values() & validity).set_bits();
     } else {
-        let num_true = arr.values().set_bits();
-        let num_false = arr.len() - num_true;
+        null_count = 0;
+        true_count = arr.values().set_bits();
+    }
+    let false_count = arr.len() - true_count - null_count;
 
-        if num_true == 0 {
-            return IdxCa::new(ca.name(), [num_false as IdxSize]);
+    if true_count == 0 && false_count == 0 {
+        return IdxCa::new(ca.name(), [null_count as IdxSize]);
+    }
+    if true_count == 0 && null_count == 0 {
+        return IdxCa::new(ca.name(), [false_count as IdxSize]);
+    }
+    if false_count == 0 && null_count == 0 {
+        return IdxCa::new(ca.name(), [true_count as IdxSize]);
+    }
+
+    if true_count == 0 {
+        match arr.is_null(0) {
+            true => return IdxCa::new(ca.name(), [null_count as IdxSize, false_count as IdxSize]),
+            false => return IdxCa::new(ca.name(), [false_count as IdxSize, null_count as IdxSize]),
         }
-
-        if num_false == 0 {
-            return IdxCa::new(ca.name(), [num_true as IdxSize]);
+    } else if false_count == 0 {
+        match arr.is_null(0) {
+            true => return IdxCa::new(ca.name(), [null_count as IdxSize, true_count as IdxSize]),
+            false => return IdxCa::new(ca.name(), [true_count as IdxSize, null_count as IdxSize]),
         }
+    } else if null_count == 0 {
+        match arr.value(0) {
+            true => return IdxCa::new(ca.name(), [true_count as IdxSize, false_count as IdxSize]),
+            false => return IdxCa::new(ca.name(), [false_count as IdxSize, true_count as IdxSize]),
+        }
+    }
 
-        let first_is_true = arr.value(0);
-        if first_is_true {
-            IdxCa::new(ca.name(), [num_true as IdxSize, num_false as IdxSize])
-        } else {
-            IdxCa::new(ca.name(), [num_false as IdxSize, num_true as IdxSize])
+    let (mut true_index, mut null_index): (Option<usize>, Option<usize>) = (None, None);
+
+    if arr.is_null(0) {
+        null_index = Some(0);
+    } else if arr.value(0) {
+        true_index = Some(0);
+    }
+
+    if let Some(0) = null_index {
+        let first_non_null = arr.validity().unwrap().iter().position(|v| v).unwrap();
+        match arr.value(first_non_null) {
+            true => {
+                return IdxCa::new(
+                    ca.name(),
+                    [
+                        null_count as IdxSize,
+                        true_count as IdxSize,
+                        false_count as IdxSize,
+                    ],
+                )
+            },
+            false => {
+                return IdxCa::new(
+                    ca.name(),
+                    [
+                        null_count as IdxSize,
+                        false_count as IdxSize,
+                        true_count as IdxSize,
+                    ],
+                )
+            },
+        }
+    } else if let Some(0) = true_index {
+        let first_non_true = arr
+            .validity()
+            .unwrap()
+            .iter()
+            .zip(arr.values())
+            .position(|(v, val)| (v && !val) || !v)
+            .unwrap();
+        match arr.is_null(first_non_true) {
+            true => {
+                return IdxCa::new(
+                    ca.name(),
+                    [
+                        true_count as IdxSize,
+                        null_count as IdxSize,
+                        false_count as IdxSize,
+                    ],
+                )
+            },
+            false => {
+                return IdxCa::new(
+                    ca.name(),
+                    [
+                        true_count as IdxSize,
+                        false_count as IdxSize,
+                        null_count as IdxSize,
+                    ],
+                )
+            },
+        }
+    } else {
+        let first_non_false = arr
+            .validity()
+            .unwrap()
+            .iter()
+            .zip(arr.values())
+            .position(|(v, val)| (v && val) || !v)
+            .unwrap();
+        match arr.is_null(first_non_false) {
+            true => {
+                return IdxCa::new(
+                    ca.name(),
+                    [
+                        false_count as IdxSize,
+                        null_count as IdxSize,
+                        true_count as IdxSize,
+                    ],
+                )
+            },
+            false => {
+                return IdxCa::new(
+                    ca.name(),
+                    [
+                        false_count as IdxSize,
+                        true_count as IdxSize,
+                        null_count as IdxSize,
+                    ],
+                )
+            },
         }
     }
 }
