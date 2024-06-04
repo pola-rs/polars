@@ -62,9 +62,10 @@ def test_unique_counts_null() -> None:
         ([True, None, False, False, None, False], [1, 2, 3]),
         ([False, None, True, True, None, True], [1, 2, 3]),
         ([None, False, True, False, True, True], [1, 2, 3]),
+        ([], []),
     ],
 )
-def test_unique_counts_bool(input: list[bool], expected: list[int]):
+def test_unique_counts_bool(input: list[bool], expected: list[int]) -> None:
     assert_series_equal(
         pl.Series("bool", input, dtype=pl.Boolean).unique_counts(),
         pl.Series("bool", expected, dtype=pl.UInt32),
