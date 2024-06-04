@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from hypothesis import given, reproduce_failure
+from hypothesis import given
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
