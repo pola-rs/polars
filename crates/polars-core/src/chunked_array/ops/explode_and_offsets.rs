@@ -179,7 +179,7 @@ impl ChunkExplode for ArrayChunked {
         if arr.null_count() == 0 {
             let s = Series::try_from((self.name(), arr.values().clone()))
                 .unwrap()
-                .cast(&ca.inner_dtype())?;
+                .cast(ca.inner_dtype())?;
             let width = self.width() as i64;
             let offsets = (0..self.len() + 1)
                 .map(|i| {
@@ -224,7 +224,7 @@ impl ChunkExplode for ArrayChunked {
         Ok((
             // SAFETY: inner_dtype should be correct
             unsafe {
-                Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], &ca.inner_dtype())
+                Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], ca.inner_dtype())
             },
             offsets,
         ))

@@ -673,12 +673,6 @@ def test_assert_series_equal_nested_categorical_as_str_global() -> None:
     "s",
     [
         pl.Series([["a", "b"], ["a"]], dtype=pl.List(pl.Categorical)),
-        pytest.param(
-            pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2)),
-            marks=pytest.mark.xfail(
-                reason="Currently bugged: https://github.com/pola-rs/polars/issues/16706"
-            ),
-        ),
         pl.Series([{"a": "x"}, {"a": "y"}], dtype=pl.Struct({"a": pl.Categorical})),
     ],
 )

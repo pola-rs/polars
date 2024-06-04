@@ -147,7 +147,7 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for ArrayChunked {
         let mut fill = match fill_value {
             Some(val) => Self::full(self.name(), val, fill_length),
             None => {
-                ArrayChunked::full_null_with_dtype(self.name(), fill_length, &self.inner_dtype(), 0)
+                ArrayChunked::full_null_with_dtype(self.name(), fill_length, self.inner_dtype(), 0)
             },
         };
 

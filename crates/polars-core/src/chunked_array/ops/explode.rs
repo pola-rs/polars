@@ -291,7 +291,7 @@ impl ExplodeByOffsets for ArrayChunked {
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
         let mut builder =
-            get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
+            get_fixed_size_list_builder(inner_type, cap, self.width(), self.name()).unwrap();
 
         let mut start = offsets[0] as usize;
         let mut last = start;

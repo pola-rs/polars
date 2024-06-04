@@ -412,6 +412,11 @@ impl ChunkCast for ListChunked {
             #[cfg(feature = "dtype-array")]
             Array(child_type, width) => {
                 let physical_type = data_type.to_physical();
+
+                // TODO!: properly implement this recursively.
+                #[cfg(feature = "dtype-categorical")]
+                polars_ensure!(!matches!(&**child_type, Categorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
+
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, true)?;
                 // SAFETY: we just casted so the dtype matches.
@@ -457,7 +462,7 @@ impl ChunkCast for ArrayChunked {
                 );
 
                 match (self.inner_dtype(), &**child_type) {
-                    (old, new) if old == *new => Ok(self.clone().into_series()),
+                    (old, new) if old == new => Ok(self.clone().into_series()),
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
                         polars_bail!(InvalidOperation: "cannot cast Array inner type: '{:?}' to dtype: {:?}", dt, child_type)
@@ -571,7 +576,7 @@ fn cast_fixed_size_list(
     let arr = ca.downcast_iter().next().unwrap();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
+        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], ca.inner_dtype())
     };
     let new_inner = s.cast(child_type)?;
 
