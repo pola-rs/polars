@@ -4728,13 +4728,9 @@ class DataFrame:
         issue_unstable_warning(
             "`sql` is considered **unstable** (although it is close to being considered stable)."
         )
-        with SQLContext(
-            register_globals=True,
-            eager=True,
-        ) as ctx:
-            frames = {table_name: self} if table_name else {}
-            frames["self"] = self
-            ctx.register_many(frames)
+        with SQLContext(register_globals=False, eager=True) as ctx:
+            name = table_name if table_name else "self"
+            ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(
