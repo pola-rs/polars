@@ -245,7 +245,8 @@ def test_date_range_start_later_than_end() -> None:
 
 def test_date_range_24h_interval_raises() -> None:
     with pytest.raises(
-        pl.ComputeError, match="`interval` input for `date_range` must be whole days"
+        pl.ComputeError,
+        match="`interval` input for `date_range` must consist of full days",
     ):
         pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h", eager=True)
 
@@ -288,3 +289,23 @@ def test_date_ranges_broadcasting_fail() -> None:
         pl.ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
     ):
         pl.date_ranges(start, end, eager=True)
+
+
+def test_date_range_datetime_input() -> None:
+    result = pl.date_range(
+        datetime(2022, 1, 1, 12), datetime(2022, 1, 3), interval="1d", eager=True
+    )
+    expected = pl.Series(
+        "literal", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]
+    )
+    assert_series_equal(result, expected)
+
+
+def test_date_ranges_datetime_input() -> None:
+    result = pl.date_ranges(
+        datetime(2022, 1, 1, 12), datetime(2022, 1, 3), interval="1d", eager=True
+    )
+    expected = pl.Series(
+        "literal", [[date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)]]
+    )
+    assert_series_equal(result, expected)

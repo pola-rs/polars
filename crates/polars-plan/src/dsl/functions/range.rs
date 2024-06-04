@@ -45,7 +45,6 @@ pub fn date_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWind
         function: FunctionExpr::Range(RangeFunction::DateRange { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
         },
@@ -62,7 +61,6 @@ pub fn date_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         function: FunctionExpr::Range(RangeFunction::DateRanges { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
         },
