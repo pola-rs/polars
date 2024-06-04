@@ -20,7 +20,6 @@ use crate::chunked_array::object::extension::EXTENSION_NAME;
 use crate::chunked_array::temporal::parse_fixed_offset;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
-use crate::config::verbose;
 use crate::prelude::*;
 
 impl Series {
@@ -444,30 +443,38 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
-            #[cfg(feature = "dtype-decimal")]
             ArrowDataType::Decimal(precision, scale)
             | ArrowDataType::Decimal256(precision, scale) => {
-                let (precision, scale) = (Some(*precision), *scale);
-                let chunks =
-                    cast_chunks(&chunks, &DataType::Decimal(precision, Some(scale)), false)
-                        .unwrap();
-                // or DecimalChunked?
-                Ok(Int128Chunked::from_chunks(name, chunks)
-                    .into_decimal_unchecked(precision, scale)
-                    .into_series())
-            },
-            #[allow(unreachable_patterns)]
-            ArrowDataType::Decimal256(_, _) | ArrowDataType::Decimal(_, _) => {
-                if verbose() {
-                    eprintln!(
-                        "Polars does not support decimal types so the 'Series' are read as Float64"
-                    );
+                #[cfg(not(feature = "dtype-decimal"))]
+                {
+                    panic!("activate 'dtype-decimal'")
                 }
-                Ok(Float64Chunked::from_chunks(
-                    name,
-                    cast_chunks(&chunks, &DataType::Float64, true)?,
-                )
-                .into_series())
+
+                #[cfg(feature = "dtype-decimal")]
+                {
+                    #[cfg(feature = "python")]
+                    {
+                        let (precision, scale) = (Some(*precision), *scale);
+                        let chunks =
+                            cast_chunks(&chunks, &DataType::Decimal(precision, Some(scale)), false)
+                                .unwrap();
+                        Ok(Int128Chunked::from_chunks(name, chunks)
+                            .into_decimal_unchecked(precision, scale)
+                            .into_series())
+                    }
+
+                    #[cfg(not(feature = "python"))]
+                    {
+                        let (precision, scale) = (Some(*precision), *scale);
+                        let chunks =
+                            cast_chunks(&chunks, &DataType::Decimal(precision, Some(scale)), false)
+                                .unwrap();
+                        // or DecimalChunked?
+                        Ok(Int128Chunked::from_chunks(name, chunks)
+                            .into_decimal_unchecked(precision, scale)
+                            .into_series())
+                    }
+                }
             },
             ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),

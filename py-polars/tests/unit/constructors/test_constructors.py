@@ -185,7 +185,7 @@ def test_error_string_dtypes() -> None:
         pl.Series("n", [1, 2, 3], dtype="f32")  # type: ignore[arg-type]
 
 
-def test_init_structured_objects(monkeypatch: Any) -> None:
+def test_init_structured_objects() -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
     @dataclasses.dataclass
     class TradeDC:

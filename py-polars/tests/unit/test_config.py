@@ -733,11 +733,6 @@ def test_config_state_env_only() -> None:
     assert "set_fmt_float" not in state_env_only
 
 
-def test_activate_decimals_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.Config().activate_decimals(True)
-
-
 def test_set_streaming_chunk_size() -> None:
     with pl.Config() as cfg:
         cfg.set_streaming_chunk_size(8)
