@@ -668,14 +668,6 @@ def test_json_decode_nested_struct() -> None:
     assert_series_equal(key_1_values.get_column("key_1_values"), expected_values)
 
 
-def test_json_extract_deprecated() -> None:
-    s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
-    expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
-    with pytest.deprecated_call():
-        result = s.str.json_extract()
-    assert_series_equal(result, expected)
-
-
 def test_json_decode_primitive_to_list_11053() -> None:
     df = pl.DataFrame(
         {

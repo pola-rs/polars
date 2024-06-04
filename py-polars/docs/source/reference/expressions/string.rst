@@ -23,7 +23,6 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.find
     Expr.str.head
     Expr.str.json_decode
-    Expr.str.json_extract
     Expr.str.json_path_match
     Expr.str.len_bytes
     Expr.str.len_chars

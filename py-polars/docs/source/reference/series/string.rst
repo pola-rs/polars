@@ -23,7 +23,6 @@ The following methods are available under the `Series.str` attribute.
     Series.str.find
     Series.str.head
     Series.str.json_decode
-    Series.str.json_extract
     Series.str.json_path_match
     Series.str.len_bytes
     Series.str.len_chars
