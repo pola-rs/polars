@@ -311,10 +311,8 @@ def test_read_ipc_only_loads_selected_columns(
 
 @pytest.mark.write_disk()
 def test_ipc_decimal_15920(
-    monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     tmp_path.mkdir(exist_ok=True)
 
     base_df = pl.Series(

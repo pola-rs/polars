@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from polars._utils.deprecation import (
     deprecate_nonkeyword_arguments,
-    issue_deprecation_warning,
 )
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
@@ -349,26 +348,6 @@ class Config(contextlib.ContextDecorator):
                 config_state[cfg_methodname] = get_value()
 
         return config_state
-
-    @classmethod
-    def activate_decimals(cls, active: bool | None = True) -> type[Config]:
-        """
-        Activate `Decimal` data types.
-
-        .. deprecated:: 1.0.0
-            Decimals are now always active and this function is a no-op.
-            This setting will be removed in the next major version.
-
-        This is a temporary setting that will be removed once the `Decimal` type
-        stabilizes (`Decimal` is currently considered *unstable*).
-        """
-        issue_deprecation_warning(
-            "`Config.activate_decimals` is deprecated and will be removed in the next major version.`"
-            " Decimals are now always active and this function is a no-op."
-            " Remove the call to `activate_decimals` to silence this warning.",
-            version="1.0.0",
-        )
-        return cls
 
     @classmethod
     def set_ascii_tables(cls, active: bool | None = True) -> type[Config]:
