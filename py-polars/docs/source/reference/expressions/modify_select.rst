@@ -55,8 +55,6 @@ Manipulation/selection
     Expr.sort
     Expr.sort_by
     Expr.tail
-    Expr.take
-    Expr.take_every
     Expr.to_physical
     Expr.top_k
     Expr.top_k_by

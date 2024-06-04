@@ -45,7 +45,6 @@ Manipulation/selection
     LazyFrame.sort
     LazyFrame.sql
     LazyFrame.tail
-    LazyFrame.take_every
     LazyFrame.top_k
     LazyFrame.unique
     LazyFrame.unnest

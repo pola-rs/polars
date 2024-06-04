@@ -43,7 +43,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.std
     Series.list.sum
     Series.list.tail
-    Series.list.take
     Series.list.to_array
     Series.list.to_struct
     Series.list.unique

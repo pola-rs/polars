@@ -65,7 +65,6 @@ Manipulation/selection
     DataFrame.sort
     DataFrame.sql
     DataFrame.tail
-    DataFrame.take_every
     DataFrame.to_dummies
     DataFrame.to_series
     DataFrame.top_k

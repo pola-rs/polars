@@ -11983,40 +11983,6 @@ class Expr:
             cast_to_supertypes=cast_to_supertypes,
         )
 
-    @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int, offset: int = 0) -> Self:
-        """
-        Take every nth value in the Series and return as a new Series.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)
-
-    @deprecate_renamed_function("gather", version="0.19.14")
-    def take(
-        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
-    ) -> Self:
-        """
-        Take values by index.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather`.
-
-        Parameters
-        ----------
-        indices
-            An expression that leads to a UInt32 dtyped Series.
-        """
-        return self.gather(indices)
-
     @deprecate_renamed_function("cum_sum", version="0.19.14")
     def cumsum(self, *, reverse: bool = False) -> Self:
         """

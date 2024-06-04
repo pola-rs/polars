@@ -53,8 +53,6 @@ Manipulation/selection
     Series.slice
     Series.sort
     Series.tail
-    Series.take
-    Series.take_every
     Series.to_dummies
     Series.top_k
     Series.unique
