@@ -2,7 +2,7 @@ use parquet_format_safe::PageLocation;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// An interval
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,17 +28,17 @@ impl Interval {
 pub fn compute_page_row_intervals(
     locations: &[PageLocation],
     num_rows: usize,
-) -> Result<Vec<Interval>, Error> {
+) -> Result<Vec<Interval>, ParquetError> {
     if locations.is_empty() {
         return Ok(vec![]);
     };
 
     let last = (|| {
         let start: usize = locations.last().unwrap().first_row_index.try_into()?;
-        let length = num_rows
-            .checked_sub(start)
-            .ok_or_else(|| Error::oos("Page start cannot be smaller than the number of rows"))?;
-        Result::<_, Error>::Ok(Interval::new(start, length))
+        let length = num_rows.checked_sub(start).ok_or_else(|| {
+            ParquetError::oos("Page start cannot be smaller than the number of rows")
+        })?;
+        Result::<_, ParquetError>::Ok(Interval::new(start, length))
     })();
 
     let pages_lengths = locations
@@ -49,7 +49,9 @@ pub fn compute_page_row_intervals(
             let length = x[1]
                 .first_row_index
                 .checked_sub(x[0].first_row_index)
-                .ok_or_else(|| Error::oos("Page start cannot be smaller than the number of rows"))?
+                .ok_or_else(|| {
+                    ParquetError::oos("Page start cannot be smaller than the number of rows")
+                })?
                 .try_into()?;
 
             Ok(Interval::new(start, length))
@@ -64,7 +66,7 @@ pub fn compute_rows(
     selected: &[bool],
     locations: &[PageLocation],
     num_rows: usize,
-) -> Result<Vec<Interval>, Error> {
+) -> Result<Vec<Interval>, ParquetError> {
     let page_intervals = compute_page_row_intervals(locations, num_rows)?;
 
     Ok(selected
@@ -118,7 +120,7 @@ pub fn select_pages(
     intervals: &[Interval],
     locations: &[PageLocation],
     num_rows: usize,
-) -> Result<Vec<FilteredPage>, Error> {
+) -> Result<Vec<FilteredPage>, ParquetError> {
     let page_intervals = compute_page_row_intervals(locations, num_rows)?;
 
     page_intervals

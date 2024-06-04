@@ -9,7 +9,7 @@ use super::thrift_format::{
     LogicalType as ParquetLogicalType, PageType as ParquetPageType, TimeType,
     TimeUnit as ParquetTimeUnit, TimestampType,
 };
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// The repetition of a parquet field
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -24,14 +24,14 @@ pub enum Repetition {
 }
 
 impl TryFrom<FieldRepetitionType> for Repetition {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(repetition: FieldRepetitionType) -> Result<Self, Self::Error> {
         Ok(match repetition {
             FieldRepetitionType::REQUIRED => Repetition::Required,
             FieldRepetitionType::OPTIONAL => Repetition::Optional,
             FieldRepetitionType::REPEATED => Repetition::Repeated,
-            _ => return Err(Error::oos("Thrift out of range")),
+            _ => return Err(ParquetError::oos("Thrift out of range")),
         })
     }
 }
@@ -60,7 +60,7 @@ pub enum Compression {
 }
 
 impl TryFrom<CompressionCodec> for Compression {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(codec: CompressionCodec) -> Result<Self, Self::Error> {
         Ok(match codec {
@@ -72,7 +72,7 @@ impl TryFrom<CompressionCodec> for Compression {
             CompressionCodec::LZ4 => Compression::Lz4,
             CompressionCodec::ZSTD => Compression::Zstd,
             CompressionCodec::LZ4_RAW => Compression::Lz4Raw,
-            _ => return Err(Error::oos("Thrift out of range")),
+            _ => return Err(ParquetError::oos("Thrift out of range")),
         })
     }
 }
@@ -143,12 +143,12 @@ pub(crate) trait CompressionLevel<T: std::fmt::Display + std::cmp::PartialOrd> {
     const MAXIMUM_LEVEL: T;
 
     /// Tests if the provided compression level is valid.
-    fn is_valid_level(level: T) -> Result<(), Error> {
+    fn is_valid_level(level: T) -> Result<(), ParquetError> {
         let compression_range = Self::MINIMUM_LEVEL..=Self::MAXIMUM_LEVEL;
         if compression_range.contains(&level) {
             Ok(())
         } else {
-            Err(Error::InvalidParameter(format!(
+            Err(ParquetError::InvalidParameter(format!(
                 "valid compression range {}..={} exceeded.",
                 compression_range.start(),
                 compression_range.end()
@@ -176,7 +176,7 @@ impl BrotliLevel {
     /// Attempts to create a brotli compression level.
     ///
     /// Compression levels must be valid.
-    pub fn try_new(level: u32) -> Result<Self, Error> {
+    pub fn try_new(level: u32) -> Result<Self, ParquetError> {
         Self::is_valid_level(level).map(|_| Self(level))
     }
 
@@ -207,7 +207,7 @@ impl GzipLevel {
     /// Attempts to create a gzip compression level.
     ///
     /// Compression levels must be valid (i.e. be acceptable for [`flate2::Compression`]).
-    pub fn try_new(level: u8) -> Result<Self, Error> {
+    pub fn try_new(level: u8) -> Result<Self, ParquetError> {
         Self::is_valid_level(level).map(|_| Self(level))
     }
 
@@ -239,7 +239,7 @@ impl ZstdLevel {
     /// Attempts to create a zstd compression level from a given compression level.
     ///
     /// Compression levels must be valid (i.e. be acceptable for [`zstd::compression_level_range`]).
-    pub fn try_new(level: i32) -> Result<Self, Error> {
+    pub fn try_new(level: i32) -> Result<Self, ParquetError> {
         Self::is_valid_level(level).map(|_| Self(level))
     }
 
@@ -264,14 +264,14 @@ pub enum PageType {
 }
 
 impl TryFrom<ParquetPageType> for PageType {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(type_: ParquetPageType) -> Result<Self, Self::Error> {
         Ok(match type_ {
             ParquetPageType::DATA_PAGE => PageType::DataPage,
             ParquetPageType::DATA_PAGE_V2 => PageType::DataPageV2,
             ParquetPageType::DICTIONARY_PAGE => PageType::DictionaryPage,
-            _ => return Err(Error::oos("Thrift out of range")),
+            _ => return Err(ParquetError::oos("Thrift out of range")),
         })
     }
 }
@@ -329,7 +329,7 @@ pub enum Encoding {
 }
 
 impl TryFrom<ParquetEncoding> for Encoding {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(encoding: ParquetEncoding) -> Result<Self, Self::Error> {
         Ok(match encoding {
@@ -342,7 +342,7 @@ impl TryFrom<ParquetEncoding> for Encoding {
             ParquetEncoding::DELTA_BYTE_ARRAY => Encoding::DeltaByteArray,
             ParquetEncoding::RLE_DICTIONARY => Encoding::RleDictionary,
             ParquetEncoding::BYTE_STREAM_SPLIT => Encoding::ByteStreamSplit,
-            _ => return Err(Error::oos("Thrift out of range")),
+            _ => return Err(ParquetError::oos("Thrift out of range")),
         })
     }
 }
@@ -379,14 +379,14 @@ impl Default for BoundaryOrder {
 }
 
 impl TryFrom<ParquetBoundaryOrder> for BoundaryOrder {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(encoding: ParquetBoundaryOrder) -> Result<Self, Self::Error> {
         Ok(match encoding {
             ParquetBoundaryOrder::UNORDERED => BoundaryOrder::Unordered,
             ParquetBoundaryOrder::ASCENDING => BoundaryOrder::Ascending,
             ParquetBoundaryOrder::DESCENDING => BoundaryOrder::Descending,
-            _ => return Err(Error::oos("BoundaryOrder Thrift value out of range")),
+            _ => return Err(ParquetError::oos("BoundaryOrder Thrift value out of range")),
         })
     }
 }
@@ -549,7 +549,7 @@ impl From<IntegerType> for (usize, bool) {
 }
 
 impl TryFrom<ParquetLogicalType> for PrimitiveLogicalType {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(type_: ParquetLogicalType) -> Result<Self, Self::Error> {
         Ok(match type_ {
@@ -575,19 +575,19 @@ impl TryFrom<ParquetLogicalType> for PrimitiveLogicalType {
             ParquetLogicalType::JSON(_) => PrimitiveLogicalType::Json,
             ParquetLogicalType::BSON(_) => PrimitiveLogicalType::Bson,
             ParquetLogicalType::UUID(_) => PrimitiveLogicalType::Uuid,
-            _ => return Err(Error::oos("LogicalType value out of range")),
+            _ => return Err(ParquetError::oos("LogicalType value out of range")),
         })
     }
 }
 
 impl TryFrom<ParquetLogicalType> for GroupLogicalType {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(type_: ParquetLogicalType) -> Result<Self, Self::Error> {
         Ok(match type_ {
             ParquetLogicalType::LIST(_) => GroupLogicalType::List,
             ParquetLogicalType::MAP(_) => GroupLogicalType::Map,
-            _ => return Err(Error::oos("LogicalType value out of range")),
+            _ => return Err(ParquetError::oos("LogicalType value out of range")),
         })
     }
 }
@@ -638,7 +638,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trip_primitive() -> Result<(), Error> {
+    fn round_trip_primitive() -> Result<(), ParquetError> {
         use PrimitiveLogicalType::*;
         let a = vec![
             String,
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_encoding() -> Result<(), Error> {
+    fn round_trip_encoding() -> Result<(), ParquetError> {
         use Encoding::*;
         let a = vec![
             Plain,
@@ -690,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn round_compression() -> Result<(), Error> {
+    fn round_compression() -> Result<(), ParquetError> {
         use Compression::*;
         let a = vec![Uncompressed, Snappy, Gzip, Lzo, Brotli, Lz4, Zstd, Lz4Raw];
         for a in a {

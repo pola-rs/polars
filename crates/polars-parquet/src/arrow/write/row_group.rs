@@ -7,7 +7,7 @@ use super::{
     array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding,
     RowGroupIterColumns, SchemaDescriptor, WriteOptions,
 };
-use crate::parquet::error::Error as ParquetError;
+use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
 use crate::parquet::FallibleStreamingIterator;

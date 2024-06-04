@@ -94,6 +94,7 @@ pub use schema::to_parquet_type;
 #[cfg(feature = "async")]
 pub use sink::FileSink;
 
+use self::pages::{FixedSizeListNested, PrimitiveNested, StructNested};
 use crate::write::dictionary::encode_as_dictionary_optional;
 
 impl StatisticsOptions {
@@ -147,9 +148,9 @@ pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
                 let end = *l_nested.offsets.last();
                 return (start as usize, (end - start) as usize);
             },
-            Nested::FixedSizeList { len, width, .. } => return (0, *len * *width),
-            Nested::Primitive(_, _, len) => out = (0, *len),
-            Nested::Struct(_, _, _) => {},
+            Nested::FixedSizeList(nested) => return (0, nested.length * nested.width),
+            Nested::Primitive(nested) => out = (0, nested.length),
+            Nested::Struct(_) => {},
         }
     }
     out
@@ -205,29 +206,33 @@ pub fn slice_parquet_array(
                 current_length = l_nested.offsets.range() as usize;
                 current_offset = *l_nested.offsets.first() as usize;
             },
-            Nested::Struct(validity, _, length) => {
+            Nested::Struct(StructNested {
+                validity, length, ..
+            }) => {
                 *length = current_length;
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
             },
-            Nested::Primitive(validity, _, length) => {
+            Nested::Primitive(PrimitiveNested {
+                validity, length, ..
+            }) => {
                 *length = current_length;
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
                 primitive_array.slice(current_offset, current_length);
             },
-            Nested::FixedSizeList {
+            Nested::FixedSizeList(FixedSizeListNested {
                 validity,
-                len,
+                length,
                 width,
                 ..
-            } => {
+            }) => {
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
-                *len = current_length;
+                *length = current_length;
                 // Update the offset/ length so that the Primitive is sliced properly.
                 current_length *= *width;
                 current_offset *= *width;
@@ -243,7 +248,7 @@ pub fn get_max_length(nested: &[Nested]) -> usize {
         match nested {
             Nested::LargeList(l_nested) => length += l_nested.offsets.range() as usize,
             Nested::List(l_nested) => length += l_nested.offsets.range() as usize,
-            Nested::FixedSizeList { len, width, .. } => length += *len * *width,
+            Nested::FixedSizeList(nested) => length += nested.length * nested.width,
             _ => {},
         }
     }
@@ -272,7 +277,7 @@ pub fn array_to_pages(
     };
     if let Encoding::RleDictionary = encoding {
         // Only take this path for primitive columns
-        if matches!(nested.first(), Some(Nested::Primitive(_, _, _))) {
+        if matches!(nested.first(), Some(Nested::Primitive(_))) {
             if let Some(result) =
                 encode_as_dictionary_optional(primitive_array, nested, type_.clone(), options)
             {

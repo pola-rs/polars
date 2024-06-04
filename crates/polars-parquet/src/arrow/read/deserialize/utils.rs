@@ -41,7 +41,7 @@ pub struct FilteredOptionalPageValidity<'a> {
 
 impl<'a> FilteredOptionalPageValidity<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, validity, _) = split_buffer(page)?;
+        let validity = split_buffer(page)?.def;
 
         let iter = hybrid_rle::Decoder::new(validity, 1);
         let iter = HybridDecoderBitmapIter::new(iter, page.num_values());
@@ -156,7 +156,7 @@ pub struct OptionalPageValidity<'a> {
 
 impl<'a> OptionalPageValidity<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, validity, _) = split_buffer(page)?;
+        let validity = split_buffer(page)?.def;
 
         let iter = hybrid_rle::Decoder::new(validity, 1);
         let iter = HybridDecoderBitmapIter::new(iter, page.num_values());
@@ -465,7 +465,7 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
 
 #[inline]
 pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::HybridRleDecoder> {
-    let (_, _, indices_buffer) = split_buffer(page)?;
+    let indices_buffer = split_buffer(page)?.values;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),
     // SPEC: followed by the values encoded using RLE/Bit packed described above (with the given bit width).

@@ -44,7 +44,7 @@ fn pages(
                     .descriptor
                     .primitive_type
                     .clone(),
-                &[Nested::Primitive(None, true, array.len())],
+                &[Nested::primitive(None, true, array.len())],
                 options,
                 Encoding::Plain,
             )
@@ -60,7 +60,7 @@ fn pages(
                     .descriptor
                     .primitive_type
                     .clone(),
-                &[Nested::Primitive(None, true, array.len())],
+                &[Nested::primitive(None, true, array.len())],
                 options,
                 encoding,
             )

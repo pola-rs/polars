@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import fsspec
 import numpy as np
@@ -14,9 +14,11 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import HealthCheck, given, settings
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -802,9 +804,142 @@ def test_sliced_dict_with_nulls_14904() -> None:
 
 
 def test_parquet_array_dtype() -> None:
-    df = pl.DataFrame({"x": [[1, 2, 3]]})
+    df = pl.DataFrame({"x": []})
     df = df.cast({"x": pl.Array(pl.Int64, shape=3)})
     test_round_trip(df)
+
+
+def test_parquet_array_dtype_nulls() -> None:
+    df = pl.DataFrame({"x": [[1, 2], None, [None, 3]]})
+    df = df.cast({"x": pl.Array(pl.Int64, shape=2)})
+    test_round_trip(df)
+
+
+@pytest.mark.parametrize(
+    ("series", "dtype"),
+    [
+        ([[1, 2, 3]], pl.List(pl.Int64)),
+        ([[1, None, 3]], pl.List(pl.Int64)),
+        (
+            [{"a": []}, {"a": [1]}, {"a": [1, 2, 3]}],
+            pl.Struct({"a": pl.List(pl.Int64)}),
+        ),
+        ([{"a": None}, None, {"a": [1, 2, None]}], pl.Struct({"a": pl.List(pl.Int64)})),
+        (
+            [[{"a": []}, {"a": [1]}, {"a": [1, 2, 3]}], None, [{"a": []}, {"a": [42]}]],
+            pl.List(pl.Struct({"a": pl.List(pl.Int64)})),
+        ),
+        (
+            [
+                [1, None, 3],
+                None,
+                [1, 3, 4],
+                None,
+                [9, None, 4],
+                [None, 42, 13],
+                [37, 511, None],
+            ],
+            pl.List(pl.Int64),
+        ),
+        ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
+        ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
+        ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
+        # @TODO: Enable when zero-width arrays are enabled
+        # ([[], [], []],                       pl.Array(pl.Int64, 0)),
+        # ([[], None, []],                     pl.Array(pl.Int64, 0)),
+        (
+            [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
+            pl.Array(pl.Array(pl.Int8, 3), 2),
+        ),
+        (
+            [[[1, 5, 2], [42, 13, 37]], None, [None, [3, 1, 3]]],
+            pl.Array(pl.Array(pl.Int8, 3), 2),
+        ),
+        (
+            [
+                [[[2, 1], None, [4, 1], None], []],
+                None,
+                [None, [[4, 4], None, [1, 2]]],
+            ],
+            pl.Array(pl.List(pl.Array(pl.Int8, 2)), 2),
+        ),
+        ([[[], []]], pl.Array(pl.List(pl.Array(pl.Int8, 2)), 2)),
+        (
+            [
+                [
+                    [[[42, 13, 37, 15, 9, 20, 0, 0, 5, 10], None]],
+                    [None, [None, [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]], None],
+                ]
+            ],
+            pl.Array(pl.List(pl.Array(pl.Array(pl.Int8, 10), 2)), 2),
+        ),
+        (
+            [
+                None,
+                [None],
+                [[None]],
+                [[[None]]],
+                [[[[None]]]],
+                [[[[[None]]]]],
+                [[[[[1]]]]],
+            ],
+            pl.Array(pl.Array(pl.Array(pl.Array(pl.Array(pl.Int8, 1), 1), 1), 1), 1),
+        ),
+        (
+            [
+                None,
+                [None],
+                [[]],
+                [[None]],
+                [[[None], None]],
+                [[[None], []]],
+                [[[[None]], [[[1]]]]],
+                [[[[[None]]]]],
+                [[[[[1]]]]],
+            ],
+            pl.Array(pl.List(pl.Array(pl.List(pl.Array(pl.Int8, 1)), 1)), 1),
+        ),
+    ],
+)
+@pytest.mark.write_disk()
+def test_complex_types(tmp_path: Path, series: list[Any], dtype: pl.DataType) -> None:
+    xs = pl.Series(series, dtype=dtype)
+    df = pl.DataFrame({"x": xs})
+
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "complex-types.parquet"
+
+    df.write_parquet(file_path)
+    after = pl.read_parquet(file_path)
+
+    assert str(after) == str(df)
+
+
+@pytest.mark.xfail()
+def test_placeholder_zero_array() -> None:
+    # @TODO: if this does not fail anymore please enable the upper test-cases
+    pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
+
+
+@pytest.mark.xfail()
+def test_placeholder_no_array_equals() -> None:
+    # @TODO: if this does not fail anymore please just call
+    # `test_round_trip` instead of comparing the strings.
+    test_round_trip(
+        pl.DataFrame(
+            {
+                "x": pl.Series(
+                    [
+                        [
+                            [1, 2],
+                            [3, 4],
+                        ]
+                    ],
+                    dtype=pl.Array(pl.List(pl.Int8), 2),
+                )
+            }
+        )
+    )
 
 
 @pytest.mark.write_disk()
@@ -970,6 +1105,28 @@ def test_hybrid_rle() -> None:
         assert "RLE_DICTIONARY" in column["encodings"]
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+@pytest.mark.skip(
+    reason="This test causes too many panics in other parts of the code base"
+)
+@given(
+    df=dataframes(
+        include_dtypes=[pl.List, pl.Array, pl.Int8, pl.Struct],
+        min_size=90,
+        max_size=110,
+    )
+)
+@pytest.mark.slow()
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
+    # delete if exists
+    path = tmp_path / "data.parquet"
+
+    df.write_parquet(path)
+    result = pl.read_parquet(path)
+
+    assert str(df) == str(result)
 
 
 def test_parquet_statistics_uint64_16683() -> None:

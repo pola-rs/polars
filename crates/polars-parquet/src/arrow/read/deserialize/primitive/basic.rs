@@ -23,7 +23,7 @@ pub(super) struct FilteredRequiredValues<'a> {
 
 impl<'a> FilteredRequiredValues<'a> {
     pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
 
         let values = values.chunks_exact(std::mem::size_of::<P>());
@@ -47,7 +47,7 @@ pub(super) struct Values<'a> {
 
 impl<'a> Values<'a> {
     pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
         Ok(Self {
             values: values.chunks_exact(std::mem::size_of::<P>()),

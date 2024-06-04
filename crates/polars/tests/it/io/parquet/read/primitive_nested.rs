@@ -1,7 +1,7 @@
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::encoding::{bitpacked, uleb128, Encoding};
-use polars_parquet::parquet::error::Error;
-use polars_parquet::parquet::page::{split_buffer, DataPage};
+use polars_parquet::parquet::error::ParquetError;
+use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::types::NativeType;
 
@@ -27,7 +27,7 @@ fn compose_array<I: Iterator<Item = u32>, F: Iterator<Item = u32>, G: Iterator<I
     max_rep: u32,
     max_def: u32,
     mut values: G,
-) -> Result<Array, Error> {
+) -> Result<Array, ParquetError> {
     let mut outer = vec![];
     let mut inner = vec![];
 
@@ -56,7 +56,7 @@ fn compose_array<I: Iterator<Item = u32>, F: Iterator<Item = u32>, G: Iterator<I
                 _ => unreachable!(),
             }
             prev_def = def;
-            Ok::<(), Error>(())
+            Ok::<(), ParquetError>(())
         })?;
     outer.push(Some(Array::Int64(inner)));
     Ok(Array::List(outer))
@@ -69,7 +69,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
     length: usize,
     rep_level_encoding: (&Encoding, i16),
     def_level_encoding: (&Encoding, i16),
-) -> Result<Array, Error> {
+) -> Result<Array, ParquetError> {
     let max_rep_level = rep_level_encoding.1 as u32;
     let max_def_level = def_level_encoding.1 as u32;
 
@@ -124,7 +124,7 @@ fn read_array(
     length: u32,
     rep_level_encoding: (&Encoding, i16),
     def_level_encoding: (&Encoding, i16),
-) -> Result<Array, Error> {
+) -> Result<Array, ParquetError> {
     let values = read_buffer::<i64>(values);
     read_array_impl::<_>(
         rep_levels,
@@ -139,8 +139,12 @@ fn read_array(
 pub fn page_to_array<T: NativeType>(
     page: &DataPage,
     dict: Option<&PrimitivePageDict<T>>,
-) -> Result<Array, Error> {
-    let (rep_levels, def_levels, values) = split_buffer(page)?;
+) -> Result<Array, ParquetError> {
+    let EncodedSplitBuffer {
+        rep: rep_levels,
+        def: def_levels,
+        values,
+    } = split_buffer(page)?;
 
     match (&page.encoding(), dict) {
         (Encoding::Plain, None) => read_array(
@@ -169,7 +173,7 @@ fn read_dict_array(
     dict: &PrimitivePageDict<i64>,
     rep_level_encoding: (&Encoding, i16),
     def_level_encoding: (&Encoding, i16),
-) -> Result<Array, Error> {
+) -> Result<Array, ParquetError> {
     let dict_values = dict.values();
 
     let bit_width = values[0];
@@ -195,10 +199,14 @@ fn read_dict_array(
 pub fn page_dict_to_array(
     page: &DataPage,
     dict: Option<&PrimitivePageDict<i64>>,
-) -> Result<Array, Error> {
+) -> Result<Array, ParquetError> {
     assert_eq!(page.descriptor.max_rep_level, 1);
 
-    let (rep_levels, def_levels, values) = split_buffer(page)?;
+    let EncodedSplitBuffer {
+        rep: rep_levels,
+        def: def_levels,
+        values,
+    } = split_buffer(page)?;
 
     match (page.encoding(), dict) {
         (Encoding::PlainDictionary, Some(dict)) => read_dict_array(
@@ -216,7 +224,7 @@ pub fn page_dict_to_array(
                 page.descriptor.max_def_level,
             ),
         ),
-        (_, None) => Err(Error::OutOfSpec(
+        (_, None) => Err(ParquetError::OutOfSpec(
             "A dictionary-encoded page MUST be preceded by a dictionary page".to_string(),
         )),
         _ => todo!(),

@@ -91,7 +91,7 @@ impl<T> GetSaferUnchecked<T> for [T] {
         if cfg!(debug_assertions) {
             &self[index]
         } else {
-            self.get_unchecked(index)
+            unsafe { self.get_unchecked(index) }
         }
     }
 
@@ -106,7 +106,7 @@ impl<T> GetSaferUnchecked<T> for [T] {
         if cfg!(debug_assertions) {
             &mut self[index]
         } else {
-            self.get_unchecked_mut(index)
+            unsafe { self.get_unchecked_mut(index) }
         }
     }
 }

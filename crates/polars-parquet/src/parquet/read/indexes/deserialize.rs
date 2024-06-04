@@ -1,11 +1,14 @@
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
 use parquet_format_safe::ColumnIndex;
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 use crate::parquet::indexes::{BooleanIndex, ByteIndex, FixedLenByteIndex, Index, NativeIndex};
 use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 
-pub fn deserialize(data: &[u8], primitive_type: PrimitiveType) -> Result<Box<dyn Index>, Error> {
+pub fn deserialize(
+    data: &[u8],
+    primitive_type: PrimitiveType,
+) -> Result<Box<dyn Index>, ParquetError> {
     let mut prot = TCompactInputProtocol::new(data, data.len() * 2 + 1024);
 
     let index = ColumnIndex::read_from_in_protocol(&mut prot)?;

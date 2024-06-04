@@ -1,16 +1,15 @@
 use polars_parquet::parquet::deserialize::{
-    native_cast, Casted, HybridRleDecoderIter, HybridRleIter, NativePageState, OptionalValues,
-    SliceFilteredIter,
+    HybridRleDecoderIter, HybridRleIter, SliceFilteredIter,
 };
 use polars_parquet::parquet::encoding::hybrid_rle::Decoder;
 use polars_parquet::parquet::encoding::Encoding;
-use polars_parquet::parquet::error::Error;
-use polars_parquet::parquet::page::{split_buffer, DataPage};
+use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::types::NativeType;
+use polars_parquet::read::ParquetError;
 
 use super::dictionary::PrimitivePageDict;
-use super::utils::deserialize_optional;
+use super::utils::{deserialize_optional, native_cast, Casted, NativePageState, OptionalValues};
 
 /// The deserialization state of a `DataPage` of `Primitive` parquet primitive type
 #[derive(Debug)]
@@ -42,14 +41,18 @@ impl<'a, T: NativeType> PageState<'a, T> {
     pub fn try_new(
         page: &'a DataPage,
         dict: Option<&'a PrimitivePageDict<T>>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ParquetError> {
         if let Some(selected_rows) = page.selected_rows() {
             let is_optional =
                 page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
             match (page.encoding(), dict, is_optional) {
                 (Encoding::Plain, _, true) => {
-                    let (_, def_levels, _) = split_buffer(page)?;
+                    let EncodedSplitBuffer {
+                        rep: _,
+                        def: def_levels,
+                        values: _,
+                    } = split_buffer(page)?;
 
                     let validity = HybridRleDecoderIter::new(HybridRleIter::new(
                         Decoder::new(def_levels, 1),
@@ -72,7 +75,7 @@ impl<'a, T: NativeType> PageState<'a, T> {
                     );
                     Ok(Self::Filtered(FilteredPageState::Required(values)))
                 },
-                _ => Err(Error::FeatureNotSupported(format!(
+                _ => Err(ParquetError::FeatureNotSupported(format!(
                     "Viewing page for encoding {:?} for native type {}",
                     page.encoding(),
                     std::any::type_name::<T>()
@@ -87,7 +90,7 @@ impl<'a, T: NativeType> PageState<'a, T> {
 pub fn page_to_vec<T: NativeType>(
     page: &DataPage,
     dict: Option<&PrimitivePageDict<T>>,
-) -> Result<Vec<Option<T>>, Error> {
+) -> Result<Vec<Option<T>>, ParquetError> {
     assert_eq!(page.descriptor.max_rep_level, 0);
     let state = PageState::<T>::try_new(page, dict)?;
 

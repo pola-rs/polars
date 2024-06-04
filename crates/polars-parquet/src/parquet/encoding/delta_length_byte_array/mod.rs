@@ -7,10 +7,10 @@ pub use encoder::encode;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parquet::error::Error;
+    use crate::parquet::error::ParquetError;
 
     #[test]
-    fn basic() -> Result<(), Error> {
+    fn basic() -> Result<(), ParquetError> {
         let data = vec!["aa", "bbb", "a", "aa", "b"];
 
         let mut buffer = vec![];
@@ -27,7 +27,7 @@ mod tests {
     }
 
     #[test]
-    fn many_numbers() -> Result<(), Error> {
+    fn many_numbers() -> Result<(), ParquetError> {
         let mut data = vec![];
         for i in 0..136 {
             data.push(format!("a{}", i))

@@ -69,6 +69,7 @@ impl FixedSizeListArray {
     }
 
     /// Alias to `Self::try_new(...).unwrap()`
+    #[track_caller]
     pub fn new(data_type: ArrowDataType, values: Box<dyn Array>, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }

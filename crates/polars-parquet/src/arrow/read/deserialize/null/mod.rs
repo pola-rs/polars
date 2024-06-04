@@ -60,7 +60,7 @@ mod tests {
 
     use super::iter_to_arrays;
     use crate::parquet::encoding::Encoding;
-    use crate::parquet::error::Error as ParquetError;
+    use crate::parquet::error::ParquetError;
     #[allow(unused_imports)]
     use crate::parquet::fallible_streaming_iterator;
     use crate::parquet::metadata::Descriptor;
