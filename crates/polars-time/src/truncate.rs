@@ -15,7 +15,7 @@ pub trait PolarsTruncate {
 impl PolarsTruncate for DatetimeChunked {
     fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         let time_zone = self.time_zone();
-        let offset = Duration::from(0);
+        let offset = Duration::new(0);
 
         // Let's check if we can use a fastpath...
         if every.len() == 1 {
@@ -97,7 +97,7 @@ impl PolarsTruncate for DateChunked {
         _tz: Option<&Tz>,
         every: &StringChunked,
     ) -> PolarsResult<Self> {
-        let offset = Duration::from(0);
+        let offset = Duration::new(0);
         let out = match every.len() {
             1 => {
                 if let Some(every) = every.get(0) {
