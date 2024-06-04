@@ -239,18 +239,6 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     assert result_empty.schema == result.schema
 
 
-def test_group_by_dynamic_truncate_to_label_deprecation() -> None:
-    df = pl.LazyFrame({"ts": [], "n": []})
-    with pytest.warns(
-        DeprecationWarning, match="replace `truncate=False` with `label='datapoint'`"
-    ):
-        df.group_by_dynamic("ts", every="1d", truncate=False)
-    with pytest.warns(
-        DeprecationWarning, match="replace `truncate=True` with `label='left'`"
-    ):
-        df.group_by_dynamic("ts", every="1d", truncate=True)
-
-
 @pytest.mark.parametrize(
     ("label", "expected"),
     [

@@ -5724,7 +5724,6 @@ class DataFrame:
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
@@ -5769,11 +5768,6 @@ class DataFrame:
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to zero.
-        truncate
-            truncate the time value to the window lower bound
-
-            .. deprecated:: 0.19.4
-                Use `label` instead.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_boundary" and
             "_upper_boundary" columns. This will impact performance because it's harder to
@@ -6045,7 +6039,6 @@ class DataFrame:
             every=every,
             period=period,
             offset=offset,
-            truncate=truncate,
             label=label,
             include_boundaries=include_boundaries,
             closed=closed,

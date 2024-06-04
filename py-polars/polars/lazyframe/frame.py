@@ -3434,7 +3434,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
@@ -3479,11 +3478,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to zero.
-        truncate
-            truncate the time value to the window lower bound
-
-            .. deprecated:: 0.19.4
-                Use `label` instead.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_boundary" and
             "_upper_boundary" columns. This will impact performance because it's harder to
@@ -3753,17 +3747,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        if truncate is not None:
-            if truncate:
-                label = "left"
-            else:
-                label = "datapoint"
-            issue_deprecation_warning(
-                f"`truncate` is deprecated and will be removed in a future version."
-                f" Please replace `truncate={truncate}` with `label='{label}'` to silence this warning.",
-                version="0.19.4",
-            )
-
         index_column = parse_as_expression(index_column)
         if offset is None:
             offset = "0ns"

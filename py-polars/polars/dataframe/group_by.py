@@ -940,7 +940,6 @@ class DynamicGroupBy:
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,
-        truncate: bool | None,
         include_boundaries: bool,
         closed: ClosedInterval,
         label: Label,
@@ -962,7 +961,6 @@ class DynamicGroupBy:
         self.every = every
         self.period = period
         self.offset = offset
-        self.truncate = truncate
         self.label = label
         self.include_boundaries = include_boundaries
         self.closed = closed
@@ -978,7 +976,6 @@ class DynamicGroupBy:
                 every=self.every,
                 period=self.period,
                 offset=self.offset,
-                truncate=self.truncate,
                 label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
@@ -1041,7 +1038,6 @@ class DynamicGroupBy:
                 every=self.every,
                 period=self.period,
                 offset=self.offset,
-                truncate=self.truncate,
                 label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
@@ -1088,7 +1084,6 @@ class DynamicGroupBy:
                 every=self.every,
                 period=self.period,
                 offset=self.offset,
-                truncate=self.truncate,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
                 group_by=self.group_by,
