@@ -48,7 +48,6 @@ Computation
     Expr.peak_min
     Expr.radians
     Expr.rank
-    Expr.rolling_apply
     Expr.rolling_map
     Expr.rolling_max
     Expr.rolling_max_by

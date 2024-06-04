@@ -27,7 +27,6 @@ from polars.functions.business import business_day_count
 from polars.functions.col import col
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
-    apply,
     approx_n_unique,
     arctan2,
     arctan2d,
@@ -52,7 +51,6 @@ from polars.functions.lazy import (
     head,
     implode,
     last,
-    map,
     map_batches,
     map_groups,
     mean,
@@ -116,7 +114,6 @@ __all__ = [
     "time_ranges",
     "zeros",
     # polars.functions.lazy
-    "apply",
     "arange",
     "arctan2",
     "arctan2d",
@@ -150,7 +147,6 @@ __all__ = [
     "int_ranges",
     "last",
     "lit",
-    "map",
     "map_batches",
     "map_groups",
     "mean",

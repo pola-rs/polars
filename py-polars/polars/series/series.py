@@ -42,7 +42,6 @@ from polars._utils.convert import (
 from polars._utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -7521,69 +7520,6 @@ class Series:
         [
             [1, 2, 3]
         ]
-        """
-
-    @deprecate_renamed_function("map_elements", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        skip_nulls: bool = True,
-    ) -> Self:
-        """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Series.map_elements`.
-
-        Parameters
-        ----------
-        function
-            Custom function or lambda.
-        return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
-        skip_nulls
-            Nulls will be skipped and not passed to the python function.
-            This is faster because python can be skipped and because we call
-            more specialized functions.
-        """
-        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
-
-    @deprecate_renamed_function("rolling_map", version="0.19.0")
-    def rolling_apply(
-        self,
-        function: Callable[[Series], Any],
-        window_size: int,
-        weights: list[float] | None = None,
-        min_periods: int | None = None,
-        *,
-        center: bool = False,
-    ) -> Series:
-        """
-        Apply a custom rolling window function.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Series.rolling_map`.
-
-        Parameters
-        ----------
-        function
-            Aggregation function
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
-        center
-            Set the labels at the center of the window
         """
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,

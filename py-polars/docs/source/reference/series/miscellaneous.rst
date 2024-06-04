@@ -6,7 +6,6 @@ Miscellaneous
 .. autosummary::
    :toctree: api/
 
-    Series.apply
     Series.equals
     Series.map_elements
     Series.reinterpret

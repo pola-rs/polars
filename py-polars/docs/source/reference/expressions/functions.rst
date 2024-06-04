@@ -16,7 +16,6 @@ These functions are available from the Polars module root and can be used as exp
    all_horizontal
    any
    any_horizontal
-   apply
    approx_n_unique
    arange
    arctan2
@@ -56,7 +55,6 @@ These functions are available from the Polars module root and can be used as exp
    last
    len
    lit
-   map
    map_batches
    map_groups
    max
@@ -97,14 +95,12 @@ These functions are available from the Polars module root and can be used as exp
 
    Expr.all
    Expr.any
-   Expr.apply
    Expr.approx_n_unique
    Expr.count
    Expr.exclude
    Expr.first
    Expr.head
    Expr.implode
-   Expr.map
    Expr.map_batches
    Expr.map_elements
    Expr.max

@@ -74,15 +74,6 @@ def test_map_batches_group() -> None:
     ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "t": [11, 35]}
 
 
-def test_map_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.map(["a", "b"], lambda x: x[0])
-    with pytest.deprecated_call():
-        pl.col("a").map(lambda x: x)
-    with pytest.deprecated_call():
-        pl.LazyFrame({"a": [1, 2]}).map(lambda x: x)
-
-
 def test_ufunc_args() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [2, 4, 6]})
     result = df.select(

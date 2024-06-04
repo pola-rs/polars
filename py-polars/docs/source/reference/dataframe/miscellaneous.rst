@@ -6,7 +6,6 @@ Miscellaneous
 .. autosummary::
    :toctree: api/
 
-    DataFrame.apply
     DataFrame.corr
     DataFrame.equals
     DataFrame.lazy

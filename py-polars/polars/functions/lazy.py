@@ -8,7 +8,6 @@ import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_parameter_as_positional,
-    deprecate_renamed_function,
     issue_deprecation_warning,
 )
 from polars._utils.parse_expr_input import (
@@ -981,35 +980,6 @@ def map_batches(
     )
 
 
-@deprecate_renamed_function("map_batches", version="0.19.0")
-def map(
-    exprs: Sequence[str] | Sequence[Expr],
-    function: Callable[[Sequence[Series]], Series],
-    return_dtype: PolarsDataType | None = None,
-) -> Expr:
-    """
-    Map a custom function over multiple columns/expressions.
-
-    .. deprecated:: 0.19.0
-        This function has been renamed to :func:`map_batches`.
-
-    Parameters
-    ----------
-    exprs
-        Input Series to f
-    function
-        Function to apply over the input
-    return_dtype
-        dtype of the output Series
-
-    Returns
-    -------
-    Expr
-        Expression with the data type given by `return_dtype`.
-    """
-    return map_batches(exprs, function, return_dtype)
-
-
 def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
@@ -1096,39 +1066,6 @@ def map_groups(
             returns_scalar=returns_scalar,
         )
     )
-
-
-@deprecate_renamed_function("map_groups", version="0.19.0")
-def apply(
-    exprs: Sequence[str | Expr],
-    function: Callable[[Sequence[Series]], Series | Any],
-    return_dtype: PolarsDataType | None = None,
-    *,
-    returns_scalar: bool = True,
-) -> Expr:
-    """
-    Apply a custom/user-defined function (UDF) in a GroupBy context.
-
-    .. deprecated:: 0.19.0
-        This function has been renamed to :func:`map_groups`.
-
-    Parameters
-    ----------
-    exprs
-        Input Series to f
-    function
-        Function to apply over the input
-    return_dtype
-        dtype of the output Series
-    returns_scalar
-        If the function returns a single scalar as output.
-
-    Returns
-    -------
-    Expr
-        Expression with the data type given by `return_dtype`.
-    """
-    return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
 
 def fold(
