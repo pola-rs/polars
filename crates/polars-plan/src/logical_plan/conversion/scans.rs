@@ -161,9 +161,16 @@ pub(super) fn csv_file_info(
 
     let infer_schema_func = |i| {
         let mut file = if run_async {
-            let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
-                cache_entries.as_ref().unwrap().get(i).unwrap();
-            entry.try_open_check_latest()?
+            #[cfg(feature = "async")]
+            {
+                let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
+                    cache_entries.as_ref().unwrap().get(i).unwrap();
+                entry.try_open_check_latest()?
+            }
+            #[cfg(not(feature = "async"))]
+            {
+                panic!("required feature `async` is not enabled")
+            }
         } else {
             polars_utils::open_file(paths.get(i).unwrap())?
         };

@@ -65,7 +65,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
-serde = ["polars-core/serde-lazy"]
+serde = ["polars-core/serde-lazy", "polars-parquet/serde"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing

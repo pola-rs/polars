@@ -76,7 +76,13 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
         uri_list
             .iter()
             .map(|uri| {
-                let uri = std::fs::canonicalize(uri.as_ref()).map_err(PolarsError::from)?;
+                let uri = std::fs::canonicalize(uri.as_ref()).map_err(|err| {
+                    let msg = Some(format!("{}: {}", err, uri.as_ref()).into());
+                    PolarsError::IO {
+                        error: err.into(),
+                        msg,
+                    }
+                })?;
                 let uri = Arc::<str>::from(uri.to_str().unwrap());
 
                 FILE_CACHE.init_entry(uri.clone(), || {
