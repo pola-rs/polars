@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -10,6 +11,8 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -269,4 +272,36 @@ def test_non_coalescing_streaming_left_join() -> None:
         "b": ["a", "b", "c"],
         "a_right": [1, 2, None],
         "c": ["j", "i", None],
+    }
+
+
+@pytest.mark.write_disk()
+def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
+    data = {
+        "value_at": [datetime(2024, i + 1, 1) for i in range(6)],
+        "value": list(range(6)),
+    }
+
+    parquet_path = tmp_path / "data.parquet"
+    pl.DataFrame(data=data).write_parquet(parquet_path)
+
+    other_parquet_path = tmp_path / "data2.parquet"
+    pl.DataFrame(data=data).write_parquet(other_parquet_path)
+
+    lf1 = pl.scan_parquet(other_parquet_path)
+    lf2 = pl.scan_parquet(parquet_path)
+
+    join_cols = set(lf1.columns).intersection(set(lf2.columns))
+    final_lf = lf1.join(lf2, on=list(join_cols), how="full", coalesce=True)
+
+    assert final_lf.collect(streaming=True).to_dict(as_series=False) == {
+        "value_at": [
+            datetime(2024, 1, 1, 0, 0),
+            datetime(2024, 2, 1, 0, 0),
+            datetime(2024, 3, 1, 0, 0),
+            datetime(2024, 4, 1, 0, 0),
+            datetime(2024, 5, 1, 0, 0),
+            datetime(2024, 6, 1, 0, 0),
+        ],
+        "value": [0, 1, 2, 3, 4, 5],
     }
