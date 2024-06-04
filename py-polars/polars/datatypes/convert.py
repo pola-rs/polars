@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import functools
 import re
 import sys
@@ -243,26 +242,6 @@ class _DataTypeMappings:
 
     @property
     @functools.lru_cache  # noqa: B019
-    def DTYPE_TO_CTYPE(self) -> dict[PolarsDataType, Any]:
-        return {
-            UInt8: ctypes.c_uint8,
-            UInt16: ctypes.c_uint16,
-            UInt32: ctypes.c_uint32,
-            UInt64: ctypes.c_uint64,
-            Int8: ctypes.c_int8,
-            Int16: ctypes.c_int16,
-            Int32: ctypes.c_int32,
-            Int64: ctypes.c_int64,
-            Float32: ctypes.c_float,
-            Float64: ctypes.c_double,
-            Datetime: ctypes.c_int64,
-            Duration: ctypes.c_int64,
-            Date: ctypes.c_int32,
-            Time: ctypes.c_int64,
-        }
-
-    @property
-    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, PythonDataType]:
         return {
             Float64: float,
@@ -341,16 +320,6 @@ class _DataTypeMappings:
 
 # Initialize once (poor man's singleton :)
 DataTypeMappings = _DataTypeMappings()
-
-
-def dtype_to_ctype(dtype: PolarsDataType) -> Any:
-    """Convert a Polars dtype to a ctype."""
-    try:
-        dtype = dtype.base_type()
-        return DataTypeMappings.DTYPE_TO_CTYPE[dtype]
-    except KeyError:  # pragma: no cover
-        msg = f"conversion of polars data type {dtype!r} to C-type not implemented"
-        raise NotImplementedError(msg) from None
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:

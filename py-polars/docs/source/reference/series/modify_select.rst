@@ -58,5 +58,4 @@ Manipulation/selection
     Series.to_dummies
     Series.top_k
     Series.unique
-    Series.view
     Series.zip_with
