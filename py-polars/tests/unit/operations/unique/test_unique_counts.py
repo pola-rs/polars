@@ -50,9 +50,10 @@ def test_unique_counts_null() -> None:
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
+        ([], []),
+        ([None, None, None], [3]),
         ([True, True, True], [3]),
         ([False, False, False], [3]),
-        ([None, None, None], [3]),
         ([True, False, False, True, True], [3, 2]),
         ([False, True, False, True, True], [2, 3]),
         ([True, None, True, None, None], [2, 3]),
@@ -62,7 +63,6 @@ def test_unique_counts_null() -> None:
         ([True, None, False, False, None, False], [1, 2, 3]),
         ([False, None, True, True, None, True], [1, 2, 3]),
         ([None, False, True, False, True, True], [1, 2, 3]),
-        ([], []),
     ],
 )
 def test_unique_counts_bool(input: list[bool], expected: list[int]) -> None:
