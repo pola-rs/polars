@@ -497,7 +497,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
                     if depth == max_depth - 1 {
                         // the leaf / primitive
                         let is_valid =
-                            (def >= *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
+                            (def > *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
                         if right_level && is_valid {
                             decoder.push_valid(values_state, decoded)?;
                         } else {
