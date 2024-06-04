@@ -7,15 +7,15 @@ use polars_utils::cache::FastFixedCache;
 use crate::prelude::*;
 
 pub trait PolarsTruncate {
-    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self>
+    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsTruncate for DatetimeChunked {
-    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked, offset: &str) -> PolarsResult<Self> {
-        let offset: Duration = Duration::parse(offset);
+    fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         let time_zone = self.time_zone();
+        let offset = Duration::new(0);
 
         // Let's check if we can use a fastpath...
         if every.len() == 1 {
@@ -92,13 +92,8 @@ impl PolarsTruncate for DatetimeChunked {
 }
 
 impl PolarsTruncate for DateChunked {
-    fn truncate(
-        &self,
-        _tz: Option<&Tz>,
-        every: &StringChunked,
-        offset: &str,
-    ) -> PolarsResult<Self> {
-        let offset = Duration::parse(offset);
+    fn truncate(&self, _tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
+        let offset = Duration::new(0);
         let out = match every.len() {
             1 => {
                 if let Some(every) = every.get(0) {

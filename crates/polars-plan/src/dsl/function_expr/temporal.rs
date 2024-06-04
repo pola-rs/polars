@@ -46,8 +46,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConvertTimeZone(tz) => map!(datetime::convert_time_zone, &tz),
             WithTimeUnit(tu) => map!(datetime::with_time_unit, tu),
             CastTimeUnit(tu) => map!(datetime::cast_time_unit, tu),
-            Truncate(offset) => {
-                map_as_slice!(datetime::truncate, &offset)
+            Truncate => {
+                map_as_slice!(datetime::truncate)
             },
             #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),
@@ -57,7 +57,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             BaseUtcOffset => map!(datetime::base_utc_offset),
             #[cfg(feature = "timezones")]
             DSTOffset => map!(datetime::dst_offset),
-            Round(offset) => map_as_slice!(datetime::round, &offset),
+            Round => map_as_slice!(datetime::round),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, non_existent) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref(), non_existent)

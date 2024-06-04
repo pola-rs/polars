@@ -160,7 +160,6 @@ class ExprDateTimeNameSpace:
     def truncate(
         self,
         every: str | timedelta | Expr,
-        offset: str | timedelta | None = None,
         *,
         use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr | None = None,
@@ -179,12 +178,6 @@ class ExprDateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        offset
-            Offset the window
-
-            .. deprecated:: 0.20.19
-                This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `dt.truncate` with `dt.offset_by`.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
@@ -206,7 +199,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` and `offset` argument are created with the
+        The `every` argument is created with the
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -309,13 +302,6 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
         """
         every = deprecate_saturating(every)
-        offset = deprecate_saturating(offset)
-        if offset is not None:
-            issue_deprecation_warning(
-                "`offset` is deprecated and will be removed in the next breaking release. "
-                "Instead, chain `dt.truncate` with `dt.offset_by`.",
-                version="0.20.19",
-            )
         if not isinstance(every, pl.Expr):
             every = parse_as_duration_string(every)
 
@@ -331,21 +317,12 @@ class ExprDateTimeNameSpace:
             )
         every = parse_as_expression(every, str_as_lit=True)
 
-        if offset is None:
-            offset = "0ns"
-
-        return wrap_expr(
-            self._pyexpr.dt_truncate(
-                every,
-                parse_as_duration_string(offset),
-            )
-        )
+        return wrap_expr(self._pyexpr.dt_truncate(every))
 
     @unstable()
     def round(
         self,
         every: str | timedelta | IntoExprColumn,
-        offset: str | timedelta | None = None,
         *,
         ambiguous: Ambiguous | Expr | None = None,
     ) -> Expr:
@@ -369,12 +346,6 @@ class ExprDateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        offset
-            Offset the window
-
-            .. deprecated:: 0.20.19
-                This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `dt.round` with `dt.offset_by`.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -392,7 +363,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` and `offset` argument are created with the
+        The `every` argument is created with the
         the following small string formatting language:
 
         - 1ns   (1 nanosecond)
@@ -466,16 +437,6 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
         """
         every = deprecate_saturating(every)
-        offset = deprecate_saturating(offset)
-        if offset is not None:
-            issue_deprecation_warning(
-                "`offset` is deprecated and will be removed in the next breaking release. "
-                "Instead, chain `dt.round` with `dt.offset_by`.",
-                version="0.20.19",
-            )
-        if offset is None:
-            offset = "0ns"
-
         if ambiguous is not None:
             issue_deprecation_warning(
                 "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
@@ -484,12 +445,7 @@ class ExprDateTimeNameSpace:
         if isinstance(every, timedelta):
             every = parse_as_duration_string(every)
         every = parse_as_expression(every, str_as_lit=True)
-        return wrap_expr(
-            self._pyexpr.dt_round(
-                every,
-                parse_as_duration_string(offset),
-            )
-        )
+        return wrap_expr(self._pyexpr.dt_round(every))
 
     def combine(self, time: dt.time | Expr, time_unit: TimeUnit = "us") -> Expr:
         """

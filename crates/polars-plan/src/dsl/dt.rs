@@ -203,9 +203,9 @@ impl DateLikeNameSpace {
     }
 
     /// Truncate the Datetime/Date range into buckets.
-    pub fn truncate(self, every: Expr, offset: String) -> Expr {
+    pub fn truncate(self, every: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate),
             &[every],
             false,
             false,
@@ -241,10 +241,9 @@ impl DateLikeNameSpace {
     }
 
     /// Round the Datetime/Date range into buckets.
-    pub fn round<S: AsRef<str>>(self, every: Expr, offset: S) -> Expr {
-        let offset = offset.as_ref().into();
+    pub fn round(self, every: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Round(offset)),
+            FunctionExpr::TemporalExpr(TemporalFunction::Round),
             &[every],
             false,
             false,
