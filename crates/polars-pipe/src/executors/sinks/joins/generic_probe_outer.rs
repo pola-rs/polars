@@ -23,7 +23,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
     // Dummy needed for the flush phase.
-    df_b_dummy: Option<DataFrame>,
+    df_b_flush_dummy: Option<DataFrame>,
     /// The join columns are all tightly packed
     /// the values of a join column(s) can be found
     /// by:
@@ -77,7 +77,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
     ) -> Self {
         GenericFullOuterJoinProbe {
             df_a: Arc::new(df_a),
-            df_b_dummy: None,
+            df_b_flush_dummy: None,
             materialized_join_cols,
             suffix,
             hb,
@@ -207,8 +207,8 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         self.join_tuples_a.clear();
         self.join_tuples_b.clear();
 
-        if self.df_b_dummy.is_none() {
-            self.df_b_dummy = Some(chunk.data.clear())
+        if self.df_b_flush_dummy.is_none() {
+            self.df_b_flush_dummy = Some(chunk.data.clear())
         }
 
         let mut hashes = std::mem::take(&mut self.hashes);
@@ -270,7 +270,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         };
 
         let size = left_df.height();
-        let right_df = self.df_b_dummy.as_ref().unwrap();
+        let right_df = self.df_b_flush_dummy.as_ref().unwrap();
 
         let right_df = unsafe {
             DataFrame::new_no_checks(
@@ -301,7 +301,7 @@ impl<K: ExtraPayload> Operator for GenericFullOuterJoinProbe<K> {
     }
 
     fn must_flush(&self) -> bool {
-        true
+        self.df_b_flush_dummy.is_some()
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Operator> {
