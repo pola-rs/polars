@@ -4475,8 +4475,8 @@ class Expr:
         Returns
         -------
         Expr
-            Expression of data type `Struct` with fields `lengths` of data type `Int32`
-            and `values` of the original data type.
+            Expression of data type `Struct` with fields `len` of data type `UInt32`
+            and `value` of the original data type.
 
         See Also
         --------
@@ -4487,18 +4487,18 @@ class Expr:
         >>> df = pl.DataFrame({"a": [1, 1, 2, 1, None, 1, 3, 3]})
         >>> df.select(pl.col("a").rle()).unnest("a")
         shape: (6, 2)
-        ┌─────────┬────────┐
-        │ lengths ┆ values │
-        │ ---     ┆ ---    │
-        │ i32     ┆ i64    │
-        ╞═════════╪════════╡
-        │ 2       ┆ 1      │
-        │ 1       ┆ 2      │
-        │ 1       ┆ 1      │
-        │ 1       ┆ null   │
-        │ 1       ┆ 1      │
-        │ 2       ┆ 3      │
-        └─────────┴────────┘
+        ┌─────┬───────┐
+        │ len ┆ value │
+        │ --- ┆ ---   │
+        │ u32 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 2   ┆ 1     │
+        │ 1   ┆ 2     │
+        │ 1   ┆ 1     │
+        │ 1   ┆ null  │
+        │ 1   ┆ 1     │
+        │ 2   ┆ 3     │
+        └─────┴───────┘
         """
         return self._from_pyexpr(self._pyexpr.rle())
 
