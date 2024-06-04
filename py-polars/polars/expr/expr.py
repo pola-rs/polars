@@ -11876,40 +11876,6 @@ class Expr:
         """
         return self.is_last_distinct()
 
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-        """
-        return self.clip(lower_bound=lower_bound)
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
-        """
-        return self.clip(upper_bound=upper_bound)
-
     @deprecate_function(
         "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
     )

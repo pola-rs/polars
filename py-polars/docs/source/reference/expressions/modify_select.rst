@@ -15,8 +15,6 @@ Manipulation/selection
     Expr.cast
     Expr.ceil
     Expr.clip
-    Expr.clip_max
-    Expr.clip_min
     Expr.cut
     Expr.drop_nans
     Expr.drop_nulls

@@ -14,8 +14,6 @@ Manipulation/selection
     Series.ceil
     Series.clear
     Series.clip
-    Series.clip_max
-    Series.clip_min
     Series.clone
     Series.cut
     Series.drop_nans
