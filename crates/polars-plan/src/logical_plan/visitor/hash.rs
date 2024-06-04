@@ -107,7 +107,7 @@ impl Hash for HashableEqLP<'_> {
                 schema: _,
                 options,
             } => {
-                hash_exprs(expr.default_exprs(), self.expr_arena, state);
+                hash_exprs(expr, self.expr_arena, state);
                 options.hash(state);
             },
             IR::Reduce {
@@ -160,7 +160,7 @@ impl Hash for HashableEqLP<'_> {
                 schema: _,
                 options,
             } => {
-                hash_exprs(exprs.default_exprs(), self.expr_arena, state);
+                hash_exprs(exprs, self.expr_arena, state);
                 options.hash(state);
             },
             IR::Distinct { input: _, options } => {
@@ -318,7 +318,7 @@ impl HashableEqLP<'_> {
                     options: or,
                     schema: _,
                 },
-            ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
+            ) => ol == or && expr_irs_eq(el, er, self.expr_arena),
             (
                 IR::Sort {
                     input: _,
@@ -398,7 +398,7 @@ impl HashableEqLP<'_> {
                     schema: _,
                     options: or,
                 },
-            ) => ol == or && expr_irs_eq(el.default_exprs(), er.default_exprs(), self.expr_arena),
+            ) => ol == or && expr_irs_eq(el, er, self.expr_arena),
             (
                 IR::Distinct {
                     input: _,

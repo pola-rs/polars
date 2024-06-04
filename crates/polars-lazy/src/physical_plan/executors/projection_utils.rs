@@ -7,15 +7,10 @@ use super::*;
 pub(super) fn profile_name(
     s: &dyn PhysicalExpr,
     input_schema: &Schema,
-    has_cse: bool,
 ) -> PolarsResult<SmartString> {
-    match (has_cse, s.to_field(input_schema)) {
-        (false, Err(e)) => Err(e),
-        (true, Err(_)) => Ok(expr_to_leaf_column_names_iter(s.as_expression().unwrap())
-            .map(|n| n.as_ref().into())
-            .next()
-            .unwrap()),
-        (_, Ok(fld)) => Ok(fld.name),
+    match s.to_field(input_schema) {
+        Err(e) => Err(e),
+        Ok(fld) => Ok(fld.name),
     }
 }
 
@@ -214,7 +209,6 @@ fn run_exprs_seq(
 
 pub(super) fn evaluate_physical_expressions(
     df: &mut DataFrame,
-    cse_exprs: &[Arc<dyn PhysicalExpr>],
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
     has_windows: bool,
@@ -228,36 +222,7 @@ pub(super) fn evaluate_physical_expressions(
         run_exprs_seq
     };
 
-    let cse_expr_runner = if has_windows {
-        execute_projection_cached_window_fns
-    } else if run_parallel && cse_exprs.len() > 1 {
-        run_exprs_par
-    } else {
-        run_exprs_seq
-    };
-
-    let selected_columns = if !cse_exprs.is_empty() {
-        let tmp_cols = cse_expr_runner(df, cse_exprs, state)?;
-        if has_windows {
-            state.clear_window_expr_cache();
-        }
-
-        let width = df.width();
-
-        // put the cse expressions at the end
-        unsafe {
-            df.hstack_mut_unchecked(&tmp_cols);
-        }
-        let result = expr_runner(df, exprs, state)?;
-        // restore original df
-        unsafe {
-            df.get_columns_mut().truncate(width);
-        }
-
-        result
-    } else {
-        expr_runner(df, exprs, state)?
-    };
+    let selected_columns = expr_runner(df, exprs, state)?;
 
     if has_windows {
         state.clear_window_expr_cache();
@@ -269,11 +234,13 @@ pub(super) fn evaluate_physical_expressions(
 pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
-    duplicate_check: bool,
+    options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
         return Ok(DataFrame::empty());
     };
+    let duplicate_check = options.duplicate_check;
+    let should_broadcast = options.should_broadcast;
     let mut df_height = 0;
     let mut has_empty = false;
     let mut all_equal_len = true;
@@ -301,7 +268,7 @@ pub(super) fn check_expand_literals(
         }
     }
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
-    if !all_equal_len {
+    if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
             .map(|series| {

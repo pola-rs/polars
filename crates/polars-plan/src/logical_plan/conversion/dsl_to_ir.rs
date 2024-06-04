@@ -2,7 +2,6 @@ use expr_expansion::{is_regex_projection, rewrite_projections};
 
 use super::stack_opt::ConversionOpt;
 use super::*;
-use crate::logical_plan::projection_expr::ProjectionExprs;
 
 fn expand_expressions(
     input: Node,
@@ -228,10 +227,9 @@ pub fn to_alp_impl(
             let schema = Arc::new(schema);
             let eirs = to_expr_irs(exprs, expr_arena);
             convert.fill_scratch(&eirs, expr_arena);
-            let expr = eirs.into();
 
             let lp = IR::Select {
-                expr,
+                expr: eirs,
                 input,
                 schema,
                 options,
@@ -519,13 +517,12 @@ pub fn to_alp_impl(
                         Context::Default,
                     )?);
                     let eirs = to_expr_irs(exprs, expr_arena);
-                    let expr: ProjectionExprs = eirs.into();
 
-                    convert.fill_scratch(&expr, expr_arena);
+                    convert.fill_scratch(&eirs, expr_arena);
 
                     let lp = IR::Select {
                         input,
-                        expr,
+                        expr: eirs,
                         schema,
                         options: ProjectionOptions {
                             duplicate_check: false,
@@ -641,7 +638,7 @@ fn resolve_with_columns(
     input: Node,
     lp_arena: &Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<(ProjectionExprs, SchemaRef)> {
+) -> PolarsResult<(Vec<ExprIR>, SchemaRef)> {
     let schema = lp_arena.get(input).schema(lp_arena);
     let mut new_schema = (**schema).clone();
     let (exprs, _) = prepare_projection(exprs, &schema)?;
@@ -668,8 +665,7 @@ fn resolve_with_columns(
     }
 
     let eirs = to_expr_irs(exprs, expr_arena);
-    let exprs = eirs.into();
-    Ok((exprs, Arc::new(new_schema)))
+    Ok((eirs, Arc::new(new_schema)))
 }
 
 fn resolve_group_by(

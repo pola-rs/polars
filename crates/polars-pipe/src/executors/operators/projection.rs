@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
+use polars_plan::prelude::ProjectionOptions;
 use smartstring::alias::String as SmartString;
 
 use crate::expressions::PhysicalPipedExpr;
@@ -47,7 +48,7 @@ impl Operator for SimpleProjectionOperator {
 #[derive(Clone)]
 pub(crate) struct ProjectionOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
-    pub(crate) cse_exprs: Option<HstackOperator>,
+    pub(crate) options: ProjectionOptions,
 }
 
 impl Operator for ProjectionOperator {
@@ -56,18 +57,6 @@ impl Operator for ProjectionOperator {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        // add temporary cse column to the chunk
-        let cse_owned_chunk;
-        let chunk = if let Some(hstack) = &mut self.cse_exprs {
-            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else {
-                unreachable!()
-            };
-            cse_owned_chunk = out;
-            &cse_owned_chunk
-        } else {
-            chunk
-        };
-
         let mut has_literals = false;
         let mut has_empty = false;
         let mut projected = self
@@ -88,7 +77,7 @@ impl Operator for ProjectionOperator {
             for s in &mut projected {
                 *s = s.clear();
             }
-        } else if has_literals {
+        } else if has_literals && self.options.should_broadcast {
             let height = projected.iter().map(|s| s.len()).max().unwrap();
             for s in &mut projected {
                 let len = s.len();
@@ -105,11 +94,7 @@ impl Operator for ProjectionOperator {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        if self.cse_exprs.is_some() {
-            "projection[cse]"
-        } else {
-            "projection"
-        }
+        "projection"
     }
 }
 
@@ -117,11 +102,7 @@ impl Operator for ProjectionOperator {
 pub(crate) struct HstackOperator {
     pub(crate) exprs: Vec<Arc<dyn PhysicalPipedExpr>>,
     pub(crate) input_schema: SchemaRef,
-    pub(crate) cse_exprs: Option<Box<Self>>,
-    // add columns without any checks
-    // this is needed for cse, as the temporary columns
-    // may have a different size
-    pub(crate) unchecked: bool,
+    pub(crate) options: ProjectionOptions,
 }
 
 impl Operator for HstackOperator {
@@ -132,17 +113,6 @@ impl Operator for HstackOperator {
     ) -> PolarsResult<OperatorResult> {
         // add temporary cse column to the chunk
         let width = chunk.data.width();
-        let cse_owned_chunk;
-        let chunk = if let Some(hstack) = &mut self.cse_exprs {
-            let OperatorResult::Finished(out) = hstack.execute(context, chunk)? else {
-                unreachable!()
-            };
-            cse_owned_chunk = out;
-            &cse_owned_chunk
-        } else {
-            chunk
-        };
-
         let projected = self
             .exprs
             .iter()
@@ -153,10 +123,21 @@ impl Operator for HstackOperator {
         let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
         let schema = &*self.input_schema;
-        if self.unchecked {
-            unsafe { df.get_columns_mut().extend(projected) }
-        } else {
+        if self.options.should_broadcast {
             df._add_columns(projected, schema)?;
+        } else {
+            debug_assert!(
+                projected
+                    .iter()
+                    .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                "non-broadcasting hstack should only be used for CSE columns"
+            );
+            // Safety: this case only appears as a result of CSE
+            // optimization, and the usage there produces new, unique
+            // column names. It is immediately followed by a
+            // projection which pulls out the possibly mismatching
+            // column lengths.
+            unsafe { df.get_columns_mut().extend(projected) }
         }
 
         let chunk = chunk.with_data(df);
@@ -166,10 +147,6 @@ impl Operator for HstackOperator {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        if self.cse_exprs.is_some() {
-            "hstack[cse]"
-        } else {
-            "hstack"
-        }
+        "hstack"
     }
 }

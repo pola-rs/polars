@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use super::*;
-use crate::logical_plan::projection_expr::ProjectionExprs;
 
 pub struct IRBuilder<'a> {
     root: Node,
@@ -50,7 +49,7 @@ impl<'a> IRBuilder<'a> {
                 expr_irs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
 
             let lp = IR::Select {
-                expr: exprs.into(),
+                expr: exprs,
                 input: self.root,
                 schema: Arc::new(schema),
                 options,
@@ -153,7 +152,7 @@ impl<'a> IRBuilder<'a> {
 
         let lp = IR::HStack {
             input: self.root,
-            exprs: ProjectionExprs::new(exprs),
+            exprs,
             schema: Arc::new(new_schema),
             options,
         };
@@ -190,7 +189,7 @@ impl<'a> IRBuilder<'a> {
 
         let lp = IR::HStack {
             input: self.root,
-            exprs: ProjectionExprs::new(expr_irs),
+            exprs: expr_irs,
             schema: Arc::new(new_schema),
             options,
         };

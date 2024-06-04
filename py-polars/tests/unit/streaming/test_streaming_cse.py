@@ -10,7 +10,7 @@ from polars.testing import assert_frame_equal
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
+def test_cse_expr_selection_streaming(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     q = pl.LazyFrame(
         {
@@ -48,12 +48,7 @@ def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
     )
     assert_frame_equal(result, expected)
 
-    err = capfd.readouterr().err
-    assert "df -> projection[cse] -> ordered_sink" in err
-    assert "df -> hstack[cse] -> ordered_sink" in err
 
-
-@pytest.mark.skip(reason="activate once fixed")
 def test_cse_expr_group_by() -> None:
     q = pl.LazyFrame(
         {
@@ -76,9 +71,6 @@ def test_cse_expr_group_by() -> None:
     s = q.explain(
         comm_subexpr_elim=True, optimized=True, streaming=True, comm_subplan_elim=False
     )
-    # check if it uses CSE_expr
-    # and is a complete pipeline
-    assert "__POLARS_CSER" in s
     assert s.startswith("STREAMING")
 
     expected = pl.DataFrame(

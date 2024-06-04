@@ -557,8 +557,7 @@ fn get_hstack<F>(
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
-    cse_exprs: Option<Box<HstackOperator>>,
-    unchecked: bool,
+    options: ProjectionOptions,
 ) -> PolarsResult<HstackOperator>
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -566,8 +565,7 @@ where
     Ok(operators::HstackOperator {
         exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
         input_schema,
-        cse_exprs,
-        unchecked,
+        options,
     })
 }
 
@@ -588,57 +586,33 @@ where
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
-        Select { expr, input, .. } => {
+        Select {
+            expr,
+            input,
+            options,
+            ..
+        } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-
-            let cse_exprs = expr.cse_exprs();
-            let cse_exprs = if cse_exprs.is_empty() {
-                None
-            } else {
-                Some(get_hstack(
-                    cse_exprs,
-                    expr_arena,
-                    to_physical,
-                    (*input_schema).clone(),
-                    None,
-                    true,
-                )?)
-            };
-
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(
-                    expr.default_exprs(),
-                    expr_arena,
-                    &to_physical,
-                    Some(&input_schema),
-                )?,
-                cse_exprs,
+                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
+                options: *options,
             };
             Box::new(op) as Box<dyn Operator>
         },
-        HStack { exprs, input, .. } => {
+        HStack {
+            exprs,
+            input,
+            options,
+            ..
+        } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-            let cse_exprs = exprs.cse_exprs();
-            let cse_exprs = if cse_exprs.is_empty() {
-                None
-            } else {
-                Some(Box::new(get_hstack(
-                    cse_exprs,
-                    expr_arena,
-                    to_physical,
-                    (*input_schema).clone(),
-                    None,
-                    true,
-                )?))
-            };
             let op = get_hstack(
-                exprs.default_exprs(),
+                exprs,
                 expr_arena,
                 to_physical,
                 (*input_schema).clone(),
-                cse_exprs,
-                false,
+                *options,
             )?;
 
             Box::new(op) as Box<dyn Operator>

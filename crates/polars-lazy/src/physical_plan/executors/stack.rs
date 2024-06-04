@@ -5,7 +5,6 @@ use super::*;
 pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) has_windows: bool,
-    pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
@@ -29,13 +28,27 @@ impl StackExec {
                 let iter = chunks.into_par_iter().map(|mut df| {
                     let res = evaluate_physical_expressions(
                         &mut df,
-                        &self.cse_exprs,
                         &self.exprs,
                         state,
                         self.has_windows,
                         self.options.run_parallel,
                     )?;
-                    df._add_columns(res, schema)?;
+                    if !self.options.should_broadcast {
+                        debug_assert!(
+                            res.iter()
+                                .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                            "non-broadcasting hstack should only be used for CSE columns"
+                        );
+                        // Safety: this case only appears as a result
+                        // of CSE optimization, and the usage there
+                        // produces new, unique column names. It is
+                        // immediately followed by a projection which
+                        // pulls out the possibly mismatching column
+                        // lengths.
+                        unsafe { df.get_columns_mut().extend(res) };
+                    } else {
+                        df._add_columns(res, schema)?;
+                    }
                     Ok(df)
                 });
 
@@ -46,13 +59,26 @@ impl StackExec {
             else {
                 let res = evaluate_physical_expressions(
                     &mut df,
-                    &self.cse_exprs,
                     &self.exprs,
                     state,
                     self.has_windows,
                     self.options.run_parallel,
                 )?;
-                df._add_columns(res, schema)?;
+                if !self.options.should_broadcast {
+                    debug_assert!(
+                        res.iter()
+                            .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                        "non-broadcasting hstack should only be used for CSE columns"
+                    );
+                    // Safety: this case only appears as a result of
+                    // CSE optimization, and the usage there produces
+                    // new, unique column names. It is immediately
+                    // followed by a projection which pulls out the
+                    // possibly mismatching column lengths.
+                    unsafe { df.get_columns_mut().extend(res) };
+                } else {
+                    df._add_columns(res, schema)?;
+                }
                 df
             };
 
@@ -68,11 +94,7 @@ impl Executor for StackExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                if self.cse_exprs.is_empty() {
-                    eprintln!("run StackExec");
-                } else {
-                    eprintln!("run StackExec with {} CSE", self.cse_exprs.len());
-                };
+                eprintln!("run StackExec");
             }
         }
         let df = self.input.execute(state)?;
@@ -81,13 +103,7 @@ impl Executor for StackExec {
             let by = self
                 .exprs
                 .iter()
-                .map(|s| {
-                    profile_name(
-                        s.as_ref(),
-                        self.input_schema.as_ref(),
-                        !self.cse_exprs.is_empty(),
-                    )
-                })
+                .map(|s| profile_name(s.as_ref(), self.input_schema.as_ref()))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("with_column".to_string(), &by);
             Cow::Owned(name)

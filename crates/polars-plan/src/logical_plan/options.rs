@@ -261,6 +261,9 @@ pub enum FileType {
 pub struct ProjectionOptions {
     pub run_parallel: bool,
     pub duplicate_check: bool,
+    // Should length-1 Series be broadcast to the length of the dataframe.
+    // Only used by CSE optimizer
+    pub should_broadcast: bool,
 }
 
 impl Default for ProjectionOptions {
@@ -268,6 +271,7 @@ impl Default for ProjectionOptions {
         Self {
             run_parallel: true,
             duplicate_check: true,
+            should_broadcast: true,
         }
     }
 }
@@ -278,6 +282,7 @@ impl ProjectionOptions {
         Self {
             run_parallel: self.run_parallel & other.run_parallel,
             duplicate_check: self.duplicate_check & other.duplicate_check,
+            should_broadcast: self.should_broadcast | other.should_broadcast,
         }
     }
 }

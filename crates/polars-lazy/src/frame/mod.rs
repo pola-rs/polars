@@ -870,6 +870,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: true,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -881,6 +882,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: false,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1281,6 +1283,7 @@ impl LazyFrame {
                 ProjectionOptions {
                     run_parallel: false,
                     duplicate_check: true,
+                    should_broadcast: true,
                 },
             )
             .build();
@@ -1308,6 +1311,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: true,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1320,6 +1324,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: false,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }

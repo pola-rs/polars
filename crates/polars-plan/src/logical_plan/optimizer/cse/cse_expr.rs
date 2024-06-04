@@ -3,13 +3,38 @@ use polars_utils::vec::CapacityByFactor;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
-use crate::logical_plan::projection_expr::ProjectionExprs;
 use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
 use ahash::RandomState;
 use polars_core::hashing::_boost_hash_combine;
+
+#[derive(Debug, Clone)]
+struct ProjectionExprs {
+    expr: Vec<ExprIR>,
+    /// offset from the back
+    /// `expr[expr.len() - common_sub_offset..]`
+    /// are the common sub expressions
+    common_sub_offset: usize,
+}
+
+impl ProjectionExprs {
+    fn default_exprs(&self) -> &[ExprIR] {
+        &self.expr[..self.expr.len() - self.common_sub_offset]
+    }
+
+    fn cse_exprs(&self) -> &[ExprIR] {
+        &self.expr[self.expr.len() - self.common_sub_offset..]
+    }
+
+    fn new_with_cse(expr: Vec<ExprIR>, common_sub_offset: usize) -> Self {
+        Self {
+            expr,
+            common_sub_offset,
+        }
+    }
+}
 
 /// Identifier that shows the sub-expression path.
 /// Must implement hash and equality and ideally
@@ -764,11 +789,33 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     false,
                     input_schema.as_ref().as_ref(),
                 )? {
+                    let schema = schema.clone();
+                    let options = *options;
+
+                    let lp = IRBuilder::new(*input, &mut arena.1, &mut arena.0)
+                        .with_columns(
+                            expr.cse_exprs().to_vec(),
+                            ProjectionOptions {
+                                run_parallel: options.run_parallel,
+                                duplicate_check: options.duplicate_check,
+                                // TODO: Somewhat of a hack, we're
+                                // going to extend the input dataframe
+                                // with the result of evaluating these
+                                // expressions and then select them
+                                // out again. That means that we don't
+                                // want to broadcast them if they turn
+                                // out to be scalars.
+                                should_broadcast: false,
+                            },
+                        )
+                        .build();
+                    let input = arena.0.add(lp);
+
                     let lp = IR::Select {
-                        input: *input,
-                        expr,
-                        schema: schema.clone(),
-                        options: *options,
+                        input,
+                        expr: expr.default_exprs().to_vec(),
+                        schema,
+                        options,
                     };
                     arena.0.replace(arena_idx, lp);
                 }
@@ -787,11 +834,19 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     false,
                     input_schema.as_ref().as_ref(),
                 )? {
-                    let lp = IR::HStack {
-                        input: *input,
-                        exprs,
-                        schema: schema.clone(),
-                        options: *options,
+                    let schema = schema.clone();
+                    let options = *options;
+                    let input = *input;
+
+                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                        .with_columns(exprs.cse_exprs().to_vec(), options)
+                        .with_columns(exprs.default_exprs().to_vec(), options)
+                        .build();
+                    let input = arena.0.add(lp);
+
+                    let lp = IR::SimpleProjection {
+                        input,
+                        columns: schema,
                     };
                     arena.0.replace(arena_idx, lp);
                 }
