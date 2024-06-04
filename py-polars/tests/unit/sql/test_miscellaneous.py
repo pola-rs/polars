@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import ComputeError, SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
