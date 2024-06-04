@@ -421,18 +421,6 @@ def test_aggregate_function_default() -> None:
         df.pivot(index="b", columns="c", values="a")
 
 
-def test_pivot_positional_args_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": ["A", "A", "B", "B", "C"],
-            "N": [1, 2, 2, 4, 2],
-            "bar": ["k", "l", "m", "n", "o"],
-        }
-    )
-    with pytest.deprecated_call():
-        df.pivot("N", "foo", "bar", aggregate_function=None)
-
-
 def test_pivot_aggregate_function_count_deprecated() -> None:
     df = pl.DataFrame(
         {

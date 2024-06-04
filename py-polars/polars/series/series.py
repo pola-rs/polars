@@ -41,7 +41,6 @@ from polars._utils.convert import (
 )
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_nonkeyword_arguments,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -2121,10 +2120,10 @@ class Series:
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
-        *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[True] = ...,
@@ -2134,10 +2133,10 @@ class Series:
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
-        *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[False],
@@ -2147,24 +2146,23 @@ class Series:
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
-        *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: bool,
     ) -> Series | DataFrame: ...
 
-    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
     @unstable()
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-        *,
         left_closed: bool = False,
         include_breaks: bool = False,
         as_series: bool = True,
@@ -7041,14 +7039,13 @@ class Series:
         ]
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool | None = None,
@@ -7208,14 +7205,13 @@ class Series:
         ]
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -7293,14 +7289,13 @@ class Series:
         ]
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,

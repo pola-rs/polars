@@ -44,7 +44,6 @@ from polars._utils.construction import (
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_nonkeyword_arguments,
     deprecate_parameter_as_positional,
     deprecate_renamed_parameter,
     deprecate_saturating,
@@ -1294,21 +1293,18 @@ class DataFrame:
         return pa.Table.from_batches(record_batches)
 
     @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]: ...
+    def to_dict(self, *, as_series: Literal[True] = ...) -> dict[str, Series]: ...
 
     @overload
-    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]: ...
+    def to_dict(self, *, as_series: Literal[False]) -> dict[str, list[Any]]: ...
 
     @overload
     def to_dict(
-        self,
-        as_series: bool,  # noqa: FBT001
+        self, *, as_series: bool
     ) -> dict[str, Series] | dict[str, list[Any]]: ...
 
-    @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
-        self,
-        as_series: bool = True,  # noqa: FBT001
+        self, *, as_series: bool = True
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -1416,14 +1412,13 @@ class DataFrame:
         """
         return self.rows(named=True)
 
-    @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
         self,
-        structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
         writable: bool = False,
         allow_copy: bool = True,
+        structured: bool = False,
         use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -1441,12 +1436,6 @@ class DataFrame:
 
         Parameters
         ----------
-        structured
-            Return a `structured array`_ with a data type that corresponds to the
-            DataFrame schema. If set to `False` (default), a 2D ndarray is
-            returned instead.
-
-            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -1460,6 +1449,12 @@ class DataFrame:
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        structured
+            Return a `structured array`_ with a data type that corresponds to the
+            DataFrame schema. If set to `False` (default), a 2D ndarray is
+            returned instead.
+
+            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
 
         use_pyarrow
             Use `pyarrow.Array.to_numpy
@@ -7518,20 +7513,11 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self"],
-        message=(
-            "The order of the parameters of `pivot` will change in the next breaking release."
-            " The order will become `index, columns, values` with `values` as an optional parameter."
-            " Use keyword arguments to silence this warning."
-        ),
-        version="0.20.8",
-    )
     def pivot(
         self,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
