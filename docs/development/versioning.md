@@ -80,10 +80,14 @@ Such changes will not be warned for, but _will_ be included in the changelog and
 ### Deprecation period
 
 As a rule, deprecated functionality is removed two breaking releases after the deprecation happens.
-For example, a function deprecated in version `1.2.3` will be removed in version `3.0.0`.
+For example, a function deprecated in version `1.2.3` will be retained in version `2.0.0` and removed in version `3.0.0`.
 
-This means that if your program does not raise any deprecation warnings, it should be mostly safe to upgrade to the next breaking release.
-As breaking releases happen about once every three months, this allows three to six months to adjust to any pending breaking changes.
+An exception to this rule are deprecations introduced with a breaking release.
+These will be enforced on the next breaking release.
+For example, a function deprecated in version `2.0.0` will be removed in version `3.0.0`.
+
+This means that if your program does not raise any deprecation warnings, it should be mostly safe to upgrade to the next major version.
+As breaking releases happen about once every six months, this allows six to twelve months to adjust to any pending breaking changes.
 
 **In some cases, we may decide to adjust the deprecation period.**
 If retaining the deprecated functionality blocks other improvements to Polars, we may shorten the deprecation period to a single breaking release. This will be mentioned in the warning message.
