@@ -28,14 +28,12 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.json_path_match
     Expr.str.len_bytes
     Expr.str.len_chars
-    Expr.str.ljust
     Expr.str.pad_end
     Expr.str.pad_start
     Expr.str.replace
     Expr.str.replace_all
     Expr.str.replace_many
     Expr.str.reverse
-    Expr.str.rjust
     Expr.str.slice
     Expr.str.split
     Expr.str.split_exact

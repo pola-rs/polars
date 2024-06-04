@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from polars._utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
-    deprecate_renamed_parameter,
 )
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
@@ -1878,40 +1877,6 @@ class StringNameSpace:
         Series
             Series of data type :class:`UInt32`. Returns null if the original
             value is null.
-        """
-
-    @deprecate_renamed_function("pad_end", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def ljust(self, length: int, fill_char: str = " ") -> Series:
-        """
-        Return the string left justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_end`.
-
-        Parameters
-        ----------
-        length
-            Justify left to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-
-    @deprecate_renamed_function("pad_start", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def rjust(self, length: int, fill_char: str = " ") -> Series:
-        """
-        Return the string right justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_start`.
-
-        Parameters
-        ----------
-        length
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
         """
 
     @deprecate_renamed_function("json_decode", version="0.19.15")
