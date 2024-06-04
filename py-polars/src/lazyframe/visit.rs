@@ -118,17 +118,12 @@ impl NodeTraverser {
         Wrap(&**schema).into_py(py)
     }
 
-    /// Get expression dtype.
+    /// Get expression dtype of expr_node, the schema used is that of the current root node
     fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
         let expr_node = Node(expr_node);
         let lp_arena = self.lp_arena.lock().unwrap();
-        let ir_node = lp_arena.get(self.root);
+        let schema = lp_arena.get(self.root).schema(&lp_arena);
         let expr_arena = self.expr_arena.lock().unwrap();
-        let schema = if let Some(schema) = ir_node.input_schema(&lp_arena) {
-            schema
-        } else {
-            raise_err!("Not able to compute input schema", ComputeError)
-        };
         let field = expr_arena
             .get(expr_node)
             .to_field(&schema, Context::Default, &expr_arena)
