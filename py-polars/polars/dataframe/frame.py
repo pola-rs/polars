@@ -10726,10 +10726,6 @@ class DataFrame:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        By default, null values in the right frame are ignored. Use
-        `include_nulls=True` to overwrite values in this frame with
-        null values in the other frame.
-
         Parameters
         ----------
         other
@@ -10748,8 +10744,8 @@ class DataFrame:
         right_on
            Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
+            Overwrite values in the left frame with null values from the right frame.
+            If set to `False` (default), null values in the right frame are ignored.
 
         Notes
         -----
