@@ -6142,7 +6142,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_nulls: bool = False,
     ) -> Self:
         """
-        Update the values in this `LazyFrame` with the non-null values in `other`.
+        Update the values in this `LazyFrame` with the values in `other`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -6166,8 +6166,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         right_on
            Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right DataFrame will be used to update the
-            left DataFrame.
+            Overwrite values in the left frame with null values from the right frame.
+            If set to `False` (default), null values in the right frame are ignored.
 
         Notes
         -----
