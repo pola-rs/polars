@@ -653,3 +653,8 @@ def test_fill_null_invalid_supertype() -> None:
         pl.InvalidOperationError, match="could not determine supertype of"
     ):
         df.select(pl.col("date").fill_null(1.0))
+
+
+def test_raise_array_of_cats() -> None:
+    with pytest.raises(pl.InvalidOperationError, match="is not yet supported"):
+        pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))

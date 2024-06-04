@@ -524,13 +524,13 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);
-                unsafe { ca.to_logical(self.inner_dtype()) };
+                unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
             None => ArrayChunked::full_null_with_dtype(
                 self.name(),
                 length,
-                &self.inner_dtype(),
+                self.inner_dtype(),
                 self.width(),
             ),
         }
