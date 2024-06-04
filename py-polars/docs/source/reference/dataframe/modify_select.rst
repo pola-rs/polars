@@ -31,7 +31,6 @@ Manipulation/selection
     DataFrame.groupby_rolling
     DataFrame.head
     DataFrame.hstack
-    DataFrame.insert_at_idx
     DataFrame.insert_column
     DataFrame.interpolate
     DataFrame.item
