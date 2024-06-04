@@ -651,6 +651,41 @@ def test_assert_series_equal_check_dtype_deprecated() -> None:
         assert_series_not_equal(s1, s3, check_dtype=False)  # type: ignore[call-arg]
 
 
+def test_assert_series_equal_nested_categorical_as_str_global() -> None:
+    # https://github.com/pola-rs/polars/issues/16196
+
+    # Global
+    with pl.StringCache():
+        s1 = pl.Series(["c0"], dtype=pl.Categorical)
+        s2 = pl.Series(["c1"], dtype=pl.Categorical)
+        s_global = pl.DataFrame([s1, s2]).to_struct("col0")
+
+    # Local
+    s1 = pl.Series(["c0"], dtype=pl.Categorical)
+    s2 = pl.Series(["c1"], dtype=pl.Categorical)
+    s_local = pl.DataFrame([s1, s2]).to_struct("col0")
+
+    assert_series_equal(s_global, s_local, categorical_as_str=True)
+    assert_series_not_equal(s_global, s_local, categorical_as_str=False)
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series([["a", "b"], ["a"]], dtype=pl.List(pl.Categorical)),
+        pytest.param(
+            pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2)),
+            marks=pytest.mark.xfail(
+                reason="Currently bugged: https://github.com/pola-rs/polars/issues/16706"
+            ),
+        ),
+        pl.Series([{"a": "x"}, {"a": "y"}], dtype=pl.Struct({"a": pl.Categorical})),
+    ],
+)
+def test_assert_series_equal_nested_categorical_as_str(s: pl.Series) -> None:
+    assert_series_equal(s, s, categorical_as_str=True)
+
+
 def test_tracebackhide(testdir: pytest.Testdir) -> None:
     testdir.makefile(
         ".py",

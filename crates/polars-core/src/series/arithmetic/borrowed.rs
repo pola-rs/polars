@@ -381,11 +381,11 @@ fn coerce_time_units<'a>(
 }
 
 #[cfg(feature = "dtype-struct")]
-pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
+pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
     s: &Series,
     rhs: &Series,
     mut func: F,
-) -> Series {
+) -> PolarsResult<Series> {
     let s = s.struct_().unwrap();
     let rhs = rhs.struct_().unwrap();
     let s_fields = s.fields();
@@ -394,20 +394,20 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> Series>(
     match (s_fields.len(), rhs_fields.len()) {
         (_, 1) => {
             let rhs = &rhs.fields()[0];
-            s._apply_fields(|s| func(s, rhs)).into_series()
+            Ok(s.try_apply_fields(|s| func(s, rhs))?.into_series())
         },
         (1, _) => {
             let s = &s.fields()[0];
-            rhs._apply_fields(|rhs| func(s, rhs)).into_series()
+            Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
             let mut rhs_iter = rhs.fields().iter();
 
-            s._apply_fields(|s| match rhs_iter.next() {
+            Ok(s.try_apply_fields(|s| match rhs_iter.next() {
                 Some(rhs) => func(s, rhs),
-                None => s.clone(),
-            })
-            .into_series()
+                None => Ok(s.clone()),
+            })?
+            .into_series())
         },
     }
 }
@@ -416,33 +416,10 @@ impl Sub for &Series {
     type Output = Series;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        match (self.dtype(), rhs.dtype()) {
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.sub(b))
-            },
-            _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-                lhs.subtract(rhs.as_ref()).expect("data types don't match")
-            },
-        }
+        self.try_sub(rhs).unwrap()
     }
 }
 
-impl Series {
-    pub fn try_add(&self, rhs: &Series) -> PolarsResult<Series> {
-        match (self.dtype(), rhs.dtype()) {
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                Ok(_struct_arithmetic(self, rhs, |a, b| a.add(b)))
-            },
-            _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
-                lhs.add_to(rhs.as_ref())
-            },
-        }
-    }
-}
 impl Add for &Series {
     type Output = Series;
 
@@ -460,16 +437,7 @@ impl Mul for &Series {
     /// let out = &s * &s;
     /// ```
     fn mul(self, rhs: Self) -> Self::Output {
-        match (self.dtype(), rhs.dtype()) {
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.mul(b))
-            },
-            _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-                lhs.multiply(rhs.as_ref()).expect("data types don't match")
-            },
-        }
+        self.try_mul(rhs).unwrap()
     }
 }
 
@@ -482,16 +450,7 @@ impl Div for &Series {
     /// let out = &s / &s;
     /// ```
     fn div(self, rhs: Self) -> Self::Output {
-        match (self.dtype(), rhs.dtype()) {
-            #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.div(b))
-            },
-            _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-                lhs.divide(rhs.as_ref()).expect("data types don't match")
-            },
-        }
+        self.try_div(rhs).unwrap()
     }
 }
 
@@ -504,14 +463,72 @@ impl Rem for &Series {
     /// let out = &s / &s;
     /// ```
     fn rem(self, rhs: Self) -> Self::Output {
+        self.try_rem(rhs).unwrap()
+    }
+}
+
+impl Series {
+    pub fn try_sub(&self, rhs: &Self) -> PolarsResult<Self> {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.rem(b))
+                _struct_arithmetic(self, rhs, |a, b| a.try_sub(b))
             },
             _ => {
-                let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
-                lhs.remainder(rhs.as_ref()).expect("data types don't match")
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.subtract(rhs.as_ref())
+            },
+        }
+    }
+
+    pub fn try_add(&self, rhs: &Self) -> PolarsResult<Self> {
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                _struct_arithmetic(self, rhs, |a, b| a.try_add(b))
+            },
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.add_to(rhs.as_ref())
+            },
+        }
+    }
+
+    pub fn try_mul(&self, rhs: &Self) -> PolarsResult<Self> {
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                _struct_arithmetic(self, rhs, |a, b| a.try_mul(b))
+            },
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.multiply(rhs.as_ref())
+            },
+        }
+    }
+
+    pub fn try_div(&self, rhs: &Self) -> PolarsResult<Self> {
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                _struct_arithmetic(self, rhs, |a, b| a.try_div(b))
+            },
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.divide(rhs.as_ref())
+            },
+        }
+    }
+
+    pub fn try_rem(&self, rhs: &Self) -> PolarsResult<Self> {
+        match (self.dtype(), rhs.dtype()) {
+            #[cfg(feature = "dtype-struct")]
+            (DataType::Struct(_), DataType::Struct(_)) => {
+                _struct_arithmetic(self, rhs, |a, b| a.try_rem(b))
+            },
+            _ => {
+                let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
+                lhs.remainder(rhs.as_ref())
             },
         }
     }

@@ -870,6 +870,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: true,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -881,6 +882,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: false,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1281,6 +1283,7 @@ impl LazyFrame {
                 ProjectionOptions {
                     run_parallel: false,
                     duplicate_check: true,
+                    should_broadcast: true,
                 },
             )
             .build();
@@ -1308,6 +1311,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: true,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1320,6 +1324,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: false,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1360,9 +1365,9 @@ impl LazyFrame {
     /// Aggregated columns will have the same names as the original columns.
     ///
     /// - Boolean columns will sum to a `u32` containing the number of `true`s.
-    /// - For integer columns, the ordinary checks for overflow are performed: if running
-    /// in `debug` mode, overflows will panic, whereas in `release` mode overflows will
-    /// silently wrap.
+    /// - For integer columns, the ordinary checks for overflow are performed:
+    ///   if running in `debug` mode, overflows will panic, whereas in `release` mode overflows will
+    ///   silently wrap.
     /// - String columns will sum to None.
     pub fn sum(self) -> Self {
         self.map_private(DslFunction::Stats(StatsFunction::Sum))

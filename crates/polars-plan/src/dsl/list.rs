@@ -164,7 +164,7 @@ impl ListNameSpace {
     ///
     /// # Arguments
     /// - `null_on_oob`: Return a null when an index is out of bounds.
-    /// This behavior is more expensive than defaulting to returning an `Error`.
+    ///   This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_gather")]
     pub fn gather(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(

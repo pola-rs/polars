@@ -185,10 +185,8 @@ def test_error_string_dtypes() -> None:
         pl.Series("n", [1, 2, 3], dtype="f32")  # type: ignore[arg-type]
 
 
-def test_init_structured_objects(monkeypatch: Any) -> None:
+def test_init_structured_objects() -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-
     @dataclasses.dataclass
     class TradeDC:
         timestamp: datetime
@@ -543,15 +541,20 @@ def test_init_ndarray() -> None:
     assert np.array_equal(df.to_numpy(), np.arange(4).reshape(-1, 1).astype(np.int64))
 
     df = pl.DataFrame(np.arange(4).reshape(-1, 2).astype(np.int64), schema=["a"])
-    assert_frame_equal(df, pl.DataFrame({"a": [[0, 1], [2, 3]]}))
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"a": [[0, 1], [2, 3]]}, schema={"a": pl.Array(pl.Int64, shape=2)}
+        ),
+    )
 
     # 2D numpy arrays
     df = pl.DataFrame({"a": np.arange(5, dtype=np.int64).reshape(1, -1)})
-    assert df.dtypes == [pl.List(pl.Int64)]
+    assert df.dtypes == [pl.Array(pl.Int64, shape=5)]
     assert df.shape == (1, 1)
 
     df = pl.DataFrame({"a": np.arange(10, dtype=np.int64).reshape(2, -1)})
-    assert df.dtypes == [pl.List(pl.Int64)]
+    assert df.dtypes == [pl.Array(pl.Int64, shape=5)]
     assert df.shape == (2, 1)
     assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 

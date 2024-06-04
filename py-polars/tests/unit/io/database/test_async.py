@@ -73,6 +73,7 @@ def test_read_async(tmp_sqlite_db: Path) -> None:
     async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
     async_connection = async_engine.connect()
     async_session = async_sessionmaker(async_engine)
+    async_session_inst = async_session()
 
     expected_frame = pl.DataFrame(
         {"id": [2, 1], "name": ["other", "misc"], "value": [-99.5, 100.0]}
@@ -82,8 +83,9 @@ def test_read_async(tmp_sqlite_db: Path) -> None:
         async_engine,
         async_connection,
         async_session,
+        async_session_inst,
     ):
-        if async_conn is async_session:
+        if async_conn in (async_session, async_session_inst):
             constraint, execute_opts = "", {}
         else:
             constraint = "WHERE value > :n"

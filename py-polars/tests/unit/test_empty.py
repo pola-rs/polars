@@ -132,3 +132,8 @@ def test_empty_is_in() -> None:
 @pytest.mark.parametrize("method", ["drop_nulls", "unique"])
 def test_empty_to_empty(method: str) -> None:
     assert getattr(pl.DataFrame(), method)().shape == (0, 0)
+
+
+def test_empty_shift_over_16676() -> None:
+    df = pl.DataFrame({"a": [], "b": []})
+    assert df.with_columns(pl.col("a").shift(fill_value=0).over("b")).shape == (0, 2)

@@ -30,17 +30,19 @@ impl LogicalType for DatetimeChunked {
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
-        match (self.dtype(), dtype) {
-            (Datetime(from_unit, _), Datetime(to_unit, tz)) => {
+        use TimeUnit::*;
+        let out = match dtype {
+            Datetime(to_unit, tz) => {
+                let from_unit = self.time_unit();
                 let (multiplier, divisor) = match (from_unit, to_unit) {
                     // scaling from lower precision to higher precision
-                    (TimeUnit::Milliseconds, TimeUnit::Nanoseconds) => (Some(1_000_000i64), None),
-                    (TimeUnit::Milliseconds, TimeUnit::Microseconds) => (Some(1_000i64), None),
-                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => (Some(1_000i64), None),
+                    (Milliseconds, Nanoseconds) => (Some(1_000_000i64), None),
+                    (Milliseconds, Microseconds) => (Some(1_000i64), None),
+                    (Microseconds, Nanoseconds) => (Some(1_000i64), None),
                     // scaling from higher precision to lower precision
-                    (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => (None, Some(1_000_000i64)),
-                    (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => (None, Some(1_000i64)),
-                    (TimeUnit::Microseconds, TimeUnit::Milliseconds) => (None, Some(1_000i64)),
+                    (Nanoseconds, Milliseconds) => (None, Some(1_000_000i64)),
+                    (Nanoseconds, Microseconds) => (None, Some(1_000i64)),
+                    (Microseconds, Milliseconds) => (None, Some(1_000i64)),
                     _ => return self.0.cast(dtype),
                 };
                 let result = match multiplier {
@@ -61,7 +63,7 @@ impl LogicalType for DatetimeChunked {
                 result
             },
             #[cfg(feature = "dtype-date")]
-            (Datetime(tu, _), Date) => {
+            Date => {
                 let cast_to_date = |tu_in_day: i64| {
                     let mut dt = self
                         .0
@@ -73,18 +75,18 @@ impl LogicalType for DatetimeChunked {
                     dt.set_sorted_flag(self.is_sorted_flag());
                     Ok(dt)
                 };
-                match tu {
-                    TimeUnit::Nanoseconds => cast_to_date(NS_IN_DAY),
-                    TimeUnit::Microseconds => cast_to_date(US_IN_DAY),
-                    TimeUnit::Milliseconds => cast_to_date(MS_IN_DAY),
+                match self.time_unit() {
+                    Nanoseconds => cast_to_date(NS_IN_DAY),
+                    Microseconds => cast_to_date(US_IN_DAY),
+                    Milliseconds => cast_to_date(MS_IN_DAY),
                 }
             },
             #[cfg(feature = "dtype-time")]
-            (Datetime(tu, _), Time) => {
-                let (scaled_mod, multiplier) = match tu {
-                    TimeUnit::Nanoseconds => (NS_IN_DAY, 1i64),
-                    TimeUnit::Microseconds => (US_IN_DAY, 1_000i64),
-                    TimeUnit::Milliseconds => (MS_IN_DAY, 1_000_000i64),
+            Time => {
+                let (scaled_mod, multiplier) = match self.time_unit() {
+                    Nanoseconds => (NS_IN_DAY, 1i64),
+                    Microseconds => (US_IN_DAY, 1_000i64),
+                    Milliseconds => (MS_IN_DAY, 1_000_000i64),
                 };
                 return Ok(self
                     .0
@@ -95,9 +97,16 @@ impl LogicalType for DatetimeChunked {
                     .into_time()
                     .into_series());
             },
-            _ => return self.0.cast(dtype),
-        }
-        .map(|mut s| {
+            dt if dt.is_numeric() => return self.0.cast(dtype),
+            dt => {
+                polars_bail!(
+                    InvalidOperation:
+                    "casting from {:?} to {:?} not supported",
+                    self.dtype(), dt
+                )
+            },
+        };
+        out.map(|mut s| {
             // TODO!; implement the divisions/multipliers above
             // in a checked manner so that we raise on overflow
             s.set_sorted_flag(self.is_sorted_flag());

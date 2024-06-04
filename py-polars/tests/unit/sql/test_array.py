@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -88,37 +88,37 @@ def test_unnest_table_function(array_keyword: str) -> None:
 def test_unnest_table_function_errors() -> None:
     with pl.SQLContext(df=None, eager=True) as ctx:
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match=r'UNNEST table alias must also declare column names, eg: "frame data" \(a,b,c\)',
         ):
             ctx.execute('SELECT * FROM UNNEST([1, 2, 3]) AS "frame data"')
 
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match="UNNEST table alias requires 1 column name, found 2",
         ):
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) AS tbl (a, b)")
 
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match="UNNEST table alias requires 2 column names, found 1",
         ):
             ctx.execute("SELECT * FROM UNNEST([1,2,3], [3,4,5]) AS tbl (a)")
 
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match=r"UNNEST table must have an alias",
         ):
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3])")
 
         with pytest.raises(
-            ComputeError,
+            SQLInterfaceError,
             match=r"UNNEST tables do not \(yet\) support WITH OFFSET/ORDINALITY",
         ):
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
 
         with pytest.raises(
-            ComputeError,
-            match="SQL interface does not yet support nested array literals",
+            SQLInterfaceError,
+            match="nested array literals are not yet supported",
         ):
             pl.sql_expr("[[1,2,3]] AS nested")

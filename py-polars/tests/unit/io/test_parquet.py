@@ -572,7 +572,6 @@ def test_nested_struct_read_12610() -> None:
     assert_frame_equal(expect, actual)
 
 
-@pl.Config(activate_decimals=True)
 @pytest.mark.write_disk()
 def test_decimal_parquet(tmp_path: Path) -> None:
     path = tmp_path / "foo.parquet"

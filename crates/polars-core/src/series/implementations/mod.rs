@@ -5,12 +5,8 @@ mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
-#[cfg(any(
-    feature = "dtype-datetime",
-    feature = "dtype-date",
-    feature = "dtype-time"
-))]
-mod dates_time;
+#[cfg(feature = "dtype-date")]
+mod date;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
 #[cfg(feature = "dtype-decimal")]
@@ -25,6 +21,8 @@ mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+#[cfg(feature = "dtype-time")]
+mod time;
 
 use std::any::Any;
 use std::borrow::Cow;

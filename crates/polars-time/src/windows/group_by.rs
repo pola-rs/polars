@@ -124,14 +124,15 @@ fn update_groups_and_bounds(
     }
 }
 
-/// Based on the given `Window`, which has an
+/// Window boundaries are created based on the given `Window`, which is defined by:
 /// - every
 /// - period
 /// - offset
-/// window boundaries are created. And every window boundary we search for the values
-/// that fit that window by the given `ClosedWindow`. The groups are return as `GroupTuples`
-/// together with the lower bound and upper bound timestamps. These timestamps indicate the start (lower)
-/// and end (upper) of the window of that group.
+///
+/// And every window boundary we search for the values that fit that window by the given
+/// `ClosedWindow`. The groups are return as `GroupTuples` together with the lower bound and upper
+/// bound timestamps. These timestamps indicate the start (lower) and end (upper) of the window of
+/// that group.
 ///
 /// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
 #[allow(clippy::too_many_arguments)]

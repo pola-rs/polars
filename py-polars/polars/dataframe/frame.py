@@ -2295,30 +2295,12 @@ class DataFrame:
             return None
 
     @overload
-    def write_json(
-        self,
-        file: None = ...,
-        *,
-        row_oriented: bool = ...,
-        pretty: bool | None = ...,
-    ) -> str: ...
+    def write_json(self, file: None = ...) -> str: ...
 
     @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path,
-        *,
-        row_oriented: bool = ...,
-        pretty: bool | None = ...,
-    ) -> None: ...
+    def write_json(self, file: IOBase | str | Path) -> None: ...
 
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        *,
-        row_oriented: bool = False,
-        pretty: bool | None = None,
-    ) -> str | None:
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """
         Serialize to JSON representation.
 
@@ -2327,17 +2309,6 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        row_oriented
-            Write to row oriented json. This is slower, but more common.
-
-        pretty
-            Pretty serialize json.
-
-            .. deprecated:: 0.20.31
-                The `pretty` functionality for `write_json` will be removed in the next
-                breaking release. Use :meth:`serialize` to serialize the DataFrame in
-                the regular JSON format.
-
 
         See Also
         --------
@@ -2351,43 +2322,28 @@ class DataFrame:
         ...         "bar": [6, 7, 8],
         ...     }
         ... )
-        >>> df.write_json(row_oriented=True)
+        >>> df.write_json()
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
         """
-        if pretty is not None:
-            issue_deprecation_warning(
-                "The `pretty` functionality for `write_json` will be removed in the next breaking release."
-                " Use `DataFrame.serialize` to serialize the DataFrame in the regular JSON format.",
-                version="0.20.31",
-            )
-        else:
-            pretty = False
 
-        if not row_oriented:
-            issue_deprecation_warning(
-                "`DataFrame.write_json` will only write row-oriented JSON in the next breaking release."
-                " Use `DataFrame.serialize` instead.",
-                version="0.20.31",
-            )
-
-        def write_json_to_string(*, pretty: bool, row_oriented: bool) -> str:
+        def write_json_to_string() -> str:
             with BytesIO() as buf:
-                self._df.write_json_old(buf, pretty=pretty, row_oriented=row_oriented)
+                self._df.write_json(buf)
                 json_bytes = buf.getvalue()
             return json_bytes.decode("utf8")
 
         if file is None:
-            return write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            return write_json_to_string()
         elif isinstance(file, StringIO):
-            json_str = write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            json_str = write_json_to_string()
             file.write(json_str)
             return None
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
-            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json(file)
             return None
         else:
-            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json(file)
             return None
 
     @overload
@@ -3319,7 +3275,7 @@ class DataFrame:
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool = True,
+        statistics: bool | str | dict[str, bool] = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
@@ -3347,6 +3303,19 @@ class DataFrame:
 
         statistics
             Write statistics to the parquet headers. This is the default behavior.
+
+            Possible values:
+
+            - `True`: enable default set of statistics (default)
+            - `False`: disable all statistics
+            - "full": calculate and write all available statistics. Cannot be
+              combined with `use_pyarrow`.
+            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
+              `use_pyarrow`. Available keys:
+              - "min": column minimum value (default: `True`)
+              - "max": column maximum value (default: `True`)
+              - "distinct_count": number of unique column values (default: `False`)
+              - "null_count": number of null values in column (default: `True`)
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
         data_page_size
@@ -3398,6 +3367,10 @@ class DataFrame:
                 file = normalize_filepath(file)
 
         if use_pyarrow:
+            if statistics == "full" or isinstance(statistics, dict):
+                msg = "write_parquet with `use_pyarrow=True` allows only boolean values for `statistics`"
+                raise ValueError(msg)
+
             tbl = self.to_arrow()
             data = {}
 
@@ -3437,6 +3410,23 @@ class DataFrame:
                 )
 
         else:
+            if isinstance(statistics, bool) and statistics:
+                statistics = {
+                    "min": True,
+                    "max": True,
+                    "distinct_count": False,
+                    "null_count": True,
+                }
+            elif isinstance(statistics, bool) and not statistics:
+                statistics = {}
+            elif statistics == "full":
+                statistics = {
+                    "min": True,
+                    "max": True,
+                    "distinct_count": True,
+                    "null_count": True,
+                }
+
             self._df.write_parquet(
                 file,
                 compression,
@@ -4738,13 +4728,9 @@ class DataFrame:
         issue_unstable_warning(
             "`sql` is considered **unstable** (although it is close to being considered stable)."
         )
-        with SQLContext(
-            register_globals=True,
-            eager=True,
-        ) as ctx:
-            frames = {table_name: self} if table_name else {}
-            frames["self"] = self
-            ctx.register_many(frames)
+        with SQLContext(register_globals=False, eager=True) as ctx:
+            name = table_name if table_name else "self"
+            ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(
@@ -5750,6 +5736,27 @@ class DataFrame:
         │ 2020-01-03 19:45:32 ┆ 11    ┆ 2     ┆ 9     │
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
+
+        If you use an index count in `period` or `offset`, then it's based on the
+        values in `index_column`:
+
+        >>> df = pl.DataFrame({"int": [0, 4, 5, 6, 8], "value": [1, 4, 2, 4, 1]})
+        >>> df.rolling("int", period="3i").agg(pl.col("int").alias("aggregated"))
+        shape: (5, 2)
+        ┌─────┬────────────┐
+        │ int ┆ aggregated │
+        │ --- ┆ ---        │
+        │ i64 ┆ list[i64]  │
+        ╞═════╪════════════╡
+        │ 0   ┆ [0]        │
+        │ 4   ┆ [4]        │
+        │ 5   ┆ [4, 5]     │
+        │ 6   ┆ [4, 5, 6]  │
+        │ 8   ┆ [6, 8]     │
+        └─────┴────────────┘
+
+        If you want the index count to be based on row number, then you may want to
+        combine `rolling` with :meth:`.with_row_index`.
         """
         period = deprecate_saturating(period)
         offset = deprecate_saturating(offset)
@@ -5815,7 +5822,7 @@ class DataFrame:
             length of the window, if None it will equal 'every'
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
-            Defaults to negative `every`.
+            Defaults to zero.
         truncate
             truncate the time value to the window lower bound
 
@@ -6006,13 +6013,12 @@ class DataFrame:
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
         >>> df.group_by_dynamic("time", every="1h", closed="both").agg(pl.col("n"))
-        shape: (5, 2)
+        shape: (4, 2)
         ┌─────────────────────┬───────────┐
         │ time                ┆ n         │
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-15 23:00:00 ┆ [0]       │
         │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
         │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
@@ -6044,13 +6050,12 @@ class DataFrame:
         ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n"))
-        shape: (7, 5)
+        shape: (6, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬───────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n         │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
         │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
-        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ [0]       │
         │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
         │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
@@ -7721,14 +7726,14 @@ class DataFrame:
         ...     separator="/",
         ... )
         shape: (2, 5)
-        ┌─────┬───────────┬───────────┬───────────┬───────────┐
-        │ ix  ┆ foo/col/a ┆ foo/col/b ┆ bar/col/a ┆ bar/col/b │
-        │ --- ┆ ---       ┆ ---       ┆ ---       ┆ ---       │
-        │ i64 ┆ i64       ┆ i64       ┆ i64       ┆ i64       │
-        ╞═════╪═══════════╪═══════════╪═══════════╪═══════════╡
-        │ 1   ┆ 1         ┆ 7         ┆ 2         ┆ 9         │
-        │ 2   ┆ 4         ┆ 1         ┆ 0         ┆ 4         │
-        └─────┴───────────┴───────────┴───────────┴───────────┘
+        ┌─────┬───────┬───────┬───────┬───────┐
+        │ ix  ┆ foo/a ┆ foo/b ┆ bar/a ┆ bar/b │
+        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
+        ╞═════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
+        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
+        └─────┴───────┴───────┴───────┴───────┘
         """  # noqa: W505
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
@@ -10692,10 +10697,6 @@ class DataFrame:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        By default, null values in the right frame are ignored. Use
-        `include_nulls=False` to overwrite values in this frame with
-        null values in the other frame.
-
         Parameters
         ----------
         other
@@ -10714,8 +10715,8 @@ class DataFrame:
         right_on
            Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
+            Overwrite values in the left frame with null values from the right frame.
+            If set to `False` (default), null values in the right frame are ignored.
 
         Notes
         -----
@@ -11030,7 +11031,7 @@ class DataFrame:
             length of the window, if None it will equal 'every'
         offset
             offset of the window, only takes effect if `start_by` is `'window'`.
-            Defaults to negative `every`.
+            Defaults to zero.
         truncate
             truncate the time value to the window lower bound
         include_boundaries

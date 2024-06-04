@@ -315,20 +315,9 @@ fn create_physical_plan_impl(
                 state.expr_depth,
             );
 
-            let streamable = if expr.has_sub_exprs() {
-                false
-            } else {
-                all_streamable(&expr, expr_arena, Context::Default)
-            };
+            let streamable = all_streamable(&expr, expr_arena, Context::Default);
             let phys_expr = create_physical_expressions_from_irs(
-                expr.default_exprs(),
-                Context::Default,
-                expr_arena,
-                Some(&input_schema),
-                &mut state,
-            )?;
-            let cse_expr = create_physical_expressions_from_irs(
-                expr.cse_exprs(),
+                &expr,
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
@@ -336,7 +325,6 @@ fn create_physical_plan_impl(
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
-                cse_exprs: cse_expr,
                 expr: phys_expr,
                 has_windows: state.has_windows,
                 input_schema,
@@ -353,7 +341,7 @@ fn create_physical_plan_impl(
         } => {
             let select = Select {
                 input,
-                expr: exprs.into(),
+                expr: exprs,
                 schema,
                 options: Default::default(),
             };
@@ -581,27 +569,15 @@ fn create_physical_plan_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
 
-            let streamable = if exprs.has_sub_exprs() {
-                false
-            } else {
-                all_streamable(&exprs, expr_arena, Context::Default)
-            };
+            let streamable = all_streamable(&exprs, expr_arena, Context::Default);
 
             let mut state = ExpressionConversionState::new(
                 POOL.current_num_threads() > exprs.len(),
                 state.expr_depth,
             );
 
-            let cse_exprs = create_physical_expressions_from_irs(
-                exprs.cse_exprs(),
-                Context::Default,
-                expr_arena,
-                Some(&input_schema),
-                &mut state,
-            )?;
-
             let phys_exprs = create_physical_expressions_from_irs(
-                exprs.default_exprs(),
+                &exprs,
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
@@ -610,7 +586,6 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::StackExec {
                 input,
                 has_windows: state.has_windows,
-                cse_exprs,
                 exprs: phys_exprs,
                 input_schema,
                 options,

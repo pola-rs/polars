@@ -2545,26 +2545,26 @@ class Series:
         Returns
         -------
         Series
-            Series of data type `Struct` with fields `lengths` of data type `Int32`
-            and `values` of the original data type.
+            Series of data type `Struct` with fields `len` of data type `UInt32`
+            and `value` of the original data type.
 
         Examples
         --------
         >>> s = pl.Series("s", [1, 1, 2, 1, None, 1, 3, 3])
         >>> s.rle().struct.unnest()
         shape: (6, 2)
-        ┌─────────┬────────┐
-        │ lengths ┆ values │
-        │ ---     ┆ ---    │
-        │ i32     ┆ i64    │
-        ╞═════════╪════════╡
-        │ 2       ┆ 1      │
-        │ 1       ┆ 2      │
-        │ 1       ┆ 1      │
-        │ 1       ┆ null   │
-        │ 1       ┆ 1      │
-        │ 2       ┆ 3      │
-        └─────────┴────────┘
+        ┌─────┬───────┐
+        │ len ┆ value │
+        │ --- ┆ ---   │
+        │ u32 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 2   ┆ 1     │
+        │ 1   ┆ 2     │
+        │ 1   ┆ 1     │
+        │ 1   ┆ null  │
+        │ 1   ┆ 1     │
+        │ 2   ┆ 3     │
+        └─────┴───────┘
         """
 
     def rle_id(self) -> Series:
@@ -4120,6 +4120,7 @@ class Series:
         other: Series,
         *,
         check_dtypes: bool = False,
+        check_names: bool = False,
         null_equal: bool = True,
     ) -> bool:
         """
@@ -4131,6 +4132,8 @@ class Series:
             Series to compare with.
         check_dtypes
             Require data types to match.
+        check_names
+            Require names to match.
         null_equal
             Consider null values as equal.
 
@@ -4148,7 +4151,10 @@ class Series:
         False
         """
         return self._s.equals(
-            other._s, check_dtypes=check_dtypes, null_equal=null_equal
+            other._s,
+            check_dtypes=check_dtypes,
+            check_names=check_names,
+            null_equal=null_equal,
         )
 
     def cast(
@@ -5451,6 +5457,8 @@ class Series:
             - For mapping elements of a series, consider: `s.sqrt()`.
             - For mapping inner elements of lists, consider:
               `s.list.eval(pl.element().sqrt())`.
+            - For mapping elements of struct fields, consider:
+              `s.struct.field("field_name").sqrt()`.
 
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.

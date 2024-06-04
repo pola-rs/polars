@@ -239,17 +239,22 @@ def test_int_to_python_datetime() -> None:
             datetime(1970, 1, 1, 0, 0, 0, 200000),
         ),
     ]
+
+    assert df.select(pl.col(col).dt.timestamp() for col in ("c", "d", "e")).rows() == [
+        (100000000000, 100000000, 100000),
+        (200000000000, 200000000, 200000),
+    ]
+
     assert df.select(
-        [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
-        + [
-            getattr(pl.col("b").cast(pl.Duration).dt, f"total_{unit}")().alias(
+        [
+            getattr(pl.col("a").cast(pl.Duration).dt, f"total_{unit}")().alias(
                 f"u[{unit}]"
             )
             for unit in ("milliseconds", "microseconds", "nanoseconds")
         ]
     ).rows() == [
-        (100000000000, 100000000, 100000, 100000, 100000000, 100000000000),
-        (200000000000, 200000000, 200000, 200000, 200000000, 200000000000),
+        (100000, 100000000, 100000000000),
+        (200000, 200000000, 200000000000),
     ]
 
 
@@ -2759,9 +2764,3 @@ def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None
 def test_pytime_conversion(tm: time) -> None:
     s = pl.Series("tm", [tm])
     assert s.to_list() == [tm]
-
-
-def test_datetime_time_unit_none_deprecated() -> None:
-    with pytest.deprecated_call():
-        dtype = pl.Datetime(time_unit=None)  # type: ignore[arg-type]
-    assert dtype.time_unit == "us"

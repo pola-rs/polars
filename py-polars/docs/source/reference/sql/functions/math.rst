@@ -13,6 +13,8 @@ Math
      - Returns the cube root (∛) of a number.
    * - :ref:`CEIL <ceil>`
      - Returns the nearest integer closest from zero.
+   * - :ref:`DIV <div>`
+     - Returns the integer quotient of the division.
    * - :ref:`EXP <exp>`
      - Computes the exponential of the given value.
    * - :ref:`FLOOR <floor_function>`
@@ -52,19 +54,19 @@ Returns the absolute value of the input column.
 
     df = pl.DataFrame({"a": [-1.0, 0.0, 1.0, -2.0]})
     df.sql("""
-      SELECT ABS(a) FROM self
+      SELECT a, ABS(a) AS abs_a FROM self
     """)
-    # shape: (4, 1)
-    # ┌─────┐
-    # │ a   │
-    # │ --- │
-    # │ f64 │
-    # ╞═════╡
-    # │ 1.0 │
-    # │ 0.0 │
-    # │ 1.0 │
-    # │ 2.0 │
-    # └─────┘
+    # shape: (4, 2)
+    # ┌──────┬───────┐
+    # │ a    ┆ abs_a │
+    # │ ---  ┆ ---   │
+    # │ f64  ┆ f64   │
+    # ╞══════╪═══════╡
+    # │ -1.0 ┆ 1.0   │
+    # │ 0.0  ┆ 0.0   │
+    # │ 1.0  ┆ 1.0   │
+    # │ -2.0 ┆ 2.0   │
+    # └──────┴───────┘
 
 .. _cbrt:
 
@@ -78,18 +80,18 @@ Returns the cube root (∛) of a number.
 
     df = pl.DataFrame({"a": [1.0, 2.0, 4.0]})
     df.sql("""
-      SELECT CBRT(a) FROM self
+      SELECT a, CBRT(a) AS cbrt_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌──────────┐
-    # │ a        │
-    # │ ---      │
-    # │ f64      │
-    # ╞══════════╡
-    # │ 1.0      │
-    # │ 1.259921 │
-    # │ 1.587401 │
-    # └──────────┘
+    # shape: (3, 2)
+    # ┌─────┬──────────┐
+    # │ a   ┆ cbrt_a   │
+    # │ --- ┆ ---      │
+    # │ f64 ┆ f64      │
+    # ╞═════╪══════════╡
+    # │ 1.0 ┆ 1.0      │
+    # │ 2.0 ┆ 1.259921 │
+    # │ 4.0 ┆ 1.587401 │
+    # └─────┴──────────┘
 
 .. _ceil:
 
@@ -103,18 +105,43 @@ Returns the nearest integer closest from zero.
 
     df = pl.DataFrame({"a": [0.1, 2.8, 4.30]})
     df.sql("""
-      SELECT CEIL(a) FROM self
+      SELECT a, CEIL(a) AS ceil_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌─────┐
-    # │ a   │
-    # │ --- │
-    # │ f64 │
-    # ╞═════╡
-    # │ 1.0 │
-    # │ 3.0 │
-    # │ 5.0 │
-    # └─────┘
+    # shape: (3, 2)
+    # ┌─────┬────────┐
+    # │ a   ┆ ceil_a │
+    # │ --- ┆ ---    │
+    # │ f64 ┆ f64    │
+    # ╞═════╪════════╡
+    # │ 0.1 ┆ 1.0    │
+    # │ 2.8 ┆ 3.0    │
+    # │ 4.3 ┆ 5.0    │
+    # └─────┴────────┘
+
+.. _div:
+
+DIV
+---
+Returns the integer quotient of the division.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"a": [-10.0, 6.5, 25.0]})
+    df.sql("""
+      SELECT a, DIV(a, 2) AS a_div_2, DIV(a, 5) AS a_div_5 FROM self
+    """)
+    # shape: (3, 3)
+    # ┌───────┬─────────┬─────────┐
+    # │ a     ┆ a_div_2 ┆ a_div_5 │
+    # │ ---   ┆ ---     ┆ ---     │
+    # │ f64   ┆ i64     ┆ i64     │
+    # ╞═══════╪═════════╪═════════╡
+    # │ -10.0 ┆ -5      ┆ -2      │
+    # │ 6.5   ┆ 3       ┆ 1       │
+    # │ 25.0  ┆ 12      ┆ 5       │
+    # └───────┴─────────┴─────────┘
 
 .. _exp:
 
@@ -128,18 +155,18 @@ Computes the exponential of the given value.
 
     df = pl.DataFrame({"a": [1, 2, 4]})
     df.sql("""
-      SELECT EXP(a) FROM self
+      SELECT a, EXP(a) AS exp_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌──────────┐
-    # │ a        │
-    # │ ---      │
-    # │ f64      │
-    # ╞══════════╡
-    # │ 2.718282 │
-    # │ 7.389056 │
-    # │ 54.59815 │
-    # └──────────┘
+    # shape: (3, 2)
+    # ┌─────┬──────────┐
+    # │ a   ┆ exp_a    │
+    # │ --- ┆ ---      │
+    # │ i64 ┆ f64      │
+    # ╞═════╪══════════╡
+    # │ 1   ┆ 2.718282 │
+    # │ 2   ┆ 7.389056 │
+    # │ 4   ┆ 54.59815 │
+    # └─────┴──────────┘
 
 .. _floor_function:
 
@@ -153,18 +180,18 @@ Returns the nearest integer away from zero.
 
     df = pl.DataFrame({"a": [0.1, 2.8, 4.30]})
     df.sql("""
-      SELECT FLOOR(a) FROM self
+      SELECT a, FLOOR(a) AS floor_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌─────┐
-    # │ a   │
-    # │ --- │
-    # │ f64 │
-    # ╞═════╡
-    # │ 0.0 │
-    # │ 2.0 │
-    # │ 4.0 │
-    # └─────┘
+    # shape: (3, 2)
+    # ┌─────┬─────────┐
+    # │ a   ┆ floor_a │
+    # │ --- ┆ ---     │
+    # │ f64 ┆ f64     │
+    # ╞═════╪═════════╡
+    # │ 0.1 ┆ 0.0     │
+    # │ 2.8 ┆ 2.0     │
+    # │ 4.3 ┆ 4.0     │
+    # └─────┴─────────┘
 
 .. _ln:
 
@@ -178,18 +205,18 @@ Computes the natural logarithm of the given value.
 
     df = pl.DataFrame({"a": [1, 2, 4]})
     df.sql("""
-      SELECT LN(a) FROM self
+      SELECT a, LN(a) AS ln_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌──────────┐
-    # │ a        │
-    # │ ---      │
-    # │ f64      │
-    # ╞══════════╡
-    # │ 0.0      │
-    # │ 0.693147 │
-    # │ 1.386294 │
-    # └──────────┘
+    # shape: (3, 2)
+    # ┌─────┬──────────┐
+    # │ a   ┆ ln_a     │
+    # │ --- ┆ ---      │
+    # │ i64 ┆ f64      │
+    # ╞═════╪══════════╡
+    # │ 1   ┆ 0.0      │
+    # │ 2   ┆ 0.693147 │
+    # │ 4   ┆ 1.386294 │
+    # └─────┴──────────┘
 
 .. _log:
 
@@ -203,18 +230,18 @@ Computes the `base` logarithm of the given value.
 
     df = pl.DataFrame({"a": [1, 2, 4]})
     df.sql("""
-      SELECT LOG(a, 10) FROM self
+      SELECT a, LOG(a, 16) AS log16_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌─────────┐
-    # │ a       │
-    # │ ---     │
-    # │ f64     │
-    # ╞═════════╡
-    # │ 0.0     │
-    # │ 0.30103 │
-    # │ 0.60206 │
-    # └─────────┘
+    # shape: (3, 2)
+    # ┌─────┬─────────┐
+    # │ a   ┆ log16_a │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ f64     │
+    # ╞═════╪═════════╡
+    # │ 1   ┆ 0.0     │
+    # │ 2   ┆ 0.25    │
+    # │ 4   ┆ 0.5     │
+    # └─────┴─────────┘
 
 .. _log2:
 
@@ -228,18 +255,18 @@ Computes the logarithm of the given value in base 2.
 
     df = pl.DataFrame({"a": [1, 2, 4]})
     df.sql("""
-      SELECT LOG2(a) FROM self
+      SELECT a, LOG2(a) AS a_log2 FROM self
     """)
-    # shape: (3, 1)
-    # ┌─────┐
-    # │ a   │
-    # │ --- │
-    # │ f64 │
-    # ╞═════╡
-    # │ 0.0 │
-    # │ 1.0 │
-    # │ 2.0 │
-    # └─────┘
+    # shape: (3, 2)
+    # ┌─────┬────────┐
+    # │ a   ┆ a_log2 │
+    # │ --- ┆ ---    │
+    # │ i64 ┆ f64    │
+    # ╞═════╪════════╡
+    # │ 1   ┆ 0.0    │
+    # │ 2   ┆ 1.0    │
+    # │ 4   ┆ 2.0    │
+    # └─────┴────────┘
 
 .. _log10:
 
@@ -253,18 +280,18 @@ Computes the logarithm of the given value in base 10.
 
     df = pl.DataFrame({"a": [1, 2, 4]})
     df.sql("""
-      SELECT LOG10(a) FROM self
+      SELECT a, LOG10(a) AS log10_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌─────────┐
-    # │ a       │
-    # │ ---     │
-    # │ f64     │
-    # ╞═════════╡
-    # │ 0.0     │
-    # │ 0.30103 │
-    # │ 0.60206 │
-    # └─────────┘
+    # shape: (3, 2)
+    # ┌─────┬─────────┐
+    # │ a   ┆ log10_a │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ f64     │
+    # ╞═════╪═════════╡
+    # │ 1   ┆ 0.0     │
+    # │ 2   ┆ 0.30103 │
+    # │ 4   ┆ 0.60206 │
+    # └─────┴─────────┘
 
 .. _log1p:
 
@@ -278,18 +305,18 @@ Computes the natural logarithm of "given value plus one".
 
     df = pl.DataFrame({"a": [1, 2, 4]})
     df.sql("""
-      SELECT LOG1P(a) FROM self
+      SELECT a, LOG1P(a) AS log1p_a FROM self
     """)
-    # shape: (3, 1)
-    # ┌──────────┐
-    # │ a        │
-    # │ ---      │
-    # │ f64      │
-    # ╞══════════╡
-    # │ 0.693147 │
-    # │ 1.098612 │
-    # │ 1.609438 │
-    # └──────────┘
+    # shape: (3, 2)
+    # ┌─────┬──────────┐
+    # │ a   ┆ log1p_a  │
+    # │ --- ┆ ---      │
+    # │ i64 ┆ f64      │
+    # ╞═════╪══════════╡
+    # │ 1   ┆ 0.693147 │
+    # │ 2   ┆ 1.098612 │
+    # │ 4   ┆ 1.609438 │
+    # └─────┴──────────┘
 
 .. _mod:
 
@@ -303,20 +330,20 @@ Returns the remainder of a numeric expression divided by another numeric express
 
     df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
     df.sql("""
-      SELECT MOD(x, 2) FROM self
+      SELECT x, MOD(x, 2) AS a_mod_2 FROM self
     """)
-    # shape: (5, 1)
-    # ┌─────┐
-    # │ x   │
-    # │ --- │
-    # │ i64 │
-    # ╞═════╡
-    # │ 0   │
-    # │ 1   │
-    # │ 0   │
-    # │ 1   │
-    # │ 0   │
-    # └─────┘
+    # shape: (5, 2)
+    # ┌─────┬─────────┐
+    # │ x   ┆ a_mod_2 │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ i64     │
+    # ╞═════╪═════════╡
+    # │ 0   ┆ 0       │
+    # │ 1   ┆ 1       │
+    # │ 2   ┆ 0       │
+    # │ 3   ┆ 1       │
+    # │ 4   ┆ 0       │
+    # └─────┴─────────┘
 
 .. _pi:
 
@@ -350,22 +377,21 @@ Returns the value to the power of the given exponent.
 
 .. code-block:: python
 
-    df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+    df = pl.DataFrame({"x": [0, 1, 2, 4]})
     df.sql("""
-      SELECT POW(x, 2) FROM self
+      SELECT x, POW(x, 8) AS x_pow_8 FROM self
     """)
-    # shape: (5, 1)
-    # ┌─────┐
-    # │ x   │
-    # │ --- │
-    # │ i64 │
-    # ╞═════╡
-    # │ 0   │
-    # │ 1   │
-    # │ 4   │
-    # │ 9   │
-    # │ 16  │
-    # └─────┘
+    # shape: (4, 2)
+    # ┌─────┬─────────┐
+    # │ x   ┆ x_pow_8 │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ i64     │
+    # ╞═════╪═════════╡
+    # │ 0   ┆ 0       │
+    # │ 1   ┆ 1       │
+    # │ 2   ┆ 256     │
+    # │ 4   ┆ 65536   │
+    # └─────┴─────────┘
 
 .. _round:
 
@@ -377,22 +403,21 @@ Round a number to `x` decimals (default: 0) away from zero.
 
 .. code-block:: python
 
-    df = pl.DataFrame({"x": [0.4, 1.8, 2.2, 3.6, 4.1]})
+    df = pl.DataFrame({"x": [-0.45, -1.81, 2.25, 3.99]})
     df.sql("""
-      SELECT ROUND(x) FROM self
+      SELECT x, ROUND(x) AS x_round, ROUND(x, 1) AS x_round_1 FROM self
     """)
-    # shape: (5, 1)
-    # ┌─────┐
-    # │ x   │
-    # │ --- │
-    # │ f64 │
-    # ╞═════╡
-    # │ 0.0 │
-    # │ 2.0 │
-    # │ 2.0 │
-    # │ 4.0 │
-    # │ 4.0 │
-    # └─────┘
+    # shape: (4, 3)
+    # ┌───────┬─────────┬───────────┐
+    # │ x     ┆ x_round ┆ x_round_1 │
+    # │ ---   ┆ ---     ┆ ---       │
+    # │ f64   ┆ f64     ┆ f64       │
+    # ╞═══════╪═════════╪═══════════╡
+    # │ -0.45 ┆ -0.0    ┆ -0.5      │
+    # │ -1.81 ┆ -2.0    ┆ -1.8      │
+    # │ 2.25  ┆ 2.0     ┆ 2.3       │
+    # │ 3.99  ┆ 4.0     ┆ 4.0       │
+    # └───────┴─────────┴───────────┘
 
 .. _sign:
 
@@ -406,20 +431,20 @@ Returns the sign of the argument as -1, 0, or +1.
 
     df = pl.DataFrame({"x": [0.4, -1, 0, -2, 4]})
     df.sql("""
-      SELECT SIGN(x) FROM self
+      SELECT x, SIGN(x) AS sign_x FROM self
     """)
-    # shape: (5, 1)
-    # ┌─────┐
-    # │ x   │
-    # │ --- │
-    # │ i64 │
-    # ╞═════╡
-    # │ 1   │
-    # │ -1  │
-    # │ 0   │
-    # │ -1  │
-    # │ 1   │
-    # └─────┘
+    # shape: (5, 2)
+    # ┌──────┬────────┐
+    # │ x    ┆ sign_x │
+    # │ ---  ┆ ---    │
+    # │ f64  ┆ i64    │
+    # ╞══════╪════════╡
+    # │ 0.4  ┆ 1      │
+    # │ -1.0 ┆ -1     │
+    # │ 0.0  ┆ 0      │
+    # │ -2.0 ┆ -1     │
+    # │ 4.0  ┆ 1      │
+    # └──────┴────────┘
 
 .. _sqrt:
 
@@ -431,18 +456,18 @@ Returns the square root (√) of a number.
 
 .. code-block:: python
 
-    df = pl.DataFrame({"x": [2, 4, 49, 64]})
+    df = pl.DataFrame({"x": [2, 16, 4096, 65536]})
     df.sql("""
-      SELECT SQRT(x) FROM self
+      SELECT x, SQRT(x) AS sqrt_x FROM self
     """)
-    # shape: (4, 1)
-    # ┌──────────┐
-    # │ x        │
-    # │ ---      │
-    # │ f64      │
-    # ╞══════════╡
-    # │ 1.414214 │
-    # │ 2.0      │
-    # │ 7.0      │
-    # │ 8.0      │
-    # └──────────┘
+    # shape: (4, 2)
+    # ┌───────┬──────────┐
+    # │ x     ┆ sqrt_x   │
+    # │ ---   ┆ ---      │
+    # │ i64   ┆ f64      │
+    # ╞═══════╪══════════╡
+    # │ 2     ┆ 1.414214 │
+    # │ 16    ┆ 4.0      │
+    # │ 4096  ┆ 64.0     │
+    # │ 65536 ┆ 256.0    │
+    # └───────┴──────────┘

@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
-from polars._utils.deprecation import deprecate_nonkeyword_arguments
+from polars._utils.deprecation import (
+    deprecate_nonkeyword_arguments,
+)
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 
@@ -44,7 +46,6 @@ TableFormatNames: TypeAlias = Literal[
 # and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
     "POLARS_WARN_UNSTABLE",
-    "POLARS_ACTIVATE_DECIMAL",
     "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
@@ -347,20 +348,6 @@ class Config(contextlib.ContextDecorator):
                 config_state[cfg_methodname] = get_value()
 
         return config_state
-
-    @classmethod
-    def activate_decimals(cls, active: bool | None = True) -> type[Config]:
-        """
-        Activate `Decimal` data types.
-
-        This is a temporary setting that will be removed once the `Decimal` type
-        stabilizes (`Decimal` is currently considered to be in beta testing).
-        """
-        if not active:
-            os.environ.pop("POLARS_ACTIVATE_DECIMAL", None)
-        else:
-            os.environ["POLARS_ACTIVATE_DECIMAL"] = str(int(active))
-        return cls
 
     @classmethod
     def set_ascii_tables(cls, active: bool | None = True) -> type[Config]:

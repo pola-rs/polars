@@ -500,3 +500,16 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
     )
 
     assert_frame_equal(out.sort("a"), expect)
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+def test_projection_pushdown_semi_anti_no_selection(
+    how: Literal["semi", "anti"],
+) -> None:
+    q_a = pl.LazyFrame({"a": [1, 2, 3]})
+
+    q_b = pl.LazyFrame({"b": [1, 2, 3], "c": [1, 2, 3]})
+
+    assert "PROJECT 1/2" in (
+        q_a.join(q_b, left_on="a", right_on="b", how=how).explain()
+    )

@@ -54,6 +54,10 @@ impl Series {
                 StructChunked::new(name, &fields).unwrap().into_series()
             },
             DataType::Null => Series::new_null(name, size),
+            DataType::Unknown(kind) => {
+                let dtype = kind.materialize().expect("expected known type");
+                Series::full_null(name, size, &dtype)
+            },
             _ => {
                 macro_rules! primitive {
                     ($type:ty) => {{

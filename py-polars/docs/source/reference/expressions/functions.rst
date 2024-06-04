@@ -83,6 +83,7 @@ These functions are available from the Polars module root and can be used as exp
    struct
    sum
    sum_horizontal
+   sql
    sql_expr
    tail
    time

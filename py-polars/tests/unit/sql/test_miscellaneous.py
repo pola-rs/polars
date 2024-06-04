@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -82,8 +82,24 @@ def test_distinct() -> None:
 
     # test unregistration
     ctx.unregister("df")
-    with pytest.raises(ComputeError, match=".*'df'.*not found"):
+    with pytest.raises(SQLInterfaceError, match="relation 'df' was not found"):
         ctx.execute("SELECT * FROM df")
+
+
+def test_frame_sql_globals_error() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df2 = pl.DataFrame({"a": [2, 3, 4], "b": [7, 6, 5]})  # noqa: F841
+
+    query = """
+        SELECT df1.a, df2.b
+        FROM df2 JOIN df1 ON df1.a = df2.a
+        ORDER BY b DESC
+    """
+    with pytest.raises(ComputeError, match=".*not found.*"):
+        df1.sql(query=query)
+
+    res = pl.sql(query=query, eager=True)
+    assert res.to_dict(as_series=False) == {"a": [2, 3], "b": [7, 6]}
 
 
 def test_in_no_ops_11946() -> None:

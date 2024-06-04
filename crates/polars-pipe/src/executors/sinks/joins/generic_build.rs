@@ -240,7 +240,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                 for (k, val) in other_ht.iter() {
                     let val = &val.0;
                     let (chunk_idx, df_idx) = k.idx.extract();
-                    // use the indexes to materialize the row
+                    // Use the indexes to materialize the row.
                     let other_row = unsafe { other.get_row(chunk_idx, df_idx) };
 
                     let h = k.hash;
@@ -331,7 +331,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     self.swapped,
                     hashes,
                     context,
-                    self.join_args.how.clone(),
+                    self.join_args.clone(),
                     self.join_nulls,
                 );
                 self.placeholder.replace(Box::new(probe_operator));

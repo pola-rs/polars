@@ -30,6 +30,13 @@ def test_equals() -> None:
     assert s3.dt.convert_time_zone("Asia/Tokyo").equals(s4) is True
 
 
+def test_series_equals_check_names() -> None:
+    s1 = pl.Series("foo", [1, 2, 3])
+    s2 = pl.Series("bar", [1, 2, 3])
+    assert s1.equals(s2) is True
+    assert s1.equals(s2, check_names=True) is False
+
+
 def test_eq_list_cmp_list() -> None:
     s = pl.Series([[1], [1, 2]])
     result = s == [1, 2]

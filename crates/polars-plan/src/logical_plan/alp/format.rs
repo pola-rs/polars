@@ -229,17 +229,9 @@ impl<'a> IRDisplay<'a> {
             },
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_slice(expr.default_exprs());
+                let exprs = self.display_expr_slice(expr);
 
-                write!(f, "{:indent$} SELECT {default_exprs}", "")?;
-
-                if !expr.cse_exprs().is_empty() {
-                    let cse_exprs = self.display_expr_slice(expr.cse_exprs());
-                    write!(f, ", CSE = {cse_exprs}")?;
-                }
-
-                f.write_str(" FROM")?;
-
+                write!(f, "{:indent$} SELECT {exprs} FROM", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
             Sort {
@@ -280,11 +272,10 @@ impl<'a> IRDisplay<'a> {
             },
             HStack { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_slice(exprs.default_exprs());
-                let cse_exprs = self.display_expr_slice(exprs.cse_exprs());
+                let exprs = self.display_expr_slice(exprs);
 
                 write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
-                write!(f, "\n{:indent$} {default_exprs}, {cse_exprs} ", "")?;
+                write!(f, "\n{:indent$} {exprs} ", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
             Distinct { input, options } => {

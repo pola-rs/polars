@@ -2960,7 +2960,7 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if isinstance(indices, list) or (
+        if isinstance(indices, Sequence) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
@@ -4475,8 +4475,8 @@ class Expr:
         Returns
         -------
         Expr
-            Expression of data type `Struct` with fields `lengths` of data type `Int32`
-            and `values` of the original data type.
+            Expression of data type `Struct` with fields `len` of data type `UInt32`
+            and `value` of the original data type.
 
         See Also
         --------
@@ -4487,18 +4487,18 @@ class Expr:
         >>> df = pl.DataFrame({"a": [1, 1, 2, 1, None, 1, 3, 3]})
         >>> df.select(pl.col("a").rle()).unnest("a")
         shape: (6, 2)
-        ┌─────────┬────────┐
-        │ lengths ┆ values │
-        │ ---     ┆ ---    │
-        │ i32     ┆ i64    │
-        ╞═════════╪════════╡
-        │ 2       ┆ 1      │
-        │ 1       ┆ 2      │
-        │ 1       ┆ 1      │
-        │ 1       ┆ null   │
-        │ 1       ┆ 1      │
-        │ 2       ┆ 3      │
-        └─────────┴────────┘
+        ┌─────┬───────┐
+        │ len ┆ value │
+        │ --- ┆ ---   │
+        │ u32 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 2   ┆ 1     │
+        │ 1   ┆ 2     │
+        │ 1   ┆ 1     │
+        │ 1   ┆ null  │
+        │ 1   ┆ 1     │
+        │ 2   ┆ 3     │
+        └─────┴───────┘
         """
         return self._from_pyexpr(self._pyexpr.rle())
 
@@ -4866,6 +4866,12 @@ class Expr:
               `pl.col("col_name").sqrt()`.
             - For mapping inner elements of lists, consider:
               `pl.col("col_name").list.eval(pl.element().sqrt())`.
+            - For mapping elements of struct fields, consider:
+              `pl.col("col_name").struct.field("field_name").sqrt()`.
+
+            If you want to replace the original column or field,
+            consider :meth:`.with_columns <polars.DataFrame.with_columns>`
+            and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element

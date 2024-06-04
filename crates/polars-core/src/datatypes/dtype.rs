@@ -28,6 +28,18 @@ pub enum UnknownKind {
     Any,
 }
 
+impl UnknownKind {
+    pub fn materialize(&self) -> Option<DataType> {
+        let dtype = match self {
+            UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
+            UnknownKind::Float => DataType::Float64,
+            UnknownKind::Str => DataType::String,
+            UnknownKind::Any => return None,
+        };
+        Some(dtype)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,

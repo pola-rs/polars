@@ -22,9 +22,7 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
     match (a.dtype(), b.dtype()) {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
-            return Ok(_struct_arithmetic(a, b, |a, b| {
-                floor_div_series(a, b).unwrap()
-            }))
+            return _struct_arithmetic(a, b, floor_div_series);
         },
         _ => {},
     }

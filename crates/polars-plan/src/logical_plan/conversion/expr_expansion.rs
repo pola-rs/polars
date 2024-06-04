@@ -712,7 +712,7 @@ fn replace_and_add_to_results(
 
                     // has both column and field expansion
                     // col('a', 'b').struct.field('*')
-                    if flags.multiple_columns {
+                    if flags.multiple_columns | flags.has_wildcard {
                         // First expand col('a', 'b') into an intermediate result.
                         let mut intermediate = vec![];
                         let mut flags = flags;
@@ -728,6 +728,7 @@ fn replace_and_add_to_results(
                         // Then expand the fields and add to the final result vec.
                         flags.expands_fields = true;
                         flags.multiple_columns = false;
+                        flags.has_wildcard = false;
                         for e in intermediate {
                             replace_and_add_to_results(e, flags, result, schema, keys)?;
                         }

@@ -19,6 +19,9 @@ df = pl.DataFrame({"foo": [1, 2, 3], "bar": [None, "bak", "baz"]})
 df.write_json("docs/data/path.json")
 # --8<-- [end:write]
 
+"""
 # --8<-- [start:scan]
 df = pl.scan_ndjson("docs/data/path.json")
 # --8<-- [end:scan]
+
+"""

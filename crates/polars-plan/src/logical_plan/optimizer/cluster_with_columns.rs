@@ -80,14 +80,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         pushable.clear();
         potential_pushable.clear();
 
-        pushable.reserve(current_exprs.as_exprs().len());
-        potential_pushable.reserve(current_exprs.as_exprs().len());
+        pushable.reserve(current_exprs.len());
+        potential_pushable.reserve(current_exprs.len());
 
         // @NOTE
         // We can pushdown any column that utilizes no live columns that are generated in the
         // input.
 
-        for input_expr in input_exprs.as_exprs() {
+        for input_expr in input_exprs.iter() {
             column_map_set(
                 &mut input_genset,
                 column_map,
@@ -95,7 +95,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             );
         }
 
-        for expr in current_exprs.as_exprs() {
+        for expr in current_exprs.iter() {
             let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
 
             for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
@@ -120,7 +120,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
         // down or pruned.
         inplace_zip_filtermap(
-            current_exprs.exprs_mut(),
+            current_exprs,
             &mut current_expr_livesets,
             |mut expr, liveset| {
                 let does_input_assign_column_that_expr_used =
@@ -150,7 +150,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                         // @NOTE: Expressions in a `WITH_COLUMNS` cannot alias to the same column.
                         // Otherwise, this would be faulty and would panic.
                         let input_expr = input_exprs
-                            .exprs_mut()
                             .iter_mut()
                             .find(|input_expr| column_name == input_expr.output_name())
                             .expect("No assigning expression for generated column");
@@ -190,7 +189,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // This will pushdown the expressions that "has an output column that is mentioned by
         // neighbour columns, but all those neighbours were being pushed down".
         for candidate in potential_pushable.iter().copied() {
-            let column_name = current_exprs.as_exprs()[candidate].output_name_arc();
+            let column_name = current_exprs[candidate].output_name_arc();
             let column_idx = column_map.get(column_name).unwrap();
 
             current_liveset.clear();
@@ -216,10 +215,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             // @NOTE: To keep the schema correct, we reverse the order here. As a
             // `WITH_COLUMNS` higher up produces later columns. This also allows us not to
             // have to deal with schemas.
-            input_exprs
-                .exprs_mut()
-                .extend(std::mem::take(current_exprs.exprs_mut()));
-            std::mem::swap(current_exprs.exprs_mut(), input_exprs.exprs_mut());
+            input_exprs.extend(std::mem::take(current_exprs));
+            std::mem::swap(current_exprs, input_exprs);
 
             // Here, we perform the trick where we switch the inputs. This makes it possible to
             // change the essentially remove the `current` node without knowing the parent of
@@ -252,8 +249,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let mut needs_simple_projection = false;
 
         input_schema_inner.reserve(pushable_set_bits);
-        input_exprs.exprs_mut().reserve(pushable_set_bits);
-        *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
+        input_exprs.reserve(pushable_set_bits);
+        *current_exprs = std::mem::take(current_exprs)
             .into_iter()
             .zip(pushable.iter())
             .filter_map(|(expr, do_pushdown)| {
@@ -265,7 +262,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     // earlier in the schema
                     let datatype = current_schema.get(column).unwrap();
                     input_schema_inner.with_column(column.into(), datatype.clone());
-                    input_exprs.exprs_mut().push(expr);
+                    input_exprs.push(expr);
 
                     None
                 } else {

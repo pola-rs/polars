@@ -1367,13 +1367,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         issue_unstable_warning(
             "`sql` is considered **unstable** (although it is close to being considered stable)."
         )
-        with SQLContext(
-            register_globals=True,
-            eager=False,
-        ) as ctx:
-            frames = {table_name: self} if table_name else {}
-            frames["self"] = self
-            ctx.register_many(frames)
+        with SQLContext(register_globals=False, eager=False) as ctx:
+            name = table_name if table_name else "self"
+            ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(
@@ -2145,7 +2141,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
-        statistics: bool = True,
+        statistics: bool | str | dict[str, bool] = True,
         row_group_size: int | None = None,
         data_pagesize_limit: int | None = None,
         maintain_order: bool = True,
@@ -2183,6 +2179,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - "zstd" : min-level: 1, max-level: 22.
         statistics
             Write statistics to the parquet headers. This is the default behavior.
+
+            Possible values:
+
+            - `True`: enable default set of statistics (default)
+            - `False`: disable all statistics
+            - "full": calculate and write all available statistics. Cannot be
+              combined with `use_pyarrow`.
+            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
+              `use_pyarrow`. Available keys:
+              - "min": column minimum value (default: `True`)
+              - "max": column maximum value (default: `True`)
+              - "distinct_count": number of unique column values (default: `False`)
+              - "null_count": number of null values in column (default: `True`)
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
@@ -2224,6 +2233,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown=slice_pushdown,
             no_optimization=no_optimization,
         )
+
+        if isinstance(statistics, bool) and statistics:
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": False,
+                "null_count": True,
+            }
+        elif isinstance(statistics, bool) and not statistics:
+            statistics = {}
+        elif statistics == "full":
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": True,
+                "null_count": True,
+            }
 
         return lf.sink_parquet(
             path=normalize_filepath(path),
@@ -3476,7 +3502,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             length of the window, if None it will equal 'every'
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
-            Defaults to negative `every`.
+            Defaults to zero.
         truncate
             truncate the time value to the window lower bound
 
@@ -3673,13 +3699,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.group_by_dynamic("time", every="1h", closed="both").agg(
         ...     pl.col("n")
         ... ).collect()
-        shape: (5, 2)
+        shape: (4, 2)
         ┌─────────────────────┬───────────┐
         │ time                ┆ n         │
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-15 23:00:00 ┆ [0]       │
         │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
         │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
@@ -3711,13 +3736,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n")).collect()
-        shape: (7, 5)
+        shape: (6, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬───────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n         │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
         │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
-        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ [0]       │
         │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
         │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
@@ -3769,7 +3793,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = negate_duration_string(parse_as_duration_string(every))
+            offset = "0ns"
 
         if period is None:
             period = every
@@ -6112,7 +6136,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_nulls: bool = False,
     ) -> Self:
         """
-        Update the values in this `LazyFrame` with the non-null values in `other`.
+        Update the values in this `LazyFrame` with the values in `other`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -6136,8 +6160,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         right_on
            Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right DataFrame will be used to update the
-            left DataFrame.
+            Overwrite values in the left frame with null values from the right frame.
+            If set to `False` (default), null values in the right frame are ignored.
 
         Notes
         -----
@@ -6542,7 +6566,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             length of the window, if None it will equal 'every'
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
-            Defaults to negative `every`.
+            Defaults to zero.
         truncate
             truncate the time value to the window lower bound
         include_boundaries

@@ -17,6 +17,7 @@ use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
+use polars_parquet::write::StatisticsOptions;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -434,6 +435,32 @@ impl ToPyObject for Wrap<TimeUnit> {
             TimeUnit::Milliseconds => "ms",
         };
         time_unit.into_py(py)
+    }
+}
+
+impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
+    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+        let mut statistics = StatisticsOptions::empty();
+
+        let dict = ob.downcast::<PyDict>()?;
+        for (key, val) in dict {
+            let key = key.extract::<PyBackedStr>()?;
+            let val = val.extract::<bool>()?;
+
+            match key.as_ref() {
+                "min" => statistics.min_value = val,
+                "max" => statistics.max_value = val,
+                "distinct_count" => statistics.distinct_count = val,
+                "null_count" => statistics.null_count = val,
+                _ => {
+                    return Err(PyTypeError::new_err(format!(
+                        "'{key}' is not a valid statistic option",
+                    )))
+                },
+            }
+        }
+
+        Ok(Wrap(statistics))
     }
 }
 

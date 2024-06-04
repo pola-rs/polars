@@ -15,6 +15,7 @@ pub trait PolarsRound {
 impl PolarsRound for DatetimeChunked {
     fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self> {
         let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        let offset = Duration::new(0);
         let out = broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {
             match (opt_t, opt_every) {
                 (Some(timestamp), Some(every)) => {
@@ -25,7 +26,7 @@ impl PolarsRound for DatetimeChunked {
                         polars_bail!(ComputeError: "Cannot round a Datetime to a negative duration")
                     }
 
-                    let w = Window::new(every, every, Duration::new(0));
+                    let w = Window::new(every, every, offset);
 
                     let func = match self.time_unit() {
                         TimeUnit::Nanoseconds => Window::round_ns,
@@ -44,6 +45,7 @@ impl PolarsRound for DatetimeChunked {
 impl PolarsRound for DateChunked {
     fn round(&self, every: &StringChunked, _tz: Option<&Tz>) -> PolarsResult<Self> {
         let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        let offset = Duration::from(0);
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         let out = broadcast_try_binary_elementwise(&self.0, every, |opt_t, opt_every| {
             match (opt_t, opt_every) {
@@ -54,7 +56,7 @@ impl PolarsRound for DateChunked {
                         polars_bail!(ComputeError: "Cannot round a Date to a negative duration")
                     }
 
-                    let w = Window::new(every, every, Duration::new(0));
+                    let w = Window::new(every, every, offset);
                     Ok(Some(
                         (w.round_ms(MSECS_IN_DAY * t as i64, None)? / MSECS_IN_DAY) as i32,
                     ))

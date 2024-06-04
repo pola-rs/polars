@@ -324,8 +324,17 @@ impl PySeries {
         self.series.has_validity()
     }
 
-    fn equals(&self, other: &PySeries, check_dtypes: bool, null_equal: bool) -> bool {
+    fn equals(
+        &self,
+        other: &PySeries,
+        check_dtypes: bool,
+        check_names: bool,
+        null_equal: bool,
+    ) -> bool {
         if check_dtypes && (self.series.dtype() != other.series.dtype()) {
+            return false;
+        }
+        if check_names && (self.series.name() != other.series.name()) {
             return false;
         }
         if null_equal {

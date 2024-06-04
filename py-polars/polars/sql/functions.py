@@ -79,8 +79,8 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     │ 2   ┆ 7   ┆ y   ┆ -654 │
     └─────┴─────┴─────┴──────┘
 
-    Apply SQL transforms (aliasing "self" to "frame") and subsequently
-    filter natively (you can freely mix SQL and native operations):
+    Apply SQL transforms and subsequently filter natively (you can freely mix SQL and
+    native operations):
 
     >>> pl.sql(
     ...     query='''

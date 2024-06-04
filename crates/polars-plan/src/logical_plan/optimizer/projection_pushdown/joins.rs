@@ -1,5 +1,5 @@
 #![allow(clippy::too_many_arguments)]
-use std::collections::BTreeSet;
+use std::borrow::Cow;
 
 use super::*;
 
@@ -97,7 +97,7 @@ pub(super) fn process_asof_join(
 
         // The join on keys can lead that columns are already added, we don't want to create
         // duplicates so store the names.
-        let mut local_projected_names = BTreeSet::new();
+        let mut local_projected_names = PlHashSet::new();
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
@@ -194,9 +194,9 @@ pub(super) fn process_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
-    options: Arc<JoinOptions>,
+    mut options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
-    _projected_names: PlHashSet<Arc<str>>,
+    projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -212,7 +212,7 @@ pub(super) fn process_join(
             right_on,
             options,
             acc_projections,
-            _projected_names,
+            projected_names,
             projections_seen,
             lp_arena,
             expr_arena,
@@ -242,7 +242,7 @@ pub(super) fn process_join(
 
         // The join on keys can lead that columns are already added, we don't want to create
         // duplicates so store the names.
-        let mut local_projected_names = BTreeSet::new();
+        let mut local_projected_names = PlHashSet::new();
 
         // We need the join columns so we push the projection downwards
         for e in &left_on {
@@ -260,8 +260,34 @@ pub(super) fn process_join(
             )
             .unwrap();
         }
-        // In full outer joins both columns remain. So `add_local=true` also for the right table
-        let add_local = !options.args.coalesce.coalesce(&options.args.how);
+
+        // For left and innner joins we can set `coalesce` to `true` if the rhs key columns are not projected.
+        // This saves a materialization.
+        if !options.args.should_coalesce()
+            && matches!(options.args.how, JoinType::Left | JoinType::Inner)
+        {
+            let non_coalesced_key_is_used = right_on.iter().any(|e| {
+                let key_name = e.output_name();
+
+                // If the name is in the lhs table, a suffix is added.
+                let key_name_after_join = if schema_left.contains(key_name) {
+                    Cow::Owned(_join_suffix_name(key_name, options.args.suffix()))
+                } else {
+                    Cow::Borrowed(key_name)
+                };
+
+                projected_names.contains(key_name_after_join.as_ref())
+            });
+
+            // If they key is not used, coalesce the columns as that is often cheaper.
+            if !non_coalesced_key_is_used {
+                let options = Arc::make_mut(&mut options);
+                options.args.coalesce = JoinCoalesce::CoalesceColumns;
+            }
+        }
+
+        // In  both columns remain. So `add_local=true` also for the right table
+        let add_local = !options.args.should_coalesce();
         for e in &right_on {
             // In case of full outer joins we also add the columns.
             // But before we do that we must check if the column wasn't already added by the lhs.
