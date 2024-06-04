@@ -29,7 +29,6 @@ from polars._utils.convert import negate_duration_string, parse_as_duration_stri
 from polars._utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
     deprecate_saturating,
     issue_deprecation_warning,
     validate_rolling_aggs_arguments,
@@ -11615,30 +11614,6 @@ class Expr:
             cast_to_supertype=cast_to_supertypes,
             input_wildcard_expansion=input_wildcard_expansion,
             pass_name_to_apply=pass_name_to_apply,
-        )
-
-    @deprecate_renamed_function("register_plugin", version="0.19.12")
-    def _register_plugin(
-        self,
-        *,
-        lib: str,
-        symbol: str,
-        args: list[IntoExpr] | None = None,
-        kwargs: dict[Any, Any] | None = None,
-        is_elementwise: bool = False,
-        input_wildcard_expansion: bool = False,
-        auto_explode: bool = False,
-        cast_to_supertypes: bool = False,
-    ) -> Expr:
-        return self.register_plugin(
-            lib=lib,
-            symbol=symbol,
-            args=args,
-            kwargs=kwargs,
-            is_elementwise=is_elementwise,
-            input_wildcard_expansion=input_wildcard_expansion,
-            returns_scalar=auto_explode,
-            cast_to_supertypes=cast_to_supertypes,
         )
 
     @classmethod
