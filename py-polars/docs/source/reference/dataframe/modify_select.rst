@@ -24,10 +24,6 @@ Manipulation/selection
     DataFrame.get_columns
     DataFrame.group_by
     DataFrame.group_by_dynamic
-    DataFrame.group_by_rolling
-    DataFrame.groupby
-    DataFrame.groupby_dynamic
-    DataFrame.groupby_rolling
     DataFrame.head
     DataFrame.hstack
     DataFrame.insert_column

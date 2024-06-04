@@ -304,7 +304,7 @@ def test_horizontal_sum_bool_dtype() -> None:
     assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1, 0], dtype=pl.UInt32)}))
 
 
-def test_horizontal_sum_in_groupby_15102() -> None:
+def test_horizontal_sum_in_group_by_15102() -> None:
     nbr_records = 1000
     out = (
         pl.LazyFrame(
@@ -504,7 +504,7 @@ def test_horizontal_mean_single_column(
     assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1.0, 0.0], dtype=out_dtype)}))
 
 
-def test_horizontal_mean_in_groupby_15115() -> None:
+def test_horizontal_mean_in_group_by_15115() -> None:
     nbr_records = 1000
     out = (
         pl.LazyFrame(

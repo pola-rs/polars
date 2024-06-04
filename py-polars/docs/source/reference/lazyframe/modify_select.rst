@@ -21,10 +21,6 @@ Manipulation/selection
     LazyFrame.gather_every
     LazyFrame.group_by
     LazyFrame.group_by_dynamic
-    LazyFrame.group_by_rolling
-    LazyFrame.groupby
-    LazyFrame.groupby_dynamic
-    LazyFrame.groupby_rolling
     LazyFrame.head
     LazyFrame.inspect
     LazyFrame.interpolate
