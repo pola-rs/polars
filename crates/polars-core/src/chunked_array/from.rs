@@ -206,11 +206,8 @@ where
         // that check if the data types in the arrays are as expected
         #[cfg(debug_assertions)]
         {
-            if !chunks.is_empty() && dtype.is_primitive() {
-                assert_eq!(
-                    chunks[0].data_type().underlying_physical_type(),
-                    dtype.to_arrow(true)
-                )
+            if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
+                assert_eq!(chunks[0].data_type(), &dtype.to_arrow(true))
             }
         }
         let field = Arc::new(Field::new(name, dtype));
