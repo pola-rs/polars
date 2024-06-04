@@ -3,7 +3,6 @@ use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-#[cfg(not(target_family = "wasm"))]
 use fs4::FileExt;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};

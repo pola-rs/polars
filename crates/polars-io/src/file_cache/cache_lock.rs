@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
 
-#[cfg(not(target_family = "wasm"))]
 use fs4::FileExt;
 use once_cell::sync::Lazy;
 use polars_core::config;

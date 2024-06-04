@@ -26,7 +26,6 @@ chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
-fs4 = { version = "0.8.3", features = ["sync"] }
 futures = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
 memchr = { workspace = true }
@@ -51,6 +50,7 @@ zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 home = "0.5.4"
+fs4 = { version = "0.8.3", features = ["sync"] }
 
 [dev-dependencies]
 tempfile = "3"

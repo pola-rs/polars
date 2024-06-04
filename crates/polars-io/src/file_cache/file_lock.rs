@@ -1,7 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::path::Path;
 
-#[cfg(not(target_family = "wasm"))]
 use fs4::FileExt;
 
 /// Note: this creates the file if it does not exist when acquiring locks.
