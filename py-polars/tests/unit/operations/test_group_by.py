@@ -503,10 +503,10 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
             (pl.col("b") / pl.col("a")).last().alias("last_ratio_2"),
         ]
     ).to_dict(as_series=False) == {
-        "a": [0, 1, 2],
-        "sum_ratio_1": [1.0, 4.2, 5.0],
-        "last_ratio_1": [1.0, 6.0, 6.0],
-        "last_ratio_2": [1.0, 6.0, 6.0],
+        "a": [1, 2],
+        "sum_ratio_1": [4.2, 5.0],
+        "last_ratio_1": [6.0, 6.0],
+        "last_ratio_2": [6.0, 6.0],
     }
 
 
@@ -543,7 +543,7 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
         .to_dict(as_series=False)
     )
 
-    assert res["corr"] == pytest.approx([9.148920923684765])
+    assert res["corr"] == pytest.approx([6.988674024215477])
     assert res["a"] == [None]
 
 
