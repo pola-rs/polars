@@ -12,7 +12,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, timedelta
+    from datetime import date, timedelta
     from typing import Literal
 
     from polars import Expr, Series
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -32,8 +32,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -43,8 +43,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -53,8 +53,8 @@ def date_range(
 
 
 def date_range(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -72,6 +72,7 @@ def date_range(
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
+        Must consist of full days.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -83,16 +84,15 @@ def date_range(
     Expr or Series
         Column of data type :class:`Date`.
 
+    See Also
+    --------
+    date_ranges
+    datetime_range
+
     Notes
     -----
     `interval` is created according to the following string language:
 
-    - 1ns   (1 nanosecond)
-    - 1us   (1 microsecond)
-    - 1ms   (1 millisecond)
-    - 1s    (1 second)
-    - 1m    (1 minute)
-    - 1h    (1 hour)
     - 1d    (1 calendar day)
     - 1w    (1 calendar week)
     - 1mo   (1 calendar month)
@@ -100,7 +100,7 @@ def date_range(
     - 1y    (1 calendar year)
 
     Or combine them:
-    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    "1w2d" # 1 week, 2 days
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -155,8 +155,8 @@ def date_range(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -166,8 +166,8 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -177,8 +177,8 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -187,8 +187,8 @@ def date_ranges(
 
 
 def date_ranges(
-    start: date | datetime | IntoExprColumn,
-    end: date | datetime | IntoExprColumn,
+    start: date | IntoExprColumn,
+    end: date | IntoExprColumn,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -206,6 +206,7 @@ def date_ranges(
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
+        Must consist of full days.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -215,18 +216,17 @@ def date_ranges(
     Returns
     -------
     Expr or Series
-        Column of data type `List(Date)` or `List(Datetime)`.
+        Column of data type `List(Date)`.
+
+    See Also
+    --------
+    date_range
+    datetime_ranges
 
     Notes
     -----
     `interval` is created according to the following string language:
 
-    - 1ns   (1 nanosecond)
-    - 1us   (1 microsecond)
-    - 1ms   (1 millisecond)
-    - 1s    (1 second)
-    - 1m    (1 minute)
-    - 1h    (1 hour)
     - 1d    (1 calendar day)
     - 1w    (1 calendar week)
     - 1mo   (1 calendar month)
@@ -234,7 +234,7 @@ def date_ranges(
     - 1y    (1 calendar year)
 
     Or combine them:
-    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    "1w2d" # 1 week, 2 days
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",

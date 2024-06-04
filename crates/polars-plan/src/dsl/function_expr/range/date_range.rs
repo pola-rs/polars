@@ -14,18 +14,16 @@ pub(super) fn date_range(
     interval: Duration,
     closed: ClosedWindow,
 ) -> PolarsResult<Series> {
-    polars_ensure!(
-        interval.is_full_days(),
-        ComputeError: "`interval` input for `date_range` must be whole days, got: {interval}"
-    );
-
     let start = &s[0];
     let end = &s[1];
-    let name = start.name();
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
+    polars_ensure!(
+        interval.is_full_days(),
+        ComputeError: "`interval` input for `date_range` must consist of full days, got: {interval}"
+    );
 
-    let dtype = DataType::Date;
+    let name = start.name();
     let start = temporal_series_to_i64_scalar(start)
         .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?
         * MILLISECONDS_IN_DAY;
@@ -33,7 +31,7 @@ pub(super) fn date_range(
         .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?
         * MILLISECONDS_IN_DAY;
 
-    let result = datetime_range_impl(
+    let out = datetime_range_impl(
         name,
         start,
         end,
@@ -41,10 +39,10 @@ pub(super) fn date_range(
         closed,
         TimeUnit::Milliseconds,
         None,
-    )?
-    .cast(&dtype)?;
+    )?;
 
-    Ok(result.into_series())
+    let to_type = DataType::Date;
+    out.cast(&to_type)
 }
 
 pub(super) fn date_ranges(
@@ -52,13 +50,13 @@ pub(super) fn date_ranges(
     interval: Duration,
     closed: ClosedWindow,
 ) -> PolarsResult<Series> {
-    polars_ensure!(
-        interval.is_full_days(),
-        ComputeError: "`interval` input for `date_ranges` must be whole days, got: {interval}"
-    );
-
     let start = &s[0];
     let end = &s[1];
+
+    polars_ensure!(
+        interval.is_full_days(),
+        ComputeError: "`interval` input for `date_ranges` must consist of full days, got: {interval}"
+    );
 
     let start = start.cast(&DataType::Int64)?;
     let end = end.cast(&DataType::Int64)?;
