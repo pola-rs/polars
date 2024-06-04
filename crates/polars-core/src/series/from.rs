@@ -89,7 +89,7 @@ impl Series {
                     .unwrap_or_else(|| Arc::new(RevMapping::default()));
                 let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
-                    rev_map.clone(),
+                    rev_map,
                     matches!(dt, Enum(_, _)),
                     *ordering,
                 );
