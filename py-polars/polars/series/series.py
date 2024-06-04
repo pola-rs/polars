@@ -7586,34 +7586,6 @@ class Series:
             Set the labels at the center of the window
         """
 
-    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
-    def is_first(self) -> Series:
-        """
-        Return a boolean mask indicating the first occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.is_first_distinct`.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Boolean`.
-        """
-
-    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
-    def is_last(self) -> Series:
-        """
-        Return a boolean mask indicating the last occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.is_last_distinct`.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Boolean`.
-        """
-
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 

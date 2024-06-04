@@ -14,11 +14,9 @@ Descriptive
     Series.is_duplicated
     Series.is_empty
     Series.is_finite
-    Series.is_first
     Series.is_first_distinct
     Series.is_in
     Series.is_infinite
-    Series.is_last
     Series.is_last_distinct
     Series.is_nan
     Series.is_not_nan
