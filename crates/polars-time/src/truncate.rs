@@ -92,11 +92,7 @@ impl PolarsTruncate for DatetimeChunked {
 }
 
 impl PolarsTruncate for DateChunked {
-    fn truncate(
-        &self,
-        _tz: Option<&Tz>,
-        every: &StringChunked,
-    ) -> PolarsResult<Self> {
+    fn truncate(&self, _tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
         let offset = Duration::new(0);
         let out = match every.len() {
             1 => {
