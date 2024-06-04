@@ -292,8 +292,7 @@ def test_sort_maintain_order_descending_repeated_nulls(nulls_last: bool) -> None
 def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     s = pl.Series("c", [True, False, True])
-    with pytest.deprecated_call():
-        df.replace("a", s)
+    df._replace("a", s)
     assert_frame_equal(df, pl.DataFrame({"a": [True, False, True], "b": [1, 2, 3]}))
 
 
