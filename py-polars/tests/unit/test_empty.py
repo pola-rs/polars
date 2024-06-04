@@ -137,3 +137,8 @@ def test_empty_to_empty(method: str) -> None:
 def test_empty_shift_over_16676() -> None:
     df = pl.DataFrame({"a": [], "b": []})
     assert df.with_columns(pl.col("a").shift(fill_value=0).over("b")).shape == (0, 2)
+
+
+def test_empty_list_cat_16405() -> None:
+    df = pl.DataFrame(schema={"cat": pl.List(pl.Categorical)})
+    df.select(pl.col("cat") == pl.col("cat"))
