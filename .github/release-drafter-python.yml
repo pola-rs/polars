@@ -8,11 +8,14 @@ include-labels:
   - python
 
 version-resolver:
-  minor:
+  major:
     labels:
       - breaking
       - breaking python
-  default: patch
+  patch:
+    labels:
+      - fix
+  default: minor
 
 categories:
   - title: 🏆 Highlights
