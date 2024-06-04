@@ -2791,9 +2791,3 @@ def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None
 def test_pytime_conversion(tm: time) -> None:
     s = pl.Series("tm", [tm])
     assert s.to_list() == [tm]
-
-
-def test_datetime_time_unit_none_deprecated() -> None:
-    with pytest.deprecated_call():
-        dtype = pl.Datetime(time_unit=None)  # type: ignore[arg-type]
-    assert dtype.time_unit == "us"

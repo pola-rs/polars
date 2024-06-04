@@ -434,23 +434,12 @@ class Datetime(TemporalType):
     epoch.
     """
 
-    time_unit: TimeUnit | None = None
-    time_zone: str | None = None
+    time_unit: TimeUnit
+    time_zone: str | None
 
     def __init__(
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
-        if time_unit is None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "Passing `time_unit=None` to the Datetime constructor is deprecated."
-                " Either avoid passing a time unit to use the default value ('us'),"
-                " or pass a valid time unit instead ('ms', 'us', 'ns').",
-                version="0.20.11",
-            )
-            time_unit = "us"
-
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -501,7 +490,7 @@ class Duration(TemporalType):
     negative time offsets.
     """
 
-    time_unit: TimeUnit | None = None
+    time_unit: TimeUnit
 
     def __init__(self, time_unit: TimeUnit = "us"):
         if time_unit not in ("ms", "us", "ns"):
@@ -680,7 +669,7 @@ class List(NestedType):
     └───────────────┴─────────────┘
     """
 
-    inner: PolarsDataType | None = None
+    inner: PolarsDataType
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         self.inner = polars.datatypes.py_type_to_dtype(inner)
@@ -696,10 +685,7 @@ class List(NestedType):
         if type(other) is DataTypeClass and issubclass(other, List):
             return True
         elif isinstance(other, List):
-            if self.inner is None or other.inner is None:
-                return True
-            else:
-                return self.inner == other.inner
+            return self.inner == other.inner
         else:
             return False
 
@@ -734,7 +720,7 @@ class Array(NestedType):
     ]
     """
 
-    inner: PolarsDataType | None = None
+    inner: PolarsDataType
     size: int
     shape: tuple[int, ...]
 
@@ -790,8 +776,6 @@ class Array(NestedType):
         elif isinstance(other, Array):
             if self.shape != other.shape:
                 return False
-            elif self.inner is None or other.inner is None:
-                return True
             else:
                 return self.inner == other.inner
         else:
