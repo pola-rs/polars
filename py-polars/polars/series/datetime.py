@@ -1229,7 +1229,6 @@ class DateTimeNameSpace:
         self,
         time_zone: str | None,
         *,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
         non_existent: NonExistent = "raise",
     ) -> Series:
@@ -1243,15 +1242,6 @@ class DateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -1658,13 +1648,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def truncate(
-        self,
-        every: str | dt.timedelta | Expr,
-        *,
-        use_earliest: bool | None = None,
-        ambiguous: Ambiguous | Series | None = None,
-    ) -> Series:
+    def truncate(self, every: str | dt.timedelta | Expr) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
@@ -1679,24 +1663,6 @@ class DateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                This is now automatically inferred; you can safely omit this argument.
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
-
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-
-            .. deprecated:: 0.19.3
-                This is now automatically inferred; you can safely omit this argument.
 
         Notes
         -----
@@ -1718,7 +1684,6 @@ class DateTimeNameSpace:
         These strings can be combined:
 
         - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",

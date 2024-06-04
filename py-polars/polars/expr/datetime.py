@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING, Iterable
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_function,
-    issue_deprecation_warning,
-    rename_use_earliest_to_ambiguous,
-)
+from polars._utils.deprecation import deprecate_function
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
@@ -155,13 +151,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
-    def truncate(
-        self,
-        every: str | timedelta | Expr,
-        *,
-        use_earliest: bool | None = None,
-        ambiguous: Ambiguous | Expr | None = None,
-    ) -> Expr:
+    def truncate(self, every: str | timedelta | Expr) -> Expr:
         """
         Divide the date/datetime range into buckets.
 
@@ -176,24 +166,6 @@ class ExprDateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                This is now automatically inferred; you can safely omit this argument.
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
-
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-
-            .. deprecated:: 0.19.3
-                This is now automatically inferred; you can safely omit this argument.
 
         Notes
         -----
@@ -302,27 +274,11 @@ class ExprDateTimeNameSpace:
         if not isinstance(every, pl.Expr):
             every = parse_as_duration_string(every)
 
-        if use_earliest is not None:
-            issue_deprecation_warning(
-                "`use_earliest` is deprecated. It is now automatically inferred; you can safely omit this argument.",
-                version="0.19.13",
-            )
-        if ambiguous is not None:
-            issue_deprecation_warning(
-                "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
-                version="0.19.13",
-            )
         every = parse_as_expression(every, str_as_lit=True)
-
         return wrap_expr(self._pyexpr.dt_truncate(every))
 
     @unstable()
-    def round(
-        self,
-        every: str | timedelta | IntoExprColumn,
-        *,
-        ambiguous: Ambiguous | Expr | None = None,
-    ) -> Expr:
+    def round(self, every: str | timedelta | IntoExprColumn) -> Expr:
         """
         Divide the date/datetime range into buckets.
 
@@ -343,15 +299,6 @@ class ExprDateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
-
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-
-            .. deprecated:: 0.19.3
-                This is now automatically inferred; you can safely omit this argument.
 
         Returns
         -------
@@ -433,11 +380,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
         """
-        if ambiguous is not None:
-            issue_deprecation_warning(
-                "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
-                version="0.19.13",
-            )
         if isinstance(every, timedelta):
             every = parse_as_duration_string(every)
         every = parse_as_expression(every, str_as_lit=True)
@@ -1690,7 +1632,6 @@ class ExprDateTimeNameSpace:
         self,
         time_zone: str | None,
         *,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
         non_existent: NonExistent = "raise",
     ) -> Expr:
@@ -1704,15 +1645,6 @@ class ExprDateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` expression. Pass `None` to unset time zone.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -1792,7 +1724,6 @@ class ExprDateTimeNameSpace:
         │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
         └─────────────────────┴───────────┴───────────────────────────────┘
         """
-        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(

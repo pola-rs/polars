@@ -4,7 +4,6 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
-from polars._utils.deprecation import rename_use_earliest_to_ambiguous
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -34,7 +33,6 @@ def datetime_(
     *,
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
-    use_earliest: bool | None = None,
     ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
@@ -60,15 +58,6 @@ def datetime_(
         Time unit of the resulting expression.
     time_zone
         Time zone of the resulting expression.
-    use_earliest
-        Determine how to deal with ambiguous datetimes:
-
-        - `None` (default): raise
-        - `True`: use the earliest datetime
-        - `False`: use the latest datetime
-
-        .. deprecated:: 0.19.0
-            Use `ambiguous` instead
     ambiguous
         Determine how to deal with ambiguous datetimes:
 
@@ -141,9 +130,7 @@ def datetime_(
     │ 2024-01-01 00:00:00 ┆ 2024-09-01 22:35:30 │
     └─────────────────────┴─────────────────────┘
     """
-    ambiguous = parse_as_expression(
-        rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
-    )
+    ambiguous_expr = parse_as_expression(ambiguous, str_as_lit=True)
     year_expr = parse_as_expression(year)
     month_expr = parse_as_expression(month)
     day_expr = parse_as_expression(day)
@@ -168,7 +155,7 @@ def datetime_(
             microsecond,
             time_unit,
             time_zone,
-            ambiguous,
+            ambiguous_expr,
         )
     )
 

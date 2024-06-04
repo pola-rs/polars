@@ -667,7 +667,7 @@ def test_to_time_format_warning() -> None:
 
 
 @pytest.mark.parametrize("exact", [True, False])
-def test_to_datetime_use_earliest(exact: bool) -> None:
+def test_to_datetime_ambiguous_earliest(exact: bool) -> None:
     result = (
         pl.Series(["2020-10-25 01:00"])
         .str.to_datetime(time_zone="Europe/London", ambiguous="earliest", exact=exact)
@@ -704,7 +704,7 @@ def test_to_datetime_naive_format_and_time_zone() -> None:
 
 
 @pytest.mark.parametrize("exact", [True, False])
-def test_strptime_use_earliest(exact: bool) -> None:
+def test_strptime_ambiguous_earliest(exact: bool) -> None:
     result = (
         pl.Series(["2020-10-25 01:00"])
         .str.strptime(
