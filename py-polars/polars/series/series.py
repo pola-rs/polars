@@ -7652,66 +7652,6 @@ class Series:
         """
         return self.scatter(indices, values)
 
-    @deprecate_renamed_function("cum_sum", version="0.19.14")
-    def cumsum(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative sum computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_sum`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_sum(reverse=reverse)
-
-    @deprecate_renamed_function("cum_max", version="0.19.14")
-    def cummax(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative max computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_max`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_max(reverse=reverse)
-
-    @deprecate_renamed_function("cum_min", version="0.19.14")
-    def cummin(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative min computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_min`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_min(reverse=reverse)
-
-    @deprecate_renamed_function("cum_prod", version="0.19.14")
-    def cumprod(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative product computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_prod`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_prod(reverse=reverse)
-
     @deprecate_renamed_function("equals", version="0.19.16")
     def series_equal(
         self, other: Series, *, null_equal: bool = True, strict: bool = False

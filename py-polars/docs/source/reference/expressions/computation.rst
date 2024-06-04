@@ -24,11 +24,6 @@ Computation
     Expr.cum_min
     Expr.cum_prod
     Expr.cum_sum
-    Expr.cumcount
-    Expr.cummax
-    Expr.cummin
-    Expr.cumprod
-    Expr.cumsum
     Expr.cumulative_eval
     Expr.degrees
     Expr.diff

@@ -507,30 +507,6 @@ def test_cum_agg() -> None:
     )
 
 
-def test_cum_agg_deprecated() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 2]})
-    with pytest.deprecated_call():
-        assert_series_equal(
-            ldf.select(pl.col("a").cumsum()).collect()["a"],
-            pl.Series("a", [1, 3, 6, 8]),
-        )
-    with pytest.deprecated_call():
-        assert_series_equal(
-            ldf.select(pl.col("a").cummin()).collect()["a"],
-            pl.Series("a", [1, 1, 1, 1]),
-        )
-    with pytest.deprecated_call():
-        assert_series_equal(
-            ldf.select(pl.col("a").cummax()).collect()["a"],
-            pl.Series("a", [1, 2, 3, 3]),
-        )
-    with pytest.deprecated_call():
-        assert_series_equal(
-            ldf.select(pl.col("a").cumprod()).collect()["a"],
-            pl.Series("a", [1, 2, 6, 12]),
-        )
-
-
 def test_floor() -> None:
     ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]}).select(pl.col("a").floor())
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 1, 3]).cast(pl.Float64))

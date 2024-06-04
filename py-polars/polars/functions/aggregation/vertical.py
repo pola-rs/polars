@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -331,19 +330,3 @@ def cum_sum(*names: str) -> Expr:
     └─────┘
     """
     return F.col(*names).cum_sum()
-
-
-@deprecate_renamed_function("cum_sum", version="0.19.14")
-def cumsum(*names: str) -> Expr:
-    """
-    Cumulatively sum all values.
-
-    .. deprecated:: 0.19.14
-        This function has been renamed to :func:`cum_sum`.
-
-    Parameters
-    ----------
-    *names
-        Name(s) of the columns to use in the aggregation.
-    """
-    return cum_sum(*names)

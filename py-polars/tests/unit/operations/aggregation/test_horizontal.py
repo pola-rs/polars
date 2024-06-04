@@ -311,20 +311,6 @@ def test_cum_sum_horizontal() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_cumsum_horizontal_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 2],
-            "b": [3, 4],
-            "c": [5, 6],
-        }
-    )
-    with pytest.deprecated_call():
-        result = df.select(pl.cumsum_horizontal("a", "c"))
-    expected = df = pl.DataFrame({"cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]})
-    assert_frame_equal(result, expected)
-
-
 def test_sum_dtype_12028() -> None:
     result = pl.select(
         pl.sum_horizontal([pl.duration(seconds=10)]).alias("sum_duration")

@@ -81,18 +81,6 @@ def test_cum_count() -> None:
     assert out["foo"][1].to_list() == [1, 2]
 
 
-def test_cumcount_deprecated() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
-
-    with pytest.deprecated_call():
-        out = df.group_by("A", maintain_order=True).agg(
-            pl.col("A").cumcount().alias("foo")
-        )
-
-    assert out["foo"][0].to_list() == [1, 2, 3, 4]
-    assert out["foo"][1].to_list() == [1, 2]
-
-
 def test_series_cum_count() -> None:
     s = pl.Series(["x", "k", None, "d"])
     result = s.cum_count()

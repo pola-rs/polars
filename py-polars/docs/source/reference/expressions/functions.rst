@@ -35,10 +35,6 @@ These functions are available from the Polars module root and can be used as exp
    cum_reduce
    cum_sum
    cum_sum_horizontal
-   cumfold
-   cumreduce
-   cumsum
-   cumsum_horizontal
    date
    datetime
    date_range
@@ -104,7 +100,6 @@ These functions are available from the Polars module root and can be used as exp
    Expr.apply
    Expr.approx_n_unique
    Expr.count
-   Expr.cumsum
    Expr.exclude
    Expr.first
    Expr.head

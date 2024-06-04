@@ -24,10 +24,6 @@ Computation
     Series.cum_min
     Series.cum_prod
     Series.cum_sum
-    Series.cummax
-    Series.cummin
-    Series.cumprod
-    Series.cumsum
     Series.cumulative_eval
     Series.diff
     Series.dot

@@ -58,19 +58,6 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
 
 
-def test_cum_agg_deprecated() -> None:
-    # confirm that known series give expected results
-    s = pl.Series("a", [1, 2, 3, 2])
-    with pytest.deprecated_call():
-        assert_series_equal(s.cumsum(), pl.Series("a", [1, 3, 6, 8]))
-    with pytest.deprecated_call():
-        assert_series_equal(s.cummin(), pl.Series("a", [1, 1, 1, 1]))
-    with pytest.deprecated_call():
-        assert_series_equal(s.cummax(), pl.Series("a", [1, 2, 3, 3]))
-    with pytest.deprecated_call():
-        assert_series_equal(s.cumprod(), pl.Series("a", [1, 2, 6, 12]))
-
-
 def test_init_inputs(monkeypatch: Any) -> None:
     nan = float("nan")
     # Good inputs
