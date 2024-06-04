@@ -45,7 +45,6 @@ Manipulation/selection
     Series.sample
     Series.scatter
     Series.set
-    Series.set_at_idx
     Series.shift
     Series.shrink_dtype
     Series.shrink_to_fit
