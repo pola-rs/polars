@@ -995,18 +995,6 @@ def test_extract_all_count() -> None:
     assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
 
 
-def test_count_matches_deprecated_count() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
-
-    with pytest.deprecated_call():
-        expr = pl.col("foo").str.count_match(r"a")
-
-    result = df.select(expr)
-
-    expected = pl.Series("foo", [2, 1, 0, None], dtype=pl.UInt32).to_frame()
-    assert_frame_equal(result, expected)
-
-
 def test_count_matches_many() -> None:
     df = pl.DataFrame(
         {

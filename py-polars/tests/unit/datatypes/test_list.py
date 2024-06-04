@@ -310,17 +310,6 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
-def test_list_count_matches_deprecated() -> None:
-    df = pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-    with pytest.deprecated_call():
-        result = df.select(
-            pl.col("listcol").list.count_match(2).alias("number_of_twos")
-        )
-
-    expected = {"number_of_twos": [0, 0, 2, 1, 0]}
-    assert result.to_dict(as_series=False) == expected
-
-
 def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")

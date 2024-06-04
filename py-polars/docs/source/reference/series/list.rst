@@ -16,7 +16,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.arg_min
     Series.list.concat
     Series.list.contains
-    Series.list.count_match
     Series.list.count_matches
     Series.list.diff
     Series.list.eval

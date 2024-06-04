@@ -2448,28 +2448,6 @@ class ExprStringNameSpace:
         base = parse_as_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(self, pattern: str | Expr) -> Expr:
-        """
-        Count all successive non-overlapping regex matches.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`UInt32`. Returns null if the
-            original value is null.
-        """
-        return self.count_matches(pattern)
-
     @deprecate_renamed_function("json_decode", version="0.19.15")
     def json_extract(
         self,
