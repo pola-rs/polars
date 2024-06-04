@@ -739,3 +739,16 @@ def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()
         is None
     )
+
+
+def test_out_of_ns_range_no_tu_specified_13592() -> None:
+    df = pl.DataFrame({"dates": ["2022-08-31 00:00:00.0", "0920-09-18 00:00:00.0"]})
+    result = df.select(pl.col("dates").str.to_datetime(format="%Y-%m-%d %H:%M:%S%.f"))[
+        "dates"
+    ]
+    expected = pl.Series(
+        "dates",
+        [datetime(2022, 8, 31, 0, 0), datetime(920, 9, 18, 0, 0)],
+        dtype=pl.Datetime("us"),
+    )
+    assert_series_equal(result, expected)
