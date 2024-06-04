@@ -1880,24 +1880,6 @@ class StringNameSpace:
             value is null.
         """
 
-    @deprecate_renamed_function("len_bytes", version="0.19.8")
-    def lengths(self) -> Series:
-        """
-        Return the number of bytes in each string.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_bytes`.
-        """
-
-    @deprecate_renamed_function("len_chars", version="0.19.8")
-    def n_chars(self) -> Series:
-        """
-        Return the length of each string as the number of characters.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_chars`.
-        """
-
     @deprecate_renamed_function("pad_end", version="0.19.12")
     @deprecate_renamed_parameter("width", "length", version="0.19.12")
     def ljust(self, length: int, fill_char: str = " ") -> Series:

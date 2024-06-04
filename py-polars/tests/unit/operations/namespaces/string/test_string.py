@@ -191,25 +191,9 @@ def test_str_len_bytes() -> None:
     assert_series_equal(result, expected)
 
 
-def test_str_lengths_deprecated() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    with pytest.deprecated_call():
-        result = s.str.lengths()
-    expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
 def test_str_len_chars() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     result = s.str.len_chars()
-    expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
-def test_str_n_chars_deprecated() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    with pytest.deprecated_call():
-        result = s.str.n_chars()
     expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
     assert_series_equal(result, expected)
 
