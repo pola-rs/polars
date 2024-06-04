@@ -2960,7 +2960,7 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if isinstance(indices, list) or (
+        if isinstance(indices, Sequence) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr

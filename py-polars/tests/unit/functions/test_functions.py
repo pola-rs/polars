@@ -447,7 +447,6 @@ def test_lazy_functions() -> None:
         pl.first("a").name.suffix("_first"),
         pl.first("b", "c").name.suffix("_first"),
         pl.last("c", "b", "a").name.suffix("_last"),
-        pl.nth(1, "c", "a").name.suffix("_nth1"),
     )
     expected: dict[str, list[Any]] = {
         "b_var": [1.0],
@@ -470,8 +469,6 @@ def test_lazy_functions() -> None:
         "c_last": [4.0],
         "b_last": [3],
         "a_last": ["foo"],
-        "c_nth1": [2.0],
-        "a_nth1": ["bar"],
     }
     assert_frame_equal(
         out,
