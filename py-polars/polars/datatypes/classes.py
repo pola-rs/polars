@@ -52,10 +52,6 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
-        ...
-
-    @classmethod
     def is_numeric(cls) -> bool:  # noqa: D102
         ...
 
@@ -143,38 +139,6 @@ class DataType(metaclass=DataTypeClass):
         False
         """
         return self == other and hash(self) == hash(other)
-
-    @classinstmethod  # type: ignore[arg-type]
-    def is_not(self, other: PolarsDataType) -> bool:
-        """
-        Check if this DataType is NOT the same as another DataType.
-
-        .. deprecated:: 0.19.14
-            Use `not dtype.is_(...)` instead.
-
-        This is a stricter check than `self != other`, as it enforces an exact
-        match of all dtype attributes for nested and/or uninitialised dtypes.
-
-        Parameters
-        ----------
-        other
-            the other polars dtype to compare with.
-
-        Examples
-        --------
-        >>> pl.List != pl.List(pl.Int32)
-        False
-        >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
-        True
-        """
-        from polars._utils.deprecation import issue_deprecation_warning
-
-        issue_deprecation_warning(
-            "`DataType.is_not` is deprecated and will be removed in the next breaking release."
-            " Use `not dtype.is_(...)` instead.",
-            version="0.19.14",
-        )
-        return not self.is_(other)
 
     @classmethod
     def is_numeric(cls) -> bool:
