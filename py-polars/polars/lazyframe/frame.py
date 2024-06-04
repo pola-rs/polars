@@ -30,7 +30,6 @@ from polars._utils.deprecation import (
     deprecate_function,
     deprecate_parameter_as_positional,
     deprecate_renamed_parameter,
-    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars._utils.parse_expr_input import (
@@ -3011,24 +3010,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
                 )
 
-        # identify deprecated usage of 'predicate' parameter
-        if "predicate" in constraints:
-            is_mask = False
-            if isinstance(p := constraints["predicate"], pl.Expr) or (
-                is_mask := is_bool_sequence(p)
-            ):
-                p = constraints.pop("predicate")
-                issue_deprecation_warning(
-                    "`filter` no longer takes a 'predicate' parameter.\n"
-                    "To silence this warning you should omit the keyword and pass "
-                    "as a positional argument instead.",
-                    version="0.19.9",
-                )
-                if is_mask:
-                    boolean_masks.append(pl.Series(p, dtype=Boolean))
-                else:
-                    all_predicates.append(p)  # type: ignore[arg-type]
-
         # unpack equality constraints from kwargs
         all_predicates.extend(
             F.col(name).eq(value) for name, value in constraints.items()
@@ -3432,8 +3413,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         index_column = parse_as_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
@@ -3455,7 +3434,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
@@ -3500,11 +3478,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
             Defaults to zero.
-        truncate
-            truncate the time value to the window lower bound
-
-            .. deprecated:: 0.19.4
-                Use `label` instead.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_boundary" and
             "_upper_boundary" columns. This will impact performance because it's harder to
@@ -3774,20 +3747,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        every = deprecate_saturating(every)
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
-        if truncate is not None:
-            if truncate:
-                label = "left"
-            else:
-                label = "datapoint"
-            issue_deprecation_warning(
-                f"`truncate` is deprecated and will be removed in a future version."
-                f" Please replace `truncate={truncate}` with `label='{label}'` to silence this warning.",
-                version="0.19.4",
-            )
-
         index_column = parse_as_expression(index_column)
         if offset is None:
             offset = "0ns"
@@ -3946,7 +3905,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
         """
-        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
@@ -4616,7 +4574,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.reverse())
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
     ) -> Self:

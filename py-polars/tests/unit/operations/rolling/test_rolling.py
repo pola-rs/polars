@@ -852,10 +852,7 @@ def test_rolling_by_1mo_saturating_12216() -> None:
             "val": [1, 2, 3, 4, 5],
         }
     ).set_sorted("date")
-    with pytest.deprecated_call(match="The '_saturating' suffix is deprecated"):
-        result = df.rolling(index_column="date", period="1mo_saturating").agg(
-            vals=pl.col("val")
-        )
+    result = df.rolling(index_column="date", period="1mo").agg(vals=pl.col("val"))
     expected = pl.DataFrame(
         {
             "date": [

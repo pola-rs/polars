@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars._utils.deprecation import (
-    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars._utils.parse_expr_input import parse_as_expression
@@ -168,8 +167,6 @@ def date_range(
         1985-01-09
     ]
     """
-    interval = deprecate_saturating(interval)
-
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
@@ -310,7 +307,6 @@ def date_ranges(
     │ 2022-01-02 ┆ 2022-01-03 ┆ [2022-01-02, 2022-01-03]             │
     └────────────┴────────────┴──────────────────────────────────────┘
     """
-    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"

@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
-    from polars import Expr
     from polars.type_aliases import Ambiguous, ClosedInterval
 
     if sys.version_info >= (3, 10):
@@ -243,35 +242,6 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         last = allowed_args[-1]
         args = ", ".join([f"{x!r}" for x in allowed_args[:-1]])
         return f" except for {args} and {last!r}"
-
-
-def rename_use_earliest_to_ambiguous(
-    use_earliest: bool | None, ambiguous: Ambiguous | Expr
-) -> Ambiguous | Expr:
-    """Issue deprecation warning if deprecated `use_earliest` argument is used."""
-    if isinstance(use_earliest, bool):
-        ambiguous = USE_EARLIEST_TO_AMBIGUOUS[use_earliest]
-        warnings.warn(
-            "The argument 'use_earliest' in 'replace_time_zone' is deprecated. "
-            f"Please replace `use_earliest={use_earliest}` with "
-            f"`ambiguous='{ambiguous}'`. Note that this new argument can also "
-            "accept expressions.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-        return ambiguous
-    return ambiguous
-
-
-def deprecate_saturating(duration: T) -> T:
-    """Deprecate `_saturating` suffix in duration strings, apply it by default."""
-    if isinstance(duration, str) and duration.endswith("_saturating"):
-        issue_deprecation_warning(
-            "The '_saturating' suffix is deprecated and is now done by default, you can safely remove it.",
-            version="0.19.3",
-        )
-        return duration[:-11]  # type: ignore[return-value]
-    return duration
 
 
 def validate_rolling_by_aggs_arguments(

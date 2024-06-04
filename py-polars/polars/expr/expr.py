@@ -28,7 +28,6 @@ from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_saturating,
     issue_deprecation_warning,
     validate_rolling_aggs_arguments,
     validate_rolling_by_aggs_arguments,
@@ -3831,8 +3830,6 @@ class Expr:
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
@@ -4415,16 +4412,6 @@ class Expr:
         │ b   ┆ 1   ┆ 2   ┆ 9   │
         └─────┴─────┴─────┴─────┘
         """
-        if "predicate" in constraints:
-            if isinstance(constraints["predicate"], pl.Expr):
-                issue_deprecation_warning(
-                    "`filter` no longer takes a 'predicate' parameter.\n"
-                    "To silence this warning you should omit the keyword and pass "
-                    "as a positional argument instead.",
-                    version="0.19.17",
-                )
-                predicates = (*predicates, constraints.pop("predicate"))
-
         predicate = parse_predicates_constraints_as_expression(
             *predicates, **constraints
         )
@@ -6429,7 +6416,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -6590,7 +6576,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -6753,7 +6738,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
         └───────┴─────────────────────┴──────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -6919,7 +6903,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -7083,7 +7066,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -7253,7 +7235,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -7396,7 +7377,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5               │
         └───────┴─────────────────────┴────────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -7539,7 +7519,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0                 │
         └───────┴─────────────────────┴──────────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
         if warn_if_unsorted is not None:
             issue_deprecation_warning(
@@ -7762,7 +7741,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -8020,7 +7998,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -8280,7 +8257,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
         └───────┴─────────────────────┴──────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -8538,7 +8514,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -8795,7 +8770,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -9054,7 +9028,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -9232,7 +9205,6 @@ class Expr:
         │ 6.0 ┆ null           │
         └─────┴────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -9442,7 +9414,6 @@ class Expr:
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )

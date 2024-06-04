@@ -153,16 +153,11 @@ class UnstableWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when unstable functionality is used."""
 
 
-class ArrowError(Exception):
-    """Deprecated: will be removed."""
-
-
 class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
 
 
 __all__ = [
-    "ArrowError",
     "CategoricalRemappingWarning",
     "ChronoFormatWarning",
     "ColumnNotFoundError",

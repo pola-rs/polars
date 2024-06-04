@@ -8,7 +8,6 @@ from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
     issue_deprecation_warning,
-    rename_use_earliest_to_ambiguous,
 )
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.various import find_stacklevel
@@ -92,7 +91,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
@@ -123,15 +121,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -152,7 +141,6 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
-        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(
@@ -212,7 +200,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
@@ -238,15 +225,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -314,7 +292,6 @@ class ExprStringNameSpace:
                 strict=strict,
                 exact=exact,
                 cache=cache,
-                use_earliest=use_earliest,
                 ambiguous=ambiguous,
             )
         elif dtype == Time:

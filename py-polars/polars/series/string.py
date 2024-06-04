@@ -82,7 +82,6 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -122,15 +121,6 @@ class StringNameSpace:
                 Offset-naive strings are parsed as `pl.Datetime(time_unit)`,
                 and offset-aware strings are converted to
                 `pl.Datetime(time_unit, "UTC")`.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -194,7 +184,6 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -220,15 +209,6 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
