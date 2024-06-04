@@ -66,13 +66,3 @@ def test_map_rows_shifted_chunks() -> None:
         }
     )
     assert_frame_equal(result, expected)
-
-
-def test_apply_deprecated() -> None:
-    df = pl.DataFrame({"a": ["foo", "2"], "b": [1, 2], "c": [1.0, 2.0]})
-
-    with pytest.deprecated_call():
-        result = df.apply(lambda x: len(x), None)
-
-    expected = pl.DataFrame({"map": [3, 3]})
-    assert_frame_equal(result, expected)

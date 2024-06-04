@@ -509,8 +509,8 @@ def test_categorical_sort_order_by_parameter(
 
 
 @StringCache()
-@pytest.mark.filterwarnings("ignore:`set_ordering` is deprecated:DeprecationWarning")
-def test_categorical_sort_order(monkeypatch: Any) -> None:
+@pytest.mark.parametrize("row_fmt_sort_enabled", [False, True])
+def test_categorical_sort_order(row_fmt_sort_enabled: bool, monkeypatch: Any) -> None:
     # create the categorical ordering first
     pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
     df = pl.DataFrame(
@@ -521,18 +521,14 @@ def test_categorical_sort_order(monkeypatch: Any) -> None:
         }
     )
 
-    assert df.sort(["n", "x"])["x"].to_list() == ["foo", "bar", "baz"]
-    assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
-        "x"
-    ].to_list() == ["bar", "baz", "foo"]
-    monkeypatch.setenv("POLARS_ROW_FMT_SORT", "1")
-    assert df.sort(["n", "x"])["x"].to_list() == ["foo", "bar", "baz"]
-    assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
-        "x"
-    ].to_list() == ["bar", "baz", "foo"]
-    assert df.with_columns(pl.col("x").cast(pl.Categorical("lexical"))).sort(
-        ["n", "x"]
-    )["x"].to_list() == ["bar", "baz", "foo"]
+    if row_fmt_sort_enabled:
+        monkeypatch.setenv("POLARS_ROW_FMT_SORT", "1")
+
+    result = df.sort(["n", "x"])
+    assert result["x"].to_list() == ["foo", "bar", "baz"]
+
+    result = df.with_columns(pl.col("x").cast(pl.Categorical("lexical"))).sort("n", "x")
+    assert result["x"].to_list() == ["bar", "baz", "foo"]
 
 
 def test_err_on_categorical_asof_join_by_arg() -> None:

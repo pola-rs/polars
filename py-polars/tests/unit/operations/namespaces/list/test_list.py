@@ -730,14 +730,6 @@ def test_list_len() -> None:
     assert_series_equal(result, expected)
 
 
-def test_list_lengths_deprecated() -> None:
-    s = pl.Series([[1, 2, None], [5]])
-    with pytest.deprecated_call():
-        result = s.list.lengths()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
 def test_list_to_array() -> None:
     data = [[1.0, 2.0], [3.0, 4.0]]
     s = pl.Series(data, dtype=pl.List(pl.Float32))

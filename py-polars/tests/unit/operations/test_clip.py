@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
@@ -135,17 +135,3 @@ def test_clip_bound_invalid_for_original_dtype() -> None:
     s = pl.Series([1, 2, 3, 4], dtype=pl.UInt32)
     with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
         s.clip(-1, 5)
-
-
-def test_clip_min_max_deprecated() -> None:
-    s = pl.Series([-1, 0, 1])
-
-    with pytest.deprecated_call():
-        result = s.clip_min(0)
-    expected = pl.Series([0, 0, 1])
-    assert_series_equal(result, expected)
-
-    with pytest.deprecated_call():
-        result = s.clip_max(0)
-    expected = pl.Series([-1, 0, 0])
-    assert_series_equal(result, expected)

@@ -378,28 +378,6 @@ def test_rolling_dynamic_sortedness_check() -> None:
         df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
 
 
-def test_groupby_dynamic_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "date": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
-            ),
-            "value": [1, 2, 3, 4, 5],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.groupby_dynamic("date", every="2d").agg(pl.sum("value"))
-    with pytest.deprecated_call():
-        result_lazy = (
-            df.lazy().groupby_dynamic("date", every="2d").agg(pl.sum("value")).collect()
-        )
-
-    expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
-
-
 @pytest.mark.parametrize("time_zone", [None, "UTC", "Asia/Kathmandu"])
 def test_group_by_dynamic_elementwise_following_mean_agg_6904(
     time_zone: str | None,

@@ -12,7 +12,6 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.concat
     Expr.str.contains
     Expr.str.contains_any
-    Expr.str.count_match
     Expr.str.count_matches
     Expr.str.decode
     Expr.str.encode
@@ -24,29 +23,20 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.find
     Expr.str.head
     Expr.str.json_decode
-    Expr.str.json_extract
     Expr.str.json_path_match
     Expr.str.len_bytes
     Expr.str.len_chars
-    Expr.str.lengths
-    Expr.str.ljust
-    Expr.str.lstrip
-    Expr.str.n_chars
     Expr.str.pad_end
     Expr.str.pad_start
-    Expr.str.parse_int
     Expr.str.replace
     Expr.str.replace_all
     Expr.str.replace_many
     Expr.str.reverse
-    Expr.str.rjust
-    Expr.str.rstrip
     Expr.str.slice
     Expr.str.split
     Expr.str.split_exact
     Expr.str.splitn
     Expr.str.starts_with
-    Expr.str.strip
     Expr.str.strip_chars
     Expr.str.strip_chars_start
     Expr.str.strip_chars_end

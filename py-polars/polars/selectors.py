@@ -15,7 +15,6 @@ from typing import (
 )
 
 from polars import functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.parse_expr_input import _parse_inputs_as_iterable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
@@ -2426,8 +2425,7 @@ def starts_with(*prefix: str) -> SelectorType:
     )
 
 
-@deprecate_nonkeyword_arguments(version="0.19.3")
-def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
+def string(*, include_categorical: bool = False) -> SelectorType:
     """
     Select all String (and, optionally, Categorical) string columns .
 

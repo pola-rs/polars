@@ -5,14 +5,11 @@ import re
 
 from hypothesis import settings
 
-from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars.type_aliases import ParametricProfileNames
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["profile"], version="0.19.3")
 def load_profile(
-    profile: ParametricProfileNames | int = "fast",
-    set_environment: bool = False,  # noqa: FBT001
+    profile: ParametricProfileNames | int = "fast", *, set_environment: bool = False
 ) -> None:
     """
     Load a named (or custom) hypothesis profile for use with the parametric tests.

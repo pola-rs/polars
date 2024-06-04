@@ -8,7 +8,6 @@ import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_parameter_as_positional,
-    deprecate_renamed_function,
     issue_deprecation_warning,
 )
 from polars._utils.parse_expr_input import (
@@ -981,35 +980,6 @@ def map_batches(
     )
 
 
-@deprecate_renamed_function("map_batches", version="0.19.0")
-def map(
-    exprs: Sequence[str] | Sequence[Expr],
-    function: Callable[[Sequence[Series]], Series],
-    return_dtype: PolarsDataType | None = None,
-) -> Expr:
-    """
-    Map a custom function over multiple columns/expressions.
-
-    .. deprecated:: 0.19.0
-        This function has been renamed to :func:`map_batches`.
-
-    Parameters
-    ----------
-    exprs
-        Input Series to f
-    function
-        Function to apply over the input
-    return_dtype
-        dtype of the output Series
-
-    Returns
-    -------
-    Expr
-        Expression with the data type given by `return_dtype`.
-    """
-    return map_batches(exprs, function, return_dtype)
-
-
 def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
@@ -1096,39 +1066,6 @@ def map_groups(
             returns_scalar=returns_scalar,
         )
     )
-
-
-@deprecate_renamed_function("map_groups", version="0.19.0")
-def apply(
-    exprs: Sequence[str | Expr],
-    function: Callable[[Sequence[Series]], Series | Any],
-    return_dtype: PolarsDataType | None = None,
-    *,
-    returns_scalar: bool = True,
-) -> Expr:
-    """
-    Apply a custom/user-defined function (UDF) in a GroupBy context.
-
-    .. deprecated:: 0.19.0
-        This function has been renamed to :func:`map_groups`.
-
-    Parameters
-    ----------
-    exprs
-        Input Series to f
-    function
-        Function to apply over the input
-    return_dtype
-        dtype of the output Series
-    returns_scalar
-        If the function returns a single scalar as output.
-
-    Returns
-    -------
-    Expr
-        Expression with the data type given by `return_dtype`.
-    """
-    return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
 
 def fold(
@@ -2306,70 +2243,3 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
-
-
-@deprecate_renamed_function("cum_fold", version="0.19.14")
-def cumfold(
-    acc: IntoExpr,
-    function: Callable[[Series, Series], Series],
-    exprs: Sequence[Expr | str] | Expr,
-    *,
-    include_init: bool = False,
-) -> Expr:
-    """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
-
-    Every cumulative result is added as a separate field in a Struct column.
-
-    .. deprecated:: 0.19.14
-        This function has been renamed to :func:`cum_fold`.
-
-    Parameters
-    ----------
-    acc
-        Accumulator Expression. This is the value that will be initialized when the fold
-        starts. For a sum this could for instance be lit(0).
-    function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
-    exprs
-        Expressions to aggregate over. May also be a wildcard expression.
-    include_init
-        Include the initial accumulator state as struct field.
-    """  # noqa: W505
-    # in case of col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
-    if isinstance(exprs, pl.Expr):
-        exprs = [exprs]
-
-    exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init))
-
-
-@deprecate_renamed_function("cum_reduce", version="0.19.14")
-def cumreduce(
-    function: Callable[[Series, Series], Series],
-    exprs: Sequence[Expr | str] | Expr,
-) -> Expr:
-    """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
-
-    Every cumulative result is added as a separate field in a Struct column.
-
-    .. deprecated:: 0.19.14
-        This function has been renamed to :func:`cum_reduce`.
-
-    Parameters
-    ----------
-    function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
-    exprs
-        Expressions to aggregate over. May also be a wildcard expression.
-    """  # noqa: W505
-    # in case of col("*")
-    if isinstance(exprs, pl.Expr):
-        exprs = [exprs]
-
-    exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_reduce(function, exprs))

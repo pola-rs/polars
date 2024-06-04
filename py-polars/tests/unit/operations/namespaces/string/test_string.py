@@ -191,25 +191,9 @@ def test_str_len_bytes() -> None:
     assert_series_equal(result, expected)
 
 
-def test_str_lengths_deprecated() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    with pytest.deprecated_call():
-        result = s.str.lengths()
-    expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
 def test_str_len_chars() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     result = s.str.len_chars()
-    expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
-def test_str_n_chars_deprecated() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    with pytest.deprecated_call():
-        result = s.str.n_chars()
     expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
     assert_series_equal(result, expected)
 
@@ -471,14 +455,6 @@ def test_str_to_integer_base_literal() -> None:
         )
 
 
-def test_str_parse_int_deprecated() -> None:
-    s = pl.Series(["110", "101", "010"])
-    with pytest.deprecated_call(match="It has been renamed to `to_integer`"):
-        result = s.str.parse_int()
-    expected = pl.Series([6, 5, 2], dtype=pl.Int32)
-    assert_series_equal(result, expected)
-
-
 def test_str_strip_chars_expr() -> None:
     df = pl.DataFrame(
         {
@@ -569,22 +545,6 @@ def test_str_strip_whitespace() -> None:
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
     assert_series_equal(s.str.strip_chars(), expected)
-
-
-def test_str_strip_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").str.strip()
-    with pytest.deprecated_call():
-        pl.col("a").str.lstrip()
-    with pytest.deprecated_call():
-        pl.col("a").str.rstrip()
-
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.strip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.lstrip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.rstrip()
 
 
 def test_str_strip_prefix_literal() -> None:
@@ -706,14 +666,6 @@ def test_json_decode_nested_struct() -> None:
     )
     expected_values = pl.Series("key_1_values", ["a", "a2", "a3"])
     assert_series_equal(key_1_values.get_column("key_1_values"), expected_values)
-
-
-def test_json_extract_deprecated() -> None:
-    s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
-    expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
-    with pytest.deprecated_call():
-        result = s.str.json_extract()
-    assert_series_equal(result, expected)
 
 
 def test_json_decode_primitive_to_list_11053() -> None:
@@ -1033,18 +985,6 @@ def test_extract_all_count() -> None:
 
     assert df["foo"].str.extract_all(r"a").dtype == pl.List
     assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
-
-
-def test_count_matches_deprecated_count() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
-
-    with pytest.deprecated_call():
-        expr = pl.col("foo").str.count_match(r"a")
-
-    result = df.select(expr)
-
-    expected = pl.Series("foo", [2, 1, 0, None], dtype=pl.UInt32).to_frame()
-    assert_frame_equal(result, expected)
 
 
 def test_count_matches_many() -> None:

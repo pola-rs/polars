@@ -6,9 +6,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
-from polars._utils.deprecation import (
-    deprecate_nonkeyword_arguments,
-)
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 
@@ -313,23 +310,19 @@ class Config(contextlib.ContextDecorator):
         file.write_text(cls.save())
 
     @classmethod
-    @deprecate_nonkeyword_arguments(version="0.19.3")
     def state(
-        cls,
-        if_set: bool = False,  # noqa: FBT001
-        env_only: bool = False,  # noqa: FBT001
+        cls, *, if_set: bool = False, env_only: bool = False
     ) -> dict[str, str | None]:
         """
         Show the current state of all Config variables as a dict.
 
         Parameters
         ----------
-        if_set : bool
+        if_set
             By default this will show the state of all `Config` environment variables.
             change this to `True` to restrict the returned dictionary to include only
             those that have been set to a specific value.
-
-        env_only : bool
+        env_only
             Include only Config environment variables in the output; some options (such
             as "set_fmt_float") are set directly, not via an environment variable.
 

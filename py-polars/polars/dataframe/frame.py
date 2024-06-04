@@ -44,9 +44,7 @@ from polars._utils.construction import (
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_nonkeyword_arguments,
     deprecate_parameter_as_positional,
-    deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
@@ -1295,21 +1293,18 @@ class DataFrame:
         return pa.Table.from_batches(record_batches)
 
     @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]: ...
+    def to_dict(self, *, as_series: Literal[True] = ...) -> dict[str, Series]: ...
 
     @overload
-    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]: ...
+    def to_dict(self, *, as_series: Literal[False]) -> dict[str, list[Any]]: ...
 
     @overload
     def to_dict(
-        self,
-        as_series: bool,  # noqa: FBT001
+        self, *, as_series: bool
     ) -> dict[str, Series] | dict[str, list[Any]]: ...
 
-    @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
-        self,
-        as_series: bool = True,  # noqa: FBT001
+        self, *, as_series: bool = True
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -1417,14 +1412,13 @@ class DataFrame:
         """
         return self.rows(named=True)
 
-    @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
         self,
-        structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
         writable: bool = False,
         allow_copy: bool = True,
+        structured: bool = False,
         use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -1442,12 +1436,6 @@ class DataFrame:
 
         Parameters
         ----------
-        structured
-            Return a `structured array`_ with a data type that corresponds to the
-            DataFrame schema. If set to `False` (default), a 2D ndarray is
-            returned instead.
-
-            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -1461,6 +1449,12 @@ class DataFrame:
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        structured
+            Return a `structured array`_ with a data type that corresponds to the
+            DataFrame schema. If set to `False` (default), a 2D ndarray is
+            returned instead.
+
+            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
 
         use_pyarrow
             Use `pyarrow.Array.to_numpy
@@ -2432,8 +2426,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -2620,7 +2612,6 @@ class DataFrame:
 
         self._df.write_avro(file, compression, name)
 
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
         workbook: Workbook | IO[bytes] | Path | str | None = None,
@@ -3436,7 +3427,6 @@ class DataFrame:
                 data_page_size,
             )
 
-    @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
         table_name: str,
@@ -4972,46 +4962,6 @@ class DataFrame:
         False
         """
         return self._df.equals(other._df, null_equal=null_equal)
-
-    @deprecate_function(
-        "DataFrame.replace is deprecated and will be removed in a future version. "
-        "Please use\n"
-        "    df = df.with_columns(new_column.alias(column_name))\n"
-        "instead.",
-        version="0.19.0",
-    )
-    def replace(self, column: str, new_column: Series) -> Self:
-        """
-        Replace a column by a new Series.
-
-        .. deprecated:: 0.19.0
-            Use :meth:`with_columns` instead, e.g.
-            `df = df.with_columns(new_column.alias(column_name))`.
-
-        Parameters
-        ----------
-        column
-            Column to replace.
-        new_column
-            New column to insert.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
-        >>> s = pl.Series([10, 20, 30])
-        >>> df.replace("foo", s)  # works in-place!  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 10  ┆ 4   │
-        │ 20  ┆ 5   │
-        │ 30  ┆ 6   │
-        └─────┴─────┘
-        """
-        return self._replace(column, new_column)
 
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
@@ -7563,20 +7513,11 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self"],
-        message=(
-            "The order of the parameters of `pivot` will change in the next breaking release."
-            " The order will become `index, columns, values` with `values` as an optional parameter."
-            " Use keyword arguments to silence this warning."
-        ),
-        version="0.20.8",
-    )
     def pivot(
         self,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -7686,7 +7627,7 @@ class DataFrame:
         └──────┴──────────┴──────────┘
 
         Note that `pivot` is only available in eager mode. If you know the unique
-        column values in advance, you can use :meth:`polars.LazyFrame.groupby` to
+        column values in advance, you can use :meth:`polars.LazyFrame.group_by` to
         get the same result as above in lazy mode:
 
         >>> index = pl.col("col1")
@@ -8176,7 +8117,6 @@ class DataFrame:
 
         return partitions
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> DataFrame:
         """
         Shift values by the given number of indices.
@@ -10847,379 +10787,6 @@ class DataFrame:
         └─────┴─────┴─────┘
         """
         return self.lazy().count().collect(_eager=True)
-
-    @deprecate_renamed_function("group_by", version="0.19.0")
-    def groupby(
-        self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
-        maintain_order: bool = False,
-    ) -> GroupBy:
-        """
-        Start a group by operation.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.group_by`.
-
-        Parameters
-        ----------
-        by
-            Column(s) to group by. Accepts expression input. Strings are parsed as
-            column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
-        maintain_order
-            Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default group by.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
-
-            .. note::
-                Within each group, the order of rows is always preserved, regardless
-                of this argument.
-
-        Returns
-        -------
-        GroupBy
-            Object which can be used to perform aggregations.
-        """
-        return self.group_by(by, *more_by, maintain_order=maintain_order)
-
-    @deprecate_renamed_function("rolling", version="0.19.0")
-    def groupby_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
-    ) -> RollingGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            Check whether the `index` column is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-        """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            group_by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("rolling", version="0.19.9")
-    def group_by_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
-    ) -> RollingGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.9
-            This method has been renamed to :func:`DataFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-        """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            group_by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
-    def groupby_dynamic(
-        self,
-        index_column: IntoExpr,
-        *,
-        every: str | timedelta,
-        period: str | timedelta | None = None,
-        offset: str | timedelta | None = None,
-        truncate: bool = True,
-        include_boundaries: bool = False,
-        closed: ClosedInterval = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        start_by: StartBy = "window",
-        check_sorted: bool | None = None,
-    ) -> DynamicGroupBy:
-        """
-        Group based on a time value (or index value of type Int32, Int64).
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.group_by_dynamic`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a dynamic group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        every
-            interval of the window
-        period
-            length of the window, if None it will equal 'every'
-        offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
-            Defaults to zero.
-        truncate
-            truncate the time value to the window lower bound
-        include_boundaries
-            Add the lower and upper bound of the window to the "_lower_bound" and
-            "_upper_bound" columns. This will impact performance because it's harder to
-            parallelize
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
-            The strategy to determine the start of the first window by.
-
-            * 'window': Start by taking the earliest timestamp, truncating it with
-              `every`, and then adding `offset`.
-              Note that weekly windows start on Monday.
-            * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains `'w'`):
-
-              * 'monday': Start the window on the Monday before the first data point.
-              * 'tuesday': Start the window on the Tuesday before the first data point.
-              * ...
-              * 'sunday': Start the window on the Sunday before the first data point.
-
-              The resulting window is then shifted back until the earliest datapoint
-              is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-        Returns
-        -------
-        DynamicGroupBy
-            Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
-        """  # noqa: W505
-        return self.group_by_dynamic(
-            index_column,
-            every=every,
-            period=period,
-            offset=offset,
-            truncate=truncate,
-            include_boundaries=include_boundaries,
-            closed=closed,
-            group_by=by,
-            start_by=start_by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("map_rows", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[tuple[Any, ...]], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        inference_size: int = 256,
-    ) -> DataFrame:
-        """
-        Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.map_rows`.
-
-        Parameters
-        ----------
-        function
-            Custom function or lambda.
-        return_dtype
-            Output type of the operation. If none given, Polars tries to infer the type.
-        inference_size
-            Only used in the case when the custom function returns rows.
-            This uses the first `n` rows to determine the output schema
-        """
-        return self.map_rows(function, return_dtype, inference_size=inference_size)
-
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: int | str | float,
-        *,
-        n: int = 1,
-    ) -> DataFrame:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            fill None values with this value.
-        n
-            Number of places to shift (may be negative).
-        """
-        return self.shift(n, fill_value=fill_value)
-
-    @deprecate_renamed_function("gather_every", version="0.19.12")
-    def take_every(self, n: int, offset: int = 0) -> DataFrame:
-        """
-        Take every nth row in the DataFrame and return as a new DataFrame.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)
-
-    @deprecate_renamed_function("get_column_index", version="0.19.14")
-    def find_idx_by_name(self, name: str) -> int:
-        """
-        Find the index of a column by name.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`get_column_index`.
-
-        Parameters
-        ----------
-        name
-            Name of the column to find.
-        """
-        return self.get_column_index(name)
-
-    @deprecate_renamed_function("insert_column", version="0.19.14")
-    @deprecate_renamed_parameter("series", "column", version="0.19.14")
-    def insert_at_idx(self, index: int, column: Series) -> Self:
-        """
-        Insert a Series at a certain column index. This operation is in place.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`insert_column`.
-
-        Parameters
-        ----------
-        index
-            Column to insert the new `Series` column.
-        column
-            `Series` to insert.
-        """
-        return self.insert_column(index, column)
-
-    @deprecate_renamed_function("replace_column", version="0.19.14")
-    @deprecate_renamed_parameter("series", "new_column", version="0.19.14")
-    def replace_at_idx(self, index: int, new_column: Series) -> Self:
-        """
-        Replace a column at an index location.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`replace_column`.
-
-        Parameters
-        ----------
-        index
-            Column index.
-        new_column
-            Series that will replace the column.
-        """
-        return self.replace_column(index, new_column)
-
-    @deprecate_renamed_function("equals", version="0.19.16")
-    def frame_equal(self, other: DataFrame, *, null_equal: bool = True) -> bool:
-        """
-        Check whether the DataFrame is equal to another DataFrame.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :func:`equals`.
-
-        Parameters
-        ----------
-        other
-            DataFrame to compare with.
-        null_equal
-            Consider null values as equal.
-        """
-        return self.equals(other, null_equal=null_equal)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

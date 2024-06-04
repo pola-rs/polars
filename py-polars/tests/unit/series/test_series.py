@@ -58,19 +58,6 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
 
 
-def test_cum_agg_deprecated() -> None:
-    # confirm that known series give expected results
-    s = pl.Series("a", [1, 2, 3, 2])
-    with pytest.deprecated_call():
-        assert_series_equal(s.cumsum(), pl.Series("a", [1, 3, 6, 8]))
-    with pytest.deprecated_call():
-        assert_series_equal(s.cummin(), pl.Series("a", [1, 1, 1, 1]))
-    with pytest.deprecated_call():
-        assert_series_equal(s.cummax(), pl.Series("a", [1, 2, 3, 3]))
-    with pytest.deprecated_call():
-        assert_series_equal(s.cumprod(), pl.Series("a", [1, 2, 6, 12]))
-
-
 def test_init_inputs(monkeypatch: Any) -> None:
     nan = float("nan")
     # Good inputs
@@ -606,10 +593,8 @@ def test_series_dtype_is() -> None:
     assert not s.dtype.is_numeric()
 
     s = pl.Series("s", ["testing..."])
-    with pytest.deprecated_call():
-        assert s.is_utf8() is True
-    with pytest.deprecated_call():
-        assert s.is_boolean() is False
+    assert s.dtype == pl.String
+    assert s.dtype != pl.Boolean
 
     s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
     assert not s.dtype.is_float()
@@ -618,18 +603,6 @@ def test_series_dtype_is() -> None:
 
     s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
     assert s.dtype.is_temporal()
-
-
-def test_series_is_dtype_deprecated() -> None:
-    s = pl.Series([1.0, 2.0])
-    with pytest.deprecated_call():
-        assert s.is_float() is True
-    with pytest.deprecated_call():
-        assert s.is_numeric() is True
-    with pytest.deprecated_call():
-        assert s.is_integer() is False
-    with pytest.deprecated_call():
-        assert s.is_temporal() is False
 
 
 def test_series_head_tail_limit() -> None:

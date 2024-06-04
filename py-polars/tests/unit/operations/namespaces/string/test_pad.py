@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 def test_str_pad_start() -> None:
@@ -88,26 +86,6 @@ def test_str_zfill_expr() -> None:
         }
     )
     assert_frame_equal(out, expected)
-
-
-def test_str_ljust_deprecated() -> None:
-    s = pl.Series(["a", "bc", "def"])
-
-    with pytest.deprecated_call():
-        result = s.str.ljust(5)
-
-    expected = pl.Series(["a    ", "bc   ", "def  "])
-    assert_series_equal(result, expected)
-
-
-def test_str_rjust_deprecated() -> None:
-    s = pl.Series(["a", "bc", "def"])
-
-    with pytest.deprecated_call():
-        result = s.str.rjust(5)
-
-    expected = pl.Series(["    a", "   bc", "  def"])
-    assert_series_equal(result, expected)
 
 
 def test_pad_end_unicode() -> None:

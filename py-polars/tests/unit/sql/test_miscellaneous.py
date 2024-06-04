@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -82,7 +81,7 @@ def test_distinct() -> None:
 
     # test unregistration
     ctx.unregister("df")
-    with pytest.raises(SQLInterfaceError, match="relation 'df' was not found"):
+    with pytest.raises(pl.SQLInterfaceError, match="relation 'df' was not found"):
         ctx.execute("SELECT * FROM df")
 
 
@@ -95,7 +94,7 @@ def test_frame_sql_globals_error() -> None:
         FROM df2 JOIN df1 ON df1.a = df2.a
         ORDER BY b DESC
     """
-    with pytest.raises(SQLInterfaceError, match=".*not found.*"):
+    with pytest.raises(pl.SQLInterfaceError, match=".*not found.*"):
         df1.sql(query=query)
 
     res = pl.sql(query=query, eager=True)

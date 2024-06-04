@@ -697,17 +697,6 @@ def test_tail() -> None:
     }
 
 
-def test_is_not_deprecated() -> None:
-    df = pl.DataFrame({"a": [True, False, True]})
-
-    with pytest.deprecated_call():
-        expr = pl.col("a").is_not()
-    result = df.select(expr)
-
-    expected = pl.DataFrame({"a": [False, True, False]})
-    assert_frame_equal(result, expected)
-
-
 def test_repr_short_expression() -> None:
     expr = pl.functions.all().len().name.prefix("length:")
     # we cut off the last ten characters because that includes the

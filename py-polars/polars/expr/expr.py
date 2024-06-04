@@ -28,9 +28,6 @@ from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
     validate_rolling_aggs_arguments,
@@ -420,7 +417,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> Self:
         """
         Return whether any of the values in the column are `True`.
@@ -476,7 +472,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> Self:
         """
         Return whether all values in the column are `True`.
@@ -710,196 +705,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
 
-    @deprecate_renamed_function("name.map", moved=True, version="0.19.12")
-    def map_alias(self, function: Callable[[str], str]) -> Self:
-        """
-        Rename the output of an expression by mapping a function over the root name.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.map`.
-
-        Parameters
-        ----------
-        function
-            Function that maps a root name to a new name.
-
-        See Also
-        --------
-        keep_name
-        prefix
-        suffix
-
-        Examples
-        --------
-        Remove a common suffix and convert to lower case.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A_reverse": [3, 2, 1],
-        ...         "B_reverse": ["z", "y", "x"],
-        ...     }
-        ... )
-        >>> df.with_columns(
-        ...     pl.all().reverse().name.map(lambda c: c.rstrip("_reverse").lower())
-        ... )
-        shape: (3, 4)
-        ┌───────────┬───────────┬─────┬─────┐
-        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
-        │ ---       ┆ ---       ┆ --- ┆ --- │
-        │ i64       ┆ str       ┆ i64 ┆ str │
-        ╞═══════════╪═══════════╪═════╪═════╡
-        │ 3         ┆ z         ┆ 1   ┆ x   │
-        │ 2         ┆ y         ┆ 2   ┆ y   │
-        │ 1         ┆ x         ┆ 3   ┆ z   │
-        └───────────┴───────────┴─────┴─────┘
-        """
-        return self.name.map(function)  # type: ignore[return-value]
-
-    @deprecate_renamed_function("name.prefix", moved=True, version="0.19.12")
-    def prefix(self, prefix: str) -> Self:
-        """
-        Add a prefix to the root column name of the expression.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.prefix`.
-
-        Parameters
-        ----------
-        prefix
-            Prefix to add to the root column name.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
-
-        See Also
-        --------
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["x", "y", "z"],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.all().reverse().name.prefix("reverse_"))
-        shape: (3, 4)
-        ┌─────┬─────┬───────────┬───────────┐
-        │ a   ┆ b   ┆ reverse_a ┆ reverse_b │
-        │ --- ┆ --- ┆ ---       ┆ ---       │
-        │ i64 ┆ str ┆ i64       ┆ str       │
-        ╞═════╪═════╪═══════════╪═══════════╡
-        │ 1   ┆ x   ┆ 3         ┆ z         │
-        │ 2   ┆ y   ┆ 2         ┆ y         │
-        │ 3   ┆ z   ┆ 1         ┆ x         │
-        └─────┴─────┴───────────┴───────────┘
-        """
-        return self.name.prefix(prefix)  # type: ignore[return-value]
-
-    @deprecate_renamed_function("name.suffix", moved=True, version="0.19.12")
-    def suffix(self, suffix: str) -> Self:
-        """
-        Add a suffix to the root column name of the expression.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.suffix`.
-
-        Parameters
-        ----------
-        suffix
-            Suffix to add to the root column name.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
-
-        See Also
-        --------
-        prefix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["x", "y", "z"],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.all().reverse().name.suffix("_reverse"))
-        shape: (3, 4)
-        ┌─────┬─────┬───────────┬───────────┐
-        │ a   ┆ b   ┆ a_reverse ┆ b_reverse │
-        │ --- ┆ --- ┆ ---       ┆ ---       │
-        │ i64 ┆ str ┆ i64       ┆ str       │
-        ╞═════╪═════╪═══════════╪═══════════╡
-        │ 1   ┆ x   ┆ 3         ┆ z         │
-        │ 2   ┆ y   ┆ 2         ┆ y         │
-        │ 3   ┆ z   ┆ 1         ┆ x         │
-        └─────┴─────┴───────────┴───────────┘
-        """
-        return self.name.suffix(suffix)  # type: ignore[return-value]
-
-    @deprecate_renamed_function("name.keep", moved=True, version="0.19.12")
-    def keep_name(self) -> Self:
-        """
-        Keep the original root name of the expression.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.keep`.
-
-        Notes
-        -----
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
-
-        See Also
-        --------
-        alias
-
-        Examples
-        --------
-        Undo an alias operation.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
-        ... )
-        >>> df.with_columns((pl.col("a") * 9).alias("c").name.keep())
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 9   ┆ 3   │
-        │ 18  ┆ 4   │
-        └─────┴─────┘
-
-        Prevent errors due to duplicate column names.
-
-        >>> df.select((pl.lit(10) / pl.all()).name.keep())
-        shape: (2, 2)
-        ┌──────┬──────────┐
-        │ a    ┆ b        │
-        │ ---  ┆ ---      │
-        │ f64  ┆ f64      │
-        ╞══════╪══════════╡
-        │ 10.0 ┆ 3.333333 │
-        │ 5.0  ┆ 2.5      │
-        └──────┴──────────┘
-        """
-        return self.name.keep()  # type: ignore[return-value]
-
     def exclude(
         self,
         columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
@@ -1062,16 +867,6 @@ class Expr:
 
         '''
         return function(self, *args, **kwargs)
-
-    @deprecate_renamed_function("not_", version="0.19.2")
-    def is_not(self) -> Self:
-        """
-        Negate a boolean expression.
-
-        .. deprecated:: 0.19.2
-            This method has been renamed to :func:`Expr.not_`.
-        """
-        return self.not_()
 
     def not_(self) -> Self:
         """
@@ -3011,7 +2806,6 @@ class Expr:
         index_lit = parse_as_expression(index)
         return self._from_pyexpr(self._pyexpr.get(index_lit))
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
     ) -> Self:
@@ -10738,14 +10532,13 @@ class Expr:
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool | None = None,
@@ -10940,14 +10733,13 @@ class Expr:
             )
         return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life))
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -11042,14 +10834,13 @@ class Expr:
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -11177,7 +10968,6 @@ class Expr:
         n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    @deprecate_renamed_parameter("multithreaded", "parallel", version="0.19.0")
     def value_counts(
         self, *, sort: bool = False, parallel: bool = False, name: str = "count"
     ) -> Self:
@@ -11738,205 +11528,6 @@ class Expr:
 
         return self._from_pyexpr(self._pyexpr.replace(old, new, default, return_dtype))
 
-    @deprecate_renamed_function("map_batches", version="0.19.0")
-    def map(
-        self,
-        function: Callable[[Series], Series | Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        agg_list: bool = False,
-    ) -> Self:
-        """
-        Apply a custom python function to a Series or sequence of Series.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Expr.map_batches`.
-
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        return_dtype
-            Dtype of the output Series.
-        agg_list
-            Aggregate list
-        """
-        return self.map_batches(function, return_dtype, agg_list=agg_list)
-
-    @deprecate_renamed_function("map_elements", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        skip_nulls: bool = True,
-        pass_name: bool = False,
-        strategy: MapElementsStrategy = "thread_local",
-    ) -> Self:
-        """
-        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Expr.map_elements`.
-
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be
-            `polars.Unknown`.
-        skip_nulls
-            Don't apply the function over values
-            that contain nulls. This is faster.
-        pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
-        strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
-
-            - 'thread_local': run the python function on a single thread.
-            - 'threading': run the python function on separate threads. Use with
-              care as this can slow performance. This might only speed up
-              your code if the amount of work per element is significant
-              and the python function releases the GIL (e.g. via calling
-              a c function)
-        """
-        return self.map_elements(
-            function,
-            return_dtype=return_dtype,
-            skip_nulls=skip_nulls,
-            pass_name=pass_name,
-            strategy=strategy,
-        )
-
-    @deprecate_renamed_function("rolling_map", version="0.19.0")
-    def rolling_apply(
-        self,
-        function: Callable[[Series], Any],
-        window_size: int,
-        weights: list[float] | None = None,
-        min_periods: int | None = None,
-        *,
-        center: bool = False,
-    ) -> Self:
-        """
-        Apply a custom rolling window function.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Expr.rolling_map`.
-
-        Parameters
-        ----------
-        function
-            Aggregation function
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
-        center
-            Set the labels at the center of the window
-        """
-        return self.rolling_map(
-            function, window_size, weights, min_periods, center=center
-        )
-
-    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
-    def is_first(self) -> Self:
-        """
-        Return a boolean mask indicating the first occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Expr.is_first_distinct`.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Boolean`.
-        """
-        return self.is_first_distinct()
-
-    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
-    def is_last(self) -> Self:
-        """
-        Return a boolean mask indicating the last occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Expr.is_last_distinct`.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Boolean`.
-        """
-        return self.is_last_distinct()
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-        """
-        return self.clip(lower_bound=lower_bound)
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
-        """
-        return self.clip(upper_bound=upper_bound)
-
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: IntoExpr,
-        *,
-        n: int = 1,
-    ) -> Self:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            Fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
-        """
-        return self.shift(n, fill_value=fill_value)
-
     @deprecate_function(
         "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
     )
@@ -12020,174 +11611,6 @@ class Expr:
             input_wildcard_expansion=input_wildcard_expansion,
             pass_name_to_apply=pass_name_to_apply,
         )
-
-    @deprecate_renamed_function("register_plugin", version="0.19.12")
-    def _register_plugin(
-        self,
-        *,
-        lib: str,
-        symbol: str,
-        args: list[IntoExpr] | None = None,
-        kwargs: dict[Any, Any] | None = None,
-        is_elementwise: bool = False,
-        input_wildcard_expansion: bool = False,
-        auto_explode: bool = False,
-        cast_to_supertypes: bool = False,
-    ) -> Expr:
-        return self.register_plugin(
-            lib=lib,
-            symbol=symbol,
-            args=args,
-            kwargs=kwargs,
-            is_elementwise=is_elementwise,
-            input_wildcard_expansion=input_wildcard_expansion,
-            returns_scalar=auto_explode,
-            cast_to_supertypes=cast_to_supertypes,
-        )
-
-    @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int, offset: int = 0) -> Self:
-        """
-        Take every nth value in the Series and return as a new Series.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)
-
-    @deprecate_renamed_function("gather", version="0.19.14")
-    def take(
-        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
-    ) -> Self:
-        """
-        Take values by index.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather`.
-
-        Parameters
-        ----------
-        indices
-            An expression that leads to a UInt32 dtyped Series.
-        """
-        return self.gather(indices)
-
-    @deprecate_renamed_function("cum_sum", version="0.19.14")
-    def cumsum(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative sum computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_sum`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_sum(reverse=reverse)
-
-    @deprecate_renamed_function("cum_prod", version="0.19.14")
-    def cumprod(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative product computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_prod`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_prod(reverse=reverse)
-
-    @deprecate_renamed_function("cum_min", version="0.19.14")
-    def cummin(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative min computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_min`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_min(reverse=reverse)
-
-    @deprecate_renamed_function("cum_max", version="0.19.14")
-    def cummax(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative max computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_max`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_max(reverse=reverse)
-
-    @deprecate_renamed_function("cum_count", version="0.19.14")
-    def cumcount(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative count computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_count`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_count(reverse=reverse)
-
-    @deprecate_function(
-        "It has been renamed to `replace`."
-        " The default behavior has changed to keep any values not present in the mapping unchanged."
-        " Pass `default=None` to keep existing behavior.",
-        version="0.19.16",
-    )
-    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
-    def map_dict(
-        self,
-        mapping: dict[Any, Any],
-        *,
-        default: Any = None,
-        return_dtype: PolarsDataType | None = None,
-    ) -> Self:
-        """
-        Replace values in column according to remapping dictionary.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :meth:`replace`. The default behavior
-            has changed to keep any values not present in the mapping unchanged.
-            Pass `default=None` to keep existing behavior.
-
-        Parameters
-        ----------
-        mapping
-            Dictionary containing the before/after values to map.
-        default
-            Value to use when the remapping dict does not contain the lookup value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Use `pl.first()`, to keep the original value.
-        return_dtype
-            Set return dtype to override automatic return dtype determination.
-        """
-        return self.replace(mapping, default=default, return_dtype=return_dtype)
 
     @classmethod
     def from_json(cls, value: str) -> Self:

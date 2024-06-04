@@ -3,10 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import functions as F
-from polars._utils.deprecation import (
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-)
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -672,7 +668,6 @@ class ListNameSpace:
         ]
         """
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Shift list values by the given number of indices.
@@ -1057,53 +1052,3 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
-
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
-        """
-        Count how often the value produced by `element` occurs.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        element
-            An expression that produces a single value
-        """
-
-    @deprecate_renamed_function("len", version="0.19.8")
-    def lengths(self) -> Series:
-        """
-        Return the number of elements in each list.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :meth:`.len`.
-        """
-
-    @deprecate_renamed_function("gather", version="0.19.14")
-    @deprecate_renamed_parameter("index", "indices", version="0.19.14")
-    def take(
-        self,
-        indices: Series | list[int] | list[list[int]],
-        *,
-        null_on_oob: bool = False,
-    ) -> Series:
-        """
-        Take sublists by multiple indices.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`gather`.
-
-        Parameters
-        ----------
-        indices
-            Indices to return per sublist
-        null_on_oob
-            Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
-            Note that defaulting to raising an error is much cheaper
-        """

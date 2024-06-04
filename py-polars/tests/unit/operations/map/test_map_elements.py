@@ -342,13 +342,6 @@ def test_map_elements_chunked_14390() -> None:
         )
 
 
-def test_apply_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").apply(np.abs)
-    with pytest.deprecated_call():
-        pl.Series([1, 2, 3]).apply(np.abs, return_dtype=pl.Float64)
-
-
 def test_cabbage_strategy_14396() -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
     with pytest.raises(

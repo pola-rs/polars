@@ -41,8 +41,6 @@ from polars._utils.convert import (
 )
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -80,7 +78,6 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Unknown,
-    dtype_to_ctype,
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
@@ -124,7 +121,6 @@ if TYPE_CHECKING:
     from polars._utils.various import (
         NoDefault,
     )
-    from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         BufferInfo,
         ClosedInterval,
@@ -137,7 +133,6 @@ if TYPE_CHECKING:
         NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
-        OneOrMoreDataTypes,
         PolarsDataType,
         PythonLiteral,
         RankMethod,
@@ -1445,7 +1440,6 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(_from_series=True)
 
-    @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:
         """
         Return the Series as a scalar, or return the element at the given index.
@@ -1566,7 +1560,6 @@ class Series:
     @overload
     def any(self, *, ignore_nulls: bool) -> bool | None: ...
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> bool | None:
         """
         Return whether any of the values in the column are `True`.
@@ -1609,7 +1602,6 @@ class Series:
     @overload
     def all(self, *, ignore_nulls: bool) -> bool | None: ...
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> bool | None:
         """
         Return whether all values in the column are `True`.
@@ -2128,10 +2120,10 @@ class Series:
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
-        *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[True] = ...,
@@ -2141,10 +2133,10 @@ class Series:
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
-        *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[False],
@@ -2154,25 +2146,23 @@ class Series:
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = ...,
         break_point_label: str = ...,
         category_label: str = ...,
-        *,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: bool,
     ) -> Series | DataFrame: ...
 
-    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
-    @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
     @unstable()
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-        *,
         left_closed: bool = False,
         include_breaks: bool = False,
         as_series: bool = True,
@@ -5527,7 +5517,6 @@ class Series:
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
         """
         Shift values by the given number of indices.
@@ -7050,14 +7039,13 @@ class Series:
         ]
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool | None = None,
@@ -7217,14 +7205,13 @@ class Series:
         ]
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -7302,14 +7289,13 @@ class Series:
         ]
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -7530,505 +7516,6 @@ class Series:
             [1, 2, 3]
         ]
         """
-
-    @deprecate_renamed_function("map_elements", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        skip_nulls: bool = True,
-    ) -> Self:
-        """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Series.map_elements`.
-
-        Parameters
-        ----------
-        function
-            Custom function or lambda.
-        return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
-        skip_nulls
-            Nulls will be skipped and not passed to the python function.
-            This is faster because python can be skipped and because we call
-            more specialized functions.
-        """
-        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
-
-    @deprecate_renamed_function("rolling_map", version="0.19.0")
-    def rolling_apply(
-        self,
-        function: Callable[[Series], Any],
-        window_size: int,
-        weights: list[float] | None = None,
-        min_periods: int | None = None,
-        *,
-        center: bool = False,
-    ) -> Series:
-        """
-        Apply a custom rolling window function.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Series.rolling_map`.
-
-        Parameters
-        ----------
-        function
-            Aggregation function
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
-        center
-            Set the labels at the center of the window
-        """
-
-    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
-    def is_first(self) -> Series:
-        """
-        Return a boolean mask indicating the first occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.is_first_distinct`.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Boolean`.
-        """
-
-    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
-    def is_last(self) -> Series:
-        """
-        Return a boolean mask indicating the last occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.is_last_distinct`.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Boolean`.
-        """
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Series:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-        """
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Series:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
-        """
-
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: int | Expr,
-        *,
-        n: int = 1,
-    ) -> Series:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            Fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
-        """
-
-    @deprecate_function("Use `Series.dtype.is_float()` instead.", version="0.19.13")
-    def is_float(self) -> bool:
-        """
-        Check if this Series has floating point numbers.
-
-        .. deprecated:: 0.19.13
-            Use `Series.dtype.is_float()` instead.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
-        >>> s.is_float()  # doctest: +SKIP
-        True
-        """
-        return self.dtype.is_float()
-
-    @deprecate_function(
-        "Use `Series.dtype.is_integer()` instead."
-        " For signed/unsigned variants, use `Series.dtype.is_signed_integer()`"
-        " or `Series.dtype.is_unsigned_integer()`.",
-        version="0.19.13",
-    )
-    def is_integer(self, signed: bool | None = None) -> bool:
-        """
-        Check if this Series datatype is an integer (signed or unsigned).
-
-        .. deprecated:: 0.19.13
-            Use `Series.dtype.is_integer()` instead.
-            For signed/unsigned variants, use `Series.dtype.is_signed_integer()`
-            or `Series.dtype.is_unsigned_integer()`.
-
-        Parameters
-        ----------
-        signed
-            * if `None`, both signed and unsigned integer dtypes will match.
-            * if `True`, only signed integer dtypes will be considered a match.
-            * if `False`, only unsigned integer dtypes will be considered a match.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
-        >>> s.is_integer()  # doctest: +SKIP
-        True
-        >>> s.is_integer(signed=False)  # doctest: +SKIP
-        True
-        >>> s.is_integer(signed=True)  # doctest: +SKIP
-        False
-        """
-        if signed is None:
-            return self.dtype.is_integer()
-        elif signed is True:
-            return self.dtype.is_signed_integer()
-        elif signed is False:
-            return self.dtype.is_unsigned_integer()
-
-        msg = f"`signed` must be None, True or False; got {signed!r}"
-        raise ValueError(msg)
-
-    @deprecate_function("Use `Series.dtype.is_numeric()` instead.", version="0.19.13")
-    def is_numeric(self) -> bool:
-        """
-        Check if this Series datatype is numeric.
-
-        .. deprecated:: 0.19.13
-            Use `Series.dtype.is_numeric()` instead.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.is_numeric()  # doctest: +SKIP
-        True
-        """
-        return self.dtype.is_numeric()
-
-    @deprecate_function("Use `Series.dtype.is_temporal()` instead.", version="0.19.13")
-    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
-        """
-        Check if this Series datatype is temporal.
-
-        .. deprecated:: 0.19.13
-            Use `Series.dtype.is_temporal()` instead.
-
-        Parameters
-        ----------
-        excluding
-            Optionally exclude one or more temporal dtypes from matching.
-
-        Examples
-        --------
-        >>> from datetime import date
-        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_temporal()  # doctest: +SKIP
-        True
-        >>> s.is_temporal(excluding=[pl.Date])  # doctest: +SKIP
-        False
-        """
-        if excluding is not None:
-            if not isinstance(excluding, Iterable):
-                excluding = [excluding]
-            if self.dtype in excluding:
-                return False
-
-        return self.dtype.is_temporal()
-
-    @deprecate_function("Use `Series.dtype == pl.Boolean` instead.", version="0.19.14")
-    def is_boolean(self) -> bool:
-        """
-        Check if this Series is a Boolean.
-
-        .. deprecated:: 0.19.14
-            Use `Series.dtype == pl.Boolean` instead.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [True, False, True])
-        >>> s.is_boolean()  # doctest: +SKIP
-        True
-        """
-        return self.dtype == Boolean
-
-    @deprecate_function("Use `Series.dtype == pl.String` instead.", version="0.19.14")
-    def is_utf8(self) -> bool:
-        """
-        Check if this Series datatype is a String.
-
-        .. deprecated:: 0.19.14
-            Use `Series.dtype == pl.String` instead.
-
-        Examples
-        --------
-        >>> s = pl.Series("x", ["a", "b", "c"])
-        >>> s.is_utf8()  # doctest: +SKIP
-        True
-        """
-        return self.dtype == String
-
-    @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int, offset: int = 0) -> Series:
-        """
-        Take every nth value in the Series and return as new Series.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)
-
-    @deprecate_renamed_function("gather", version="0.19.14")
-    def take(
-        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
-    ) -> Series:
-        """
-        Take values by index.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather`.
-
-        Parameters
-        ----------
-        indices
-            Index location used for selection.
-        """
-        return self.gather(indices)
-
-    @deprecate_renamed_function("scatter", version="0.19.14")
-    @deprecate_renamed_parameter("idx", "indices", version="0.19.14")
-    @deprecate_renamed_parameter("value", "values", version="0.19.14")
-    def set_at_idx(
-        self,
-        indices: Series | np.ndarray[Any, Any] | Sequence[int] | int,
-        values: (
-            int
-            | float
-            | str
-            | bool
-            | date
-            | datetime
-            | Sequence[int]
-            | Sequence[float]
-            | Sequence[bool]
-            | Sequence[str]
-            | Sequence[date]
-            | Sequence[datetime]
-            | Series
-            | None
-        ),
-    ) -> Series:
-        """
-        Set values at the index locations.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`scatter`.
-
-        Parameters
-        ----------
-        indices
-            Integers representing the index locations.
-        values
-            Replacement values.
-        """
-        return self.scatter(indices, values)
-
-    @deprecate_renamed_function("cum_sum", version="0.19.14")
-    def cumsum(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative sum computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_sum`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_sum(reverse=reverse)
-
-    @deprecate_renamed_function("cum_max", version="0.19.14")
-    def cummax(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative max computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_max`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_max(reverse=reverse)
-
-    @deprecate_renamed_function("cum_min", version="0.19.14")
-    def cummin(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative min computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_min`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_min(reverse=reverse)
-
-    @deprecate_renamed_function("cum_prod", version="0.19.14")
-    def cumprod(self, *, reverse: bool = False) -> Series:
-        """
-        Get an array with the cumulative product computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_prod`.
-
-        Parameters
-        ----------
-        reverse
-            reverse the operation.
-        """
-        return self.cum_prod(reverse=reverse)
-
-    @deprecate_function(
-        "Use `Series.to_numpy(allow_copy=False) instead.", version="0.19.14"
-    )
-    def view(self, *, ignore_nulls: bool = False) -> SeriesView:
-        """
-        Get a view into this Series data with a numpy array.
-
-        .. deprecated:: 0.19.14
-            This method will be removed in a future version.
-
-        This operation doesn't clone data, but does not include missing values.
-        Don't use this unless you know what you are doing.
-
-        Parameters
-        ----------
-        ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
-        """
-        if not ignore_nulls:
-            assert not self.null_count()
-
-        from polars.series._numpy import SeriesView, _ptr_to_numpy
-
-        ptr_type = dtype_to_ctype(self.dtype)
-        ptr = self._s.as_single_ptr()
-        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
-        array.setflags(write=False)
-        return SeriesView(array, self)
-
-    @deprecate_function(
-        "It has been renamed to `replace`."
-        " The default behavior has changed to keep any values not present in the mapping unchanged."
-        " Pass `default=None` to keep existing behavior.",
-        version="0.19.16",
-    )
-    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
-    def map_dict(
-        self,
-        mapping: dict[Any, Any],
-        *,
-        default: Any = None,
-        return_dtype: PolarsDataType | None = None,
-    ) -> Self:
-        """
-        Replace values in the Series using a remapping dictionary.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :meth:`replace`. The default behavior
-            has changed to keep any values not present in the mapping unchanged.
-            Pass `default=None` to keep existing behavior.
-
-        Parameters
-        ----------
-        mapping
-            Dictionary containing the before/after values to map.
-        default
-            Value to use when the remapping dict does not contain the lookup value.
-            Use `pl.first()`, to keep the original value.
-        return_dtype
-            Set return dtype to override automatic return dtype determination.
-        """
-        return self.replace(mapping, default=default, return_dtype=return_dtype)
-
-    @deprecate_renamed_function("equals", version="0.19.16")
-    def series_equal(
-        self, other: Series, *, null_equal: bool = True, strict: bool = False
-    ) -> bool:
-        """
-        Check whether the Series is equal to another Series.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :meth:`equals`.
-
-        Parameters
-        ----------
-        other
-            Series to compare with.
-        null_equal
-            Consider null values as equal.
-        strict
-            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
-            `pl.Int64` will return `False`.
-        """
-        return self.equals(other, check_dtypes=strict, null_equal=null_equal)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

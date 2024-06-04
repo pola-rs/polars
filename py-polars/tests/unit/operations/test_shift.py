@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest
-
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -40,7 +38,7 @@ def test_shift_frame(fruits_cars: pl.DataFrame) -> None:
             assert res[rows, cols] is None
 
 
-def test_shift_and_fill() -> None:
+def test_shift_fill_value() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     # use exprs
@@ -103,7 +101,7 @@ def test_shift_frame_with_fill() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_shift_and_fill_group_logicals() -> None:
+def test_shift_fill_value_group_logicals() -> None:
     df = pl.DataFrame(
         [
             (date(2001, 1, 2), "A"),
@@ -117,23 +115,3 @@ def test_shift_and_fill_group_logicals() -> None:
     result = df.select(pl.col("d").shift(fill_value=pl.col("d").max(), n=-1).over("s"))
 
     assert result.dtypes == [pl.Date]
-
-
-def test_shift_and_fill_deprecated() -> None:
-    a = pl.Series("a", [1, 2, 3])
-
-    with pytest.deprecated_call():
-        result = a.shift_and_fill(100, n=-1)
-
-    expected = pl.Series("a", [2, 3, 100])
-    assert_series_equal(result, expected)
-
-
-def test_shift_and_fill_frame_deprecated() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-
-    with pytest.deprecated_call():
-        result = lf.shift_and_fill(100, n=1)
-
-    expected = pl.LazyFrame({"a": [100, 1, 2], "b": [100, 4, 5]})
-    assert_frame_equal(result, expected)
