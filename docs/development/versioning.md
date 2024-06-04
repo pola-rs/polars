@@ -55,11 +55,11 @@ There are a number of reasons functionality may be marked as unstable:
 
 - We are unsure about the exact API. The name, function signature, or implementation are likely to change in the future.
 - The functionality is not tested extensively yet. Bugs may pop up when used in real-world scenarios.
-- The functionality does not integrate well with the full Polars API. You may find it works in one context but not in another.
+- The functionality does not yet integrate well with the full Polars API. You may find it works in one context but not in another.
 
 Releasing functionality as unstable allows us to gather important feedback from users that use Polars in real-world scenarios.
-This helps us fine-tune things before giving it the final stamp of approval.
-Users are only interested in solid, well-tested functionality can avoid this part of the API.
+This helps us fine-tune things before giving it our final stamp of approval.
+Users that are only interested in solid, well-tested functionality can avoid this part of the API.
 
 Functionality marked as unstable may change at any point without it being considered a breaking change.
 
@@ -80,13 +80,14 @@ Such changes will not be warned for, but _will_ be included in the changelog and
 ### Deprecation period
 
 As a rule, deprecated functionality is removed two breaking releases after the deprecation happens.
-For example:
+For example, a function deprecated in version `1.2.3` will be retained in version `2.0.0` and removed in version `3.0.0`.
 
-- Before the release of `1.0.0`: a function deprecated in version `0.18.3` will be removed in version `0.20.0`
-- After the release of `1.0.0`: a function deprecated in version `1.2.3` will be removed in version `3.0.0`
+An exception to this rule are deprecations introduced with a breaking release.
+These will be enforced on the next breaking release.
+For example, a function deprecated in version `2.0.0` will be removed in version `3.0.0`.
 
-This means that if your program does not raise any deprecation warnings, it should be mostly safe to upgrade to the next breaking release.
-As breaking releases happen about once every three months, this allows three to six months to adjust to any pending breaking changes.
+This means that if your program does not raise any deprecation warnings, it should be mostly safe to upgrade to the next major version.
+As breaking releases happen about once every six months, this allows six to twelve months to adjust to any pending breaking changes.
 
 **In some cases, we may decide to adjust the deprecation period.**
 If retaining the deprecated functionality blocks other improvements to Polars, we may shorten the deprecation period to a single breaking release. This will be mentioned in the warning message.
