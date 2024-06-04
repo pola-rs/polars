@@ -410,6 +410,17 @@ impl Literal for ChronoDuration {
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+impl Literal for Duration {
+    fn lit(self) -> Expr {
+        let ns = self.duration_ns();
+        Expr::Literal(LiteralValue::Duration(
+            if self.negative() { -ns } else { ns },
+            TimeUnit::Nanoseconds,
+        ))
+    }
+}
+
 #[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {

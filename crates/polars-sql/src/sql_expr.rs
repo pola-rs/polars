@@ -7,6 +7,7 @@ use polars_lazy::prelude::*;
 use polars_ops::series::SeriesReshape;
 use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
+use polars_time::Duration;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use regex::{Regex, RegexBuilder};
@@ -17,7 +18,7 @@ use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    JoinConstraint, ObjectName, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo,
+    Interval, JoinConstraint, ObjectName, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo,
     TrimWhereField, UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
@@ -259,6 +260,7 @@ impl SQLExprVisitor<'_> {
                 subquery,
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
+            SQLExpr::Interval(interval) => self.visit_interval(interval),
             SQLExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
@@ -406,6 +408,42 @@ impl SQLExprVisitor<'_> {
                 SQLInterface: "invalid identifier {:?}",
                 idents
             ),
+        }
+    }
+
+    fn visit_interval(&self, interval: &Interval) -> PolarsResult<Expr> {
+        if interval.last_field.is_some()
+            || interval.leading_field.is_some()
+            || interval.leading_precision.is_some()
+            || interval.fractional_seconds_precision.is_some()
+        {
+            polars_bail!(SQLInterface: "interval with explicit leading field or precision is not supported: {:?}", interval)
+        }
+        let mut negative = false;
+        let s = match &*interval.value {
+            SQLExpr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr,
+            } if matches!(**expr, SQLExpr::Value(SQLValue::SingleQuotedString(_))) => {
+                if let SQLExpr::Value(SQLValue::SingleQuotedString(ref s)) = **expr {
+                    negative = true;
+                    Some(s)
+                } else {
+                    unreachable!()
+                }
+            },
+            SQLExpr::Value(SQLValue::SingleQuotedString(s)) => Some(s),
+            _ => None,
+        };
+        match s {
+            Some(s) if s.contains('-') => {
+                polars_bail!(SQLInterface: "minus signs are not yet supported in interval strings; found '{}'", s)
+            },
+            Some(s) => {
+                let d = Duration::parse_interval(s);
+                Ok(lit(if negative { -d } else { d }))
+            },
+            None => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
         }
     }
 

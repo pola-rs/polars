@@ -15,6 +15,7 @@ polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cross_join", "cum_agg", "dtype-date", "dtype-decimal", "is_in", "list_eval", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "timezones", "trigonometry"] }
 polars-ops = { workspace = true }
 polars-plan = { workspace = true }
+polars-time = { workspace = true }
 
 hex = { workspace = true }
 once_cell = { workspace = true }

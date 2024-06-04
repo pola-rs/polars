@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::ops::Mul;
+use std::ops::{Mul, Neg};
 
 #[cfg(feature = "timezones")]
 use arrow::legacy::kernels::{Ambiguous, NonExistent};
@@ -53,6 +53,21 @@ impl PartialOrd<Self> for Duration {
 impl Ord for Duration {
     fn cmp(&self, other: &Self) -> Ordering {
         self.duration_ns().cmp(&other.duration_ns())
+    }
+}
+
+impl Neg for Duration {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            months: self.months,
+            weeks: self.weeks,
+            days: self.days,
+            nsecs: self.nsecs,
+            negative: !self.negative,
+            parsed_int: self.parsed_int,
+        }
     }
 }
 
@@ -138,20 +153,40 @@ impl Duration {
     /// # Panics
     /// If the given str is invalid for any reason.
     pub fn parse(duration: &str) -> Self {
-        let num_minus_signs = duration.matches('-').count();
-        if num_minus_signs > 1 {
-            panic!("a Duration string can only have a single minus sign")
-        }
-        if (num_minus_signs > 0) & !duration.starts_with('-') {
-            panic!("only a single minus sign is allowed, at the front of the string")
-        }
+        Self::_parse(duration, false)
+    }
 
-        let mut nsecs = 0;
+    #[doc(hidden)]
+    /// Parse SQL-style "interval" string to Duration. Handles verbose
+    /// units (such as 'year', 'minutes', etc.) and whitespace, as
+    /// well as being case-insensitive.
+    pub fn parse_interval(interval: &str) -> Self {
+        Self::_parse(&interval.to_ascii_lowercase(), true)
+    }
+
+    fn _parse(s: &str, as_interval: bool) -> Self {
+        let s = if as_interval { s.trim_start() } else { s };
+
+        let parse_type = if as_interval { "interval" } else { "duration" };
+        let num_minus_signs = s.matches('-').count();
+        if num_minus_signs > 1 {
+            panic!("{} string can only have a single minus sign", parse_type)
+        }
+        if num_minus_signs > 0 {
+            if as_interval {
+                // TODO: intervals need to support per-element minus signs
+                panic!("minus signs are not currently supported in interval strings")
+            } else if !s.starts_with('-') {
+                panic!("only a single minus sign is allowed, at the front of the string")
+            }
+        }
+        let mut months = 0;
         let mut weeks = 0;
         let mut days = 0;
-        let mut months = 0;
-        let negative = duration.starts_with('-');
-        let mut iter = duration.char_indices();
+        let mut nsecs = 0;
+
+        let negative = s.starts_with('-');
+        let mut iter = s.char_indices().peekable();
         let mut start = 0;
 
         // skip the '-' char
@@ -159,37 +194,52 @@ impl Duration {
             start += 1;
             iter.next().unwrap();
         }
-
+        // permissive whitespace for intervals
+        if as_interval {
+            while let Some((i, ch)) = iter.peek() {
+                if *ch == ' ' {
+                    start = *i + 1;
+                    iter.next();
+                } else {
+                    break;
+                }
+            }
+        }
+        // reserve capacity for the longest valid unit ("microseconds")
+        let mut unit = String::with_capacity(12);
         let mut parsed_int = false;
 
-        let mut unit = String::with_capacity(2);
         while let Some((i, mut ch)) = iter.next() {
             if !ch.is_ascii_digit() {
-                let n = duration[start..i]
-                    .parse::<i64>()
-                    .expect("expected an integer in the duration string");
+                let n = s[start..i].parse::<i64>().unwrap_or_else(|_| {
+                    panic!(
+                        "expected leading integer in the {} string, found {}",
+                        parse_type, ch
+                    )
+                });
 
                 loop {
-                    if ch.is_ascii_alphabetic() {
-                        unit.push(ch)
-                    } else {
-                        break;
+                    match ch {
+                        c if c.is_ascii_alphabetic() => unit.push(c),
+                        ' ' | ',' if as_interval => {},
+                        _ => break,
                     }
                     match iter.next() {
                         Some((i, ch_)) => {
                             ch = ch_;
                             start = i
                         },
-                        None => {
-                            break;
-                        },
+                        None => break,
                     }
                 }
                 if unit.is_empty() {
-                    panic!("expected a unit in the duration string")
+                    panic!(
+                        "expected a unit to follow integer in the {} string '{}'",
+                        parse_type, s
+                    )
                 }
-
                 match &*unit {
+                    // matches that are allowed for both duration/interval
                     "ns" => nsecs += n,
                     "us" => nsecs += n * NS_MICROSECOND,
                     "ms" => nsecs += n * NS_MILLISECOND,
@@ -198,17 +248,38 @@ impl Duration {
                     "h" => nsecs += n * NS_HOUR,
                     "d" => days += n,
                     "w" => weeks += n,
-                    "mo" => {
-                        months += n
-                    }
+                    "mo" => months += n,
                     "q" => months += n * 3,
                     "y" => months += n * 12,
-                    // we will read indexes as nanoseconds
                     "i" => {
                         nsecs += n;
                         parsed_int = true;
-                    }
-                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'q', 'mo', 'y', 'i'"),
+                    },
+                    _ if as_interval => match &*unit {
+                        // interval-only (verbose/sql) matches
+                        "nanosec" | "nanosecs" | "nanosecond" | "nanoseconds" => nsecs += n,
+                        "microsec" | "microsecs" | "microsecond" | "microseconds" => {
+                            nsecs += n * NS_MICROSECOND
+                        },
+                        "millisec" | "millisecs" | "millisecond" | "milliseconds" => {
+                            nsecs += n * NS_MILLISECOND
+                        },
+                        "sec" | "secs" | "second" | "seconds" => nsecs += n * NS_SECOND,
+                        "min" | "mins" | "minute" | "minutes" => nsecs += n * NS_MINUTE,
+                        "hour" | "hours" => nsecs += n * NS_HOUR,
+                        "day" | "days" => days += n,
+                        "week" | "weeks" => weeks += n,
+                        "mon" | "mons" | "month" | "months" => months += n,
+                        "quarter" | "quarters" => months += n * 3,
+                        "year" | "years" => months += n * 12,
+                        _ => {
+                            let valid_units = "'year', 'month', 'quarter', 'week', 'day', 'hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond'";
+                            panic!("unit: '{unit}' not supported; available units include: {} (and their plurals)", valid_units)
+                        },
+                    },
+                    _ => {
+                        panic!("unit: '{unit}' not supported; available units are: 'y', 'mo', 'q', 'w', 'd', 'h', 'm', 's', 'ms', 'us', 'ns'")
+                    },
                 }
                 unit.clear();
             }
@@ -954,7 +1025,7 @@ pub fn ensure_is_constant_duration(
     time_zone: Option<&str>,
     variable_name: &str,
 ) -> PolarsResult<()> {
-    polars_ensure!(duration.is_constant_duration(time_zone), 
+    polars_ensure!(duration.is_constant_duration(time_zone),
         InvalidOperation: "expected `{}` to be a constant duration \
             (i.e. one independent of differing month durations or of daylight savings time), got {}.\n\
             \n\
@@ -971,11 +1042,11 @@ pub fn ensure_duration_matches_data_type(
 ) -> PolarsResult<()> {
     match data_type {
         DataType::Int64 | DataType::UInt64 | DataType::Int32 | DataType::UInt32 => {
-            polars_ensure!(duration.parsed_int || duration.is_zero(), 
+            polars_ensure!(duration.parsed_int || duration.is_zero(),
                 InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
         },
         DataType::Datetime(_, _) | DataType::Date | DataType::Duration(_) | DataType::Time => {
-            polars_ensure!(!duration.parsed_int, 
+            polars_ensure!(!duration.parsed_int,
                 InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
         },
         _ => {
