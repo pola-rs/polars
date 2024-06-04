@@ -471,14 +471,6 @@ def test_str_to_integer_base_literal() -> None:
         )
 
 
-def test_str_parse_int_deprecated() -> None:
-    s = pl.Series(["110", "101", "010"])
-    with pytest.deprecated_call(match="It has been renamed to `to_integer`"):
-        result = s.str.parse_int()
-    expected = pl.Series([6, 5, 2], dtype=pl.Int32)
-    assert_series_equal(result, expected)
-
-
 def test_str_strip_chars_expr() -> None:
     df = pl.DataFrame(
         {

@@ -15,7 +15,7 @@ from polars._utils.deprecation import (
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
+from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -2448,29 +2448,6 @@ class ExprStringNameSpace:
         """
         base = parse_as_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
-
-    @deprecate_renamed_function("to_integer", version="0.19.14")
-    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
-    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Expr:
-        """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`to_integer`.
-
-        Parameters
-        ----------
-        base
-            Positive integer which is the base of the string we are parsing.
-        strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
-        """
-        if base is None:
-            base = 2
-        return self.to_integer(base=base, strict=strict).cast(Int32, strict=strict)
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
     def strip(self, characters: str | None = None) -> Expr:
