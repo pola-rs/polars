@@ -1501,7 +1501,6 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int | IntoExprColumn) -> Series:
         """
         Pad the start of the string with zeros until it reaches the given length.

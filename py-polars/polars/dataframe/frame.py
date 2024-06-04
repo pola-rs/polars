@@ -2432,8 +2432,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -2620,7 +2618,6 @@ class DataFrame:
 
         self._df.write_avro(file, compression, name)
 
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
         workbook: Workbook | IO[bytes] | Path | str | None = None,
@@ -3436,7 +3433,6 @@ class DataFrame:
                 data_page_size,
             )
 
-    @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
         table_name: str,
@@ -8176,7 +8172,6 @@ class DataFrame:
 
         return partitions
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> DataFrame:
         """
         Shift values by the given number of indices.

@@ -35,9 +35,6 @@ if TYPE_CHECKING:
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecate_renamed_parameter(
-    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
-)
 def read_csv(
     source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
@@ -603,9 +600,6 @@ def _read_csv_impl(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecate_renamed_parameter(
-    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
-)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -910,9 +904,6 @@ def read_csv_batched(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecate_renamed_parameter(
-    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
-)
 def scan_csv(
     source: str | Path | list[str] | list[Path],
     *,

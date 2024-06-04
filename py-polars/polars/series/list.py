@@ -672,7 +672,6 @@ class ListNameSpace:
         ]
         """
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Shift list values by the given number of indices.

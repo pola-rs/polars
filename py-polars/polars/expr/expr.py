@@ -420,7 +420,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> Self:
         """
         Return whether any of the values in the column are `True`.
@@ -476,7 +475,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> Self:
         """
         Return whether all values in the column are `True`.
@@ -3011,7 +3009,6 @@ class Expr:
         index_lit = parse_as_expression(index)
         return self._from_pyexpr(self._pyexpr.get(index_lit))
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
     ) -> Self:
@@ -11177,7 +11174,6 @@ class Expr:
         n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    @deprecate_renamed_parameter("multithreaded", "parallel", version="0.19.0")
     def value_counts(
         self, *, sort: bool = False, parallel: bool = False, name: str = "count"
     ) -> Self:

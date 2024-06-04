@@ -1445,7 +1445,6 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(_from_series=True)
 
-    @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:
         """
         Return the Series as a scalar, or return the element at the given index.
@@ -1566,7 +1565,6 @@ class Series:
     @overload
     def any(self, *, ignore_nulls: bool) -> bool | None: ...
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> bool | None:
         """
         Return whether any of the values in the column are `True`.
@@ -1609,7 +1607,6 @@ class Series:
     @overload
     def all(self, *, ignore_nulls: bool) -> bool | None: ...
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> bool | None:
         """
         Return whether all values in the column are `True`.
@@ -2164,7 +2161,6 @@ class Series:
     ) -> Series | DataFrame: ...
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
-    @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
     @unstable()
     def cut(
         self,
@@ -5527,7 +5523,6 @@ class Series:
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
         """
         Shift values by the given number of indices.

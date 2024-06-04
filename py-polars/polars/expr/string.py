@@ -928,7 +928,6 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
-    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
         Pad the start of the string with zeros until it reaches the given length.
