@@ -30,7 +30,6 @@ from polars._utils.deprecation import (
     deprecate_function,
     deprecate_parameter_as_positional,
     deprecate_renamed_parameter,
-    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars._utils.parse_expr_input import (
@@ -3432,8 +3431,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         index_column = parse_as_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
@@ -3774,9 +3771,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        every = deprecate_saturating(every)
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         if truncate is not None:
             if truncate:
                 label = "left"
@@ -3946,7 +3940,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
         """
-        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)

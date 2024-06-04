@@ -46,7 +46,6 @@ from polars._utils.deprecation import (
     deprecate_function,
     deprecate_parameter_as_positional,
     deprecate_renamed_parameter,
-    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
@@ -5707,8 +5706,6 @@ class DataFrame:
         If you want the index count to be based on row number, then you may want to
         combine `rolling` with :meth:`.with_row_index`.
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         return RollingGroupBy(
             self,
             index_column=index_column,
@@ -6042,9 +6039,6 @@ class DataFrame:
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        every = deprecate_saturating(every)
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         return DynamicGroupBy(
             self,
             index_column=index_column,
@@ -6157,14 +6151,12 @@ class DataFrame:
         │ 2021-06-01 00:00:00 ┆ B      ┆ 3      │
         └─────────────────────┴────────┴────────┘
         """
-        every = deprecate_saturating(every)
         if offset is not None:
             issue_deprecation_warning(
                 "`offset` is deprecated and will be removed in the next breaking release. "
                 "Instead, chain `upsample` with `dt.offset_by`.",
                 version="0.20.19",
             )
-        offset = deprecate_saturating(offset)
         if group_by is None:
             group_by = []
         if isinstance(group_by, str):
@@ -6456,7 +6448,6 @@ class DataFrame:
         └─────────────┴────────────┴────────────┴──────┘
 
         """
-        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
             raise TypeError(msg)

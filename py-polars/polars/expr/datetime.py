@@ -9,7 +9,6 @@ from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_saturating,
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
@@ -300,7 +299,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
         """
-        every = deprecate_saturating(every)
         if not isinstance(every, pl.Expr):
             every = parse_as_duration_string(every)
 
@@ -435,7 +433,6 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
         """
-        every = deprecate_saturating(every)
         if ambiguous is not None:
             issue_deprecation_warning(
                 "`ambiguous` is deprecated. It is now automatically inferred; you can safely omit this argument.",
@@ -2169,7 +2166,6 @@ class ExprDateTimeNameSpace:
         │ 2005-01-01 00:00:00 ┆ 1y     ┆ 2006-01-01 00:00:00 │
         └─────────────────────┴────────┴─────────────────────┘
         """
-        by = deprecate_saturating(by)
         by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 

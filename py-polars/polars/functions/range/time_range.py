@@ -5,7 +5,6 @@ from datetime import time
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils.deprecation import deprecate_saturating
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
@@ -131,8 +130,6 @@ def time_range(
         23:45:00
     ]
     """
-    interval = deprecate_saturating(interval)
-
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
@@ -268,7 +265,6 @@ def time_ranges(
     │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
     └──────────┴──────────┴────────────────────────────────┘
     """
-    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:
