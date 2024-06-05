@@ -121,7 +121,7 @@ impl GlobalLock {
     /// Returns
     /// * `None` - Could be locked (ambiguous)
     /// * `Some(true)` - Unlocked (by this function call)
-    /// * `Some(false)` - Unlocked (already previously unlocked)
+    /// * `Some(false)` - Unlocked (was not locked)
     fn try_unlock(&self) -> Option<bool> {
         if let Ok(mut this) = self.inner.try_write() {
             if Arc::strong_count(&self.access_tracker.0) <= 2 {
