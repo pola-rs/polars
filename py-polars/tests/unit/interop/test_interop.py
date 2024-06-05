@@ -1075,6 +1075,7 @@ def test_arrow_fixed_size_list() -> None:
         a=pl.repeat(pl.int_ranges(0, 2).cast(pl.Array(pl.Int64, 2)), n)
     )
     with NamedTemporaryFile() as f:
-        expected.write_parquet(f)
-        pa_table = pq.read_table(f)
-        assert_frame_equal(expected, pl.from_arrow(pa_table))
+        expected.write_parquet(f.name)
+        pa_table = pq.read_table(f.name)
+    test_df = pl.DataFrame(pa_table)
+    assert_frame_equal(expected, test_df)
