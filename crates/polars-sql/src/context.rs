@@ -849,21 +849,22 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         let mut by = Vec::with_capacity(ob.len());
         let mut descending = Vec::with_capacity(ob.len());
+        let mut nulls_last = Vec::with_capacity(ob.len());
 
         let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
         for ob in ob {
+            // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
+            // https://www.postgresql.org/docs/current/queries-order.html
             by.push(parse_sql_expr(&ob.expr, self, schema.as_deref())?);
-            descending.push(!ob.asc.unwrap_or(true));
-            polars_ensure!(
-                ob.nulls_first.is_none(),
-                SQLInterface: "NULLS FIRST/LAST is not (yet) supported",
-            );
+            let desc_order = !ob.asc.unwrap_or(true);
+            nulls_last.push(!ob.nulls_first.unwrap_or(desc_order));
+            descending.push(desc_order);
         }
-
         Ok(lf.sort_by_exprs(
             &by,
             SortMultipleOptions::default()
                 .with_order_descending_multi(descending)
+                .with_nulls_last_multi(nulls_last)
                 .with_maintain_order(true),
         ))
     }

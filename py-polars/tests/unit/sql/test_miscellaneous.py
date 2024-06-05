@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -81,7 +82,7 @@ def test_distinct() -> None:
 
     # test unregistration
     ctx.unregister("df")
-    with pytest.raises(pl.SQLInterfaceError, match="relation 'df' was not found"):
+    with pytest.raises(SQLInterfaceError, match="relation 'df' was not found"):
         ctx.execute("SELECT * FROM df")
 
 
@@ -94,7 +95,7 @@ def test_frame_sql_globals_error() -> None:
         FROM df2 JOIN df1 ON df1.a = df2.a
         ORDER BY b DESC
     """
-    with pytest.raises(pl.SQLInterfaceError, match=".*not found.*"):
+    with pytest.raises(SQLInterfaceError, match="relation.*not found.*"):
         df1.sql(query=query)
 
     res = pl.sql(query=query, eager=True)
@@ -132,168 +133,6 @@ def test_limit_offset() -> None:
         )
         assert_frame_equal(out, lf.slice(offset, limit).collect())
         assert len(out) == min(limit, n_values - offset)
-
-
-def test_order_by(foods_ipc_path: Path) -> None:
-    foods = pl.scan_ipc(foods_ipc_path)
-    nums = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 3, 2]})
-
-    order_by_distinct_res = pl.SQLContext(foods1=foods).execute(
-        """
-        SELECT DISTINCT category
-        FROM foods1
-        ORDER BY category DESC
-        """,
-        eager=True,
-    )
-    assert order_by_distinct_res.to_dict(as_series=False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit"]
-    }
-
-    order_by_group_by_res = pl.SQLContext(foods1=foods).execute(
-        """
-        SELECT category
-        FROM foods1
-        GROUP BY category
-        ORDER BY category DESC
-        """,
-        eager=True,
-    )
-    assert order_by_group_by_res.to_dict(as_series=False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit"]
-    }
-
-    order_by_constructed_group_by_res = pl.SQLContext(foods1=foods).execute(
-        """
-        SELECT category, SUM(calories) as summed_calories
-        FROM foods1
-        GROUP BY category
-        ORDER BY summed_calories DESC
-        """,
-        eager=True,
-    )
-    assert order_by_constructed_group_by_res.to_dict(as_series=False) == {
-        "category": ["seafood", "meat", "fruit", "vegetables"],
-        "summed_calories": [1250, 540, 410, 192],
-    }
-
-    order_by_unselected_res = pl.SQLContext(foods1=foods).execute(
-        """
-        SELECT SUM(calories) as summed_calories
-        FROM foods1
-        GROUP BY category
-        ORDER BY summed_calories DESC
-        """,
-        eager=True,
-    )
-    assert order_by_unselected_res.to_dict(as_series=False) == {
-        "summed_calories": [1250, 540, 410, 192],
-    }
-
-    order_by_unselected_nums_res = pl.SQLContext(df=nums).execute(
-        """
-        SELECT
-        df.x,
-        df.y as y_alias
-        FROM df
-        ORDER BY y_alias
-        """,
-        eager=True,
-    )
-    assert order_by_unselected_nums_res.to_dict(as_series=False) == {
-        "x": [3, 2, 1],
-        "y_alias": [2, 3, 4],
-    }
-
-    order_by_wildcard_res = pl.SQLContext(df=nums).execute(
-        """
-        SELECT
-        *,
-        df.y as y_alias
-        FROM df
-        ORDER BY y
-        """,
-        eager=True,
-    )
-    assert order_by_wildcard_res.to_dict(as_series=False) == {
-        "x": [3, 2, 1],
-        "y": [2, 3, 4],
-        "y_alias": [2, 3, 4],
-    }
-
-    order_by_qualified_wildcard_res = pl.SQLContext(df=nums).execute(
-        """
-        SELECT
-        df.*
-        FROM df
-        ORDER BY y
-        """,
-        eager=True,
-    )
-    assert order_by_qualified_wildcard_res.to_dict(as_series=False) == {
-        "x": [3, 2, 1],
-        "y": [2, 3, 4],
-    }
-
-    order_by_exclude_res = pl.SQLContext(df=nums).execute(
-        """
-        SELECT
-        * EXCLUDE y
-        FROM df
-        ORDER BY y
-        """,
-        eager=True,
-    )
-    assert order_by_exclude_res.to_dict(as_series=False) == {
-        "x": [3, 2, 1],
-    }
-
-    order_by_qualified_exclude_res = pl.SQLContext(df=nums).execute(
-        """
-        SELECT
-        df.* EXCLUDE y
-        FROM df
-        ORDER BY y
-        """,
-        eager=True,
-    )
-    assert order_by_qualified_exclude_res.to_dict(as_series=False) == {
-        "x": [3, 2, 1],
-    }
-
-    order_by_expression_res = pl.SQLContext(df=nums).execute(
-        """
-        SELECT
-        x % y as modded
-        FROM df
-        ORDER BY x % y
-        """,
-        eager=True,
-    )
-    assert order_by_expression_res.to_dict(as_series=False) == {
-        "modded": [1, 1, 2],
-    }
-
-
-def test_order_by_misc() -> None:
-    res = pl.DataFrame(
-        {
-            "x": ["apple", "orange"],
-            "y": ["sheep", "alligator"],
-            "z": ["hello", "world"],
-        }
-    ).sql(
-        """
-        SELECT z, y, x
-        FROM self ORDER BY y DESC
-        """
-    )
-    assert res.columns == ["z", "y", "x"]
-    assert res.to_dict(as_series=False) == {
-        "z": ["hello", "world"],
-        "y": ["sheep", "alligator"],
-        "x": ["apple", "orange"],
-    }
 
 
 def test_register_context() -> None:

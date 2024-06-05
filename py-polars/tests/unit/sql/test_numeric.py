@@ -18,7 +18,7 @@ def test_div() -> None:
         {
             "a": [20.5, None, 10.0, 5.0, 2.5],
             "b": [6, 12, 24, None, 5],
-        }
+        },
     )
     res = df.sql("SELECT DIV(a, b) AS a_div_b, DIV(b, a) AS b_div_a FROM self")
     assert res.to_dict(as_series=False) == {
