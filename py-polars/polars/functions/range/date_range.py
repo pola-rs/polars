@@ -12,7 +12,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from datetime import date, timedelta
+    from datetime import date, datetime, timedelta
     from typing import Literal
 
     from polars import Expr, Series
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 @overload
 def date_range(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -32,8 +32,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -43,8 +43,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -53,8 +53,8 @@ def date_range(
 
 
 def date_range(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -155,8 +155,8 @@ def date_range(
 
 @overload
 def date_ranges(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -166,8 +166,8 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -177,8 +177,8 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -187,8 +187,8 @@ def date_ranges(
 
 
 def date_ranges(
-    start: date | IntoExprColumn,
-    end: date | IntoExprColumn,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
