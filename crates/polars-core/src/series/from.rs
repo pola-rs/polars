@@ -84,9 +84,10 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             dt @ (Categorical(rev_map, ordering) | Enum(rev_map, ordering)) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
-                let rev_map = rev_map
-                    .clone()
-                    .unwrap_or_else(|| Arc::new(RevMapping::default()));
+                let rev_map = rev_map.clone().unwrap_or_else(|| {
+                    assert!(cats.is_empty());
+                    Arc::new(RevMapping::default())
+                });
                 let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     rev_map,
