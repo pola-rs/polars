@@ -205,7 +205,7 @@ fn apply_offsets_to_datetime(
                     if offset.negative() {
                         duration = -duration;
                     }
-                    Ok(datetime.0.apply_values(|v| v + duration))
+                    Ok(datetime.0.clone().wrapping_add_scalar(duration))
                 } else {
                     let offset_fn = match datetime.time_unit() {
                         TimeUnit::Milliseconds => Duration::add_ms,
