@@ -362,7 +362,7 @@ def test_top_k_nulls() -> None:
 
 
 @pytest.mark.xfail(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/15238"
+    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/16748"
 )
 def test_bottom_k_nulls() -> None:
     s = pl.Series([1, 2, 3, None, None])
