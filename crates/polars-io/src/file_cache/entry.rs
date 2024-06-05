@@ -9,7 +9,7 @@ use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::flatten;
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
-use super::file_fetcher::FileFetcher;
+use super::file_fetcher::{FileFetcher, RemoteMetadata};
 use super::file_lock::{FileLock, FileLockAnyGuard};
 use super::metadata::EntryMetadata;
 use super::utils::update_last_accessed;
@@ -39,6 +39,13 @@ struct EntryData {
 
 #[derive(Clone)]
 pub struct FileCacheEntry(Arc<EntryData>);
+
+impl EntryMetadata {
+    fn matches_remote_metadata(&self, remote_metadata: &RemoteMetadata) -> bool {
+        self.remote_last_modified == remote_metadata.last_modified
+            && self.local_size == remote_metadata.size
+    }
+}
 
 impl Inner {
     fn try_open_assume_latest(&mut self) -> PolarsResult<std::fs::File> {
@@ -73,7 +80,7 @@ impl Inner {
 
     fn try_open_check_latest(&mut self) -> PolarsResult<std::fs::File> {
         let verbose = config::verbose();
-        let remote_metadata = self.file_fetcher.fetch_metadata()?;
+        let remote_metadata = &self.file_fetcher.fetch_metadata()?;
         let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_any();
 
         {
@@ -81,9 +88,7 @@ impl Inner {
             update_last_accessed(metadata_file);
 
             if let Ok(metadata) = self.try_get_metadata(metadata_file, &cache_guard) {
-                if metadata.remote_last_modified == remote_metadata.last_modified
-                    && metadata.local_size == remote_metadata.size
-                {
+                if metadata.matches_remote_metadata(remote_metadata) {
                     let data_file_path = self.get_cached_data_file_path();
 
                     if metadata.compare_local_state(data_file_path).is_ok() {
@@ -101,9 +106,7 @@ impl Inner {
             .try_get_metadata(metadata_file, &cache_guard)
             .unwrap_or_else(|_| Arc::new(EntryMetadata::new_with_uri(self.uri.clone())));
 
-        if metadata.remote_last_modified == remote_metadata.last_modified
-            && metadata.local_size == remote_metadata.size
-        {
+        if metadata.matches_remote_metadata(remote_metadata) {
             let data_file_path = self.get_cached_data_file_path();
 
             if metadata.compare_local_state(data_file_path).is_ok() {
@@ -131,6 +134,8 @@ impl Inner {
             self.uri_hash.as_bytes(),
             remote_metadata.last_modified,
         );
+        // Remove the file if it exists, since it doesn't match the metadata.
+        // This could be left from an aborted process.
         let _ = std::fs::remove_file(data_file_path);
         if !self.file_fetcher.fetches_as_symlink() {
             let file = std::fs::OpenOptions::new()
