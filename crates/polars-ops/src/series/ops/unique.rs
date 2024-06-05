@@ -47,49 +47,40 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
         n_true = arr.values().set_bits();
     }
     let n_false = arr.len() - n_true - n_null;
+    let (n_true, n_false, n_null) = (n_true as IdxSize, n_false as IdxSize, n_null as IdxSize);
 
     if n_true == 0 && n_false == 0 {
-        return IdxCa::new(ca.name(), [n_null as IdxSize]);
+        return IdxCa::new(ca.name(), [n_null]);
     }
     if n_true == 0 && n_null == 0 {
-        return IdxCa::new(ca.name(), [n_false as IdxSize]);
+        return IdxCa::new(ca.name(), [n_false]);
     }
     if n_false == 0 && n_null == 0 {
-        return IdxCa::new(ca.name(), [n_true as IdxSize]);
+        return IdxCa::new(ca.name(), [n_true]);
     }
 
     if n_true == 0 {
         match arr.is_null(0) {
-            true => return IdxCa::new(ca.name(), [n_null as IdxSize, n_false as IdxSize]),
-            false => return IdxCa::new(ca.name(), [n_false as IdxSize, n_null as IdxSize]),
+            true => return IdxCa::new(ca.name(), [n_null, n_false]),
+            false => return IdxCa::new(ca.name(), [n_false, n_null]),
         }
     } else if n_false == 0 {
         match arr.is_null(0) {
-            true => return IdxCa::new(ca.name(), [n_null as IdxSize, n_true as IdxSize]),
-            false => return IdxCa::new(ca.name(), [n_true as IdxSize, n_null as IdxSize]),
+            true => return IdxCa::new(ca.name(), [n_null, n_true]),
+            false => return IdxCa::new(ca.name(), [n_true, n_null]),
         }
     } else if n_null == 0 {
         match arr.value(0) {
-            true => return IdxCa::new(ca.name(), [n_true as IdxSize, n_false as IdxSize]),
-            false => return IdxCa::new(ca.name(), [n_false as IdxSize, n_true as IdxSize]),
+            true => return IdxCa::new(ca.name(), [n_true, n_false]),
+            false => return IdxCa::new(ca.name(), [n_false, n_true]),
         }
     }
 
     if arr.is_null(0) {
         let first_non_null = arr.validity().unwrap().iter().position(|v| v).unwrap();
         match arr.value(first_non_null) {
-            true => {
-                return IdxCa::new(
-                    ca.name(),
-                    [n_null as IdxSize, n_true as IdxSize, n_false as IdxSize],
-                )
-            },
-            false => {
-                return IdxCa::new(
-                    ca.name(),
-                    [n_null as IdxSize, n_false as IdxSize, n_true as IdxSize],
-                )
-            },
+            true => return IdxCa::new(ca.name(), [n_null, n_true, n_false]),
+            false => return IdxCa::new(ca.name(), [n_null, n_false, n_true]),
         }
     } else {
         let first_unique = arr.value(0);
@@ -102,30 +93,10 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
             .unwrap();
 
         match (first_unique, arr.is_null(second_unique)) {
-            (true, true) => {
-                return IdxCa::new(
-                    ca.name(),
-                    [n_true as IdxSize, n_null as IdxSize, n_false as IdxSize],
-                )
-            },
-            (true, false) => {
-                return IdxCa::new(
-                    ca.name(),
-                    [n_true as IdxSize, n_false as IdxSize, n_null as IdxSize],
-                )
-            },
-            (false, true) => {
-                return IdxCa::new(
-                    ca.name(),
-                    [n_false as IdxSize, n_null as IdxSize, n_true as IdxSize],
-                )
-            },
-            (false, false) => {
-                return IdxCa::new(
-                    ca.name(),
-                    [n_false as IdxSize, n_true as IdxSize, n_null as IdxSize],
-                )
-            },
+            (true, true) => return IdxCa::new(ca.name(), [n_true, n_null, n_false]),
+            (true, false) => return IdxCa::new(ca.name(), [n_true, n_false, n_null]),
+            (false, true) => return IdxCa::new(ca.name(), [n_false, n_null, n_true]),
+            (false, false) => return IdxCa::new(ca.name(), [n_false, n_true, n_null]),
         }
     }
 }
