@@ -21,11 +21,6 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
 
     .. versionadded:: 0.20.31
 
-    Notes
-    -----
-    The Polars SQL engine can operate against Polars DataFrame, LazyFrame, and Series
-    objects, as well as Pandas DataFrame and Series, and PyArrow Table and RecordBatch.
-
     Parameters
     ----------
     query
@@ -35,6 +30,8 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
 
     Notes
     -----
+    * The Polars SQL engine can operate against Polars DataFrame, LazyFrame, and Series
+      objects, as well as Pandas DataFrame and Series, PyArrow Table and RecordBatch.
     * Additional control over registration and execution behaviour is available
       with the :class:`SQLContext` object.
 
@@ -113,12 +110,14 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     ...     [pa.array([1, 2, 3]), pa.array(["x", "y", "z"])],
     ...     names=["a", "e"],
     ... )
-    >>> pl.sql('''
-    ...   SELECT pl_frame.*, d, e
-    ...   FROM pl_frame
-    ...   JOIN pd_frame USING(a)
-    ...   JOIN pa_table USING(a)
-    ... ''').collect()
+    >>> pl.sql(
+    ...     query='''
+    ...         SELECT pl_frame.*, d, e
+    ...         FROM pl_frame
+    ...         JOIN pd_frame USING(a)
+    ...         JOIN pa_table USING(a)
+    ...     ''',
+    ... ).collect()
     shape: (2, 5)
     ┌─────┬─────┬─────┬──────┬─────┐
     │ a   ┆ b   ┆ c   ┆ d    ┆ e   │

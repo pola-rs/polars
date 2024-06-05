@@ -278,9 +278,9 @@ class SQLContext(Generic[FrameType]):
         possible_names = {
             nm
             for nm in re.split(r"\s", q)
-            if re.match(r'^("[^"]+"|\w+)$', nm) and nm.lower() not in _SQL_KEYWORDS_
+            if re.match(r'^("[^"]+")$', nm)
+            or (nm.isidentifier() and nm.lower() not in _SQL_KEYWORDS_)
         }
-
         # get compatible frame objects from the globals, constraining by possible names
         named_frames = _get_frame_locals(all_compatible=True, named=possible_names)
         with cls(frames=named_frames, register_globals=False) as ctx:
