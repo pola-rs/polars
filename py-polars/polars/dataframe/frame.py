@@ -6003,15 +6003,13 @@ class DataFrame:
         time_column: str,
         *,
         every: str | timedelta,
-        offset: str | timedelta | None = None,
         group_by: str | Sequence[str] | None = None,
         maintain_order: bool = False,
     ) -> Self:
         """
         Upsample a DataFrame at a regular frequency.
 
-        The `every` and `offset` arguments are created with
-        the following string language:
+        The `every` argument is created with the following string language:
 
         - 1ns   (1 nanosecond)
         - 1us   (1 microsecond)
@@ -6042,12 +6040,6 @@ class DataFrame:
             Note that this column has to be sorted for the output to make sense.
         every
             Interval will start 'every' duration.
-        offset
-            Change the start of the date_range by this offset.
-
-            .. deprecated:: 0.20.19
-                This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `upsample` with `dt.offset_by`.
         group_by
             First group by these columns and then upsample for every group.
         maintain_order
@@ -6094,24 +6086,15 @@ class DataFrame:
         │ 2021-06-01 00:00:00 ┆ B      ┆ 3      │
         └─────────────────────┴────────┴────────┘
         """
-        if offset is not None:
-            issue_deprecation_warning(
-                "`offset` is deprecated and will be removed in the next breaking release. "
-                "Instead, chain `upsample` with `dt.offset_by`.",
-                version="0.20.19",
-            )
         if group_by is None:
             group_by = []
         if isinstance(group_by, str):
             group_by = [group_by]
-        if offset is None:
-            offset = "0ns"
 
         every = parse_as_duration_string(every)
-        offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
-            self._df.upsample(group_by, time_column, every, offset, maintain_order)
+            self._df.upsample(group_by, time_column, every, maintain_order)
         )
 
     def join_asof(
