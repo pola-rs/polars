@@ -688,17 +688,15 @@ def test_rolling_aggregations_with_over_11225() -> None:
 
     df_temporal = df_temporal.sort("group", "date")
 
-    with pytest.deprecated_call(match="you can safely remove this argument"):
-        result = df_temporal.with_columns(
-            rolling_row_mean=pl.col("index")
-            .rolling_mean_by(
-                by="date",
-                window_size="2d",
-                closed="left",
-                warn_if_unsorted=False,
-            )
-            .over("group")
+    result = df_temporal.with_columns(
+        rolling_row_mean=pl.col("index")
+        .rolling_mean_by(
+            by="date",
+            window_size="2d",
+            closed="left",
         )
+        .over("group")
+    )
     expected = pl.DataFrame(
         {
             "index": [0, 1, 2, 3, 4],
