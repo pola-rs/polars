@@ -60,9 +60,12 @@ def test_unique_counts_null() -> None:
         ([None, True, None, True, True], [2, 3]),
         ([False, None, False, None, None], [2, 3]),
         ([None, False, None, False, False], [2, 3]),
+        ([True, False, None, False, None, None], [1, 2, 3]),
         ([True, None, False, False, None, False], [1, 2, 3]),
+        ([False, True, True, None, None, None], [1, 2, 3]),
         ([False, None, True, True, None, True], [1, 2, 3]),
         ([None, False, True, False, True, True], [1, 2, 3]),
+        ([None, True, True, False, False, False], [1, 2, 3]),
     ],
 )
 def test_unique_counts_bool(input: list[bool], expected: list[int]) -> None:

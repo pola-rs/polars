@@ -34,136 +34,96 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
 
-    let (true_count, null_count);
+    let (n_true, n_null);
     if let Some(validity) = arr.validity() {
-        null_count = validity.unset_bits();
-        if null_count < arr.len() {
-            true_count = (arr.values() & validity).set_bits();
+        n_null = validity.unset_bits();
+        if n_null < arr.len() {
+            n_true = (arr.values() & validity).set_bits();
         } else {
-            true_count = 0;
+            n_true = 0;
         }
     } else {
-        null_count = 0;
-        true_count = arr.values().set_bits();
+        n_null = 0;
+        n_true = arr.values().set_bits();
     }
-    let false_count = arr.len() - true_count - null_count;
+    let n_false = arr.len() - n_true - n_null;
 
-    if true_count == 0 && false_count == 0 {
-        return IdxCa::new(ca.name(), [null_count as IdxSize]);
+    if n_true == 0 && n_false == 0 {
+        return IdxCa::new(ca.name(), [n_null as IdxSize]);
     }
-    if true_count == 0 && null_count == 0 {
-        return IdxCa::new(ca.name(), [false_count as IdxSize]);
+    if n_true == 0 && n_null == 0 {
+        return IdxCa::new(ca.name(), [n_false as IdxSize]);
     }
-    if false_count == 0 && null_count == 0 {
-        return IdxCa::new(ca.name(), [true_count as IdxSize]);
+    if n_false == 0 && n_null == 0 {
+        return IdxCa::new(ca.name(), [n_true as IdxSize]);
     }
 
-    if true_count == 0 {
+    if n_true == 0 {
         match arr.is_null(0) {
-            true => return IdxCa::new(ca.name(), [null_count as IdxSize, false_count as IdxSize]),
-            false => return IdxCa::new(ca.name(), [false_count as IdxSize, null_count as IdxSize]),
+            true => return IdxCa::new(ca.name(), [n_null as IdxSize, n_false as IdxSize]),
+            false => return IdxCa::new(ca.name(), [n_false as IdxSize, n_null as IdxSize]),
         }
-    } else if false_count == 0 {
+    } else if n_false == 0 {
         match arr.is_null(0) {
-            true => return IdxCa::new(ca.name(), [null_count as IdxSize, true_count as IdxSize]),
-            false => return IdxCa::new(ca.name(), [true_count as IdxSize, null_count as IdxSize]),
+            true => return IdxCa::new(ca.name(), [n_null as IdxSize, n_true as IdxSize]),
+            false => return IdxCa::new(ca.name(), [n_true as IdxSize, n_null as IdxSize]),
         }
-    } else if null_count == 0 {
+    } else if n_null == 0 {
         match arr.value(0) {
-            true => return IdxCa::new(ca.name(), [true_count as IdxSize, false_count as IdxSize]),
-            false => return IdxCa::new(ca.name(), [false_count as IdxSize, true_count as IdxSize]),
+            true => return IdxCa::new(ca.name(), [n_true as IdxSize, n_false as IdxSize]),
+            false => return IdxCa::new(ca.name(), [n_false as IdxSize, n_true as IdxSize]),
         }
     }
-
-    let (mut true_index, mut null_index): (Option<usize>, Option<usize>) = (None, None);
 
     if arr.is_null(0) {
-        null_index = Some(0);
-    } else if arr.value(0) {
-        true_index = Some(0);
-    }
-
-    if let Some(0) = null_index {
         let first_non_null = arr.validity().unwrap().iter().position(|v| v).unwrap();
         match arr.value(first_non_null) {
             true => {
                 return IdxCa::new(
                     ca.name(),
-                    [
-                        null_count as IdxSize,
-                        true_count as IdxSize,
-                        false_count as IdxSize,
-                    ],
+                    [n_null as IdxSize, n_true as IdxSize, n_false as IdxSize],
                 )
             },
             false => {
                 return IdxCa::new(
                     ca.name(),
-                    [
-                        null_count as IdxSize,
-                        false_count as IdxSize,
-                        true_count as IdxSize,
-                    ],
-                )
-            },
-        }
-    } else if let Some(0) = true_index {
-        let first_non_true = arr
-            .validity()
-            .unwrap()
-            .iter()
-            .zip(arr.values())
-            .position(|(v, val)| !v || !val)
-            .unwrap();
-        match arr.is_null(first_non_true) {
-            true => {
-                return IdxCa::new(
-                    ca.name(),
-                    [
-                        true_count as IdxSize,
-                        null_count as IdxSize,
-                        false_count as IdxSize,
-                    ],
-                )
-            },
-            false => {
-                return IdxCa::new(
-                    ca.name(),
-                    [
-                        true_count as IdxSize,
-                        false_count as IdxSize,
-                        null_count as IdxSize,
-                    ],
+                    [n_null as IdxSize, n_false as IdxSize, n_true as IdxSize],
                 )
             },
         }
     } else {
-        let first_non_false = arr
+        let first_unique = arr.value(0);
+        let second_unique = arr
             .validity()
             .unwrap()
             .iter()
             .zip(arr.values())
-            .position(|(v, val)| !v || val)
+            .position(|(v, val)| !v || val != first_unique)
             .unwrap();
-        match arr.is_null(first_non_false) {
-            true => {
+
+        match (first_unique, arr.is_null(second_unique)) {
+            (true, true) => {
                 return IdxCa::new(
                     ca.name(),
-                    [
-                        false_count as IdxSize,
-                        null_count as IdxSize,
-                        true_count as IdxSize,
-                    ],
+                    [n_true as IdxSize, n_null as IdxSize, n_false as IdxSize],
                 )
             },
-            false => {
+            (true, false) => {
                 return IdxCa::new(
                     ca.name(),
-                    [
-                        false_count as IdxSize,
-                        true_count as IdxSize,
-                        null_count as IdxSize,
-                    ],
+                    [n_true as IdxSize, n_false as IdxSize, n_null as IdxSize],
+                )
+            },
+            (false, true) => {
+                return IdxCa::new(
+                    ca.name(),
+                    [n_false as IdxSize, n_null as IdxSize, n_true as IdxSize],
+                )
+            },
+            (false, false) => {
+                return IdxCa::new(
+                    ca.name(),
+                    [n_false as IdxSize, n_true as IdxSize, n_null as IdxSize],
                 )
             },
         }
