@@ -20,7 +20,7 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 async-trait = { version = "0.1.59", optional = true }
 atoi_simd = { workspace = true, optional = true }
-blake3 = "1.5.1"
+blake3 = { version = "1.5.1", optional = true }
 bytes = { version = "1.3" }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -49,8 +49,8 @@ url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
+fs4 = { version = "0.8.3", features = ["sync"], optional = true }
 home = "0.5.4"
-fs4 = { version = "0.8.3", features = ["sync"] }
 
 [dev-dependencies]
 tempfile = "3"
@@ -109,7 +109,8 @@ async = [
   "polars-error/regex",
   "polars-parquet?/async",
 ]
-cloud = ["object_store", "async", "polars-error/object_store", "url", "serde_json", "serde"]
+cloud = ["object_store", "async", "polars-error/object_store", "url", "serde_json", "serde", "file_cache"]
+file_cache = ["async", "dep:blake3", "dep:fs4"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]

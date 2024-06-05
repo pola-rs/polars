@@ -12,8 +12,6 @@ use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
-#[cfg(feature = "cloud")]
-use crate::file_cache::FILE_CACHE;
 use crate::prelude::is_cloud_url;
 use crate::utils::get_reader_bytes;
 
@@ -30,7 +28,7 @@ pub fn count_rows(
     let mut reader = if is_cloud_url(path) || config::force_async() {
         #[cfg(feature = "cloud")]
         {
-            FILE_CACHE
+            crate::file_cache::FILE_CACHE
                 .get_entry(path.to_str().unwrap())
                 // Safety: This was initialized by schema inference.
                 .unwrap()

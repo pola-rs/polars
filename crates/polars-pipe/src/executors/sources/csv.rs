@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
-use polars_io::file_cache::FILE_CACHE;
 use polars_io::utils::is_cloud_url;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
@@ -101,7 +100,7 @@ impl CsvSource {
             #[cfg(feature = "cloud")]
             {
                 options.into_reader_with_file_handle(
-                    FILE_CACHE
+                    polars_io::file_cache::FILE_CACHE
                         .get_entry(path.to_str().unwrap())
                         // Safety: This was initialized by schema inference.
                         .unwrap()
