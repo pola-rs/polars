@@ -38,7 +38,7 @@ def diff_from_mean(series):
     return pl.Series([value - mean for value in series])
 
 
-# Apply our custom function a full Series with map_batches():
+# Apply our custom function to a full Series with map_batches():
 out = df.select(pl.col("values").map_batches(diff_from_mean))
 print("== select() with UDF ==")
 print(out)
@@ -103,7 +103,8 @@ out = df3.select(
         lambda combined: add(
             combined.struct.field("values1"), combined.struct.field("values2")
         )
-    ).alias("add_columns")
+    )
+    .alias("add_columns")
 )
 print(out)
 # --8<-- [end:combine]
