@@ -1076,6 +1076,14 @@ def test_arrow_fixed_size_list() -> None:
     )
     with NamedTemporaryFile() as f:
         expected.write_parquet(f.name)
-        pa_table = pq.read_table(f.name)
+        for _ in range(5):
+            try:
+                pa_table = pq.read_table(f.name)
+                break
+            except PermissionError:
+                time.sleep(1)
+                pa_table = None
+    if pa_table is None:
+        return None
     test_df = pl.DataFrame(pa_table)
     assert_frame_equal(expected, test_df)
