@@ -18,7 +18,7 @@ pub(super) struct EvictionManager {
 impl EvictionManager {
     pub(super) fn run_in_background(mut self) {
         let verbose = config::verbose();
-        let sleep_interval = std::cmp::max(self.limit_since_last_access.as_secs() / 4, 7);
+        let sleep_interval = std::cmp::max(self.limit_since_last_access.as_secs() / 4, 60);
 
         if verbose {
             eprintln!(
