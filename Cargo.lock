@@ -3203,6 +3203,7 @@ dependencies = [
  "polars-lazy",
  "polars-ops",
  "polars-plan",
+ "polars-time",
  "rand",
  "serde",
  "serde_json",
