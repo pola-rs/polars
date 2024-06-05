@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import time as tm
 from datetime import date, datetime, time, timedelta, timezone
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, cast
@@ -1082,7 +1082,7 @@ def test_arrow_fixed_size_list() -> None:
                 pa_table = pq.read_table(f.name)
                 break
             except PermissionError:
-                time.sleep(1)
+                tm.sleep(1)
                 pa_table = None
     if pa_table is None:
         return None
