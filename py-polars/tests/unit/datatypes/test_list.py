@@ -832,3 +832,22 @@ def test_list_str_sum_exception_12935() -> None:
 def test_list_list_sum_exception_12935() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([[1], [2]]).sum()
+
+
+def test_null_list_categorical_16405() -> None:
+    df = pl.DataFrame(
+        [(None, "foo")],
+        schema={
+            "match": pl.List(pl.Categorical),
+            "what": pl.Categorical,
+        },
+    )
+
+    df = df.select(
+        pl.col("match")
+        .list.set_intersection(pl.concat_list(pl.col("what")))
+        .alias("result")
+    )
+
+    expected = pl.DataFrame([None], schema={"result": pl.List(pl.Categorical)})
+    assert_frame_equal(df, expected)
