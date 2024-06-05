@@ -17,7 +17,7 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool
 from polars._utils.wrap import wrap_df, wrap_expr
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -209,17 +209,6 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     │ 2   │
     └─────┘
     """
-    if not columns:
-        issue_deprecation_warning(
-            "`pl.cum_count()` is deprecated. The same result can be achieved using"
-            " `pl.int_range(1, pl.len() + 1, dtype=pl.UInt32)`,"
-            " or `int_range(pl.len(), 0, -1, dtype=pl.UInt32)` when `reverse=True`.",
-            version="0.20.5",
-        )
-        if reverse:
-            return F.int_range(F.len(), 0, step=-1, dtype=UInt32).alias("cum_count")
-        else:
-            return F.int_range(1, F.len() + 1, dtype=UInt32).alias("cum_count")
     return F.col(*columns).cum_count(reverse=reverse)
 
 
