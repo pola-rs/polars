@@ -75,9 +75,9 @@ impl TreeWalker for Expr {
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
             Explode(expr) => Explode(am(expr, f)?),
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, options } => {
+            Window { function, partition_by, order_by, options } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, options }
+                Window { function: am(function, f)?, partition_by, order_by, options }
             },
             Wildcard => Wildcard,
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },

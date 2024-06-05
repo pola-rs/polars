@@ -420,6 +420,7 @@ impl<'a> Display for ExprIRDisplay<'a> {
             Window {
                 function,
                 partition_by,
+                order_by,
                 options,
             } => {
                 let function = self.with_root(function);
@@ -434,7 +435,12 @@ impl<'a> Display for ExprIRDisplay<'a> {
                         )
                     },
                     _ => {
-                        write!(f, "{function}.over({partition_by})")
+                        if let Some((order_by, _)) = order_by {
+                            let order_by = self.with_root(order_by);
+                            write!(f, "{function}.over(partition_by: {partition_by}, order_by: {order_by})")
+                        } else {
+                            write!(f, "{function}.over({partition_by})")
+                        }
                     },
                 }
             },

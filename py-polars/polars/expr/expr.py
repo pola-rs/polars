@@ -3588,8 +3588,9 @@ class Expr:
 
     def over(
         self,
-        expr: IntoExpr | Iterable[IntoExpr],
+        partition_by: IntoExpr | Iterable[IntoExpr],
         *more_exprs: IntoExpr,
+        order_by: IntoExpr | Iterable[IntoExpr] | None = None,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Self:
         """
@@ -3604,11 +3605,14 @@ class Expr:
 
         Parameters
         ----------
-        expr
+        partition_by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
         *more_exprs
             Additional columns to group by, specified as positional arguments.
+        order_by:
+            Order the window functions/aggregations with the partitioned groups by the
+            result of the expression passed to `order_by`.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
                 If the aggregation results in multiple values, assign them back to their
@@ -3725,8 +3729,18 @@ class Expr:
         └─────┴─────┴─────┘
 
         """
-        exprs = parse_as_list_of_expressions(expr, *more_exprs)
-        return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
+        partition_by = parse_as_list_of_expressions(partition_by, *more_exprs)
+        if order_by is not None:
+            order_by = parse_as_list_of_expressions(order_by)
+        return self._from_pyexpr(
+            self._pyexpr.over(
+                partition_by,
+                order_by=order_by,
+                order_by_descending=False,  # does not work yet
+                order_by_nulls_last=False,  # does not work yet
+                mapping_strategy=mapping_strategy,
+            )
+        )
 
     def rolling(
         self,

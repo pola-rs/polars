@@ -197,6 +197,7 @@ fn create_physical_expr_inner(
         Window {
             mut function,
             partition_by,
+            order_by,
             options,
         } => {
             state.set_window();
@@ -207,6 +208,21 @@ fn create_physical_expr_inner(
                 schema,
                 state,
             )?;
+
+            let order_by = order_by
+                .map(|(node, options)| {
+                    PolarsResult::Ok((
+                        create_physical_expr_inner(
+                            node,
+                            Context::Aggregation,
+                            expr_arena,
+                            schema,
+                            state,
+                        )?,
+                        options,
+                    ))
+                })
+                .transpose()?;
 
             let mut out_name = None;
             if let Alias(expr, name) = expr_arena.get(function) {
@@ -250,6 +266,7 @@ fn create_physical_expr_inner(
 
                     Ok(Arc::new(WindowExpr {
                         group_by,
+                        order_by,
                         apply_columns,
                         out_name,
                         function: function_expr,

@@ -56,6 +56,7 @@ pub use list::*;
 pub use meta::*;
 pub use name::*;
 pub use options::*;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -952,12 +953,13 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        self.over_with_options(partition_by, Default::default())
+        self.over_with_options(partition_by, None, Default::default())
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: E,
+        order_by: Option<(E, SortOptions)>,
         options: WindowMapping,
     ) -> Self {
         let partition_by = partition_by
@@ -965,9 +967,24 @@ impl Expr {
             .iter()
             .map(|e| e.clone().into())
             .collect();
+
+        let order_by = order_by.map(|(e, options)| {
+            let e = e.as_ref();
+            let e = if e.len() == 1 {
+                Arc::new(e[0].clone().into())
+            } else {
+                feature_gated!["dtype-struct", {
+                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+                    Arc::new(as_struct(e))
+                }]
+            };
+            (e, options)
+        });
+
         Expr::Window {
             function: Arc::new(self),
             partition_by,
+            order_by,
             options: options.into(),
         }
     }
@@ -980,6 +997,7 @@ impl Expr {
         Expr::Window {
             function: Arc::new(self),
             partition_by: vec![index_col],
+            order_by: None,
             options: WindowType::Rolling(options),
         }
     }

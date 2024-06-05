@@ -330,10 +330,12 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::Window {
             function,
             partition_by,
+            order_by,
             options,
         } => AExpr::Window {
             function: to_aexpr_impl(owned(function), arena, state),
             partition_by: to_aexprs(partition_by, arena, state),
+            order_by: order_by.map(|(e, options)| (to_aexpr_impl(owned(e), arena, state), options)),
             options,
         },
         Expr::Slice {
