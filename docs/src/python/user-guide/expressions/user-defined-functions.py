@@ -14,6 +14,18 @@ df = pl.DataFrame(
 print(df)
 # --8<-- [end:dataframe]
 
+# --8<-- [start:individual_log]
+import math
+
+
+def my_log(value):
+    return math.log(value)
+
+
+out = df.select(pl.col("values").map_elements(my_log, return_dtype=pl.Float64))
+print(out)
+# --8<-- [end:individual_log]
+
 
 # --8<-- [start:diff_from_mean]
 def diff_from_mean(series):
@@ -91,8 +103,7 @@ out = df3.select(
         lambda combined: add(
             combined.struct.field("values1"), combined.struct.field("values2")
         )
-    )
-    .alias("add_columns")
+    ).alias("add_columns")
 )
 print(out)
 # --8<-- [end:combine]

@@ -9,6 +9,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", df);
     // --8<-- [end:dataframe]
 
+    // --8<-- [start:individual_log]
+    // --8<-- [end:individual_log]
+
     // --8<-- [start:diff_from_mean]
     // --8<-- [end:diff_from_mean]
 

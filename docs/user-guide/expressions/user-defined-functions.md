@@ -3,13 +3,14 @@
 Polars expressions are quite powerful and flexible, so there is much less need for custom Python functions compared to other libraries.
 Still, you may need to pass an expression's state to a third party library or apply your black box function to data in Polars.
 
-In this part of the documentation we'll be using one specific API that allows you to do this:
+In this part of the documentation we'll be using two APIs that allows you to do this:
 
+- [:material-api: `map_elements`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html): Call a function separately on each value in the `Series`.
 - [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html): Always passes the full `Series` to the function.
 
-## Example: A slow, custom function written in Python
+## Processing individual values with `map_elements()`
 
-For demonstration purposes, let's say we want to calculate the difference between the mean of a `Series` and each value.
+Let's start with the simplest case: we want to process each value in a `Series` individually.
 Here is our data:
 
 {{code_block('user-guide/expressions/user-defined-functions','dataframe',[])}}
@@ -19,7 +20,27 @@ Here is our data:
 --8<-- "python/user-guide/expressions/user-defined-functions.py:dataframe"
 ```
 
-We can use `map_batches()` to run this function on either the full `Series` or individual groups in a `group_by()`:
+We'll call `math.log()` on each individual value:
+
+{{code_block('user-guide/expressions/user-defined-functions','individual_log',[])}}
+
+```python exec="on" result="text" session="user-guide/udf"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:individual_log"
+```
+
+While this works, `map_elements()` has two problems:
+
+1. **Limited to individual items:** Often you'll want to have a calculation that needs to operate on the whole `Series`, rather than individual items one by one.
+2. **Performance overhead:** Even if you do want to process each item individually, calling a function for each individual item is slow; all those extra function calls add a lot of overhead.
+
+Let's start by solving the first problem, and then we'll see how to solve the second problem.
+
+## Processing a whole `Series` with `map_batches()`
+
+We want to run a custom on the contents of a whole `Series`.
+For demonstration purposes, let's say we want to calculate the difference between the mean of a `Series` and each value.
+
+We can use the `map_batches()` API to run this function on either the full `Series` or individual groups in a `group_by()`:
 
 {{code_block('user-guide/expressions/user-defined-functions','diff_from_mean',[])}}
 
@@ -47,9 +68,12 @@ For example:
 --8<-- "python/user-guide/expressions/user-defined-functions.py:np_log"
 ```
 
+Notice that we can use `map_batches()`, because `numpy.log()` is able to run on both individual items and on whole NumPy arrays.
+This means it will run much faster than our original example, since we only have a single Python call and then all processing happens in a fast low-level language.
+
 ## Example: A fast custom function using Numba
 
-The pre-written functions are helpful, but our goal is to write our own functions.
+The pre-written functions NumPy provides are helpful, but our goal is to write our own functions.
 For example, let's say we want a fast version of our `diff_from_mean()` example above.
 The easiest way to write this in Python is to use [Numba](https://numba.readthedocs.io/en/stable/), which allows you to write custom functions in (a subset) of Python while still getting the benefit of compiled code.
 
