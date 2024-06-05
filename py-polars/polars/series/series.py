@@ -5608,18 +5608,15 @@ class Series:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -5635,15 +5632,6 @@ class Series:
             300
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_min(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_max(
@@ -5671,18 +5659,15 @@ class Series:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -5698,15 +5683,6 @@ class Series:
             500
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_max(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_mean(
@@ -5734,18 +5710,15 @@ class Series:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -5761,15 +5734,6 @@ class Series:
             450.0
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_mean(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_sum(
@@ -5797,18 +5761,15 @@ class Series:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
-            An optional slice with the same length of the window that will be multiplied
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -5824,15 +5785,6 @@ class Series:
                 9
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_sum(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_std(
@@ -5861,18 +5813,15 @@ class Series:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
@@ -5891,19 +5840,6 @@ class Series:
                 2.0
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_std(
-                    window_size,
-                    weights,
-                    min_periods=min_periods,
-                    center=center,
-                    ddof=ddof,
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_var(
@@ -5932,18 +5868,15 @@ class Series:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
 
@@ -5962,19 +5895,6 @@ class Series:
                 4.0
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_var(
-                    window_size,
-                    weights,
-                    min_periods=min_periods,
-                    center=center,
-                    ddof=ddof,
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_map(
@@ -5998,17 +5918,13 @@ class Series:
         function
             Custom aggregation function.
         window_size
-            Size of the window. The window at a given row will include the row
-            itself and the `window_size - 1` elements before it.
+            The length of the window in number of elements.
         weights
-            A list of weights with the same length as the window that will be multiplied
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
             Set the labels at the center of the window.
 
@@ -6049,24 +5965,21 @@ class Series:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -6083,18 +5996,6 @@ class Series:
                 6.0
         ]
         """
-        if min_periods is None:
-            min_periods = window_size
-
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_median(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_quantile(
@@ -6124,18 +6025,15 @@ class Series:
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
             Interpolation method.
         window_size
-            The length of the window.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -6163,23 +6061,6 @@ class Series:
                 5.32
         ]
         """
-        if min_periods is None:
-            min_periods = window_size
-
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_quantile(
-                    quantile,
-                    interpolation,
-                    window_size,
-                    weights,
-                    min_periods=min_periods,
-                    center=center,
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Series:
