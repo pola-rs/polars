@@ -51,9 +51,8 @@ impl Inner {
 
             if let Ok(metadata) = self.try_get_metadata(metadata_file, &cache_guard) {
                 let data_file_path = self.get_cached_data_file_path();
-                let cmp_result = metadata.compare_local_state(data_file_path);
 
-                if cmp_result.is_ok() {
+                if metadata.compare_local_state(data_file_path).is_ok() {
                     if verbose {
                         eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
                     }
@@ -86,9 +85,8 @@ impl Inner {
                     && metadata.local_size == remote_metadata.size
                 {
                     let data_file_path = self.get_cached_data_file_path();
-                    let cmp_result = metadata.compare_local_state(data_file_path);
 
-                    if cmp_result.is_ok() {
+                    if metadata.compare_local_state(data_file_path).is_ok() {
                         if verbose {
                             eprintln!("[file_cache::entry] try_open_check_latest: opening already fetched file for uri = {}", self.uri.clone());
                         }
@@ -107,9 +105,8 @@ impl Inner {
             && metadata.local_size == remote_metadata.size
         {
             let data_file_path = self.get_cached_data_file_path();
-            let cmp_result = metadata.compare_local_state(data_file_path);
 
-            if cmp_result.is_ok() {
+            if metadata.compare_local_state(data_file_path).is_ok() {
                 if verbose {
                     eprintln!(
                         "[file_cache::entry] try_open_check_latest: opening already fetched file (lost race) for uri = {}",
@@ -176,8 +173,7 @@ impl Inner {
         metadata.local_size = local_size;
         metadata.remote_last_modified = remote_metadata.last_modified;
 
-        let cmp_result = metadata.compare_local_state(data_file_path);
-        if let Err(e) = cmp_result {
+        if let Err(e) = metadata.compare_local_state(data_file_path) {
             panic!("metadata mismatch after file fetch: {}", e);
         }
 
