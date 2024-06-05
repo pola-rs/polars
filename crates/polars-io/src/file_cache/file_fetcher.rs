@@ -7,7 +7,7 @@ use crate::cloud::PolarsObjectStore;
 use crate::pl_async;
 
 pub trait FileFetcher: Send + Sync {
-    fn get_uri(&self) -> Arc<str>;
+    fn get_uri(&self) -> &Arc<str>;
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata>;
     /// Fetches the object to a `local_path`.
     fn fetch(&self, local_path: &std::path::Path) -> PolarsResult<()>;
@@ -19,6 +19,8 @@ pub struct RemoteMetadata {
     pub last_modified: u64,
 }
 
+/// A struct that fetches data from local disk and stores it into the `cache`.
+/// Mostly used for debugging, it only ever gets called if `POLARS_FORCE_ASYNC` is set.
 pub(super) struct LocalFileFetcher {
     uri: Arc<str>,
     path: Box<std::path::Path>,
@@ -37,8 +39,8 @@ impl LocalFileFetcher {
 }
 
 impl FileFetcher for LocalFileFetcher {
-    fn get_uri(&self) -> Arc<str> {
-        self.uri.clone()
+    fn get_uri(&self) -> &Arc<str> {
+        &self.uri
     }
 
     fn fetches_as_symlink(&self) -> bool {
@@ -81,8 +83,8 @@ pub(super) struct CloudFileFetcher {
 }
 
 impl FileFetcher for CloudFileFetcher {
-    fn get_uri(&self) -> Arc<str> {
-        self.uri.clone()
+    fn get_uri(&self) -> &Arc<str> {
+        &self.uri
     }
 
     fn fetches_as_symlink(&self) -> bool {
@@ -109,6 +111,8 @@ impl FileFetcher for CloudFileFetcher {
                 .map_err(PolarsError::from)?;
 
             self.object_store.download(&self.cloud_path, file).await?;
+            // Dropping is delayed for tokio async files so we need to explicitly
+            // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
             file.sync_all().await.map_err(PolarsError::from)?;
             PolarsResult::Ok(())
         })?;
