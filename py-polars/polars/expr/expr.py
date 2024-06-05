@@ -10263,7 +10263,7 @@ class Expr:
         alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving average.
@@ -10306,7 +10306,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -10314,7 +10314,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -10336,16 +10336,6 @@ class Expr:
         │ 2.428571 │
         └──────────┘
         """
-        if ignore_nulls is None:
-            issue_deprecation_warning(
-                "The default value for `ignore_nulls` for `ewm` methods"
-                " will change from True to False in the next breaking release."
-                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
-                " and silence this warning.",
-                version="0.20.11",
-            )
-            ignore_nulls = True
-
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
@@ -10465,7 +10455,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -10511,7 +10501,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -10519,7 +10509,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -10541,16 +10531,6 @@ class Expr:
         │ 0.963624 │
         └──────────┘
         """
-        if ignore_nulls is None:
-            issue_deprecation_warning(
-                "The default value for `ignore_nulls` for `ewm` methods"
-                " will change from True to False in the next breaking release."
-                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
-                " and silence this warning.",
-                version="0.20.11",
-            )
-            ignore_nulls = True
-
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
@@ -10566,7 +10546,7 @@ class Expr:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving variance.
@@ -10612,7 +10592,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -10620,7 +10600,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -10642,16 +10622,6 @@ class Expr:
         │ 0.928571 │
         └──────────┘
         """
-        if ignore_nulls is None:
-            issue_deprecation_warning(
-                "The default value for `ignore_nulls` for `ewm` methods"
-                " will change from True to False in the next breaking release."
-                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
-                " and silence this warning.",
-                version="0.20.11",
-            )
-            ignore_nulls = True
-
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
