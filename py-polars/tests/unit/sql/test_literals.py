@@ -103,7 +103,7 @@ def test_intervals() -> None:
               INTERVAL '100ms 100us' AS i2,
               -- long form with/without commas (case-insensitive)
               INTERVAL '1 week, 2 hours, 3 minutes, 4 seconds' AS i3,
-              INTERVAL '1 Quarter 2 Months 987 Microseconds' AS i4,
+              INTERVAL '1 QUARTER 2 Months 987 microseconds' AS i4,
             FROM df
             """
         )
@@ -124,3 +124,9 @@ def test_intervals() -> None:
             match="minus signs are not yet supported in interval strings; found '-7d'",
         ):
             ctx.execute("SELECT INTERVAL '-7d' AS one_week_ago FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match="unary ops are not valid on interval strings; found -'7d'",
+        ):
+            ctx.execute("SELECT INTERVAL -'7d' AS one_week_ago FROM df")
