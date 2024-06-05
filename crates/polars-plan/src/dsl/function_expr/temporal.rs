@@ -197,16 +197,15 @@ fn apply_offsets_to_datetime(
                 let offset = &Duration::parse(offset);
                 if offset.is_constant_duration(datetime.time_zone().as_deref()) {
                     // fastpath!
-                    let duration = match datetime.time_unit() {
+                    let mut duration = match datetime.time_unit() {
                         TimeUnit::Milliseconds => offset.duration_ms(),
                         TimeUnit::Microseconds => offset.duration_us(),
                         TimeUnit::Nanoseconds => offset.duration_ns(),
                     };
                     if offset.negative() {
-                        Ok(datetime.0.apply_values(|v| v - duration))
-                    } else {
-                        Ok(datetime.0.apply_values(|v| v + duration))
+                        duration = -duration;
                     }
+                    Ok(datetime.0.apply_values(|v| v + duration))
                 } else {
                     let offset_fn = match datetime.time_unit() {
                         TimeUnit::Milliseconds => Duration::add_ms,
