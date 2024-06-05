@@ -26,12 +26,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_function,
-    issue_deprecation_warning,
-    validate_rolling_aggs_arguments,
-    validate_rolling_by_aggs_arguments,
-)
+from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -7292,14 +7287,11 @@ class Expr:
     @unstable()
     def rolling_min(
         self,
-        window_size: int | timedelta | str,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -7312,67 +7304,21 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their min.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
-
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic
-            temporal size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
             Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_min` is deprecated - please use
-                :meth:`.rolling_min_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
 
         Notes
         -----
@@ -7439,98 +7385,24 @@ class Expr:
         │ 5.0 ┆ 4.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling min with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_min=pl.col("index").rolling_min(window_size="2h", by="date")
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_min │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ u32             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
-        └───────┴─────────────────────┴─────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_min` is deprecated. Instead of "
-                "`rolling_min(..., by='foo')`, please use `rolling_min_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_min_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_min(
                 window_size,
                 weights,
                 min_periods,
-                center,
+                center=center,
             )
         )
 
     @unstable()
     def rolling_max(
         self,
-        window_size: int | timedelta | str,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -7749,25 +7621,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_max` is deprecated. Instead of "
-                "`rolling_max(..., by='foo')`, please use `rolling_max_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_max_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_max(
                 window_size,
@@ -7780,14 +7633,11 @@ class Expr:
     @unstable()
     def rolling_mean(
         self,
-        window_size: int | timedelta | str,
+        window_size: int,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -8008,25 +7858,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
         └───────┴─────────────────────┴──────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_mean` is deprecated. Instead of "
-                "`rolling_mean(..., by='foo')`, please use `rolling_mean_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_mean_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_mean(
                 window_size,
@@ -8039,14 +7870,11 @@ class Expr:
     @unstable()
     def rolling_sum(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -8265,25 +8093,6 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_sum` is deprecated. Instead of "
-                "`rolling_sum(..., by='foo')`, please use `rolling_sum_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_sum_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_sum(
                 window_size,
@@ -8296,15 +8105,12 @@ class Expr:
     @unstable()
     def rolling_std(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
         ddof: int = 1,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -8521,48 +8327,25 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_std` is deprecated. Instead of "
-                "`rolling_std(..., by='foo')`, please use `rolling_std_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_std_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                ddof=ddof,
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
                 window_size,
                 weights,
                 min_periods,
-                center,
-                ddof,
+                center=center,
+                ddof=ddof,
             )
         )
 
     @unstable()
     def rolling_var(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
         ddof: int = 1,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -8779,47 +8562,24 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_var` is deprecated. Instead of "
-                "`rolling_var(..., by='foo')`, please use `rolling_var_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_var_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                ddof=ddof,
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
                 window_size,
                 weights,
                 min_periods,
-                center,
-                ddof,
+                center=center,
+                ddof=ddof,
             )
         )
 
     @unstable()
     def rolling_median(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling median.
@@ -8956,31 +8716,12 @@ class Expr:
         │ 6.0 ┆ null           │
         └─────┴────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_median` is deprecated. Instead of "
-                "`rolling_median(..., by='foo')`, please use `rolling_median_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_median_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_median(
                 window_size,
                 weights,
                 min_periods,
-                center,
+                center=center,
             )
         )
 
@@ -8989,14 +8730,11 @@ class Expr:
         self,
         quantile: float,
         interpolation: RollingInterpolationMethod = "nearest",
-        window_size: int | timedelta | str = 2,
+        window_size: int | timedelta = 2,
         weights: list[float] | None = None,
         *,
         min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling quantile.
@@ -9165,26 +8903,6 @@ class Expr:
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_quantile` is deprecated. Instead of "
-                "`rolling_quantile(..., by='foo')`, please use `rolling_quantile_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_quantile_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-                quantile=quantile,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile(
                 quantile,
@@ -9192,7 +8910,7 @@ class Expr:
                 window_size,
                 weights,
                 min_periods,
-                center,
+                center=center,
             )
         )
 
@@ -11532,24 +11250,6 @@ def _prepare_alpha(
         raise ValueError(msg)
 
     return alpha
-
-
-def _prepare_rolling_window_args(
-    window_size: int | timedelta | str,
-    min_periods: int | None = None,
-) -> tuple[int | str, int]:
-    if isinstance(window_size, int):
-        if window_size < 1:
-            msg = "`window_size` must be positive"
-            raise ValueError(msg)
-
-        if min_periods is None:
-            min_periods = window_size
-    elif isinstance(window_size, timedelta):
-        window_size = parse_as_duration_string(window_size)
-    if min_periods is None:
-        min_periods = 1
-    return window_size, min_periods
 
 
 def _prepare_rolling_by_window_args(

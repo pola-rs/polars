@@ -6,13 +6,12 @@ from functools import wraps
 from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
 from polars._utils.various import find_stacklevel
-from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
-    from polars.type_aliases import Ambiguous, ClosedInterval
+    from polars.type_aliases import Ambiguous
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -242,36 +241,3 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         last = allowed_args[-1]
         args = ", ".join([f"{x!r}" for x in allowed_args[:-1]])
         return f" except for {args} and {last!r}"
-
-
-def validate_rolling_by_aggs_arguments(
-    weights: list[float] | None, *, center: bool
-) -> None:
-    if weights is not None:
-        msg = "`weights` is not supported in `rolling_*(..., by=...)` expression"
-        raise InvalidOperationError(msg)
-    if center:
-        msg = "`center=True` is not supported in `rolling_*(..., by=...)` expression"
-        raise InvalidOperationError(msg)
-
-
-def validate_rolling_aggs_arguments(
-    window_size: int | str, closed: ClosedInterval | None
-) -> int:
-    if isinstance(window_size, str):
-        issue_deprecation_warning(
-            "Passing a str to `rolling_*` is deprecated.\n\n"
-            "Please, either:\n"
-            "- pass an integer if you want a fixed window size (e.g. `rolling_mean(3)`)\n"
-            "- pass a string if you are computing the rolling operation based on another column (e.g. `rolling_mean_by('date', '3d'))\n",
-            version="0.20.26",
-        )
-        try:
-            window_size = int(window_size.rstrip("i"))
-        except ValueError:
-            msg = f"Expected a string of the form 'ni', where `n` is a positive integer, got: {window_size}"
-            raise InvalidOperationError(msg) from None
-    if closed is not None:
-        msg = "`closed` is not supported in `rolling_*(...)` expression"
-        raise InvalidOperationError(msg)
-    return window_size

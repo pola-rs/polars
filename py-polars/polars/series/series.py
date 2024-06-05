@@ -5635,15 +5635,6 @@ class Series:
             300
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_min(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_max(
@@ -5698,15 +5689,6 @@ class Series:
             500
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_max(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_mean(
@@ -5761,15 +5743,6 @@ class Series:
             450.0
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_mean(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_sum(
@@ -5824,15 +5797,6 @@ class Series:
                 9
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_sum(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_std(
@@ -5891,19 +5855,6 @@ class Series:
                 2.0
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_std(
-                    window_size,
-                    weights,
-                    min_periods=min_periods,
-                    center=center,
-                    ddof=ddof,
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_var(
@@ -5962,19 +5913,6 @@ class Series:
                 4.0
         ]
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_var(
-                    window_size,
-                    weights,
-                    min_periods=min_periods,
-                    center=center,
-                    ddof=ddof,
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_map(
@@ -6083,18 +6021,6 @@ class Series:
                 6.0
         ]
         """
-        if min_periods is None:
-            min_periods = window_size
-
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_median(
-                    window_size, weights, min_periods=min_periods, center=center
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_quantile(
@@ -6163,23 +6089,6 @@ class Series:
                 5.32
         ]
         """
-        if min_periods is None:
-            min_periods = window_size
-
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).rolling_quantile(
-                    quantile,
-                    interpolation,
-                    window_size,
-                    weights,
-                    min_periods=min_periods,
-                    center=center,
-                )
-            )
-            .to_series()
-        )
 
     @unstable()
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Series:
