@@ -13,9 +13,17 @@ use crate::pl_async;
 use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 
 pub(super) static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
-    POLARS_TEMP_DIR_BASE_PATH
-        .join("/file-cache/")
-        .into_boxed_path()
+    let path = POLARS_TEMP_DIR_BASE_PATH
+        .join("file-cache/")
+        .into_boxed_path();
+
+    if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
+        if !path.is_dir() {
+            panic!("failed to create file cache directory: {}", err);
+        }
+    }
+
+    path
 });
 
 pub(super) fn last_modified_u64(metadata: &std::fs::Metadata) -> u64 {

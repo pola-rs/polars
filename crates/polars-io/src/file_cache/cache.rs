@@ -10,11 +10,12 @@ use polars_utils::aliases::PlHashMap;
 use super::entry::{FileCacheEntry, DATA_PREFIX, METADATA_PREFIX};
 use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
-use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
+use super::utils::FILE_CACHE_PREFIX;
+use crate::prelude::is_cloud_url;
 
 pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
-    let prefix = POLARS_TEMP_DIR_BASE_PATH.join("polars/file-cache/");
-    let prefix = Arc::<Path>::from(prefix.as_path());
+    let prefix = FILE_CACHE_PREFIX.as_ref();
+    let prefix = Arc::<Path>::from(prefix);
 
     if config::verbose() {
         eprintln!("file cache prefix: {}", prefix.to_str().unwrap());

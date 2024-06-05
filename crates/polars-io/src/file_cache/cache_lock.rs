@@ -10,8 +10,6 @@ use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
 
 pub(super) static GLOBAL_FILE_CACHE_LOCK: Lazy<GlobalLock> = Lazy::new(|| {
-    let path = FILE_CACHE_PREFIX.as_ref();
-    let _ = std::fs::create_dir_all(path);
     let path = FILE_CACHE_PREFIX.join(".process-lock");
 
     let file = std::fs::OpenOptions::new()
