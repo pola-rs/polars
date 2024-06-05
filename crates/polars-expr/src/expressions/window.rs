@@ -21,6 +21,7 @@ pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) order_by: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) apply_columns: Vec<Arc<str>>,
     pub(crate) out_name: Option<Arc<str>>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
@@ -439,7 +440,15 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
-            let out: PolarsResult<GroupsProxy> = Ok(gb.take_groups());
+            let mut groups = gb.take_groups();
+
+            if let Some(order_by) = &self.order_by {
+                let order_by = order_by.evaluate(df, state)?;
+                polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
+                groups = update_groups_sort_by(&groups, &order_by, &[false])?
+            }
+
+            let out: PolarsResult<GroupsProxy> = Ok(groups);
             out
         };
 

@@ -117,11 +117,12 @@ pub enum Expr {
         input: Arc<Expr>,
         by: Arc<Expr>,
     },
-    /// See postgres window functions
+    /// Polars flavored window functions.
     Window {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
+        order_by: Option<Arc<Expr>>,
         options: WindowType,
     },
     Wildcard,
@@ -249,10 +250,12 @@ impl Hash for Expr {
             Expr::Window {
                 function,
                 partition_by,
+                order_by,
                 options,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
+                order_by.hash(state);
                 options.hash(state);
             },
             Expr::Slice {

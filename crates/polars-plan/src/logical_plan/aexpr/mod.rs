@@ -172,7 +172,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefore we need `[ExprIr]`.
+        /// Therefor we need `[ExprIr]`.
         input: Vec<ExprIR>,
         /// function to apply
         function: FunctionExpr,
@@ -181,6 +181,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
+        order_by: Option<Node>,
         options: WindowType,
     },
     #[default]
@@ -303,8 +304,12 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 options: _,
             } => {
+                if let Some(n) = order_by {
+                    container.push_node(*n);
+                }
                 for e in partition_by.iter().rev() {
                     container.push_node(*e);
                 }
@@ -397,11 +402,17 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                let offset = order_by.is_some() as usize;
                 *function = *inputs.last().unwrap();
                 partition_by.clear();
-                partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
+                partition_by.extend_from_slice(&inputs[offset..inputs.len() - 1]);
+
+                if order_by.is_some() {
+                    *order_by = Some(inputs[0]);
+                }
 
                 return self;
             },

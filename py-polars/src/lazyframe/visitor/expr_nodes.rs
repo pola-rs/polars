@@ -352,6 +352,8 @@ pub struct Window {
     #[pyo3(get)]
     partition_by: Vec<usize>,
     #[pyo3(get)]
+    order_by: Option<usize>,
+    #[pyo3(get)]
     options: PyObject,
 }
 
@@ -1225,10 +1227,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         AExpr::Window {
             function,
             partition_by,
+            order_by,
             options,
         } => {
             let function = function.0;
             let partition_by = partition_by.iter().map(|n| n.0).collect();
+            let order_by = order_by.map(|n| n.0);
             let options = match options {
                 WindowType::Over(options) => PyWindowMapping { inner: *options }.into_py(py),
                 WindowType::Rolling(options) => PyRollingGroupOptions {
@@ -1239,6 +1243,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             Window {
                 function,
                 partition_by,
+                order_by,
                 options,
             }
             .into_py(py)

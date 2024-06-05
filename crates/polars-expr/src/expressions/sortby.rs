@@ -53,6 +53,19 @@ fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
     Ok(())
 }
 
+pub(super) fn update_groups_sort_by(
+    groups: &GroupsProxy,
+    sort_by_s: &Series,
+    descending: &[bool],
+) -> PolarsResult<GroupsProxy> {
+    let groups = groups
+        .par_iter()
+        .map(|indicator| sort_by_groups_single_by(indicator, sort_by_s, descending))
+        .collect::<PolarsResult<_>>()?;
+
+    Ok(GroupsProxy::Idx(groups))
+}
+
 fn sort_by_groups_single_by(
     indicator: GroupsIndicator,
     sort_by_s: &Series,
@@ -282,18 +295,11 @@ impl PhysicalExpr for SortByExpr {
 
             let (check, groups) = POOL.join(
                 || check_groups(groups, ac_in.groups()),
-                || {
-                    groups
-                        .par_iter()
-                        .map(|indicator| {
-                            sort_by_groups_single_by(indicator, &sort_by_s, &descending)
-                        })
-                        .collect::<PolarsResult<_>>()
-                },
+                || update_groups_sort_by(groups, &sort_by_s, &descending),
             );
             check?;
 
-            GroupsProxy::Idx(groups?)
+            groups?
         } else {
             let groups = ac_sort_by[0].groups();
 

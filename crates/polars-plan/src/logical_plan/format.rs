@@ -15,6 +15,7 @@ impl fmt::Debug for Expr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 options,
             } => match options {
                 #[cfg(feature = "dynamic_group_by")]
@@ -26,7 +27,11 @@ impl fmt::Debug for Expr {
                     )
                 },
                 _ => {
-                    write!(f, "{function:?}.over({partition_by:?})")
+                    if let Some(order_by) = order_by {
+                        write!(f, "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})")
+                    } else {
+                        write!(f, "{function:?}.over({partition_by:?})")
+                    }
                 },
             },
             Nth(i) => write!(f, "nth({i})"),
