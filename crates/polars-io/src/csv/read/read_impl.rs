@@ -64,17 +64,18 @@ pub(crate) fn cast_columns(
     };
 
     if parallel {
-        let cols = df
-            .get_columns()
-            .iter()
-            .map(|s| {
-                if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
-                    cast_fn(s, fld)
-                } else {
-                    Ok(s.clone())
-                }
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let cols = POOL.install(|| {
+            df.get_columns()
+                .into_par_iter()
+                .map(|s| {
+                    if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                        cast_fn(s, fld)
+                    } else {
+                        Ok(s.clone())
+                    }
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
         *df = unsafe { DataFrame::new_no_checks(cols) }
     } else {
         // cast to the original dtypes in the schema
@@ -473,7 +474,15 @@ impl<'a> CoreReader<'a> {
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
-            let mut df = DataFrame::from(self.schema.as_ref());
+            let schema = &projection
+                .iter()
+                .map(|&i| self.schema.get_at_index(i).unwrap())
+                .map(|(name, dtype)| Field {
+                    name: name.clone(),
+                    dtype: dtype.clone(),
+                })
+                .collect::<Schema>();
+            let mut df = DataFrame::from(schema);
             if let Some(ref row_index) = self.row_index {
                 df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))?;
             }

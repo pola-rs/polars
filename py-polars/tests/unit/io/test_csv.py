@@ -2160,3 +2160,24 @@ def test_read_csv_dtypes_deprecated() -> None:
         schema={"a": pl.Int8, "b": pl.Int8, "c": pl.Int8},
     )
     assert_frame_equal(df, expected)
+
+
+def test_projection_applied_on_file_with_no_rows_16606(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / "data.csv"
+
+    data = """\
+a,b,c,d
+"""
+
+    with path.open("w") as f:
+        f.write(data)
+
+    columns = ["a", "b"]
+
+    out = pl.read_csv(path, columns=columns).columns
+    assert out == columns
+
+    out = pl.scan_csv(path).select(columns).collect().columns
+    assert out == columns
