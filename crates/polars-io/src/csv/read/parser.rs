@@ -12,7 +12,7 @@ use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use crate::file_cache::FILE_CACHE;
 use crate::prelude::is_cloud_url;
 use crate::utils::get_reader_bytes;
