@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, time, timedelta, timezone
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, cast
