@@ -95,6 +95,11 @@ def datetime_range(
     Expr or Series
         Column of data type :class:`Datetime`.
 
+    See Also
+    --------
+    datetime_ranges
+    date_range
+
     Notes
     -----
     `interval` is created according to the following string language:
@@ -289,6 +294,11 @@ def datetime_ranges(
     -------
     Expr or Series
         Column of data type `List(Datetime)`.
+
+    See Also
+    --------
+    datetime_range
+    date_ranges
 
     Examples
     --------
