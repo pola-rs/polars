@@ -735,9 +735,13 @@ def test_list_to_array() -> None:
     s = pl.Series(data, dtype=pl.List(pl.Float32))
 
     result = s.list.to_array(2)
+    result_slice = s[1:].list.to_array(2)
 
     expected = pl.Series(data, dtype=pl.Array(pl.Float32, 2))
     assert_series_equal(result, expected)
+
+    expected_slice = pl.Series([data[1]], dtype=pl.Array(pl.Float32, 2))
+    assert_series_equal(result_slice, expected_slice)
 
     # test logical type
     df = pl.DataFrame(
