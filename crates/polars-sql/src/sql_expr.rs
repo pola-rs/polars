@@ -417,20 +417,11 @@ impl SQLExprVisitor<'_> {
             || interval.leading_precision.is_some()
             || interval.fractional_seconds_precision.is_some()
         {
-            polars_bail!(SQLInterface: "interval with explicit leading field or precision is not supported: {:?}", interval)
+            polars_bail!(SQLSyntax: "unsupported interval syntax: '{}'", interval)
         }
-        let mut negative = false;
         let s = match &*interval.value {
-            SQLExpr::UnaryOp {
-                op: UnaryOperator::Minus,
-                expr,
-            } if matches!(**expr, SQLExpr::Value(SQLValue::SingleQuotedString(_))) => {
-                if let SQLExpr::Value(SQLValue::SingleQuotedString(ref s)) = **expr {
-                    negative = true;
-                    Some(s)
-                } else {
-                    unreachable!()
-                }
+            SQLExpr::UnaryOp { .. } => {
+                polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
             },
             SQLExpr::Value(SQLValue::SingleQuotedString(s)) => Some(s),
             _ => None,
@@ -439,10 +430,7 @@ impl SQLExprVisitor<'_> {
             Some(s) if s.contains('-') => {
                 polars_bail!(SQLInterface: "minus signs are not yet supported in interval strings; found '{}'", s)
             },
-            Some(s) => {
-                let d = Duration::parse_interval(s);
-                Ok(lit(if negative { -d } else { d }))
-            },
+            Some(s) => Ok(lit(Duration::parse_interval(s))),
             None => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
         }
     }
@@ -1193,7 +1181,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
         DateTimeField::Year => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
         DateTimeField::Month => expr.dt().month(),
-        DateTimeField::Week => expr.dt().week(),
+        DateTimeField::Week(_) => expr.dt().week(),
         DateTimeField::IsoWeek => expr.dt().week(),
         DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
         DateTimeField::DayOfWeek | DateTimeField::Dow => {

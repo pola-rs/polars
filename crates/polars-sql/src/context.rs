@@ -119,7 +119,7 @@ impl SQLContext {
             .parse_statements()
             .map_err(to_compute_err)?;
 
-        polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement at a time please");
+        polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
         let res = self.execute_statement(ast.first().unwrap())?;
 
         // Ensure the result uses the proper arenas.
@@ -175,13 +175,11 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
-
         self.execute_query_no_ctes(query)
     }
 
     pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         let lf = self.process_set_expr(&query.body, query)?;
-
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
