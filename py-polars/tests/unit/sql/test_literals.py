@@ -124,3 +124,9 @@ def test_intervals() -> None:
             match="minus signs are not yet supported in interval strings; found '-7d'",
         ):
             ctx.execute("SELECT INTERVAL '-7d' AS one_week_ago FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match="unary ops are not valid on interval strings; found -'7d'",
+        ):
+            ctx.execute("SELECT INTERVAL -'7d' AS one_week_ago FROM df")

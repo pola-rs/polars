@@ -8,7 +8,17 @@ import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Collection,
+    Generator,
+    Iterable,
+    Literal,
+    Sequence,
+    TypeVar,
+)
 
 import polars as pl
 from polars import functions as F
@@ -422,10 +432,11 @@ def find_stacklevel() -> int:
 
 
 def _get_stack_locals(
-    of_type: type | tuple[type, ...] | None = None,
+    of_type: type | Collection[type] | Callable[[Any], bool] | None = None,
+    *,
+    named: str | Collection[str] | None = None,
     n_objects: int | None = None,
     n_frames: int | None = None,
-    named: str | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """
     Retrieve f_locals from all (or the last 'n') stack frames from the calling location.
@@ -433,7 +444,9 @@ def _get_stack_locals(
     Parameters
     ----------
     of_type
-        Only return objects of this type.
+        Only return objects of this type; can be a single class, tuple of
+        classes, or a callable that returns True/False if the object being
+        tested is considered a match.
     n_objects
         If specified, return only the most recent `n` matching objects.
     n_frames
@@ -441,24 +454,39 @@ def _get_stack_locals(
     named
         If specified, only return objects matching the given name(s).
     """
-    if isinstance(named, str):
-        named = (named,)
-
     objects = {}
     examined_frames = 0
+
+    if isinstance(named, str):
+        named = (named,)
     if n_frames is None:
         n_frames = sys.maxsize
+
+    if inspect.isfunction(of_type):
+        matches_type = of_type
+    else:
+        if isinstance(of_type, Collection):
+            of_type = tuple(of_type)
+
+        def matches_type(obj: Any) -> bool:  # type: ignore[misc]
+            return isinstance(obj, of_type)  # type: ignore[arg-type]
+
+    if named is not None:
+        if isinstance(named, str):
+            named = (named,)
+        elif not isinstance(named, set):
+            named = set(named)
+
     stack_frame = inspect.currentframe()
     stack_frame = getattr(stack_frame, "f_back", None)
-
     try:
         while stack_frame and examined_frames < n_frames:
             local_items = list(stack_frame.f_locals.items())
             for nm, obj in reversed(local_items):
                 if (
                     nm not in objects
-                    and (named is None or (nm in named))
-                    and (of_type is None or isinstance(obj, of_type))
+                    and (named is None or nm in named)
+                    and (of_type is None or matches_type(obj))
                 ):
                     objects[nm] = obj
                     if n_objects is not None and len(objects) >= n_objects:
