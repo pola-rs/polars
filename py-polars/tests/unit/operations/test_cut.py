@@ -81,29 +81,6 @@ def test_cut_null_values() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
-def test_cut_deprecated_as_series() -> None:
-    a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    with pytest.deprecated_call():
-        out = a.cut(breaks=[-1, 1], as_series=False)
-
-    assert out.shape == (12, 3)
-    assert out.filter(pl.col("break_point") < 1e9).to_dict(as_series=False) == {
-        "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
-        "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
-        "category": [
-            "(-inf, -1]",
-            "(-inf, -1]",
-            "(-inf, -1]",
-            "(-inf, -1]",
-            "(-inf, -1]",
-            "(-1, 1]",
-            "(-1, 1]",
-            "(-1, 1]",
-            "(-1, 1]",
-        ],
-    }
-
-
 def test_cut_bin_name_in_agg_context() -> None:
     df = pl.DataFrame({"a": [1]}).select(
         cut=pl.col("a").cut([1, 2], include_breaks=True).over(1),

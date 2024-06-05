@@ -2095,39 +2095,6 @@ class Series:
         """
         return wrap_df(self._s.to_dummies(separator, drop_first))
 
-    @overload
-    def cut(
-        self,
-        breaks: Sequence[float],
-        *,
-        labels: Sequence[str] | None = ...,
-        left_closed: bool = ...,
-        include_breaks: bool = ...,
-        as_series: Literal[True] = ...,
-    ) -> Series: ...
-
-    @overload
-    def cut(
-        self,
-        breaks: Sequence[float],
-        *,
-        labels: Sequence[str] | None = ...,
-        left_closed: bool = ...,
-        include_breaks: bool = ...,
-        as_series: Literal[False],
-    ) -> DataFrame: ...
-
-    @overload
-    def cut(
-        self,
-        breaks: Sequence[float],
-        *,
-        labels: Sequence[str] | None = ...,
-        left_closed: bool = ...,
-        include_breaks: bool = ...,
-        as_series: bool,
-    ) -> Series | DataFrame: ...
-
     @unstable()
     def cut(
         self,
@@ -2136,8 +2103,7 @@ class Series:
         labels: Sequence[str] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
-        as_series: bool = True,
-    ) -> Series | DataFrame:
+    ) -> Series:
         """
         Bin continuous values into discrete categories.
 
@@ -2158,14 +2124,6 @@ class Series:
             Include a column with the right endpoint of the bin each observation falls
             in. This will change the data type of the output from a
             :class:`Categorical` to a :class:`Struct`.
-        as_series
-            If set to `False`, return a DataFrame containing the original values,
-            the breakpoints, and the categories.
-
-            .. deprecated:: 0.19.0
-                This parameter will be removed. The same behavior can be achieved by
-                setting `include_breaks=True`, unnesting the resulting struct Series,
-                and adding the result to the original Series.
 
         Returns
         -------
@@ -2210,80 +2168,6 @@ class Series:
         │ 2   ┆ inf         ┆ (1, inf]   │
         └─────┴─────────────┴────────────┘
         """
-        if not as_series:
-            issue_deprecation_warning(
-                "The `as_series` parameter for `Series.cut` will be removed."
-                " The same behavior can be achieved by setting `include_breaks=True`,"
-                " unnesting the resulting struct Series,"
-                " and adding the result to the original Series.",
-                version="0.19.0",
-            )
-            temp_name = self.name + "_bin"
-            return (
-                self.to_frame()
-                .with_columns(
-                    F.col(self.name)
-                    .cut(
-                        breaks,
-                        labels=labels,
-                        left_closed=left_closed,
-                        include_breaks=True,  # always include breaks
-                    )
-                    .alias(temp_name)
-                )
-                .unnest(temp_name)
-            )
-
-        result = (
-            self.to_frame()
-            .select_seq(
-                F.col(self.name).cut(
-                    breaks,
-                    labels=labels,
-                    left_closed=left_closed,
-                    include_breaks=include_breaks,
-                )
-            )
-            .to_series()
-        )
-
-        return result
-
-    @overload
-    def qcut(
-        self,
-        quantiles: Sequence[float] | int,
-        *,
-        labels: Sequence[str] | None = ...,
-        left_closed: bool = ...,
-        allow_duplicates: bool = ...,
-        include_breaks: bool = ...,
-        as_series: Literal[True] = ...,
-    ) -> Series: ...
-
-    @overload
-    def qcut(
-        self,
-        quantiles: Sequence[float] | int,
-        *,
-        labels: Sequence[str] | None = ...,
-        left_closed: bool = ...,
-        allow_duplicates: bool = ...,
-        include_breaks: bool = ...,
-        as_series: Literal[False],
-    ) -> DataFrame: ...
-
-    @overload
-    def qcut(
-        self,
-        quantiles: Sequence[float] | int,
-        *,
-        labels: Sequence[str] | None = ...,
-        left_closed: bool = ...,
-        allow_duplicates: bool = ...,
-        include_breaks: bool = ...,
-        as_series: bool,
-    ) -> Series | DataFrame: ...
 
     @unstable()
     def qcut(
@@ -2294,8 +2178,7 @@ class Series:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
-        as_series: bool = True,
-    ) -> Series | DataFrame:
+    ) -> Series:
         """
         Bin continuous values into discrete categories based on their quantiles.
 
@@ -2321,14 +2204,6 @@ class Series:
             Include a column with the right endpoint of the bin each observation falls
             in. This will change the data type of the output from a
             :class:`Categorical` to a :class:`Struct`.
-        as_series
-            If set to `False`, return a DataFrame containing the original values,
-            the breakpoints, and the categories.
-
-            .. deprecated:: 0.19.0
-                This parameter will be removed. The same behavior can be achieved by
-                setting `include_breaks=True`, unnesting the resulting struct Series,
-                and adding the result to the original Series.
 
         Returns
         -------
@@ -2387,46 +2262,6 @@ class Series:
         │ 2   ┆ inf         ┆ (1, inf]   │
         └─────┴─────────────┴────────────┘
         """
-        if not as_series:
-            issue_deprecation_warning(
-                "the `as_series` parameter for `Series.qcut` will be removed."
-                " The same behavior can be achieved by setting `include_breaks=True`,"
-                " unnesting the resulting struct Series,"
-                " and adding the result to the original Series.",
-                version="0.19.0",
-            )
-            temp_name = self.name + "_bin"
-            return (
-                self.to_frame()
-                .with_columns(
-                    F.col(self.name)
-                    .qcut(
-                        quantiles,
-                        labels=labels,
-                        left_closed=left_closed,
-                        allow_duplicates=allow_duplicates,
-                        include_breaks=True,  # always include breaks
-                    )
-                    .alias(temp_name)
-                )
-                .unnest(temp_name)
-            )
-
-        result = (
-            self.to_frame()
-            .select(
-                F.col(self.name).qcut(
-                    quantiles,
-                    labels=labels,
-                    left_closed=left_closed,
-                    allow_duplicates=allow_duplicates,
-                    include_breaks=include_breaks,
-                )
-            )
-            .to_series()
-        )
-
-        return result
 
     def rle(self) -> Series:
         """
