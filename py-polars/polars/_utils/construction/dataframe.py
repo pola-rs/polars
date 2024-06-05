@@ -1127,12 +1127,12 @@ def arrow_to_pydf(
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 
-    data_dict = {}
     # dictionaries cannot be built in different batches (categorical does not allow
     # that) so we rechunk them and create them separately.
-    dictionary_cols = {}
     # struct columns don't work properly if they contain multiple chunks.
-    struct_cols = {}
+    # array columns don't work properly if they contain multiple chunks.
+    special_cols = {}
+    data_dict = {}
     names = []
     for i, column in enumerate(data):
         # extract the name before casting
@@ -1140,12 +1140,13 @@ def arrow_to_pydf(
         names.append(name)
 
         column = plc.coerce_arrow(column)
-        if pa.types.is_dictionary(column.type):
+        if (
+            pa.types.is_dictionary(column.type)
+            or isinstance(column.type, (pa.StructType, pa.FixedSizeListType))
+            and column.num_chunks > 1
+        ):
             ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
-            dictionary_cols[i] = wrap_s(ps)
-        elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
-            ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
-            struct_cols[i] = wrap_s(ps)
+            special_cols[i] = wrap_s(ps)
         else:
             data_dict[name] = column
 
@@ -1165,14 +1166,9 @@ def arrow_to_pydf(
         pydf = pydf.rechunk()
 
     reset_order = False
-    if len(dictionary_cols) > 0:
+    if len(special_cols) > 0:
         df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in dictionary_cols.values()])
-        reset_order = True
-
-    if len(struct_cols) > 0:
-        df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in struct_cols.values()])
+        df = df.with_columns([F.lit(s).alias(s.name) for s in special_cols.values()])
         reset_order = True
 
     if reset_order:

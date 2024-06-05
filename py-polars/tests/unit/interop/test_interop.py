@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -1065,3 +1067,14 @@ def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
         {"a": [None, 1.0, 2], "b": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}
     )
     assert_frame_equal(result, expected)
+
+
+def test_arrow_fixed_size_list() -> None:
+    n = 131073  # if n is smaller then it works even w/o newest fix
+    expected = pl.select(
+        a=pl.repeat(pl.int_ranges(0, 2).cast(pl.Array(pl.Int64, 2)), n)
+    )
+    with NamedTemporaryFile() as f:
+        expected.write_parquet(f)
+        pa_table = pq.read_table(f)
+        assert_frame_equal(expected, pl.from_arrow(pa_table))

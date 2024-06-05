@@ -465,7 +465,9 @@ def arrow_to_pyseries(
         if array.num_chunks > 1:
             # somehow going through ffi with a structarray
             # returns the first chunk every time
-            if isinstance(array.type, pa.StructType):
+            # somehow going through ffi with a FixedSizeList
+            # returns the whole array x times
+            if isinstance(array.type, (pa.StructType, pa.FixedSizeListType)):
                 pys = PySeries.from_arrow(name, array.combine_chunks())
             else:
                 it = array.iterchunks()
