@@ -1,6 +1,8 @@
+use std::path::Path;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
+use once_cell::sync::Lazy;
 use polars_error::{to_compute_err, PolarsError, PolarsResult};
 
 use super::cache::FILE_CACHE;
@@ -8,7 +10,13 @@ use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
 use crate::pl_async;
-use crate::prelude::is_cloud_url;
+use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
+
+pub(super) static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
+    POLARS_TEMP_DIR_BASE_PATH
+        .join("/file-cache/")
+        .into_boxed_path()
+});
 
 pub(super) fn last_modified_u64(metadata: &std::fs::Metadata) -> u64 {
     metadata

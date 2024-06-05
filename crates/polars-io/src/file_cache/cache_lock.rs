@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
@@ -7,14 +6,13 @@ use fs4::FileExt;
 use once_cell::sync::Lazy;
 use polars_core::config;
 
+use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
 
 pub(super) static GLOBAL_FILE_CACHE_LOCK: Lazy<GlobalLock> = Lazy::new(|| {
-    let path = std::env::var("POLARS_TEMP_DIR")
-        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
-    let path = PathBuf::from(path).join("polars/file-cache/");
-    let _ = std::fs::create_dir_all(&path);
-    let path = path.join(".process-lock");
+    let path = FILE_CACHE_PREFIX.as_ref();
+    let _ = std::fs::create_dir_all(path);
+    let path = FILE_CACHE_PREFIX.join(".process-lock");
 
     let file = std::fs::OpenOptions::new()
         .write(true)

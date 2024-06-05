@@ -262,7 +262,7 @@ impl FileCacheEntry {
         ));
 
         debug_assert!(
-            Arc::ptr_eq(&uri, &file_fetcher.get_uri()),
+            Arc::ptr_eq(&uri, file_fetcher.get_uri()),
             "impl error: entry uri != file_fetcher uri"
         );
 

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -7,16 +7,13 @@ use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
 
-use super::entry::FileCacheEntry;
+use super::entry::{FileCacheEntry, DATA_PREFIX, METADATA_PREFIX};
 use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
-use crate::file_cache::entry::{DATA_PREFIX, METADATA_PREFIX};
-use crate::prelude::is_cloud_url;
+use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 
 pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
-    let prefix = std::env::var("POLARS_TEMP_DIR")
-        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
-    let prefix = PathBuf::from(prefix).join("polars/file-cache/");
+    let prefix = POLARS_TEMP_DIR_BASE_PATH.join("polars/file-cache/");
     let prefix = Arc::<Path>::from(prefix.as_path());
 
     if config::verbose() {

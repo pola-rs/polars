@@ -11,6 +11,15 @@ use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
+pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
+    std::env::var("POLARS_TEMP_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(std::env::temp_dir().to_string_lossy().as_ref()).join("polars/")
+        })
+        .into_boxed_path()
+});
+
 pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     reader: &'a mut R,
 ) -> PolarsResult<ReaderBytes<'a>> {
