@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::config;
@@ -7,6 +8,7 @@ use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
 
 use super::entry::FileCacheEntry;
+use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
 use crate::file_cache::entry::{DATA_PREFIX, METADATA_PREFIX};
 use crate::prelude::is_cloud_url;
@@ -20,6 +22,17 @@ pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
     if config::verbose() {
         eprintln!("file cache prefix: {}", prefix.to_str().unwrap());
     }
+
+    EvictionManager {
+        prefix: prefix.clone(),
+        files_to_remove: None,
+        limit_since_last_access: Duration::from_secs(
+            std::env::var("POLARS_FILE_CACHE_TTL")
+                .map(|x| x.parse::<u64>().expect("integer"))
+                .unwrap_or(60 * 60),
+        ),
+    }
+    .run_in_background();
 
     FileCache::new(prefix)
 });

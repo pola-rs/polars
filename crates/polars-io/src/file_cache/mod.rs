@@ -1,6 +1,7 @@
 mod cache;
 mod cache_lock;
 mod entry;
+mod eviction;
 mod file_fetcher;
 mod file_lock;
 mod metadata;
