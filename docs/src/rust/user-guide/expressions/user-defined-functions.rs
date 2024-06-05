@@ -3,8 +3,8 @@ use polars::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
     let df = df!(
-        "keys" => &["a", "a", "b"],
-        "values" => &[10, 7, 1],
+        "keys" => &["a", "a", "b", "b"],
+        "values" => &[10, 7, 1, 23],
     )?;
     println!("{}", df);
     // --8<-- [end:dataframe]
