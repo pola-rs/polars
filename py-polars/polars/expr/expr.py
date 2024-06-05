@@ -3732,7 +3732,15 @@ class Expr:
         partition_by = parse_as_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
             order_by = parse_as_list_of_expressions(order_by)
-        return self._from_pyexpr(self._pyexpr.over(partition_by, order_by, mapping_strategy))
+        return self._from_pyexpr(
+            self._pyexpr.over(
+                partition_by,
+                order_by=order_by,
+                order_by_descending=False,  # does not work yet
+                order_by_nulls_last=False,  # does not work yet
+                mapping_strategy=mapping_strategy,
+            )
+        )
 
     def rolling(
         self,

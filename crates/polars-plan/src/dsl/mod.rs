@@ -959,7 +959,7 @@ impl Expr {
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: E,
-        order_by: Option<E>,
+        order_by: Option<(E, SortOptions)>,
         options: WindowMapping,
     ) -> Self {
         let partition_by = partition_by
@@ -968,16 +968,17 @@ impl Expr {
             .map(|e| e.clone().into())
             .collect();
 
-        let order_by = order_by.map(|e| {
+        let order_by = order_by.map(|(e, options)| {
             let e = e.as_ref();
-            if e.len() == 1 {
+            let e = if e.len() == 1 {
                 Arc::new(e[0].clone().into())
             } else {
                 feature_gated!["dtype-struct", {
                     let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
                     Arc::new(as_struct(e))
                 }]
-            }
+            };
+            (e, options)
         });
 
         Expr::Window {

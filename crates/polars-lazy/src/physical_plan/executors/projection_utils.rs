@@ -1,4 +1,3 @@
-use polars_utils::format_smartstring;
 use polars_utils::iter::EnumerateIdxTrait;
 use smartstring::alias::String as SmartString;
 
@@ -51,7 +50,7 @@ fn rolling_evaluate(
 fn window_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
-    window: PlHashMap<SmartString, Vec<IdAndExpression>>,
+    window: PlHashMap<String, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
     POOL.install(|| {
         window
@@ -111,7 +110,7 @@ fn execute_projection_cached_window_fns(
     #[allow(clippy::type_complexity)]
     // String: partition_name,
     // u32: index,
-    let mut windows: PlHashMap<SmartString, Vec<IdAndExpression>> = PlHashMap::default();
+    let mut windows: PlHashMap<String, Vec<IdAndExpression>> = PlHashMap::default();
     #[cfg(feature = "dynamic_group_by")]
     let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
@@ -126,13 +125,21 @@ fn execute_projection_cached_window_fns(
             if let Expr::Window {
                 partition_by,
                 options,
+                order_by,
                 ..
             } = e
             {
                 let entry = match options {
                     WindowType::Over(_) => {
-                        let group_by = format_smartstring!("{:?}", partition_by.as_slice());
-                        windows.entry(group_by).or_insert_with(Vec::new)
+                        let mut key = format!("{:?}", partition_by.as_slice());
+                        if let Some((e, k)) = order_by {
+                            polars_expr::prelude::window_function_format_order_by(
+                                &mut key,
+                                e.as_ref(),
+                                k,
+                            )
+                        }
+                        windows.entry(key).or_insert_with(Vec::new)
                     },
                     #[cfg(feature = "dynamic_group_by")]
                     WindowType::Rolling(options) => rolling.entry(options).or_insert_with(Vec::new),

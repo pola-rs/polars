@@ -56,11 +56,11 @@ fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
 pub(super) fn update_groups_sort_by(
     groups: &GroupsProxy,
     sort_by_s: &Series,
-    descending: &[bool],
+    options: &SortOptions,
 ) -> PolarsResult<GroupsProxy> {
     let groups = groups
         .par_iter()
-        .map(|indicator| sort_by_groups_single_by(indicator, sort_by_s, descending))
+        .map(|indicator| sort_by_groups_single_by(indicator, sort_by_s, options))
         .collect::<PolarsResult<_>>()?;
 
     Ok(GroupsProxy::Idx(groups))
@@ -69,29 +69,26 @@ pub(super) fn update_groups_sort_by(
 fn sort_by_groups_single_by(
     indicator: GroupsIndicator,
     sort_by_s: &Series,
-    descending: &[bool],
+    options: &SortOptions,
 ) -> PolarsResult<(IdxSize, IdxVec)> {
+    let options = SortOptions {
+        descending: options.descending,
+        nulls_last: options.nulls_last,
+        // We are already in par iter.
+        multithreaded: false,
+        ..Default::default()
+    };
     let new_idx = match indicator {
         GroupsIndicator::Idx((_, idx)) => {
             // SAFETY: group tuples are always in bounds.
             let group = unsafe { sort_by_s.take_slice_unchecked(idx) };
 
-            let sorted_idx = group.arg_sort(SortOptions {
-                descending: descending[0],
-                // We are already in par iter.
-                multithreaded: false,
-                ..Default::default()
-            });
+            let sorted_idx = group.arg_sort(options);
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
             let group = sort_by_s.slice(first as i64, len as usize);
-            let sorted_idx = group.arg_sort(SortOptions {
-                descending: descending[0],
-                // We are already in par iter.
-                multithreaded: false,
-                ..Default::default()
-            });
+            let sorted_idx = group.arg_sort(options);
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -295,7 +292,16 @@ impl PhysicalExpr for SortByExpr {
 
             let (check, groups) = POOL.join(
                 || check_groups(groups, ac_in.groups()),
-                || update_groups_sort_by(groups, &sort_by_s, &descending),
+                || {
+                    update_groups_sort_by(
+                        groups,
+                        &sort_by_s,
+                        &SortOptions {
+                            descending: descending[0],
+                            ..Default::default()
+                        },
+                    )
+                },
             );
             check?;
 

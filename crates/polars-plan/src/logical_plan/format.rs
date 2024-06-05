@@ -27,7 +27,7 @@ impl fmt::Debug for Expr {
                     )
                 },
                 _ => {
-                    if let Some(order_by) = order_by {
+                    if let Some((order_by, _)) = order_by {
                         write!(f, "{function:?}.over(partition_by: {partition_by:?}, order_by: {order_by:?})")
                     } else {
                         write!(f, "{function:?}.over({partition_by:?})")

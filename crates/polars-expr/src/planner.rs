@@ -210,14 +210,17 @@ fn create_physical_expr_inner(
             )?;
 
             let order_by = order_by
-                .map(|node| {
-                    create_physical_expr_inner(
-                        node,
-                        Context::Aggregation,
-                        expr_arena,
-                        schema,
-                        state,
-                    )
+                .map(|(node, options)| {
+                    PolarsResult::Ok((
+                        create_physical_expr_inner(
+                            node,
+                            Context::Aggregation,
+                            expr_arena,
+                            schema,
+                            state,
+                        )?,
+                        options,
+                    ))
                 })
                 .transpose()?;
 

@@ -490,3 +490,24 @@ def test_windows_not_cached() -> None:
     # this might fail if they are cached
     for _ in range(1000):
         ldf.collect()
+
+
+def test_window_order_by_8662() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 2, 2, 2, 2],
+            "t": [1, 2, 3, 4, 4, 1, 2, 3],
+            "x": [10, 20, 30, 40, 10, 20, 30, 40],
+        }
+    )
+
+    assert df.with_columns(
+        x_lag0=pl.col("x").shift(1).over("g"),
+        x_lag1=pl.col("x").shift(1).over("g", order_by="t"),
+    ).to_dict(as_series=False) == {
+        "g": [1, 1, 1, 1, 2, 2, 2, 2],
+        "t": [1, 2, 3, 4, 4, 1, 2, 3],
+        "x": [10, 20, 30, 40, 10, 20, 30, 40],
+        "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
+        "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
+    }

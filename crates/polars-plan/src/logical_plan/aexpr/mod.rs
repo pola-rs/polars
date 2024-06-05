@@ -181,7 +181,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
-        order_by: Option<Node>,
+        order_by: Option<(Node, SortOptions)>,
         options: WindowType,
     },
     #[default]
@@ -307,7 +307,7 @@ impl AExpr {
                 order_by,
                 options: _,
             } => {
-                if let Some(n) = order_by {
+                if let Some((n, _)) = order_by {
                     container.push_node(*n);
                 }
                 for e in partition_by.iter().rev() {
@@ -410,8 +410,8 @@ impl AExpr {
                 partition_by.clear();
                 partition_by.extend_from_slice(&inputs[offset..inputs.len() - 1]);
 
-                if order_by.is_some() {
-                    *order_by = Some(inputs[0]);
+                if let Some((_, options)) = order_by {
+                    *order_by = Some((inputs[0], *options));
                 }
 
                 return self;

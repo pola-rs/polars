@@ -42,6 +42,7 @@ pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
 pub(crate) use ternary::*;
+pub use window::window_function_format_order_by;
 pub(crate) use window::*;
 
 use crate::state::ExecutionState;
