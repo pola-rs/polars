@@ -55,7 +55,7 @@ def test_qcut_include_breaks() -> None:
 
     expected = pl.DataFrame(
         {
-            "break_point": [-2.0, -1.0, 1.0, 1.0, inf],
+            "breakpoint": [-2.0, -1.0, 1.0, 1.0, inf],
             "category": ["a", "b", "c", "c", "d"],
         },
         schema_overrides={"category": pl.Categorical},
@@ -73,7 +73,7 @@ def test_qcut_include_breaks_lazy_schema() -> None:
 
     expected = pl.LazyFrame(
         {
-            "break_point": [-1.0, -1.0, 1.0, 1.0, inf],
+            "breakpoint": [-1.0, -1.0, 1.0, 1.0, inf],
             "category": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
         },
         schema_overrides={"category": pl.Categorical},

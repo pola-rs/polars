@@ -46,7 +46,7 @@ def test_cut_include_breaks() -> None:
 
     expected = pl.DataFrame(
         {
-            "break_point": [-1.5, 0.25, 0.25, 1.0, inf],
+            "breakpoint": [-1.5, 0.25, 0.25, 1.0, inf],
             "category": ["a", "b", "b", "c", "d"],
         },
         schema_overrides={"category": pl.Categorical},
@@ -64,7 +64,7 @@ def test_cut_include_breaks_lazy_schema() -> None:
 
     expected = pl.LazyFrame(
         {
-            "break_point": [-1.0, -1.0, 1.0, 1.0, inf],
+            "breakpoint": [-1.0, -1.0, 1.0, 1.0, inf],
             "category": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
         },
         schema_overrides={"category": pl.Categorical},
@@ -88,7 +88,7 @@ def test_cut_bin_name_in_agg_context() -> None:
         qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
     )
     schema = pl.Struct(
-        {"break_point": pl.Float64, "category": pl.Categorical("physical")}
+        {"breakpoint": pl.Float64, "category": pl.Categorical("physical")}
     )
     assert df.schema == {"cut": schema, "qcut": schema, "qcut_uniform": schema}
 

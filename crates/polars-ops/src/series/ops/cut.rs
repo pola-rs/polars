@@ -33,7 +33,7 @@ fn map_cats(
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("break_point", s.len());
+        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("breakpoint", s.len());
         s_iter
             .map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
