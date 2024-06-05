@@ -64,10 +64,10 @@ def test_cut_include_breaks_lazy_schema() -> None:
 
     expected = pl.LazyFrame(
         {
-            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
-            "a_bin": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
+            "break_point": [-1.0, -1.0, 1.0, 1.0, inf],
+            "category": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
         },
-        schema_overrides={"a_bin": pl.Categorical},
+        schema_overrides={"category": pl.Categorical},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 
@@ -104,21 +104,15 @@ def test_cut_deprecated_as_series() -> None:
     }
 
 
-def test_cut_deprecated_label_name() -> None:
-    s = pl.Series([1.0, 2.0])
-    with pytest.deprecated_call():
-        s.cut([0.1], category_label="x")
-    with pytest.deprecated_call():
-        s.cut([0.1], break_point_label="x")
-
-
 def test_cut_bin_name_in_agg_context() -> None:
     df = pl.DataFrame({"a": [1]}).select(
         cut=pl.col("a").cut([1, 2], include_breaks=True).over(1),
         qcut=pl.col("a").qcut([1], include_breaks=True).over(1),
         qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
     )
-    schema = pl.Struct({"brk": pl.Float64, "a_bin": pl.Categorical("physical")})
+    schema = pl.Struct(
+        {"break_point": pl.Float64, "category": pl.Categorical("physical")}
+    )
     assert df.schema == {"cut": schema, "qcut": schema, "qcut_uniform": schema}
 
 

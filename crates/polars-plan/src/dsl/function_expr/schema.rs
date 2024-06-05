@@ -226,14 +226,9 @@ impl FunctionExpr {
                 include_breaks: true,
                 ..
             } => {
-                let name = fields[0].name();
-                let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
-                    Field::new("brk", DataType::Float64),
-                    Field::new(
-                        name_bin.as_str(),
-                        DataType::Categorical(None, Default::default()),
-                    ),
+                    Field::new("break_point", DataType::Float64),
+                    Field::new("category", DataType::Categorical(None, Default::default())),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
@@ -269,14 +264,9 @@ impl FunctionExpr {
                 include_breaks: true,
                 ..
             } => {
-                let name = fields[0].name();
-                let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
-                    Field::new("brk", DataType::Float64),
-                    Field::new(
-                        name_bin.as_str(),
-                        DataType::Categorical(None, Default::default()),
-                    ),
+                    Field::new("break_point", DataType::Float64),
+                    Field::new("category", DataType::Categorical(None, Default::default())),
                 ]);
                 mapper.with_dtype(struct_dt)
             },

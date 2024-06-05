@@ -2101,8 +2101,6 @@ class Series:
         breaks: Sequence[float],
         *,
         labels: Sequence[str] | None = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[True] = ...,
@@ -2114,8 +2112,6 @@ class Series:
         breaks: Sequence[float],
         *,
         labels: Sequence[str] | None = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: Literal[False],
@@ -2127,8 +2123,6 @@ class Series:
         breaks: Sequence[float],
         *,
         labels: Sequence[str] | None = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         left_closed: bool = ...,
         include_breaks: bool = ...,
         as_series: bool,
@@ -2140,8 +2134,6 @@ class Series:
         breaks: Sequence[float],
         *,
         labels: Sequence[str] | None = None,
-        break_point_label: str = "break_point",
-        category_label: str = "category",
         left_closed: bool = False,
         include_breaks: bool = False,
         as_series: bool = True,
@@ -2160,20 +2152,6 @@ class Series:
         labels
             Names of the categories. The number of labels must be equal to the number
             of cut points plus one.
-        break_point_label
-            Name of the breakpoint column. Only used if `include_breaks` is set to
-            `True`.
-
-            .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
-                rename the field instead.
-        category_label
-            Name of the category column. Only used if `include_breaks` is set to
-            `True`.
-
-            .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
-                rename the field instead.
         left_closed
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
@@ -2232,18 +2210,6 @@ class Series:
         │ 2   ┆ inf         ┆ (1, inf]   │
         └─────┴─────────────┴────────────┘
         """
-        if break_point_label != "break_point":
-            issue_deprecation_warning(
-                "The `break_point_label` parameter for `Series.cut` will be removed."
-                " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.19.0",
-            )
-        if category_label != "category":
-            issue_deprecation_warning(
-                "The `category_label` parameter for `Series.cut` will be removed."
-                " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.19.0",
-            )
         if not as_series:
             issue_deprecation_warning(
                 "The `as_series` parameter for `Series.cut` will be removed."
@@ -2266,7 +2232,6 @@ class Series:
                     .alias(temp_name)
                 )
                 .unnest(temp_name)
-                .rename({"brk": break_point_label, temp_name: category_label})
             )
 
         result = (
@@ -2282,9 +2247,6 @@ class Series:
             .to_series()
         )
 
-        if include_breaks:
-            result = result.struct.rename_fields([break_point_label, category_label])
-
         return result
 
     @overload
@@ -2296,8 +2258,6 @@ class Series:
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         as_series: Literal[True] = ...,
     ) -> Series: ...
 
@@ -2310,8 +2270,6 @@ class Series:
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         as_series: Literal[False],
     ) -> DataFrame: ...
 
@@ -2324,8 +2282,6 @@ class Series:
         left_closed: bool = ...,
         allow_duplicates: bool = ...,
         include_breaks: bool = ...,
-        break_point_label: str = ...,
-        category_label: str = ...,
         as_series: bool,
     ) -> Series | DataFrame: ...
 
@@ -2338,8 +2294,6 @@ class Series:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
-        break_point_label: str = "break_point",
-        category_label: str = "category",
         as_series: bool = True,
     ) -> Series | DataFrame:
         """
@@ -2367,20 +2321,6 @@ class Series:
             Include a column with the right endpoint of the bin each observation falls
             in. This will change the data type of the output from a
             :class:`Categorical` to a :class:`Struct`.
-        break_point_label
-            Name of the breakpoint column. Only used if `include_breaks` is set to
-            `True`.
-
-            .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
-                rename the field instead.
-        category_label
-            Name of the category column. Only used if `include_breaks` is set to
-            `True`.
-
-            .. deprecated:: 0.19.0
-                This parameter will be removed. Use `Series.struct.rename_fields` to
-                rename the field instead.
         as_series
             If set to `False`, return a DataFrame containing the original values,
             the breakpoints, and the categories.
@@ -2447,18 +2387,6 @@ class Series:
         │ 2   ┆ inf         ┆ (1, inf]   │
         └─────┴─────────────┴────────────┘
         """
-        if break_point_label != "break_point":
-            issue_deprecation_warning(
-                "The `break_point_label` parameter for `Series.cut` will be removed."
-                " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.19.0",
-            )
-        if category_label != "category":
-            issue_deprecation_warning(
-                "The `category_label` parameter for `Series.cut` will be removed."
-                " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.19.0",
-            )
         if not as_series:
             issue_deprecation_warning(
                 "the `as_series` parameter for `Series.qcut` will be removed."
@@ -2482,7 +2410,6 @@ class Series:
                     .alias(temp_name)
                 )
                 .unnest(temp_name)
-                .rename({"brk": break_point_label, temp_name: category_label})
             )
 
         result = (
@@ -2498,9 +2425,6 @@ class Series:
             )
             .to_series()
         )
-
-        if include_breaks:
-            result = result.struct.rename_fields([break_point_label, category_label])
 
         return result
 
