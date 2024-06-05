@@ -124,12 +124,14 @@ impl GlobalLock {
     /// * `Some(false)` - Unlocked (already previously unlocked)
     fn try_unlock(&self) -> Option<bool> {
         if let Ok(mut this) = self.inner.try_write() {
-            if Arc::strong_count(&self.access_tracker.0) <= 2 && this.state.take().is_some() {
-                this.file.unlock().unwrap();
-                return Some(true);
+            if Arc::strong_count(&self.access_tracker.0) <= 2 {
+                return if this.state.take().is_some() {
+                    this.file.unlock().unwrap();
+                    Some(true)
+                } else {
+                    Some(false)
+                };
             }
-
-            return this.state.is_none().then_some(false);
         }
         None
     }
