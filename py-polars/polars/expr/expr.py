@@ -7294,8 +7294,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -7525,8 +7525,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -7782,8 +7782,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -8041,8 +8041,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -8298,8 +8298,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -8556,8 +8556,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -8814,8 +8814,8 @@ class Expr:
         self,
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -8991,8 +8991,8 @@ class Expr:
         interpolation: RollingInterpolationMethod = "nearest",
         window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval | None = None,
@@ -9244,8 +9244,8 @@ class Expr:
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Self:
         """
@@ -10882,7 +10882,7 @@ class Expr:
 
     @unstable()
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
+        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
