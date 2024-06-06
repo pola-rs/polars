@@ -6,6 +6,7 @@ use polars_core::POOL;
 use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
+use polars_utils::min_max;
 use rayon::prelude::*;
 
 use super::*;
@@ -524,9 +525,22 @@ impl ApplyExpr {
                 let root = expr_to_leaf_column_name(&self.expr)?;
 
                 match stats.get_stats(&root).ok() {
-                    Some(st) => match st.null_count() {
-                        Some(0) => Ok(false),
-                        _ => Ok(true),
+                    Some(st) => {
+                        let invalid = match (st.to_min(), st.to_max()) {
+                            (Some(min), Some(max)) => {
+                                ChunkCompare::gt(min,max).ok().unwrap().all()
+                            },
+                            _ => true,
+                        };
+                        if invalid {
+                            polars_warn!("The min_value stat is greater than max_value. \
+                            Ignoring stats as invalid"
+                            );
+                        };
+                        match (st.null_count(), invalid) {
+                            (Some(0), false) => Ok(false),
+                            _ => Ok(true),
+                        }
                     },
                     None => Ok(true),
                 }
