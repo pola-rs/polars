@@ -240,11 +240,12 @@ def read_database(
                 err_suffix="package",
             )
             connection = ODBCCursorProxy(connection)
-        else:
+        elif "://" in connection:
             # otherwise looks like a mistaken call to read_database_uri
-            msg = (
-                "Use of a string URI with 'read_database' is invalid; call `read_database_uri` instead",
-            )
+            msg = "Use of string URI is invalid here; call `read_database_uri` instead"
+            raise ValueError(msg)
+        else:
+            msg = "unable to identify string connection as valid ODBC (no driver)"
             raise ValueError(msg)
 
     # return frame from arbitrary connections using the executor abstraction

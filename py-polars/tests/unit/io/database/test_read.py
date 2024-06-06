@@ -616,6 +616,17 @@ def test_read_database_mocked(
             ),
             id="Invalid kwargs",
         ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database",
+                engine="adbc",
+                query="SELECT * FROM test_data",
+                protocol="{not:a, valid:odbc_string}",
+                errclass=ValueError,
+                errmsg=r"unable to identify string connection as valid ODBC",
+            ),
+            id="Invalid ODBC string",
+        ),
     ],
 )
 def test_read_database_exceptions(
