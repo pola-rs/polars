@@ -130,6 +130,21 @@ def read_parquet(
     --------
     scan_parquet
     scan_pyarrow_dataset
+
+    Examples
+    --------
+    Read a local Parquet file.
+
+    >>> pl.read_parquet("path/to/file.parquet")
+
+    Read a file on Azure Blob Storage
+
+    >>> source = "az://path/to/file.parquet"
+    >>> storage_options = {
+    ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
+    ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
+    ... }
+    >>> pl.read_parquet(source, storage_options=storage_options)
     """
     if hive_schema is not None:
         msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
@@ -270,6 +285,25 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     -------
     dict
         Dictionary mapping column names to datatypes
+
+    Examples
+    --------
+    Read a parquet file.
+    >>> pl.read_parquet("path/to/file.parquet")
+    shape: (3, 3)
+    ┌──────┬─────────┬──────────┐
+    │ year ┆ name    ┆ country  │
+    │ ---  ┆ ---     ┆ ---      │
+    │ i64  ┆ str     ┆ str      │
+    ├──────┼─────────┼──────────┤
+    │ 2020 ┆ Alice   ┆ USA      │
+    │ 2021 ┆ Bob     ┆ Canada   │
+    │ 2022 ┆ Charlie ┆ UK       │
+    └──────┴─────────┴──────────┘
+
+    Get the schema of the parquet file.
+    >>> pl.read_parquet_schema("path/to/file.parquet")
+    {'year': Int64, 'name': String, 'country': String}
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
