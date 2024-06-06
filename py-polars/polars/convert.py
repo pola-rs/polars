@@ -18,7 +18,7 @@ from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyser
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import _cast_repr_strings_with_schema
 from polars._utils.wrap import wrap_df, wrap_s
-from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
+from polars.datatypes import N_INFER_DEFAULT, Categorical, Object, String, Struct
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -712,17 +712,37 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             if coldata:
                 coldata.pop(idx)
 
-    # init cols as String Series, handle "null" -> None, create schema from repr dtype
-    data = [
-        pl.Series([(None if v == "null" else v) for v in cd], dtype=String)
-        for cd in coldata
-    ]
+    data = []
+    for i, d in enumerate(dtypes):
+        if i < len(coldata):
+            # init cols as String Series with list data with multiline wrap
+            # around to single cell data
+            if d is not None and "list" in d:
+                row_element = "" if len(coldata[i]) == 0 else coldata[i][0]
+                col_row = []
+                for row in coldata[i][1:]:
+                    if row.startswith("["):
+                        col_row.append(row_element)
+                        row_element = row
+                    else:
+                        row_element += row
+                col_row.append(row_element)
+                data.append(pl.Series(col_row, dtype=String))
+            else:
+                # init cols as String Series, handle "null" -> None,
+                # create schema from repr dtype
+                data.append(
+                    pl.Series(
+                        [(None if v == "null" else v) for v in coldata[i]], dtype=String
+                    )
+                )
+
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
     if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
         empty_data = [None] * len(data[0])
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
-        if dtype in (List, Struct, Object):
+        if dtype in (Struct, Object):
             msg = (
                 f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )

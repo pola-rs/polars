@@ -11,6 +11,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.asserts.frame import _assert_frame_schema_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -798,6 +799,116 @@ def test_dataframe_from_repr() -> None:
         "ident": pl.String,
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
+
+
+def test_dataframe_from_repr_for_list() -> None:
+    # frame with list dtype
+    with pl.StringCache():
+        frame = (
+            pl.LazyFrame(
+                {
+                    "a": [[1, 2, None], [1, 2, None]],
+                    "b": [[4.5, 5.5, 6.5], [4.5, 5.5, 6.5]],
+                    # "c": [["x", "y", "z"], ["x", "y", "z"]],
+                    "d": [[True, False, True], [True, False, True]],
+                    "e": [["x", "", None], ["x", "", None]],
+                    "f": [
+                        [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                        [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                    ],
+                    "g": [
+                        [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                        [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                    ],
+                    "h": [
+                        [
+                            datetime(2022, 7, 5, 10, 30, 45, 4560),
+                            datetime(2023, 10, 12, 20, 3, 8, 11),
+                            None,
+                        ],
+                        [
+                            datetime(2022, 7, 5, 10, 30, 45, 4560),
+                            datetime(2023, 10, 12, 20, 3, 8, 11),
+                            None,
+                        ],
+                    ],
+                    "i": [
+                        [1.2345, 2.456, 345.543],
+                        [781239.1, 123.4211, 1234141.111],
+                    ],
+                },
+            )
+            .with_columns(
+                # pl.col("c").cast(pl.List(pl.Categorical)),
+                pl.col("h").cast(pl.List(pl.Datetime("ns"))),
+            )
+            .collect()
+        )
+
+    assert frame.schema == {
+        "a": pl.List(pl.Int64),
+        "b": pl.List(pl.Float64),
+        # "c": pl.List(pl.String),
+        "d": pl.List(pl.Boolean),
+        "e": pl.List(pl.String),
+        "g": pl.List(pl.Time),
+        "f": pl.List(pl.Date),
+        "h": pl.List(pl.Datetime("ns")),
+        "i": pl.List(pl.Float64),
+    }
+    df = cast(pl.DataFrame, pl.from_repr(repr(frame)))
+    # print(df)
+    _assert_frame_schema_equal(
+        frame, df, check_dtype=True, check_column_order=True, objects="DataFrames"
+    )
+
+    # empty frame; confirm List schema is inferred
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+        ┌───────────┬──────────┬───────────┬───────────┬───────────┬───────────┐
+        │ id        ┆ q1       ┆ q2        ┆ q3        ┆ q4        ┆ total     │
+        │ ---       ┆ ---      ┆ ---       ┆ ---       ┆ ---       ┆ ---       │
+        │ list[str] ┆ list[i8] ┆ list[i16] ┆ list[i32] ┆ list[i64] ┆ list[f64] │
+        ╞═══════════╪══════════╪═══════════╪═══════════╪═══════════╪═══════════╡
+        └───────────┴──────────┴───────────┴───────────┴───────────┴───────────┘
+        """
+        ),
+    )
+    assert df.shape == (0, 6)
+    assert df.rows() == []
+    assert df.schema == {
+        "id": pl.List(pl.String),
+        "q1": pl.List(pl.Int8),
+        "q2": pl.List(pl.Int16),
+        "q3": pl.List(pl.Int32),
+        "q4": pl.List(pl.Int64),
+        "total": pl.List(pl.Float64),
+    }
+
+    # empty frame with non-standard/blank 'null'
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            ┌───────────┬───────────┐
+            │ c1        ┆ c2        │
+            │ ---       ┆ ---       │
+            │ list[i32] ┆ list[f64] │
+            ╞═══════════╪═══════════╡
+            │           ┆           │
+            └───────────┴───────────┘
+            """
+        ),
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            data=[([None], [None])],
+            schema={"c1": pl.List(pl.Int32), "c2": pl.List(pl.Float64)},
+        ),
+    )
 
 
 def test_series_from_repr() -> None:

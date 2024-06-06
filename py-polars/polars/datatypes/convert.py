@@ -415,16 +415,29 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
 
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
+
+    def _time_subtype(time_subtype: str) -> tuple[str]:
+        return (s.strip("'\" ") for s in time_subtype.replace("μs", "us").split(","))  # type: ignore[return-value]
+
     if dtype and subtype:
-        # TODO: further-improve handling for nested types (such as List,Struct)
+        # TODO: further-improve handling for nested types (such as Struct)
         try:
             if dtype == Decimal:
                 subtype = (None, int(subtype))
+            elif dtype == List:
+                if DataTypeMappings.REPR_TO_DTYPE.get(subtype) is not None:
+                    subtype = (DataTypeMappings.REPR_TO_DTYPE.get(subtype),)
+                else:
+                    m = re.match(r"^(\w+)(?:\[(.+)\])?$", subtype)
+                    if m is not None:
+                        subtype_base, time_subtype = m.groups()
+                        subtype = DataTypeMappings.REPR_TO_DTYPE.get(subtype_base)
+                        if subtype and time_subtype:
+                            time_subtype = _time_subtype(time_subtype)
+                            subtype = (subtype(*time_subtype),)  # type: ignore[operator]
             else:
-                subtype = (
-                    s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")
-                )
-            return dtype(*subtype)  # type: ignore[operator]
+                subtype = _time_subtype(subtype)
+            return dtype(*subtype)  # type: ignore[operator, misc]
         except ValueError:
             pass
     return dtype
