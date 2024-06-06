@@ -17,8 +17,16 @@ In a vertical concatenation you combine all of the rows from a list of `DataFram
 --8<-- "python/user-guide/transformations/concatenation.py:vertical"
 ```
 
-Vertical concatenation fails when the dataframes do not have the same column names.
+Vertical concatenation fails when the dataframes do not have the same column names and dtypes.
 
+For certain differences in dtypes, Polars can do a relaxed vertical concatenation where the differences in dtype are resolved by casting all columns with the same name but different dtypes to a *supertype*. For example, if column `'a'` in the first `DataFrame` is `Float32` but column `'a'` in the second `DataFrame` is `Int64`, then both columns are cast to their supertype `Float64` before concatenation. If the set of dtypes for a column do not have a supertype, the concatenation fails. The supertype mappings are defined internally in Polars.
+
+
+{{code_block('user-guide/transformations/concatenation','vertical_relaxed',['concat'])}}
+
+```python exec="on" result="text" session="user-guide/transformations/concatenation"
+--8<-- "python/user-guide/transformations/concatenation.py:vertical_relaxed"
+```
 ## Horizontal concatenation - getting wider
 
 In a horizontal concatenation you combine all of the columns from a list of `DataFrames` into a single wider `DataFrame`.
@@ -42,7 +50,7 @@ columns will be padded with `null` values at the end up to the maximum length.
 
 ## Diagonal concatenation - getting longer, wider and `null`ier
 
-In a diagonal concatenation you combine all of the row and columns from a list of `DataFrames` into a single longer and/or wider `DataFrame`.
+In a diagonal concatenation you combine all of the rows and columns from a list of `DataFrames` into a single longer and/or wider `DataFrame`.
 
 {{code_block('user-guide/transformations/concatenation','cross',['concat'])}}
 
@@ -50,11 +58,12 @@ In a diagonal concatenation you combine all of the row and columns from a list o
 --8<-- "python/user-guide/transformations/concatenation.py:cross"
 ```
 
-Diagonal concatenation generates nulls when the column names do not overlap.
+Diagonal concatenation generates nulls when the column names do not overlap but fails if the dtypes do not match for columns with the same name. As with vertical concatenation there is an alternative `diagonal_relaxed` method that tries to cast columns to a supertype if columns with the same name have different dtypes.
 
 When the dataframe shapes do not match and we have an overlapping semantic key then [we can join the dataframes](joins.md) instead of concatenating them.
 
 ## Rechunking
 
-Before a concatenation we have two dataframes `df1` and `df2`. Each column in `df1` and `df2` is in one or more chunks in memory. By default, during concatenation the chunks in each column are copied to a single new chunk - this is known as **rechunking**. Rechunking is an expensive operation, but is often worth it because future operations will be faster.
-If you do not want Polars to rechunk the concatenated `DataFrame` you specify `rechunk = False` when doing the concatenation.
+We have a `list` of `DataFrames` and we want to concatenate them. Each column in each `DataFrame` is stored in one or more chunks in memory. When we concatenate the `DataFrames` then the data from each column in each `DataFrame` can be copied to a single location in memory - this is known as **rechunking**. Rechunking is an expensive process as it requires copying data from one location to another. However, rechunking can make subsequent operations faster as the data is in a single location in memory.
+
+By default when we do a concatenation in eager mode rechunking does not happen. If we want Polars to rechunk the concatenated `DataFrame` then specify `rechunk = True` when doing the concatenation. In lazy mode the query optimizer assesses whether to do rechunking based on the query plan.
