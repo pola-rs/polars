@@ -100,11 +100,29 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
         }
     )
     with pl.SQLContext(frame_data=df, eager=True) as ctx:
-        for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART(dt,'{part}')"):
+        for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART('{part}',dt)"):
             res = ctx.execute(f"SELECT {func} AS {part} FROM frame_data").to_series()
 
             assert res.dtype == dtype
             assert res.to_list() == expected
+
+
+def test_extract_errors() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
+
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
+        for part in ("femtosecond", "stroopwafel"):
+            with pytest.raises(
+                SQLSyntaxError,
+                match=f"EXTRACT/DATE_PART does not support '{part}' part",
+            ):
+                ctx.execute(f"SELECT EXTRACT({part} FROM dt) FROM frame_data")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match=r"EXTRACT/DATE_PART does not support 'week\(tuesday\)' part",
+        ):
+            ctx.execute("SELECT DATE_PART('week(tuesday)', dt) FROM frame_data")
 
 
 @pytest.mark.parametrize(
@@ -130,9 +148,9 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
             """
             SELECT
               EXTRACT(MILLENNIUM FROM dt) AS c1,
-              DATE_PART(dt,'century') AS c2,
+              DATE_PART('century',dt) AS c2,
               EXTRACT(millennium FROM dt) AS c3,
-              DATE_PART(dt,'CENTURY') AS c4,
+              DATE_PART('CENTURY',dt) AS c4,
             FROM frame_data
             """
         )

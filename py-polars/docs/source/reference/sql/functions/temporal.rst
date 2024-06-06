@@ -82,9 +82,9 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     df.sql("""
       SELECT
         dt,
-        DATE_PART(dt, 'year') AS year,
-        DATE_PART(dt, 'month') AS month,
-        DATE_PART(dt, 'day') AS day
+        DATE_PART('year', dt) AS year,
+        DATE_PART('month', dt) AS month,
+        DATE_PART('day', dt) AS day
       FROM self
     """)
 

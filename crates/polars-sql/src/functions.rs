@@ -786,7 +786,7 @@ impl PolarsSQLFunctions {
                 if ctx.function_registry.contains(other) {
                     Self::Udf(other.to_string())
                 } else {
-                    polars_bail!(SQLInterface: "unsupported function: {}", other);
+                    polars_bail!(SQLInterface: "unsupported function '{}'", other);
                 }
             },
         })
@@ -824,13 +824,13 @@ impl SQLFunctionVisitor<'_> {
                     Ok(e.round(match decimals {
                         Expr::Literal(LiteralValue::Int(n)) => {
                             if n >= 0 { n as u32 } else {
-                                polars_bail!(SQLInterface: "ROUND does not (yet) support negative 'n_decimals' ({})", function.args[1])
+                                polars_bail!(SQLInterface: "ROUND does not currently support negative decimals value ({})", function.args[1])
                             }
                         },
-                        _ => polars_bail!(SQLSyntax: "invalid 'n_decimals' for ROUND ({})", function.args[1]),
+                        _ => polars_bail!(SQLSyntax: "invalid decimals value for ROUND ({})", function.args[1]),
                     }))
                 }),
-                _ => polars_bail!(SQLSyntax: "invalid number of arguments for ROUND; expected 1 or 2, found {}", function.args.len()),
+                _ => polars_bail!(SQLSyntax: "invalid number of arguments for ROUND (expected 1-2, found {})", function.args.len()),
             },
             Sign => self.visit_unary(Expr::sign),
             Sqrt => self.visit_unary(Expr::sqrt),
@@ -887,11 +887,11 @@ impl SQLFunctionVisitor<'_> {
                 2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
                 _ => polars_bail!(SQLSyntax: "invalid number of arguments for DATE: {}", function.args.len()),
             },
-            DatePart => self.try_visit_binary(|e, part| {
+            DatePart => self.try_visit_binary(|part, e| {
                 match part {
                     Expr::Literal(LiteralValue::String(p)) => parse_date_part(e, &p),
                     _ => {
-                        polars_bail!(SQLSyntax: "invalid 'part' for DATE_PART: {}", function.args[1]);
+                        polars_bail!(SQLSyntax: "invalid 'part' for EXTRACT/DATE_PART: {}", function.args[1]);
                     }
                 }
             }),
@@ -1119,7 +1119,7 @@ impl SQLFunctionVisitor<'_> {
                 self.apply_cumulative_window(f, cumulative_f, spec)
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "Named windows are not supported yet; found {:?}",
+                SQLInterface: "Named windows are not currently supported; found {:?}",
                 named_window
             ),
             _ => self.visit_unary(f),
@@ -1294,7 +1294,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                SQLInterface: "Named windows are not supported yet; found: {:?}",
+                SQLInterface: "Named windows are not currently supported; found {:?}",
                 named_window
             ),
             None => expr,
