@@ -81,7 +81,6 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -112,15 +111,6 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as `pl.Datetime(time_unit)`,
-                and offset-aware strings are converted to
-                `pl.Datetime(time_unit, "UTC")`.
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
