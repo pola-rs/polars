@@ -48,6 +48,13 @@ columns will be padded with `null` values at the end up to the maximum length.
 --8<-- "python/user-guide/transformations/concatenation.py:horizontal_different_lengths"
 ```
 
+An alternative horizontal concatenation method is `align` where Polars combines frames horizontally by determining the common key columns and aligning rows.
+{{code_block('user-guide/transformations/concatenation','horizontal_align',['concat'])}}
+
+```python exec="on" result="text" session="user-guide/transformations/concatenation"
+--8<-- "python/user-guide/transformations/concatenation.py:horizontal_align"
+```
+
 ## Diagonal concatenation - getting longer, wider and `null`ier
 
 In a diagonal concatenation you combine all of the rows and columns from a list of `DataFrames` into a single longer and/or wider `DataFrame`.

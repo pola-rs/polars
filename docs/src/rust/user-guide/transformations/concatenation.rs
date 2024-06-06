@@ -64,6 +64,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &df_horizontal_concat);
     // --8<-- [end:horizontal_different_lengths]
 
+    // --8<-- [start:horizontal_align]
+    println!("Not available in Rust");
+
+    // --8<-- [end:horizontal_align]
+
     // --8<-- [start:cross]
     let df_d1 = df!(
         "a"=> &[1],
