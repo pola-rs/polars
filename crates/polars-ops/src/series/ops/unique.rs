@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use arrow::array::Array;
+use polars_compute::distinct_count::DistinctCountKernel;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
@@ -34,30 +35,20 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
 
+    if arr.distinct_count() == 1 {
+        return IdxCa::new(ca.name(), [arr.len() as IdxSize]);
+    }
+
     let (n_true, n_null);
     if let Some(validity) = arr.validity() {
         n_null = validity.unset_bits();
-        if n_null < arr.len() {
-            n_true = (arr.values() & validity).set_bits();
-        } else {
-            n_true = 0;
-        }
+        n_true = (arr.values() & validity).set_bits();
     } else {
         n_null = 0;
         n_true = arr.values().set_bits();
     }
     let n_false = arr.len() - n_true - n_null;
     let (n_true, n_false, n_null) = (n_true as IdxSize, n_false as IdxSize, n_null as IdxSize);
-
-    if n_true == 0 && n_false == 0 {
-        return IdxCa::new(ca.name(), [n_null]);
-    }
-    if n_true == 0 && n_null == 0 {
-        return IdxCa::new(ca.name(), [n_false]);
-    }
-    if n_false == 0 && n_null == 0 {
-        return IdxCa::new(ca.name(), [n_true]);
-    }
 
     if n_true == 0 {
         match arr.is_null(0) {
