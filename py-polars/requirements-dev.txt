@@ -39,7 +39,6 @@ s3fs[boto3]
 lxml
 fastexcel>=0.9
 openpyxl
-pyxlsb
 xlsx2csv
 XlsxWriter
 deltalake>=0.15.0

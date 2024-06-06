@@ -9,7 +9,6 @@ Polars does not have a native Excel reader. Instead, it uses external libraries 
 
 - xlsx2csv: This is the current default.
 - openpyxl: Typically slower than xls2csv, but can provide more flexibility for files that are difficult to parse.
-- pyxlsb: For reading binary Excel files (xlsb).
 - fastexcel: This reader is based on [calamine](https://github.com/tafia/calamine) and is typically the fastest reader but has fewer features than xls2csv.
 
 Although fastexcel is not the default at this point, we recommend trying fastexcel first and using xlsx2csv or openpyxl if you encounter issues.
@@ -19,7 +18,7 @@ To use one of these engines, the appropriate Python package must be installed as
 === ":fontawesome-brands-python: Python"
 
     ```shell
-    $ pip install xlsx2csv openpyxl pyxlsb fastexcel
+    $ pip install xlsx2csv openpyxl fastexcel
     ```
 
 The default Excel reader is xlsx2csv.
