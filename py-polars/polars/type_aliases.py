@@ -7,6 +7,7 @@ from typing import (
     Any,
     Collection,
     Iterable,
+    Iterator,
     List,
     Literal,
     Mapping,
@@ -275,3 +276,6 @@ BooleanMask: TypeAlias = Union[
 ]
 SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
+GroupByIterator: TypeAlias = Iterator[
+    Tuple[Union[object, Tuple[object, ...]], "DataFrame"]
+]
