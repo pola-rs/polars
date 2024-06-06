@@ -1762,12 +1762,7 @@ class DateTimeNameSpace:
         """
 
     @unstable()
-    def round(
-        self,
-        every: str | dt.timedelta | IntoExprColumn,
-        *,
-        ambiguous: Ambiguous | Series | None = None,
-    ) -> Series:
+    def round(self, every: str | dt.timedelta | IntoExprColumn) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
@@ -1788,15 +1783,6 @@ class DateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
-
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-
-            .. deprecated:: 0.19.3
-                This is now automatically inferred; you can safely omit this argument.
 
         Returns
         -------

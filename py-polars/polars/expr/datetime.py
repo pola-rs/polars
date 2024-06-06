@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime as dt
-from datetime import timedelta
 from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
@@ -151,7 +150,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
-    def truncate(self, every: str | timedelta | Expr) -> Expr:
+    def truncate(self, every: str | dt.timedelta | Expr) -> Expr:
         """
         Divide the date/datetime range into buckets.
 
@@ -278,7 +277,7 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_truncate(every))
 
     @unstable()
-    def round(self, every: str | timedelta | IntoExprColumn) -> Expr:
+    def round(self, every: str | dt.timedelta | IntoExprColumn) -> Expr:
         """
         Divide the date/datetime range into buckets.
 
@@ -380,7 +379,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 01:00:00 ┆ 2001-01-01 01:00:00 │
         └─────────────────────┴─────────────────────┘
         """
-        if isinstance(every, timedelta):
+        if isinstance(every, dt.timedelta):
             every = parse_as_duration_string(every)
         every = parse_as_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_round(every))
