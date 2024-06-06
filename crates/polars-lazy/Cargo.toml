@@ -98,7 +98,9 @@ dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dty
 dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8"]
 
 object = ["polars-plan/object"]
-date_offset = ["polars-plan/date_offset"]
+month_start = ["polars-plan/month_start"]
+month_end = ["polars-plan/month_end"]
+offset_by = ["polars-plan/offset_by"]
 trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
@@ -258,7 +260,6 @@ features = [
   "cum_agg",
   "cumulative_eval",
   "cutqcut",
-  "date_offset",
   "diagonal_concat",
   "diff",
   "dot_diagram",
@@ -291,8 +292,11 @@ features = [
   "meta",
   "mode",
   "moment",
+  "month_start",
+  "month_end",
   "nightly",
   "object",
+  "offset_by",
   "panic_on_schema",
   "parquet",
   "pct_change",

@@ -231,6 +231,7 @@ pub enum PyTemporalFunction {
     ConvertTimeZone,
     TimeStamp,
     Truncate,
+    OffsetBy,
     MonthStart,
     MonthEnd,
     BaseUtcOffset,
@@ -936,6 +937,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
                     },
                     TemporalFunction::Truncate => (PyTemporalFunction::Truncate).into_py(py),
+                    TemporalFunction::OffsetBy => (PyTemporalFunction::OffsetBy,).into_py(py),
                     TemporalFunction::MonthStart => (PyTemporalFunction::MonthStart,).into_py(py),
                     TemporalFunction::MonthEnd => (PyTemporalFunction::MonthEnd,).into_py(py),
                     TemporalFunction::BaseUtcOffset => {
@@ -1018,7 +1020,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("search sorted"))
                 },
                 FunctionExpr::Range(_) => return Err(PyNotImplementedError::new_err("range")),
-                FunctionExpr::DateOffset => ("offset_by",).to_object(py),
                 FunctionExpr::Trigonometry(trigfun) => match trigfun {
                     TrigonometricFunction::Cos => ("cos",),
                     TrigonometricFunction::Cot => ("cot",),

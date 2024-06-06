@@ -197,7 +197,7 @@ The opt-in features are:
     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
     - `arg_where` - Get indices where condition holds.
     - `search_sorted` - Find indices where elements should be inserted to maintain order.
-    - `date_offset` Add an offset to dates that take months and leap years into account.
+    - `offset_by` Add an offset to dates that take months and leap years into account.
     - `trigonometry` Trigonometric functions.
     - `sign` Compute the element-wise sign of a Series.
     - `propagate_nans` NaN propagating min/max aggregations.
