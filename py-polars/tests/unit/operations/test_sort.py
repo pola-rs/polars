@@ -252,23 +252,26 @@ def test_sort_aggregation_fast_paths() -> None:
             assert_frame_equal(out, expected)
 
 
-def test_sorted_join_and_dtypes() -> None:
-    for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int16]:
-        df_a = (
-            pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
-            .with_row_index()
-            .with_columns(pl.col("a").cast(dt).set_sorted())
-        )
-
-    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
-        pl.col("a").cast(dt).set_sorted()
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
+def test_sorted_join_and_dtypes(dtype: pl.PolarsDataType) -> None:
+    df_a = (
+        pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
+        .with_row_index()
+        .with_columns(pl.col("a").cast(dtype).set_sorted())
     )
 
-    assert df_a.join(df_b, on="a", how="inner").to_dict(as_series=False) == {
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
+        pl.col("a").cast(dtype).set_sorted()
+    )
+
+    result_inner = df_a.join(df_b, on="a", how="inner")
+    assert result_inner.to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
-    assert df_a.join(df_b, on="a", how="left").to_dict(as_series=False) == {
+
+    result_left = df_a.join(df_b, on="a", how="left", coalesce=True)
+    assert result_left.to_dict(as_series=False) == {
         "index": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
