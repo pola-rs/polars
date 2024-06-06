@@ -5,14 +5,13 @@ use std::collections::VecDeque;
 use arrow::array::*;
 use arrow::legacy::kernels::list::array_to_unit_list;
 use arrow::offset::Offsets;
-use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::datatypes::{DataType, ListChunked};
-use polars_core::prelude::{IntoSeries, Series};
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 
-use crate::prelude::*;
+use crate::chunked_array::builder::get_list_builder;
+use crate::datatypes::{DataType, ListChunked};
+use crate::prelude::{IntoSeries, Series, *};
 
 fn reshape_fast_path(name: &str, s: &Series) -> Series {
     let mut ca = match s.dtype() {
@@ -30,10 +29,10 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
     ca.into_series()
 }
 
-pub trait SeriesReshape: SeriesSealed {
+impl Series {
     /// Recurse nested types until we are at the leaf array.
-    fn get_leaf_array(&self) -> Series {
-        let s = self.as_series();
+    pub fn get_leaf_array(&self) -> Series {
+        let s = self;
         match s.dtype() {
             #[cfg(feature = "dtype-array")]
             DataType::Array(dtype, _) => {
@@ -62,8 +61,8 @@ pub trait SeriesReshape: SeriesSealed {
 
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// so a Series of `[1, 2, 3]` becomes `[[1, 2, 3]]`.
-    fn implode(&self) -> PolarsResult<ListChunked> {
-        let s = self.as_series();
+    pub fn implode(&self) -> PolarsResult<ListChunked> {
+        let s = self;
         let s = s.rechunk();
         let values = s.array_ref(0);
 
@@ -89,7 +88,7 @@ pub trait SeriesReshape: SeriesSealed {
     }
 
     #[cfg(feature = "dtype-array")]
-    fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+    pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
         let mut dims = dimensions.iter().copied().collect::<VecDeque<_>>();
 
         let leaf_array = self.get_leaf_array();
@@ -136,8 +135,8 @@ pub trait SeriesReshape: SeriesSealed {
         })
     }
 
-    fn reshape_list(&self, dimensions: &[i64]) -> PolarsResult<Series> {
-        let s = self.as_series();
+    pub fn reshape_list(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+        let s = self;
 
         if dimensions.is_empty() {
             polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
@@ -212,13 +211,10 @@ pub trait SeriesReshape: SeriesSealed {
     }
 }
 
-impl SeriesReshape for Series {}
-
 #[cfg(test)]
 mod test {
-    use polars_core::prelude::*;
-
     use super::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_to_list() -> PolarsResult<()> {

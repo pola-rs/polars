@@ -126,7 +126,6 @@ impl PySeries {
     }
 
     fn reshape(&self, dims: Vec<i64>, is_list: bool) -> PyResult<Self> {
-        use polars_ops::prelude::SeriesReshape;
         let out = if is_list {
             self.series.reshape_list(&dims)
         } else {

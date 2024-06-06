@@ -651,3 +651,10 @@ def test_fill_null_invalid_supertype() -> None:
 def test_raise_array_of_cats() -> None:
     with pytest.raises(pl.InvalidOperationError, match="is not yet supported"):
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
+
+
+def test_raise_invalid_arithmetic() -> None:
+    df = pl.Series("a", [object()]).to_frame()
+
+    with pytest.raises(pl.InvalidOperationError):
+        df.select(pl.col("a") - pl.col("a"))

@@ -113,6 +113,63 @@ impl NumOpsDispatchInner for BooleanType {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+fn array_shape(dt: &DataType, infer: bool) -> Vec<i64> {
+    fn inner(dt: &DataType, buf: &mut Vec<i64>) {
+        if let DataType::Array(_, size) = dt {
+            buf.push(*size as i64)
+        }
+    }
+
+    let mut buf = vec![];
+    if infer {
+        buf.push(-1)
+    }
+    inner(dt, &mut buf);
+    buf
+}
+
+#[cfg(feature = "dtype-array")]
+impl ArrayChunked {
+    fn arithm_helper(
+        &self,
+        rhs: &Series,
+        op: &dyn Fn(Series, Series) -> PolarsResult<Series>,
+    ) -> PolarsResult<Series> {
+        let l_leaf_array = self.clone().into_series().get_leaf_array();
+        let shape = array_shape(self.dtype(), true);
+
+        let r_leaf_array = if rhs.dtype().is_numeric() && rhs.len() == 1 {
+            rhs.clone()
+        } else {
+            polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "can only do arithmetic of array's of the same type and shape; got {} and {}", self.dtype(), rhs.dtype());
+            rhs.get_leaf_array()
+        };
+
+        let out = op(l_leaf_array, r_leaf_array)?;
+        out.reshape_array(&shape)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl NumOpsDispatchInner for FixedSizeListType {
+    fn add_to(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.add_to(&r))
+    }
+    fn subtract(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.subtract(&r))
+    }
+    fn multiply(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.multiply(&r))
+    }
+    fn divide(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.divide(&r))
+    }
+    fn remainder(lhs: &ArrayChunked, rhs: &Series) -> PolarsResult<Series> {
+        lhs.arithm_helper(rhs, &|l, r| l.remainder(&r))
+    }
+}
+
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
     use num_traits::{CheckedDiv, One, ToPrimitive, Zero};

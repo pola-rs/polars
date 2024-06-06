@@ -37,9 +37,9 @@ impl BinaryExpr {
 /// Can partially do operations in place.
 fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResult<Series> {
     match op {
-        Operator::Plus => Ok(left + right),
-        Operator::Minus => Ok(left - right),
-        Operator::Multiply => Ok(left * right),
+        Operator::Plus => left.try_add_owned(right),
+        Operator::Minus => left.try_sub_owned(right),
+        Operator::Multiply => left.try_mul_owned(right),
         _ => apply_operator(&left, &right, op),
     }
 }
@@ -61,6 +61,12 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left.try_div(right),
             Date | Datetime(_, _) | Float32 | Float64 => left.try_div(right),
+            #[cfg(feature = "dtype-array")]
+            dt @ Array(_, _) => {
+                let left_dt = dt.cast_leaf(Float64);
+                let right_dt = right.dtype().cast_leaf(Float64);
+                left.cast(&left_dt)?.try_div(&right.cast(&right_dt)?)
+            },
             _ => left.cast(&Float64)?.try_div(&right.cast(&Float64)?),
         },
         Operator::FloorDivide => {
