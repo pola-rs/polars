@@ -929,7 +929,7 @@ def test_group_by_dynamic_agg_bad_input_types(input: Any) -> None:
         ).agg(input)
 
 
-def test_group_by_dynamic_check_sorted_15225() -> None:
+def test_group_by_dynamic_15225() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -937,10 +937,7 @@ def test_group_by_dynamic_check_sorted_15225() -> None:
             "c": [1, 1, 2],
         }
     )
-    with pytest.deprecated_call(match="`check_sorted` is now deprecated"):
-        result = df.group_by_dynamic("b", every="2d", check_sorted=False).agg(
-            pl.sum("a")
-        )
+    result = df.group_by_dynamic("b", every="2d").agg(pl.sum("a"))
     expected = pl.DataFrame({"b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]})
     assert_frame_equal(result, expected)
     result = df.group_by_dynamic("b", every="2d", group_by="c").agg(pl.sum("a"))

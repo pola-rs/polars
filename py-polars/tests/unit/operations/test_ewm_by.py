@@ -181,10 +181,9 @@ def test_ewma_by_if_unsorted() -> None:
     expected = pl.DataFrame({"values": [2.5, 2.0], "by": [3, 1]})
     assert_frame_equal(result, expected)
 
-    with pytest.deprecated_call(match="you can safely remove this argument"):
-        result = df.with_columns(
-            pl.col("values").ewm_mean_by("by", half_life="2i", check_sorted=False),
-        )
+    result = df.with_columns(
+        pl.col("values").ewm_mean_by("by", half_life="2i"),
+    )
     assert_frame_equal(result, expected)
 
     result = df.sort("by").with_columns(

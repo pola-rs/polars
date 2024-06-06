@@ -3481,7 +3481,6 @@ class Expr:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        check_sorted: bool | None = None,
     ) -> Self:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3539,10 +3538,6 @@ class Expr:
             Offset of the window. Default is `-period`.
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
-        check_sorted
-            Whether to check that `index_column` is sorted.
-            If you are sure the data is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output.
 
         Examples
         --------
@@ -9258,7 +9253,6 @@ class Expr:
         by: str | IntoExpr,
         *,
         half_life: str | timedelta,
-        check_sorted: bool | None = None,
     ) -> Self:
         r"""
         Calculate time-based exponentially weighted moving average.
@@ -9304,13 +9298,6 @@ class Expr:
             durations such as months (or even days in the time-zone-aware case)
             are not supported, please express your duration in an approximately
             equivalent number of hours (e.g. '370h' instead of '1mo').
-        check_sorted
-            Check whether `by` column is sorted.
-            Incorrectly setting this to `False` will lead to incorrect output.
-
-            .. deprecated:: 0.20.27
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -9350,11 +9337,6 @@ class Expr:
         """
         by = parse_as_expression(by)
         half_life = parse_as_duration_string(half_life)
-        if check_sorted is not None:
-            issue_deprecation_warning(
-                "`check_sorted` is now deprecated in `ewm_mean_by`, you can safely remove this argument.",
-                version="0.20.27",
-            )
         return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life))
 
     def ewm_std(
