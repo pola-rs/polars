@@ -37,10 +37,6 @@ def assert_frame_equal(
         The second DataFrame or LazyFrame to compare.
     check_row_order
         Require row order to match.
-
-        .. note::
-            Setting this to `False` requires sorting the data, which will fail on
-            frames that contain unsortable columns.
     check_column_order
         Require column order to match.
     check_dtypes
@@ -118,6 +114,7 @@ def assert_frame_equal(
             _assert_series_values_equal(
                 s_left,
                 s_right,
+                check_order=True,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -227,10 +224,6 @@ def assert_frame_not_equal(
         The second DataFrame or LazyFrame to compare.
     check_row_order
         Require row order to match.
-
-        .. note::
-            Setting this to `False` requires sorting the data, which will fail on
-            frames that contain unsortable columns.
     check_column_order
         Require column order to match.
     check_dtypes
