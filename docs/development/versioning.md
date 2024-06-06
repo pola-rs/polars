@@ -2,9 +2,11 @@
 
 ## Version changes
 
-Polars adheres to the [semantic versioning](https://semver.org/) specification.
+Polars adheres to the [semantic versioning](https://semver.org/) specification:
 
-As Polars has not released its `1.0.0` version yet, breaking releases lead to a minor version increase (e.g. from `0.18.15` to `0.19.0`), while all other releases increment the patch version (e.g. from `0.18.15` to `0.18.16`)
+- Breaking changes lead to a **major** version increase (`1.0.0`, `2.0.0`, ...)
+- New features and performance improvements lead to a **minor** version increase (`1.1.0`, `1.2.0`, ...)
+- Other changes lead to a **patch** version increase (`1.0.1`, `1.0.2`, ...)
 
 ## Policy for breaking changes
 
@@ -92,3 +94,18 @@ As breaking releases happen about once every six months, this allows six to twel
 **In some cases, we may decide to adjust the deprecation period.**
 If retaining the deprecated functionality blocks other improvements to Polars, we may shorten the deprecation period to a single breaking release. This will be mentioned in the warning message.
 If the deprecation affects many users, we may extend the deprecation period.
+
+## Release frequency
+
+Polars does not have a set release schedule.
+We issue a new release whenever we feel like we have something new and valuable to offer to our users.
+In practice, a new minor version is released about once every one or two weeks.
+
+### Breaking releases
+
+Over time, issues pop up that require a breaking change to address.
+When enough issues have accumulated, we issue a breaking release.
+
+So far, breaking releases have happened about once every three to six months.
+The rate and severity of breaking changes will continue to diminish as Polars grows more solid.
+From this point on, we expect new major versions to be released about once every six months.
