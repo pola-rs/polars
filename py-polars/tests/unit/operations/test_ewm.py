@@ -304,13 +304,3 @@ def test_ewm_methods(
             ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
             ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
             assert_series_equal(ewm_var_pl, ewm_var_pd, atol=1e-07)
-
-
-def test_ewm_ignore_nulls_deprecation() -> None:
-    s = pl.Series([1, None, 3])
-    with pytest.deprecated_call():
-        s.ewm_mean(com=1.0)
-    with pytest.deprecated_call():
-        s.ewm_std(com=1.0)
-    with pytest.deprecated_call():
-        s.ewm_var(com=1.0)

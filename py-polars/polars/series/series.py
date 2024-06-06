@@ -194,14 +194,6 @@ class Series:
     nan_to_null : bool, default False
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
-    dtype_if_empty : DataType, default Null
-        Data type of the Series if `values` contains no non-null data.
-
-        .. deprecated:: 0.20.6
-            The data type for empty Series will always be `Null`, unless `dtype` is
-            specified. To preserve behavior, check if the resulting Series has data type
-            `Null` and cast to the desired data type.
-            This parameter will be removed in the next breaking release.
 
     Examples
     --------
@@ -269,17 +261,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-        dtype_if_empty: PolarsDataType = Null,
     ):
-        if dtype_if_empty != Null:
-            issue_deprecation_warning(
-                "The `dtype_if_empty` parameter for the Series constructor is deprecated."
-                " The data type for empty Series will always be Null, unless `dtype` is specified."
-                " To preserve behavior, check if the resulting Series has data type Null and cast to the desired data type."
-                " This parameter will be removed in the next breaking release.",
-                version="0.20.6",
-            )
-
         # If 'Unknown' treat as None to trigger type inference
         if dtype == Unknown:
             dtype = None
@@ -370,10 +352,6 @@ class Series:
                 " for the `values` parameter"
             )
             raise TypeError(msg)
-
-        # Implementation of deprecated `dtype_if_empty` functionality
-        if dtype_if_empty != Null and self.dtype == Null:
-            self._s = self._s.cast(dtype_if_empty, False)
 
     @classmethod
     def _from_pyseries(cls, pyseries: PySeries) -> Self:
@@ -6898,7 +6876,7 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Series:
         r"""
         Exponentially-weighted moving average.
@@ -6941,7 +6919,7 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -6949,7 +6927,7 @@ class Series:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -7065,7 +7043,7 @@ class Series:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Series:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -7111,7 +7089,7 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -7119,7 +7097,7 @@ class Series:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -7149,7 +7127,7 @@ class Series:
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Series:
         r"""
         Exponentially-weighted moving variance.
@@ -7195,7 +7173,7 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -7203,7 +7181,7 @@ class Series:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
