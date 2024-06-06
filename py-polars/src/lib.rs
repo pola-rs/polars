@@ -214,9 +214,6 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::arctan2)).unwrap();
-    #[cfg(feature = "trigonometry")]
-    m.add_wrapped(wrap_pyfunction!(functions::arctan2d))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::datetime))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_expr))
