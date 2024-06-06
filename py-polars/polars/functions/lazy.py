@@ -6,10 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import (
-    deprecate_parameter_as_positional,
-    issue_deprecation_warning,
-)
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -100,7 +97,6 @@ def element() -> Expr:
     return F.col("")
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def count(*columns: str) -> Expr:
     """
     Return the number of non-null values in the column.
@@ -212,7 +208,6 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     return F.col(*columns).cum_count(reverse=reverse)
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def implode(*columns: str) -> Expr:
     """
     Aggregate all column values into a list.
@@ -334,7 +329,6 @@ def var(column: str, ddof: int = 1) -> Expr:
     return F.col(column).var(ddof)
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def mean(*columns: str) -> Expr:
     """
     Get the mean value.
@@ -382,7 +376,6 @@ def mean(*columns: str) -> Expr:
     return F.col(*columns).mean()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def median(*columns: str) -> Expr:
     """
     Get the median value.
@@ -426,7 +419,6 @@ def median(*columns: str) -> Expr:
     return F.col(*columns).median()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def n_unique(*columns: str) -> Expr:
     """
     Count unique values.
@@ -470,7 +462,6 @@ def n_unique(*columns: str) -> Expr:
     return F.col(*columns).n_unique()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def approx_n_unique(*columns: str) -> Expr:
     """
     Approximate count of unique values.
@@ -515,7 +506,6 @@ def approx_n_unique(*columns: str) -> Expr:
     return F.col(*columns).approx_n_unique()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def first(*columns: str) -> Expr:
     """
     Get the first column or value.
@@ -581,7 +571,6 @@ def first(*columns: str) -> Expr:
     return F.col(*columns).first()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def last(*columns: str) -> Expr:
     """
     Get the last column or value.

@@ -44,7 +44,6 @@ from polars._utils.construction import (
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_parameter_as_positional,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -5381,7 +5380,6 @@ class DataFrame:
         """
         return self.with_row_index(name, offset)
 
-    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
@@ -6872,7 +6870,6 @@ class DataFrame:
                 raise
         return self
 
-    @deprecate_parameter_as_positional("columns", version="0.20.4")
     def drop(
         self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
     ) -> DataFrame:

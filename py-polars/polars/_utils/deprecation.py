@@ -53,7 +53,7 @@ def deprecate_function(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             issue_deprecation_warning(
-                f"`{function.__name__}` is deprecated. {message}",
+                f"`{function.__qualname__}` is deprecated. {message}",
                 version=version,
             )
             return function(*args, **kwargs)
@@ -69,43 +69,6 @@ def deprecate_renamed_function(
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to mark a function as deprecated due to being renamed (or moved)."""
     return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
-
-
-def deprecate_parameter_as_positional(
-    old_name: str, *, version: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Decorator to mark a function argument as deprecated due to being made positional.
-
-    Use as follows::
-
-        @deprecate_parameter_as_positional("column", version="0.20.4")
-        def myfunc(new_name): ...
-    """
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            try:
-                param_args = kwargs.pop(old_name)
-            except KeyError:
-                return function(*args, **kwargs)
-
-            issue_deprecation_warning(
-                f"named `{old_name}` param is deprecated; use positional `*args` instead.",
-                version=version,
-            )
-            if not isinstance(param_args, Sequence) or isinstance(param_args, str):
-                param_args = (param_args,)
-            elif not isinstance(param_args, tuple):
-                param_args = tuple(param_args)
-            args = args + param_args  # type: ignore[assignment]
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
 
 
 def deprecate_renamed_parameter(
@@ -124,7 +87,7 @@ def deprecate_renamed_parameter(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             _rename_keyword_argument(
-                old_name, new_name, kwargs, function.__name__, version
+                old_name, new_name, kwargs, function.__qualname__, version
             )
             return function(*args, **kwargs)
 
@@ -227,10 +190,7 @@ def deprecate_nonkeyword_arguments(
 
 
 def _format_argument_list(allowed_args: list[str]) -> str:
-    """
-    Format allowed arguments list for use in the warning message of
-    `deprecate_nonkeyword_arguments`.
-    """  # noqa: D205
+    """Format allowed arguments list for use in the warning message of `deprecate_nonkeyword_arguments`."""  # noqa: W505
     if "self" in allowed_args:
         allowed_args.remove("self")
     if not allowed_args:
@@ -241,3 +201,43 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         last = allowed_args[-1]
         args = ", ".join([f"{x!r}" for x in allowed_args[:-1]])
         return f" except for {args} and {last!r}"
+
+
+def deprecate_parameter_as_multi_positional(
+    old_name: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator to mark a function argument as deprecated due to being made multi-positional.
+
+    Use as follows::
+
+        @deprecate_parameter_as_positional("columns", version="0.20.4")
+        def myfunc(*columns): ...
+    """  # noqa: W505
+
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            try:
+                arg_value = kwargs.pop(old_name)
+            except KeyError:
+                return function(*args, **kwargs)
+
+            issue_deprecation_warning(
+                f"Passing `{old_name}` as a keyword argument is deprecated."
+                " Pass it as a positional argument instead.",
+                version=version,
+            )
+
+            if not isinstance(arg_value, Sequence) or isinstance(arg_value, str):
+                arg_value = (arg_value,)
+            elif not isinstance(arg_value, tuple):
+                arg_value = tuple(arg_value)
+
+            args = args + arg_value  # type: ignore[assignment]
+            return function(*args, **kwargs)
+
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
