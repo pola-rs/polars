@@ -1,8 +1,12 @@
 use arrow::array::{Array, BooleanArray};
 
-/// Kernel to calculate the number of unique non-null elements
+/// Kernel to calculate the number of unique elements
+///
+/// A null is also considered a unique value
 pub trait DistinctCountKernel {
-    /// Calculate the number of unique non-null elements in [`Self`]
+    /// Calculate the number of unique elements in [`Self`]
+    ///
+    /// A null is also considered a unique value
     fn distinct_count(&self) -> usize;
 }
 
