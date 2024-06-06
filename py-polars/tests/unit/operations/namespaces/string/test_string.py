@@ -766,13 +766,13 @@ def test_extract_binary() -> None:
     assert out[0] == "aron"
 
 
-def test_str_concat_returns_scalar() -> None:
+def test_str_join_returns_scalar() -> None:
     df = pl.DataFrame(
         [pl.Series("val", ["A", "B", "C", "D"]), pl.Series("id", [1, 1, 2, 2])]
     )
     grouped = (
         df.group_by("id")
-        .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
+        .agg(pl.col("val").str.join(delimiter=",").alias("grouped"))
         .get_column("grouped")
     )
     assert grouped.dtype == pl.String

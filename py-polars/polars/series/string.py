@@ -361,42 +361,6 @@ class StringNameSpace:
         ]
         """
 
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Series:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`String`.
-
-        Examples
-        --------
-        >>> pl.Series([1, None, 2]).str.concat("-")
-        shape: (1,)
-        Series: '' [str]
-        [
-            "1-2"
-        ]
-        >>> pl.Series([1, None, 2]).str.concat("-", ignore_nulls=False)
-        shape: (1,)
-        Series: '' [str]
-        [
-            null
-        ]
-        """
-
     def contains(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
@@ -1902,5 +1866,81 @@ class StringNameSpace:
             "Everybody wants to rule the world"
             "Tell you what me want, what me really really want"
             "Can me feel the love tonight"
+        ]
+        """
+
+    def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, None, 3])
+        >>> s.str.join("-")
+        shape: (1,)
+        Series: '' [str]
+        [
+            "1-3"
+        ]
+        >>> s.str.join(ignore_nulls=False)
+        shape: (1,)
+        Series: '' [str]
+        [
+            null
+        ]
+        """
+
+    @deprecate_function(
+        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
+        " is an empty string instead of a hyphen.",
+        version="1.0.0",
+    )
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Series:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> pl.Series([1, None, 2]).str.concat("-")  # doctest: +SKIP
+        shape: (1,)
+        Series: '' [str]
+        [
+            "1-2"
+        ]
+        >>> pl.Series([1, None, 2]).str.concat(ignore_nulls=False)  # doctest: +SKIP
+        shape: (1,)
+        Series: '' [str]
+        [
+            null
         ]
         """
