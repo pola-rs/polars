@@ -748,10 +748,6 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
             "full" => JoinType::Full,
-            "outer_coalesce" => {
-                // TODO! deprecate
-                JoinType::Full
-            },
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
             #[cfg(feature = "cross_join")]

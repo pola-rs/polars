@@ -3966,7 +3966,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer'` should be replaced with `how='full'`.",
                 version="0.20.29",
             )
-        elif how == "outer_coalesce":
+        elif how == "outer_coalesce":  # type: ignore[comparison-overlap]
             coalesce = True
             how = "full"
             issue_deprecation_warning(
