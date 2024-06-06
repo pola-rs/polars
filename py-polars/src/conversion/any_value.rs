@@ -336,7 +336,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_struct<'py>(ob: &Bound<'py, PyAny>, strict: bool) -> PyResult<AnyValue<'py>> {
-        let convert = ob.hasattr( "_asdict")?;
+        let convert = ob.hasattr("_asdict")?;
         let dict: &Bound<'py, PyDict>;
         let cmd: Bound<'py, PyDict>;
         let cm: Bound<'py, PyAny>;
@@ -361,8 +361,6 @@ pub(crate) fn py_object_to_any_value<'py>(
         }
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
-
-
 
     fn get_object(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         #[cfg(feature = "object")]
