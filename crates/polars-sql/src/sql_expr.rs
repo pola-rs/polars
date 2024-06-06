@@ -240,7 +240,9 @@ impl SQLExprVisitor<'_> {
             } => self.visit_cast(expr, data_type, format, true),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
-            SQLExpr::Extract { field, expr } => parse_extract(self.visit_expr(expr)?, field),
+            SQLExpr::Extract { field, expr } => {
+                parse_extract_date_part(self.visit_expr(expr)?, field)
+            },
             SQLExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
             SQLExpr::Function(function) => self.visit_function(function),
             SQLExpr::Identifier(ident) => self.visit_identifier(ident),
@@ -1171,7 +1173,41 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
     }
 }
 
-fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
+pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
+    let field = match field {
+        // handle 'DATE_PART' and all valid abbreviations/alternates
+        DateTimeField::Custom(Ident { value, .. }) => {
+            let value = value.to_ascii_lowercase();
+            match value.as_str() {
+                "millennium" | "millennia" => &DateTimeField::Millennium,
+                "century" | "centuries" => &DateTimeField::Century,
+                "decade" | "decades" => &DateTimeField::Decade,
+                "isoyear" => &DateTimeField::Isoyear,
+                "year" | "years" | "y" => &DateTimeField::Year,
+                "quarter" | "quarters" => &DateTimeField::Quarter,
+                "month" | "months" | "mon" | "mons" => &DateTimeField::Month,
+                "dayofyear" | "doy" => &DateTimeField::DayOfYear,
+                "dayofweek" | "dow" => &DateTimeField::DayOfWeek,
+                "isoweek" | "week" | "weeks" => &DateTimeField::IsoWeek,
+                "isodow" => &DateTimeField::Isodow,
+                "day" | "days" | "d" => &DateTimeField::Day,
+                "hour" | "hours" | "h" => &DateTimeField::Hour,
+                "minute" | "minutes" | "mins" | "min" | "m" => &DateTimeField::Minute,
+                "second" | "seconds" | "sec" | "secs" | "s" => &DateTimeField::Second,
+                "millisecond" | "milliseconds" | "ms" => &DateTimeField::Millisecond,
+                "microsecond" | "microseconds" | "us" => &DateTimeField::Microsecond,
+                "nanosecond" | "nanoseconds" | "ns" => &DateTimeField::Nanosecond,
+                #[cfg(feature = "timezones")]
+                "timezone" => &DateTimeField::Timezone,
+                "time" => &DateTimeField::Time,
+                "epoch" => &DateTimeField::Epoch,
+                _ => {
+                    polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", value)
+                },
+            }
+        },
+        _ => field,
+    };
     Ok(match field {
         DateTimeField::Millennium => expr.dt().millennium(),
         DateTimeField::Century => expr.dt().century(),
@@ -1224,40 +1260,6 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
             polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
         },
     })
-}
-
-pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
-    let part = part.to_ascii_lowercase();
-    parse_extract(
-        expr,
-        match part.as_str() {
-            "millennium" => &DateTimeField::Millennium,
-            "century" => &DateTimeField::Century,
-            "decade" => &DateTimeField::Decade,
-            "isoyear" => &DateTimeField::Isoyear,
-            "year" => &DateTimeField::Year,
-            "quarter" => &DateTimeField::Quarter,
-            "month" => &DateTimeField::Month,
-            "dayofyear" | "doy" => &DateTimeField::DayOfYear,
-            "dayofweek" | "dow" => &DateTimeField::DayOfWeek,
-            "isoweek" | "week" => &DateTimeField::IsoWeek,
-            "isodow" => &DateTimeField::Isodow,
-            "day" => &DateTimeField::Day,
-            "hour" => &DateTimeField::Hour,
-            "minute" => &DateTimeField::Minute,
-            "second" => &DateTimeField::Second,
-            "millisecond" | "milliseconds" => &DateTimeField::Millisecond,
-            "microsecond" | "microseconds" => &DateTimeField::Microsecond,
-            "nanosecond" | "nanoseconds" => &DateTimeField::Nanosecond,
-            #[cfg(feature = "timezones")]
-            "timezone" => &DateTimeField::Timezone,
-            "time" => &DateTimeField::Time,
-            "epoch" => &DateTimeField::Epoch,
-            _ => {
-                polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", part)
-            },
-        },
-    )
 }
 
 fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
