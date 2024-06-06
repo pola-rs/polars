@@ -1,6 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::total_ord::TotalOrd;
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
@@ -176,11 +177,8 @@ where
             .then(|| {
                 array
                     .non_null_values_iter()
-                    .map(|x| {
-                        let x: P = x.as_();
-                        x
-                    })
-                    .max_by(|x, y| x.ord(y))
+                    .max_by(TotalOrd::tot_cmp)
+                    .map(T::as_)
             })
             .flatten(),
         min_value: options
@@ -188,11 +186,8 @@ where
             .then(|| {
                 array
                     .non_null_values_iter()
-                    .map(|x| {
-                        let x: P = x.as_();
-                        x
-                    })
-                    .min_by(|x, y| x.ord(y))
+                    .min_by(TotalOrd::tot_cmp)
+                    .map(T::as_)
             })
             .flatten(),
     }

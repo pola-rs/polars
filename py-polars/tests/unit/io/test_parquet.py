@@ -970,3 +970,15 @@ def test_hybrid_rle() -> None:
         assert "RLE_DICTIONARY" in column["encodings"]
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_parquet_statistics_uint64_16683() -> None:
+    u64_max = (1 << 64) - 1
+    df = pl.Series("a", [u64_max, 0], dtype=pl.UInt64).to_frame()
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min == 0
+    assert statistics.max == u64_max
