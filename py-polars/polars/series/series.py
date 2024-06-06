@@ -4439,8 +4439,9 @@ class Series:
             4
         ]
         """
-        dtype_init_repr = dtype_to_init_repr(self.dtype, prefix="pl.")
-        return f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype={dtype_init_repr})'
+        values = self.head(n).to_list()
+        dtype_init_repr = dtype_to_init_repr(self.dtype)
+        return f"pl.Series({self.name!r}, {values}, dtype={dtype_init_repr})"
 
     def count(self) -> int:
         """
