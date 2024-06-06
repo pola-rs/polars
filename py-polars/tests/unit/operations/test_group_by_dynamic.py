@@ -835,8 +835,8 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
         for name, data in df.group_by_dynamic("datetime", every=every, closed="left")
     ]
     expected1 = [
-        (datetime(2020, 1, 1, 10, tzinfo=tzinfo), (2, 3)),
-        (datetime(2020, 1, 1, 11, tzinfo=tzinfo), (1, 3)),
+        ((datetime(2020, 1, 1, 10, tzinfo=tzinfo),), (2, 3)),
+        ((datetime(2020, 1, 1, 11, tzinfo=tzinfo),), (1, 3)),
     ]
     assert result1 == expected1
 

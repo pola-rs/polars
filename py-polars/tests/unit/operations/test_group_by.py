@@ -329,10 +329,9 @@ def test_group_by_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    with pytest.deprecated_call():
-        gb_iter = enumerate(df.group_by("foo", maintain_order=True))
+    gb_iter = enumerate(df.group_by("foo", maintain_order=True))
     for i, (group, data) in gb_iter:
-        assert group == expected_names[i]
+        assert group == (expected_names[i],)
         assert data.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
