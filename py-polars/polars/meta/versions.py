@@ -35,7 +35,6 @@ def show_versions() -> None:
     pyarrow:              16.0.0
     pydantic:             2.7.1
     pyiceberg:            0.6.0
-    pyxlsb:               1.0.10
     sqlalchemy:           2.0.29
     torch:                2.2.2
     xlsx2csv:             0.8.2
@@ -79,7 +78,6 @@ def _get_dependency_info() -> dict[str, str]:
         "pyarrow",
         "pydantic",
         "pyiceberg",
-        "pyxlsb",
         "sqlalchemy",
         "torch",
         "xlsx2csv",

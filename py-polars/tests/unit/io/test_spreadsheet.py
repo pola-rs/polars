@@ -88,7 +88,6 @@ def path_ods_mixed(io_files_path: Path) -> Path:
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -126,7 +125,6 @@ def test_read_spreadsheet(
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -171,7 +169,6 @@ def test_read_excel_multi_sheets(
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -278,7 +275,6 @@ def test_read_excel_basic_datatypes(
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -308,7 +304,6 @@ def test_read_invalid_worksheet(
     ("read_spreadsheet", "source", "additional_params"),
     [
         (pl.read_excel, "path_xlsx_mixed", {"engine": "openpyxl"}),
-        (pl.read_excel, "path_xlsb_mixed", {"engine": "pyxlsb"}),
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
@@ -488,10 +483,7 @@ def test_unsupported_engine() -> None:
         pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
 
 
-def test_unsupported_binary_workbook(path_xlsx: Path, path_xlsb: Path) -> None:
-    with pytest.raises(Exception, match="invalid Excel Binary Workbook"):
-        pl.read_excel(path_xlsx, engine="pyxlsb")
-
+def test_unsupported_binary_workbook(path_xlsb: Path) -> None:
     with pytest.raises(Exception, match="does not support binary format"):
         pl.read_excel(path_xlsb, engine="openpyxl")
 
