@@ -12,7 +12,13 @@ impl DistinctCountKernel for BooleanArray {
             return 0;
         }
 
-        let unset_bits = self.values().unset_bits();
-        2 - usize::from(unset_bits == 0 || unset_bits == self.values().len())
+        if self.null_count() == 0 {
+            let unset_bits = self.values().unset_bits();
+            2 - usize::from(unset_bits == 0 || unset_bits == self.values().len())
+        } else {
+            let values = self.values() & self.validity().unwrap();
+            let unset_bits = self.values().unset_bits();
+            3 - usize::from(unset_bits == 0 || unset_bits == values.len())
+        }
     }
 }
