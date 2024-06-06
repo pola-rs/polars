@@ -58,10 +58,11 @@ pub enum FunctionNode {
         alias: Option<Arc<str>>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
+    /// Streaming engine pipeline
     Pipeline {
         function: Arc<dyn DataFrameUdfMut>,
         schema: SchemaRef,
-        original: Option<Arc<DslPlan>>,
+        original: Option<Arc<IRPlan>>,
     },
     Unnest {
         columns: Arc<[Arc<str>]>,
@@ -301,6 +302,19 @@ impl FunctionNode {
             RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
         }
     }
+
+    pub fn to_streaming_lp(&self) -> Option<IRPlanRef> {
+        let Self::Pipeline {
+            function: _,
+            schema: _,
+            original,
+        } = self
+        else {
+            return None;
+        };
+
+        Some(original.as_ref()?.as_ref().as_ref())
+    }
 }
 
 impl Debug for FunctionNode {
@@ -327,8 +341,7 @@ impl Display for FunctionNode {
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
-                    let ir_plan = original.as_ref().clone().to_alp().unwrap();
-                    let ir_display = ir_plan.display();
+                    let ir_display = original.as_ref().display();
 
                     writeln!(f, "--- STREAMING")?;
                     write!(f, "{ir_display}")?;

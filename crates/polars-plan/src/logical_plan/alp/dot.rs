@@ -6,7 +6,10 @@ use crate::constants::UNLIMITED_CACHE;
 use crate::prelude::alp::format::ColumnsDisplay;
 use crate::prelude::*;
 
-pub struct IRDotDisplay<'a>(pub(crate) IRPlanRef<'a>);
+pub struct IRDotDisplay<'a> {
+    is_streaming: bool,
+    lp: IRPlanRef<'a>,
+}
 
 const INDENT: &str = "  ";
 
@@ -43,18 +46,39 @@ fn write_label<'a, 'b>(
 }
 
 impl<'a> IRDotDisplay<'a> {
+    pub fn new(lp: IRPlanRef<'a>) -> Self {
+        if let Some(streaming_lp) = lp.extract_streaming_plan() {
+            return Self::new_streaming(streaming_lp);
+        }
+
+        Self {
+            is_streaming: false,
+            lp,
+        }
+    }
+
+    fn new_streaming(lp: IRPlanRef<'a>) -> Self {
+        Self {
+            is_streaming: true,
+            lp,
+        }
+    }
+
     fn with_root(&self, root: Node) -> Self {
-        Self(self.0.with_root(root))
+        Self {
+            is_streaming: false,
+            lp: self.lp.with_root(root),
+        }
     }
 
     fn display_expr(&self, expr: &'a ExprIR) -> ExprIRDisplay<'a> {
-        expr.display(self.0.expr_arena)
+        expr.display(self.lp.expr_arena)
     }
 
     fn display_exprs(&self, exprs: &'a [ExprIR]) -> ExprIRSliceDisplay<'a, ExprIR> {
         ExprIRSliceDisplay {
             exprs,
-            expr_arena: self.0.expr_arena,
+            expr_arena: self.lp.expr_arena,
         }
     }
 
@@ -66,7 +90,21 @@ impl<'a> IRDotDisplay<'a> {
     ) -> std::fmt::Result {
         use fmt::Write;
 
-        let root = self.0.root();
+        let root = self.lp.root();
+
+        let mut parent = parent;
+        if self.is_streaming {
+            *last += 1;
+            let streaming_node = DotNode::Plain(*last);
+
+            if let Some(parent) = parent {
+                writeln!(f, "{INDENT}{parent} -- {streaming_node}")?;
+                write_label(f, streaming_node, |f| f.write_str("STREAMING"))?;
+            }
+
+            parent = Some(streaming_node);
+        }
+        let parent = parent;
 
         let id = if let IR::Cache { id, .. } = root {
             DotNode::Cache(*id)
@@ -250,8 +288,12 @@ impl<'a> IRDotDisplay<'a> {
             MapFunction {
                 input, function, ..
             } => {
-                self.with_root(*input)._format(f, Some(id), last)?;
-                write_label(f, id, |f| write!(f, "{function}"))?;
+                if let Some(streaming_lp) = function.to_streaming_lp() {
+                    Self::new_streaming(streaming_lp)._format(f, Some(id), last)?;
+                } else {
+                    self.with_root(*input)._format(f, Some(id), last)?;
+                    write_label(f, id, |f| write!(f, "{function}"))?;
+                }
             },
             ExtContext { input, .. } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
@@ -271,7 +313,7 @@ impl<'a> IRDotDisplay<'a> {
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
-                let total_columns = self.0.lp_arena.get(*input).schema(self.0.lp_arena).len();
+                let total_columns = self.lp.lp_arena.get(*input).schema(self.lp.lp_arena).len();
 
                 let columns = ColumnsDisplay(columns.as_ref());
                 self.with_root(*input)._format(f, Some(id), last)?;

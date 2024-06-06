@@ -171,6 +171,11 @@ impl IRPlan {
         }
     }
 
+    /// Extract the original logical plan if the plan is for the Streaming Engine
+    pub fn extract_streaming_plan(&self) -> Option<IRPlanRef> {
+        self.as_ref().extract_streaming_plan()
+    }
+
     pub fn describe(&self) -> String {
         self.as_ref().describe()
     }
@@ -180,11 +185,11 @@ impl IRPlan {
     }
 
     pub fn display(&self) -> format::IRDisplay {
-        format::IRDisplay(self.as_ref())
+        self.as_ref().display()
     }
 
     pub fn display_dot(&self) -> dot::IRDotDisplay {
-        dot::IRDotDisplay(self.as_ref())
+        self.as_ref().display_dot()
     }
 }
 
@@ -201,12 +206,28 @@ impl<'a> IRPlanRef<'a> {
         }
     }
 
+    /// Extract the original logical plan if the plan is for the Streaming Engine
+    pub fn extract_streaming_plan(self) -> Option<IRPlanRef<'a>> {
+        // @NOTE: the streaming engine replaces the whole tree with a MapFunction { Pipeline, .. }
+        // and puts the original plan somewhere in there. This is how we extract it. Disgusting, I
+        // know.
+        let IR::MapFunction { input: _, function } = self.root() else {
+            return None;
+        };
+
+        let FunctionNode::Pipeline { original, .. } = function else {
+            return None;
+        };
+
+        Some(original.as_ref()?.as_ref().as_ref())
+    }
+
     pub fn display(self) -> format::IRDisplay<'a> {
-        format::IRDisplay(self)
+        format::IRDisplay::new(self)
     }
 
     pub fn display_dot(self) -> dot::IRDotDisplay<'a> {
-        dot::IRDotDisplay(self)
+        dot::IRDotDisplay::new(self)
     }
 
     pub fn describe(self) -> String {

@@ -9,7 +9,10 @@ use recursive::recursive;
 
 use crate::prelude::*;
 
-pub struct IRDisplay<'a>(pub(crate) IRPlanRef<'a>);
+pub struct IRDisplay<'a> {
+    is_streaming: bool,
+    lp: IRPlanRef<'a>,
+}
 
 #[derive(Clone, Copy)]
 pub struct ExprIRDisplay<'a> {
@@ -58,9 +61,6 @@ fn write_scan(
     predicate: &Option<ExprIRDisplay<'_>>,
     n_rows: Option<usize>,
 ) -> fmt::Result {
-    if indent != 0 {
-        writeln!(f)?;
-    }
     let path_fmt = match path.len() {
         1 => path[0].to_string_lossy(),
         0 => "".into(),
@@ -91,13 +91,66 @@ fn write_scan(
 }
 
 impl<'a> IRDisplay<'a> {
+    pub fn new(lp: IRPlanRef<'a>) -> Self {
+        if let Some(streaming_lp) = lp.extract_streaming_plan() {
+            return Self::new_streaming(streaming_lp);
+        }
+
+        Self {
+            is_streaming: false,
+            lp,
+        }
+    }
+
+    fn new_streaming(lp: IRPlanRef<'a>) -> Self {
+        Self {
+            is_streaming: true,
+            lp,
+        }
+    }
+
+    fn root(&self) -> &IR {
+        self.lp.root()
+    }
+
+    fn with_root(&self, root: Node) -> Self {
+        Self {
+            is_streaming: false,
+            lp: self.lp.with_root(root),
+        }
+    }
+
+    fn display_expr(&self, root: &'a ExprIR) -> ExprIRDisplay<'a> {
+        ExprIRDisplay {
+            node: root.node(),
+            output_name: root.output_name_inner(),
+            expr_arena: self.lp.expr_arena,
+        }
+    }
+
+    fn display_expr_slice(&self, exprs: &'a [ExprIR]) -> ExprIRSliceDisplay<'a, ExprIR> {
+        ExprIRSliceDisplay {
+            exprs,
+            expr_arena: self.lp.expr_arena,
+        }
+    }
+
     #[recursive]
     fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
-        if indent != 0 {
-            writeln!(f)?;
-        }
+        let indent = if self.is_streaming {
+            writeln!(f, "{:indent$}STREAMING:", "")?;
+            indent + 2
+        } else {
+            if indent != 0 {
+                writeln!(f)?;
+            }
+
+            indent
+        };
+
         let sub_indent = indent + 2;
         use IR::*;
+
         match self.root() {
             #[cfg(feature = "python")]
             PythonScan { options, predicate } => {
@@ -293,9 +346,12 @@ impl<'a> IRDisplay<'a> {
             MapFunction {
                 input, function, ..
             } => {
-                let function_fmt = format!("{function}");
-                write!(f, "{:indent$}{function_fmt}", "")?;
-                self.with_root(*input)._format(f, sub_indent)
+                if let Some(streaming_lp) = function.to_streaming_lp() {
+                    IRDisplay::new_streaming(streaming_lp)._format(f, indent)
+                } else {
+                    write!(f, "{:indent$}{function}", "")?;
+                    self.with_root(*input)._format(f, sub_indent)
+                }
             },
             ExtContext { input, .. } => {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
@@ -313,7 +369,7 @@ impl<'a> IRDisplay<'a> {
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
-                let total_columns = self.0.lp_arena.get(*input).schema(self.0.lp_arena).len();
+                let total_columns = self.lp.lp_arena.get(*input).schema(self.lp.lp_arena).len();
 
                 let columns = ColumnsDisplay(columns.as_ref());
                 write!(
@@ -325,31 +381,6 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input)._format(f, sub_indent)
             },
             Invalid => write!(f, "{:indent$}INVALID", ""),
-        }
-    }
-}
-
-impl<'a> IRDisplay<'a> {
-    fn root(&self) -> &IR {
-        self.0.root()
-    }
-
-    fn with_root(&self, root: Node) -> Self {
-        Self(self.0.with_root(root))
-    }
-
-    fn display_expr(&self, root: &'a ExprIR) -> ExprIRDisplay<'a> {
-        ExprIRDisplay {
-            node: root.node(),
-            output_name: root.output_name_inner(),
-            expr_arena: self.0.expr_arena,
-        }
-    }
-
-    fn display_expr_slice(&self, exprs: &'a [ExprIR]) -> ExprIRSliceDisplay<'a, ExprIR> {
-        ExprIRSliceDisplay {
-            exprs,
-            expr_arena: self.0.expr_arena,
         }
     }
 }
