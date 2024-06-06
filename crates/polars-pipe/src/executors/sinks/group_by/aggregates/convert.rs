@@ -241,7 +241,7 @@ where
                 #[cfg(feature = "dtype-categorical")]
                 if matches!(
                     logical_dtype,
-                    DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::Date
                 ) {
                     return (
                         logical_dtype.clone(),
