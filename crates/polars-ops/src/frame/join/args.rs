@@ -49,10 +49,10 @@ impl JoinCoalesce {
         use JoinCoalesce::*;
         use JoinType::*;
         match join_type {
-            Left | Inner => {
+            Inner => {
                 matches!(self, JoinSpecific | CoalesceColumns)
             },
-            Full { .. } => {
+            Left | Full { .. } => {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]

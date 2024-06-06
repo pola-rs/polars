@@ -76,7 +76,7 @@ def test_streaming_joins() -> None:
 
         pl_result = (
             dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on="a", how=how)
+            .join(dfb_pl.lazy(), on="a", how=how, coalesce=True)
             .sort(["a", "b"], maintain_order=True)
             .collect(streaming=True)
         )
@@ -92,7 +92,7 @@ def test_streaming_joins() -> None:
 
         pl_result = (
             dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on=["a", "b"], how=how)
+            .join(dfb_pl.lazy(), on=["a", "b"], how=how, coalesce=True)
             .sort(["a", "b"])
             .collect(streaming=True)
         )
@@ -184,10 +184,16 @@ def test_join_null_matches(streaming: bool) -> None:
 
     # Left outer
     expected = pl.DataFrame(
-        {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
+        {
+            "idx_a": [0, 1, 2],
+            "a": [None, 1, 2],
+            "idx_b": [None, 2, 1],
+            "a_right": [None, 1, 2],
+        }
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
+        expected,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -227,7 +233,9 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
         {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
+        df_a.join(df_b, on=["a", "idx"], how="left", coalesce=True).collect(
+            streaming=streaming
+        ),
         expected,
     )
 
