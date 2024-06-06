@@ -30,6 +30,7 @@ mod test {
     #[test]
     fn test_distinct_count() {
         let test_cases = vec![
+            (BooleanArray::from(vec![]), 0),
             (BooleanArray::from(vec![None, None]), 0),
             (BooleanArray::from(vec![Some(true), Some(true)]), 1),
             (BooleanArray::from(vec![Some(false), Some(false)]), 1),
