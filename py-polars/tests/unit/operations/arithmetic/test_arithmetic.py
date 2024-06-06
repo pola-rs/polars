@@ -554,14 +554,30 @@ def test_power_series() -> None:
 
 
 @pytest.mark.parametrize(
-    "inp,expected,expr", [
-        (np.array([[1, 2], [3, 4]]), np.array([[2, 4], [6, 8]]), pl.col("a") + pl.col("a"))
-    ]
+    ("expected", "expr"),
+    [
+        (
+            np.array([[2, 4], [6, 8]]),
+            pl.col("a") + pl.col("a"),
+        ),
+        (
+            np.array([[0, 0], [0, 0]]),
+            pl.col("a") - pl.col("a"),
+        ),
+        (
+            np.array([[1, 4], [9, 16]]),
+            pl.col("a") * pl.col("a"),
+        ),
+        (
+            np.array([[1.0, 1.0], [1.0, 1.0]]),
+            pl.col("a") / pl.col("a"),
+        ),
+    ],
 )
-def test_array_arithmetic_same_size(inp: np.array, expected: np.array, expr: pl.Expr) -> None:
-    df = pl.Series("a", inp).to_frame()
+def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
+    df = pl.Series("a", np.array([[1, 2], [3, 4]])).to_frame()
 
     assert_frame_equal(
         df.select(expr),
-        pl.Series("a", np.array([[2, 4], [6, 8]])).to_frame(),
+        pl.Series("a", expected).to_frame(),
     )

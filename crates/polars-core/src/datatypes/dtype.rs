@@ -227,6 +227,17 @@ impl DataType {
         prev
     }
 
+    /// Cast the leaf types of Lists/Arrays and keep the nesting.
+    pub fn cast_leaf(&self, to: DataType) -> DataType {
+        use DataType::*;
+        match self {
+            List(inner) => List(Box::new(inner.cast_leaf(to))),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Array(Box::new(inner.cast_leaf(to)), *size),
+            _ => to,
+        }
+    }
+
     /// Convert to the physical data type
     #[must_use]
     pub fn to_physical(&self) -> DataType {

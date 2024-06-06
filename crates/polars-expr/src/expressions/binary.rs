@@ -61,6 +61,12 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left.try_div(right),
             Date | Datetime(_, _) | Float32 | Float64 => left.try_div(right),
+            #[cfg(feature = "dtype-array")]
+            dt @ Array(_, _) => {
+                let left_dt = dt.cast_leaf(Float64);
+                let right_dt = right.dtype().cast_leaf(Float64);
+                left.cast(&left_dt)?.try_div(&right.cast(&right_dt)?)
+            },
             _ => left.cast(&Float64)?.try_div(&right.cast(&Float64)?),
         },
         Operator::FloorDivide => {
