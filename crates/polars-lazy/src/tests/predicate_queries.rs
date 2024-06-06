@@ -1,3 +1,5 @@
+use polars_ops::prelude::JoinCoalesce;
+
 use super::*;
 
 #[test]
@@ -179,7 +181,16 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
     let out = a
         .clone()
         .lazy()
-        .join(b.clone(), [col("key")], [col("key")], JoinType::Left.into())
+        .join(
+            b.clone(),
+            [col("key")],
+            [col("key")],
+            JoinArgs {
+                how: JoinType::Left,
+                coalesce: JoinCoalesce::CoalesceColumns,
+                ..Default::default()
+            },
+        )
         .filter(col("flag").is_null())
         .collect()?;
     let expected = df![
@@ -191,7 +202,16 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
 
     let out = a
         .lazy()
-        .join(b, [col("key")], [col("key")], JoinType::Left.into())
+        .join(
+            b,
+            [col("key")],
+            [col("key")],
+            JoinArgs {
+                how: JoinType::Left,
+                coalesce: JoinCoalesce::CoalesceColumns,
+                ..Default::default()
+            },
+        )
         .filter(col("flag").is_null())
         .with_predicate_pushdown(false)
         .collect()?;
