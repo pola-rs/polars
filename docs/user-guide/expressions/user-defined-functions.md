@@ -5,7 +5,7 @@ Still, you may need to pass an expression's state to a third party library or ap
 
 In this part of the documentation we'll be using two APIs that allows you to do this:
 
-- [:material-api: `map_elements`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html): Call a function separately on each value in the `Series`.
+- [:material-api: `map_elements`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html): Call a function separately on each value in the `Series`.
 - [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html): Always passes the full `Series` to the function.
 
 ## Processing individual values with `map_elements()`
@@ -37,7 +37,7 @@ Let's start by solving the first problem, and then we'll see how to solve the se
 
 ## Processing a whole `Series` with `map_batches()`
 
-We want to run a custom on the contents of a whole `Series`.
+We want to run a custom function on the contents of a whole `Series`.
 For demonstration purposes, let's say we want to calculate the difference between the mean of a `Series` and each value.
 
 We can use the `map_batches()` API to run this function on either the full `Series` or individual groups in a `group_by()`:
@@ -52,8 +52,6 @@ We can use the `map_batches()` API to run this function on either the full `Seri
 
 The problem with a pure-Python implementation is that it's slow.
 In general, you want to minimize how much Python code you call if you want fast results.
-Calling a Python function for every `Series` isn't usually a problem, unless the `group_by()` produces a very large number of groups.
-However, running the `for` loop in Python, and then summing the values in Python, will be very slow.
 
 To maximize speed, you'll want to make sure that you're using a function written in a compiled language.
 For numeric calculations Polars supports a pair of interfaces defined by NumPy called ["ufuncs"](https://numpy.org/doc/stable/reference/ufuncs.html) and ["generalized ufuncs"](https://numpy.org/neps/nep-0005-generalized-ufuncs.html).
@@ -118,10 +116,13 @@ The basic idea is to combine multiple columns into a `Struct`, and then the func
 ## Streaming calculations
 
 Passing the full `Series` to the user-defined function has a cost: it may use a lot of memory, as its contents are copied into a NumPy array.
-You can use a `is_elementwise=True` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) to stream results into the function, which means it might not get all values at once.
+You can use the `is_elementwise=True` argument to [:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html) to stream results into the function, which means it might not get all values at once.
 
-For a function like `numpy.log()` this works fine, because `numpy.log()` effectively calculates each individual value separately anyway.
-However, for our example `diff_from_mean()` function above, this would result in incorrect results, since it would calculate the mean on only part of the `Series`.
+!!! note
+    The `is_elementwise` argument can lead to incorrect results if set incorrectly.
+    If you set `is_elementwise=True`, make sure that your function actually operates
+    element-by-element (e.g. "calculate the logarithm of each value") - our example function `diff_from_mean()`,
+    for instance, does not.
 
 ## Return types
 
