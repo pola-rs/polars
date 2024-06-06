@@ -98,7 +98,7 @@ If the deprecation affects many users, we may extend the deprecation period.
 ## Release frequency
 
 Polars does not have a set release schedule.
-We issue a new release whenever we feel like we have something new to offer that's valuable to our users.
+We issue a new release whenever we feel like we have something new and valuable to offer to our users.
 In practice, a new minor version is released about once every one or two weeks.
 
 ### Breaking releases
@@ -107,4 +107,5 @@ Over time, issues pop up that require a breaking change to address.
 When enough issues have accumulated, we issue a breaking release.
 
 So far, breaking releases have happened about once every three to six months.
+The rate and severity of breaking changes will continue to diminish as Polars grows more solid.
 From this point on, we expect new major versions to be released about once every six months.
