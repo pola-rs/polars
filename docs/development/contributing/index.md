@@ -253,7 +253,8 @@ The snippet is delimited by `--8<-- [start:<snippet_name>]` and `--8<-- [end:<sn
 
 #### Linting
 
-Before committing: 
+Before committing:
+
 - install `dprint` (see above) and run `dprint fmt` from the `docs` directory to lint the markdown files
 - run `cargo fmt` for the `docs` directory to format the Rust code snippets
 
