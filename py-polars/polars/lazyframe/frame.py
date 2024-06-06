@@ -3973,12 +3973,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
             )
-        elif how == "left" and coalesce is None:
-            issue_deprecation_warning(
-                "The default coalesce behavior of left join will change to `False` in the next breaking release."
-                " Pass `coalesce=True` to keep the current behavior and silence this warning.",
-                version="0.20.30",
-            )
 
         elif how == "cross":
             return self._from_pyldf(
