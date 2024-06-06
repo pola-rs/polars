@@ -27,6 +27,7 @@ def assert_series_equal(
     *,
     check_dtypes: bool = True,
     check_names: bool = True,
+    check_order: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -48,6 +49,8 @@ def assert_series_equal(
         Require data types to match.
     check_names
         Require names to match.
+    check_order
+        Require elements to appear in the same order.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
@@ -107,6 +110,7 @@ def assert_series_equal(
     _assert_series_values_equal(
         left,
         right,
+        check_order=check_order,
         check_exact=check_exact,
         rtol=rtol,
         atol=atol,
@@ -118,6 +122,7 @@ def _assert_series_values_equal(
     left: Series,
     right: Series,
     *,
+    check_order: bool,
     check_exact: bool,
     rtol: float,
     atol: float,
@@ -130,6 +135,10 @@ def _assert_series_values_equal(
     if categorical_as_str:
         left = _categorical_series_to_string(left)
         right = _categorical_series_to_string(right)
+
+    if not check_order:
+        left = left.sort()
+        right = right.sort()
 
     # Determine unequal elements
     try:
@@ -206,6 +215,7 @@ def _assert_series_nested_values_equal(
             _assert_series_values_equal(
                 s1,
                 s2,
+                check_order=True,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -219,6 +229,7 @@ def _assert_series_nested_values_equal(
             _assert_series_values_equal(
                 s1,
                 s2,
+                check_order=True,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -331,6 +342,7 @@ def assert_series_not_equal(
     *,
     check_dtypes: bool = True,
     check_names: bool = True,
+    check_order: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -351,6 +363,8 @@ def assert_series_not_equal(
         Require data types to match.
     check_names
         Require names to match.
+    check_order
+        Require elements to appear in the same order.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
@@ -387,6 +401,7 @@ def assert_series_not_equal(
             right=right,
             check_dtypes=check_dtypes,
             check_names=check_names,
+            check_order=check_order,
             check_exact=check_exact,
             rtol=rtol,
             atol=atol,

@@ -6,12 +6,19 @@ from decimal import Decimal as D
 from typing import Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_series_equal, assert_series_not_equal
+from polars.testing.parametric import series
 
 nan = float("nan")
 pytest_plugins = ["pytester"]
+
+
+@given(s=series())
+def test_assert_series_equal_parametric(s: pl.Series) -> None:
+    assert_series_equal(s, s)
 
 
 def test_compare_series_value_mismatch() -> None:
@@ -32,6 +39,15 @@ def test_compare_series_empty_equal() -> None:
     assert_series_equal(srs1, srs2)
     with pytest.raises(AssertionError):
         assert_series_not_equal(srs1, srs2)
+
+
+def test_assert_series_equal_check_order() -> None:
+    srs1 = pl.Series([1, 2, 3, None])
+    srs2 = pl.Series([2, None, 3, 1])
+
+    assert_series_equal(srs1, srs2, check_order=False)
+    with pytest.raises(AssertionError):
+        assert_series_not_equal(srs1, srs2, check_order=False)
 
 
 def test_compare_series_nans_assert_equal() -> None:
