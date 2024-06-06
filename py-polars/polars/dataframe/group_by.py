@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable, Iterator
+from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_renamed_function,
-    issue_deprecation_warning,
-)
+from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import sys
@@ -105,30 +102,13 @@ class GroupBy:
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(F.all().exclude(temp_col))
-
-        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        key_as_single_value = (
-            len(self.by) == 1 and isinstance(self.by[0], str) and not self.named_by
-        )
-        if key_as_single_value:
-            issue_deprecation_warning(
-                "`group_by` iteration will change to always return group identifiers as tuples."
-                f" Pass `by` as a list to silence this warning, e.g. `group_by([{self.by[0]!r}])`.",
-                version="0.20.4",
-            )
-            self._group_names = iter(group_names.to_series())
-        else:
-            self._group_names = group_names.iter_rows()
-
+        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -817,24 +797,13 @@ class RollingGroupBy:
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(F.all().exclude(temp_col))
-
-        # When grouping by a single column, group name is a single value
-        # When grouping by multiple columns, group name is a tuple of values
-        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if self.group_by is None:
-            self._group_names = iter(group_names.to_series())
-        else:
-            self._group_names = group_names.iter_rows()
-
+        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -974,24 +943,13 @@ class DynamicGroupBy:
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(F.all().exclude(temp_col))
-
-        # When grouping by a single column, group name is a single value
-        # When grouping by multiple columns, group name is a tuple of values
-        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if self.group_by is None:
-            self._group_names = iter(group_names.to_series())
-        else:
-            self._group_names = group_names.iter_rows()
-
+        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 

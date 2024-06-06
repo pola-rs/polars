@@ -523,7 +523,7 @@ def test_rolling_iter() -> None:
 
     # Without 'by' argument
     result1 = [
-        (name, data.shape)
+        (name[0], data.shape)
         for name, data in df.rolling(index_column="date", period="2d")
     ]
     expected1 = [
