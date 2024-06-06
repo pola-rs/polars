@@ -39,6 +39,22 @@ def read_avro(
     Returns
     -------
     DataFrame
+
+    Examples
+    --------
+    Read a DataFrame from an Apache Avro file, with columns
+
+    >>> pl.read_avro("data.avro")
+    ... shape: (3, 3)
+    ... ┌─────┬────────┬──────┐
+    ... │ id  ┆ name   ┆ age  │
+    ... │ --- ┆ ---    ┆ ---  │
+    ... │ i64 ┆ str    ┆ i64  │
+    ... ├─────┼────────┼──────┤
+    ... │ 1   ┆ Alice  ┆ 20   │
+    ... │ 2   ┆ Bob    ┆ 30   │
+    ... │ 3   ┆ Alex   ┆ 40   │
+    ... └─────┴────────┴──────┘
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
