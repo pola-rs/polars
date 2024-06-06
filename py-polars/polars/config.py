@@ -2,24 +2,23 @@ from __future__ import annotations
 
 import contextlib
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    pass
-
 if TYPE_CHECKING:
+    import sys
     from types import TracebackType
 
-    from typing_extensions import TypeAlias
-
     from polars.type_aliases import FloatFmt
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
+
 
 TableFormatNames: TypeAlias = Literal[
     "ASCII_FULL",

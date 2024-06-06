@@ -153,3 +153,45 @@ def test_register_context() -> None:
         assert ctx.tables() == ["_lf1", "_lf2"]
 
     assert ctx.tables() == []
+
+
+def test_sql_on_compatible_frame_types() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    # create various different frame types
+    dfp = df.to_pandas()
+    dfa = df.to_arrow()
+    dfb = dfa.to_batches()[0]  # noqa: F841
+
+    # run polars sql query against all frame types
+    for dfs in (  # noqa: B007
+        (df["a"] * 2).rename("c"),  # polars series
+        (dfp["a"] * 2).rename("c"),  # pandas series
+    ):
+        res = pl.sql("""
+            SELECT a, b, SUM(c) AS cc FROM (
+              SELECT * FROM df               -- polars frame
+                UNION ALL SELECT * FROM dfp  -- pandas frame
+                UNION ALL SELECT * FROM dfa  -- pyarrow table
+                UNION ALL SELECT * FROM dfb  -- pyarrow record batch
+            ) tbl
+            INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
+            GROUP BY "a", "b"
+            ORDER BY "a", "b"
+        """).collect()
+
+        expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [16, 24]})
+        assert_frame_equal(left=expected, right=res)
+
+    # register and operate on non-polars frames
+    for obj in (dfa, dfp):
+        with pl.SQLContext(obj=obj) as ctx:
+            res = ctx.execute("SELECT * FROM obj", eager=True)
+            assert_frame_equal(df, res)
+
+    # don't register all compatible objects
+    with pytest.raises(SQLInterfaceError, match="relation 'dfp' was not found"):
+        pl.SQLContext(
+            register_globals=True,
+            all_compatible=False,
+        ).execute("SELECT * FROM dfp")
