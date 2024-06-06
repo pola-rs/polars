@@ -221,12 +221,6 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-#[cfg(feature = "trigonometry")]
-pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
-    y.inner.arctan2(x.inner).degrees().into()
-}
-
-#[pyfunction]
 pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 

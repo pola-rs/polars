@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -1341,28 +1341,25 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
 
     Examples
     --------
-    >>> import math
-    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> c = (2**0.5) / 2
     >>> df = pl.DataFrame(
     ...     {
-    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
-    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...         "y": [c, -c, c, -c],
+    ...         "x": [c, c, -c, -c],
     ...     }
     ... )
-    >>> df.select(
-    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
-    ... )
-    shape: (4, 2)
-    ┌────────┬───────────┐
-    │ atan2d ┆ atan2     │
-    │ ---    ┆ ---       │
-    │ f64    ┆ f64       │
-    ╞════════╪═══════════╡
-    │ 45.0   ┆ 0.785398  │
-    │ -45.0  ┆ -0.785398 │
-    │ 135.0  ┆ 2.356194  │
-    │ -135.0 ┆ -2.356194 │
-    └────────┴───────────┘
+    >>> df.with_columns(pl.arctan2("y", "x").alias("atan2"))
+    shape: (4, 3)
+    ┌───────────┬───────────┬───────────┐
+    │ y         ┆ x         ┆ atan2     │
+    │ ---       ┆ ---       ┆ ---       │
+    │ f64       ┆ f64       ┆ f64       │
+    ╞═══════════╪═══════════╪═══════════╡
+    │ 0.707107  ┆ 0.707107  ┆ 0.785398  │
+    │ -0.707107 ┆ 0.707107  ┆ -0.785398 │
+    │ 0.707107  ┆ -0.707107 ┆ 2.356194  │
+    │ -0.707107 ┆ -0.707107 ┆ -2.356194 │
+    └───────────┴───────────┴───────────┘
     """
     if isinstance(y, str):
         y = F.col(y)
@@ -1371,6 +1368,7 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
+@deprecate_function("Use `arctan2` followed by `.degrees()` instead.", version="1.0.0")
 def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
     Compute two argument arctan in degrees.
@@ -1387,16 +1385,16 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
     Examples
     --------
-    >>> import math
-    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> c = (2**0.5) / 2
     >>> df = pl.DataFrame(
     ...     {
-    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
-    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...         "y": [c, -c, c, -c],
+    ...         "x": [c, c, -c, -c],
     ...     }
     ... )
-    >>> df.select(
-    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
+    >>> df.select(  # doctest: +SKIP
+    ...     pl.arctan2d("y", "x").alias("atan2d"),
+    ...     pl.arctan2("y", "x").alias("atan2"),
     ... )
     shape: (4, 2)
     ┌────────┬───────────┐
@@ -1410,11 +1408,7 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     │ -135.0 ┆ -2.356194 │
     └────────┴───────────┘
     """
-    if isinstance(y, str):
-        y = F.col(y)
-    if isinstance(x, str):
-        x = F.col(x)
-    return wrap_expr(plr.arctan2d(y._pyexpr, x._pyexpr))
+    return arctan2(y, x).degrees()
 
 
 def exclude(
