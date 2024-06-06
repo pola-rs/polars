@@ -57,7 +57,7 @@ def test_scan_ndjson_with_schema(foods_ndjson_path: Path) -> None:
 
 
 def test_scan_ndjson_infer_0(foods_ndjson_path: Path) -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ValueError):
         pl.scan_ndjson(foods_ndjson_path, infer_schema_length=0)
 
 
