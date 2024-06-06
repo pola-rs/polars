@@ -19,13 +19,14 @@ In a vertical concatenation you combine all of the rows from a list of `DataFram
 
 Vertical concatenation fails when the dataframes do not have the same column names and dtypes.
 
-For certain differences in dtypes, Polars can do a relaxed vertical concatenation where the differences in dtype are resolved by casting all columns with the same name but different dtypes to a *supertype*. For example, if column `'a'` in the first `DataFrame` is `Float32` but column `'a'` in the second `DataFrame` is `Int64`, then both columns are cast to their supertype `Float64` before concatenation. If the set of dtypes for a column do not have a supertype, the concatenation fails. The supertype mappings are defined internally in Polars.
+For certain differences in dtypes, Polars can do a relaxed vertical concatenation where the differences in dtype are resolved by casting all columns with the same name but different dtypes to a _supertype_. For example, if column `'a'` in the first `DataFrame` is `Float32` but column `'a'` in the second `DataFrame` is `Int64`, then both columns are cast to their supertype `Float64` before concatenation. If the set of dtypes for a column do not have a supertype, the concatenation fails. The supertype mappings are defined internally in Polars.
 
 {{code_block('user-guide/transformations/concatenation','vertical_relaxed',['concat'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/concatenation"
 --8<-- "python/user-guide/transformations/concatenation.py:vertical_relaxed"
 ```
+
 ## Horizontal concatenation - getting wider
 
 In a horizontal concatenation you combine all of the columns from a list of `DataFrames` into a single wider `DataFrame`.
