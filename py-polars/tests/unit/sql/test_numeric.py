@@ -118,11 +118,11 @@ def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
-            SQLSyntaxError, match=r"invalid 'n_decimals' for ROUND \('!!'\)"
+            SQLSyntaxError, match=r"invalid decimals value for ROUND \('!!'\)"
         ):
             ctx.execute("SELECT ROUND(n,'!!') AS n FROM df")
         with pytest.raises(
-            SQLInterfaceError, match=r"ROUND .* negative 'n_decimals' \(-1\)"
+            SQLInterfaceError, match=r"ROUND .* negative decimals value \(-1\)"
         ):
             ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 

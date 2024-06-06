@@ -1181,7 +1181,12 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
         DateTimeField::Year => expr.dt().year(),
         DateTimeField::Quarter => expr.dt().quarter(),
         DateTimeField::Month => expr.dt().month(),
-        DateTimeField::Week(_) => expr.dt().week(),
+        DateTimeField::Week(weekday) => {
+            if weekday.is_some() {
+                polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+            }
+            expr.dt().week()
+        },
         DateTimeField::IsoWeek => expr.dt().week(),
         DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
         DateTimeField::DayOfWeek | DateTimeField::Dow => {
@@ -1217,7 +1222,7 @@ fn parse_extract(expr: Expr, field: &DateTimeField) -> PolarsResult<Expr> {
                 + expr.dt().nanosecond().div(typed_lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(SQLInterface: "EXTRACT function does not support {}", field)
+            polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
         },
     })
 }
@@ -1250,7 +1255,7 @@ pub(crate) fn parse_date_part(expr: Expr, part: &str) -> PolarsResult<Expr> {
             "time" => &DateTimeField::Time,
             "epoch" => &DateTimeField::Epoch,
             _ => {
-                polars_bail!(SQLInterface: "DATE_PART function does not support '{}'", part)
+                polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", part)
             },
         },
     )
