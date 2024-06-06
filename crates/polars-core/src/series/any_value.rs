@@ -74,25 +74,47 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
+        use crate::chunked_array::metadata::MetadataCollectable;
+
         if values.is_empty() {
             return Ok(Self::new_empty(name, dtype));
         }
 
         let mut s = match dtype {
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
+            DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => any_values_to_integer::<Int16Type>(values, strict)?.into_series(),
-            DataType::Int32 => any_values_to_integer::<Int32Type>(values, strict)?.into_series(),
-            DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?.into_series(),
+            DataType::Int16 => any_values_to_integer::<Int16Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
+            DataType::Int32 => any_values_to_integer::<Int32Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
+            DataType::Int64 => any_values_to_integer::<Int64Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?.into_series(),
+            DataType::UInt8 => any_values_to_integer::<UInt8Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?.into_series(),
-            DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?.into_series(),
-            DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?.into_series(),
-            DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
-            DataType::Float64 => any_values_to_f64(values, strict)?.into_series(),
+            DataType::UInt16 => any_values_to_integer::<UInt16Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
+            DataType::UInt32 => any_values_to_integer::<UInt32Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
+            DataType::UInt64 => any_values_to_integer::<UInt64Type>(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
+            DataType::Float32 => any_values_to_f32(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
+            DataType::Float64 => any_values_to_f64(values, strict)?
+                .with_cheap_metadata()
+                .into_series(),
             DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
             DataType::String => any_values_to_string(values, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
@@ -167,6 +189,7 @@ fn any_values_to_integer<T: PolarsIntegerType>(
         }
         Ok(builder.finish())
     }
+
     if strict {
         any_values_to_integer_strict::<T>(values)
     } else {
