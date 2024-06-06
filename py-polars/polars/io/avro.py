@@ -44,7 +44,7 @@ def read_avro(
     --------
     Read a DataFrame from an Apache Avro file, with columns
 
-    >>> pl.read_avro("data.avro")
+    >>> pl.read_avro("data.avro") # doctest: +SKIP
     ... shape: (3, 3)
     ... ┌─────┬────────┬──────┐
     ... │ id  ┆ name   ┆ age  │

@@ -38,6 +38,7 @@ def build_info() -> dict[str, Any]:
     Examples
     --------
     Return detailed Polars build information.
-    >>> pl.build_info()
+
+    >>> pl.build_info()  # doctest: +SKIP
     """
     return __build__

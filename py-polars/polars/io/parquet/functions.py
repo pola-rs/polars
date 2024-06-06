@@ -135,7 +135,7 @@ def read_parquet(
     --------
     Read a local Parquet file.
 
-    >>> pl.read_parquet("path/to/file.parquet")
+    >>> pl.read_parquet("path/to/file.parquet")  # doctest: +SKIP
 
     Read a file on Azure Blob Storage
 
@@ -144,7 +144,7 @@ def read_parquet(
     ...     "AZURE_STORAGE_ACCOUNT_NAME": "AZURE_STORAGE_ACCOUNT_NAME",
     ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
     ... }
-    >>> pl.read_parquet(source, storage_options=storage_options)
+    >>> pl.read_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
     if hive_schema is not None:
         msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
@@ -289,7 +289,8 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     Examples
     --------
     Read a parquet file.
-    >>> pl.read_parquet("path/to/file.parquet")
+
+    >>> pl.read_parquet("path/to/file.parquet")  # doctest: +SKIP
     shape: (3, 3)
     ┌──────┬─────────┬──────────┐
     │ year ┆ name    ┆ country  │
@@ -302,7 +303,8 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     └──────┴─────────┴──────────┘
 
     Get the schema of the parquet file.
-    >>> pl.read_parquet_schema("path/to/file.parquet")
+
+    >>> pl.read_parquet_schema("path/to/file.parquet")  # doctest: +SKIP
     {'year': Int64, 'name': String, 'country': String}
     """
     if isinstance(source, (str, Path)):

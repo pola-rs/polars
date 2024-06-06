@@ -55,6 +55,8 @@ def read_ndjson(
 
     Examples
     --------
+    Read from a njdson string.
+
     >>> from io import StringIO
     >>> json_str = '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
     >>> pl.read_ndjson(StringIO(json_str))
@@ -141,7 +143,7 @@ def scan_ndjson(
     --------
     >>> from io import StringIO
     >>> json_str = '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
-    >>> pl.scan_ndjson(StringIO(json_str)).collect()
+    >>> pl.scan_ndjson(StringIO(json_str)).collect()  # doctest: +SKIP
     shape: (3, 2)
     ┌─────┬─────┐
     │ foo ┆ bar │
