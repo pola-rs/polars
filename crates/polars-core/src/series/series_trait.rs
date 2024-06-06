@@ -136,23 +136,23 @@ pub(crate) mod private {
         }
 
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(sub, self)
+            polars_bail!(opq = subtract, self._dtype());
         }
         fn add_to(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(add, self)
+            polars_bail!(opq = add, self._dtype());
         }
         fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(mul, self)
+            polars_bail!(opq = multiply, self._dtype());
         }
         fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(div, self)
+            polars_bail!(opq = divide, self._dtype());
         }
         fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(rem, self)
+            polars_bail!(opq = remainder, self._dtype());
         }
         #[cfg(feature = "algorithm_group_by")]
         fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
-            invalid_operation_panic!(group_tuples, self)
+            polars_bail!(opq = group_tuples, self._dtype());
         }
         #[cfg(feature = "zip_with")]
         fn zip_with_same_type(
@@ -160,7 +160,7 @@ pub(crate) mod private {
             _mask: &BooleanChunked,
             _other: &Series,
         ) -> PolarsResult<Series> {
-            invalid_operation_panic!(zip_with_same_type, self)
+            polars_bail!(opq = zip_with_same_type, self._dtype());
         }
 
         #[allow(unused_variables)]

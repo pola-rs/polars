@@ -51,6 +51,24 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.add_to(rhs)
+    }
+
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.subtract(rhs)
+    }
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.multiply(rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.divide(rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.remainder(rhs)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<ArrayChunked> {

@@ -286,6 +286,10 @@ impl Series {
         true
     }
 
+    pub fn from_arrow_chunks(name: &str, arrays: Vec<ArrayRef>) -> PolarsResult<Series> {
+        Self::try_from((name, arrays))
+    }
+
     pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
         Self::try_from((name, array))
     }

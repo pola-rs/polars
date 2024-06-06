@@ -34,7 +34,6 @@ pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
-use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;

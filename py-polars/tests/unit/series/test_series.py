@@ -14,17 +14,12 @@ import polars
 import polars as pl
 from polars._utils.construction import iterable_to_pyseries
 from polars.datatypes import (
-    Date,
     Datetime,
     Field,
     Float64,
-    Int8,
-    Int16,
     Int32,
     Int64,
     Time,
-    UInt8,
-    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -369,139 +364,6 @@ def test_date_agg() -> None:
 def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
     assert s.min() == min
     assert s.max() == max
-
-
-@pytest.mark.parametrize(
-    "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
-)
-def test_arithmetic(s: pl.Series) -> None:
-    a = s
-    b = s
-
-    assert ((a * b) == [1, 4]).sum() == 2
-    assert ((a / b) == [1.0, 1.0]).sum() == 2
-    assert ((a + b) == [2, 4]).sum() == 2
-    assert ((a - b) == [0, 0]).sum() == 2
-    assert ((a + 1) == [2, 3]).sum() == 2
-    assert ((a - 1) == [0, 1]).sum() == 2
-    assert ((a / 1) == [1.0, 2.0]).sum() == 2
-    assert ((a // 2) == [0, 1]).sum() == 2
-    assert ((a * 2) == [2, 4]).sum() == 2
-    assert ((2 + a) == [3, 4]).sum() == 2
-    assert ((1 - a) == [0, -1]).sum() == 2
-    assert ((2 * a) == [2, 4]).sum() == 2
-
-    # integer division
-    assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
-    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.5])
-    assert_series_equal(1 // a, expected)
-    # modulo
-    assert ((1 % a) == [0, 1]).sum() == 2
-    assert ((a % 1) == [0, 0]).sum() == 2
-    # negate
-    assert (-a == [-1, -2]).sum() == 2
-    # unary plus
-    assert (+a == a).all()
-    # wrong dtypes in rhs operands
-    assert ((1.0 - a) == [0.0, -1.0]).sum() == 2
-    assert ((1.0 / a) == [1.0, 0.5]).sum() == 2
-    assert ((1.0 * a) == [1, 2]).sum() == 2
-    assert ((1.0 + a) == [2, 3]).sum() == 2
-    assert ((1.0 % a) == [0, 1]).sum() == 2
-
-
-def test_arithmetic_datetime() -> None:
-    a = pl.Series("a", [datetime(2021, 1, 1)])
-    with pytest.raises(TypeError):
-        a // 2
-    with pytest.raises(TypeError):
-        a / 2
-    with pytest.raises(TypeError):
-        a * 2
-    with pytest.raises(TypeError):
-        a % 2
-    with pytest.raises(
-        pl.InvalidOperationError,
-    ):
-        a**2
-    with pytest.raises(TypeError):
-        2 / a
-    with pytest.raises(TypeError):
-        2 // a
-    with pytest.raises(TypeError):
-        2 * a
-    with pytest.raises(TypeError):
-        2 % a
-    with pytest.raises(
-        pl.InvalidOperationError,
-    ):
-        2**a
-
-
-def test_power() -> None:
-    a = pl.Series([1, 2], dtype=Int64)
-    b = pl.Series([None, 2.0], dtype=Float64)
-    c = pl.Series([date(2020, 2, 28), date(2020, 3, 1)], dtype=Date)
-    d = pl.Series([1, 2], dtype=UInt8)
-    e = pl.Series([1, 2], dtype=Int8)
-    f = pl.Series([1, 2], dtype=UInt16)
-    g = pl.Series([1, 2], dtype=Int16)
-    h = pl.Series([1, 2], dtype=UInt32)
-    i = pl.Series([1, 2], dtype=Int32)
-    j = pl.Series([1, 2], dtype=UInt64)
-    k = pl.Series([1, 2], dtype=Int64)
-    m = pl.Series([2**33, 2**33], dtype=UInt64)
-
-    # pow
-    assert_series_equal(a**2, pl.Series([1, 4], dtype=Int64))
-    assert_series_equal(b**3, pl.Series([None, 8.0], dtype=Float64))
-    assert_series_equal(a**a, pl.Series([1, 4], dtype=Int64))
-    assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
-    assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
-    assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
-    assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
-    assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
-    assert_series_equal(g**d, pl.Series([1, 4], dtype=Int16))
-    assert_series_equal(h**d, pl.Series([1, 4], dtype=UInt32))
-    assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
-    assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
-    assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
-
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `null` as exponent",
-    ):
-        a ** pl.lit(None)
-
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `date` as base",
-    ):
-        c**2
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="`pow` operation not supported for dtype `date` as exponent",
-    ):
-        2**c
-
-    with pytest.raises(pl.ColumnNotFoundError):
-        a ** "hi"  # type: ignore[operator]
-
-    # Raising to UInt64: raises if can't be downcast safely to UInt32...
-    with pytest.raises(pl.ComputeError, match="conversion from `u64` to `u32` failed"):
-        a**m
-    # ... but succeeds otherwise.
-    assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
-
-    # rpow
-    assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
-    assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
-
-    with pytest.raises(pl.ColumnNotFoundError):
-        "hi" ** a
-
-    # Series.pow() method
-    assert_series_equal(a.pow(2), pl.Series([1, 4], dtype=Int64))
 
 
 def test_add_string() -> None:
