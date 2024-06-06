@@ -5528,7 +5528,6 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -5594,18 +5593,6 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         group_by
             Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -5684,7 +5671,6 @@ class DataFrame:
             offset=offset,
             closed=closed,
             group_by=group_by,
-            check_sorted=check_sorted,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -5700,7 +5686,6 @@ class DataFrame:
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool | None = None,
     ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -5771,18 +5756,6 @@ class DataFrame:
 
               The resulting window is then shifted back until the earliest datapoint
               is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -6015,7 +5988,6 @@ class DataFrame:
             closed=closed,
             group_by=group_by,
             start_by=start_by,
-            check_sorted=check_sorted,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")

@@ -6757,9 +6757,6 @@ class Series:
             durations such as months (or even days in the time-zone-aware case)
             are not supported, please express your duration in an approximately
             equivalent number of hours (e.g. '370h' instead of '1mo').
-        check_sorted
-            Check whether `by` column is sorted.
-            Incorrectly setting this to `False` will lead to incorrect output.
 
         Returns
         -------

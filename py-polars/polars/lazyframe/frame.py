@@ -3158,7 +3158,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3224,18 +3223,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Define which sides of the temporal interval are closed (inclusive).
         group_by
             Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -3311,7 +3298,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3382,18 +3368,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
               The resulting window is then shifted back until the earliest datapoint
               is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------

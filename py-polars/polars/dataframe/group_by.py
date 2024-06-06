@@ -791,13 +791,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
-        check_sorted: bool | None = None,
     ):
-        if check_sorted is not None:
-            issue_deprecation_warning(
-                "`check_sorted` is now deprecated in `rolling`, you can safely remove this argument.",
-                version="0.20.31",
-            )
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -945,13 +939,7 @@ class DynamicGroupBy:
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
-        check_sorted: bool | None = None,
     ):
-        if check_sorted is not None:
-            issue_deprecation_warning(
-                "`check_sorted` is now deprecated in `rolling`, you can safely remove this argument.",
-                version="0.20.31",
-            )
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
