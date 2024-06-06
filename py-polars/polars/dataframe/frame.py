@@ -2205,9 +2205,9 @@ class DataFrame:
         >>> print(df.to_init_repr())
         pl.DataFrame(
             [
-                pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
-                pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.String),
+                pl.Series('foo', [1, 2, 3], dtype=pl.UInt8),
+                pl.Series('bar', [6.0, 7.0, 8.0], dtype=pl.Float32),
+                pl.Series('ham', ['a', 'b', 'c'], dtype=pl.String),
             ]
         )
 

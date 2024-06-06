@@ -84,6 +84,7 @@ from polars.datatypes import (
     py_type_to_dtype,
     supported_numpy_char_code,
 )
+from polars.datatypes._utils import dtype_to_init_repr
 from polars.dependencies import (
     _HVPLOT_AVAILABLE,
     _PYARROW_AVAILABLE,
@@ -4426,7 +4427,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, None, 4], dtype=pl.Int16)
         >>> print(s.to_init_repr())
-        pl.Series("a", [1, 2, None, 4], dtype=pl.Int16)
+        pl.Series('a', [1, 2, None, 4], dtype=pl.Int16)
         >>> s_from_str_repr = eval(s.to_init_repr())
         >>> s_from_str_repr
         shape: (4,)
@@ -4438,9 +4439,9 @@ class Series:
             4
         ]
         """
-        return (
-            f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
-        )
+        values = self.head(n).to_list()
+        dtype_init_repr = dtype_to_init_repr(self.dtype)
+        return f"pl.Series({self.name!r}, {values}, dtype={dtype_init_repr})"
 
     def count(self) -> int:
         """
