@@ -360,9 +360,10 @@ where
     ///
     /// It is an error to pass `max_records = Some(0)`, as a schema cannot be inferred from 0 records when deserializing
     /// from JSON (unlike CSVs, there is no header row to inspect for column names).
-    pub fn infer_schema_len(mut self, max_records: Option<usize>) -> Self {
+    pub fn infer_schema_len(mut self, max_records: Option<usize>) -> PolarsResult<Self> {
+        polars_ensure!(max_records.unwrap_or(1) > 0, InvalidOperation: "expected a positive value for schema inference; got 0");
         self.infer_schema_len = max_records;
-        self
+        Ok(self)
     }
 
     /// Set the batch size (number of records to load at one time)

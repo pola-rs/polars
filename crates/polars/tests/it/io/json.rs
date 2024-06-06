@@ -21,6 +21,7 @@ fn read_json() {
     let file = Cursor::new(basic_json);
     let df = JsonReader::new(file)
         .infer_schema_len(Some(3))
+        .unwrap()
         .with_json_format(JsonFormat::JsonLines)
         .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
@@ -49,6 +50,7 @@ fn read_json_with_whitespace() {
     let file = Cursor::new(basic_json);
     let df = JsonReader::new(file)
         .infer_schema_len(Some(3))
+        .unwrap()
         .with_json_format(JsonFormat::JsonLines)
         .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()
@@ -103,6 +105,7 @@ fn read_unordered_json() {
     let file = Cursor::new(unordered_json);
     let df = JsonReader::new(file)
         .infer_schema_len(Some(3))
+        .unwrap()
         .with_json_format(JsonFormat::JsonLines)
         .with_batch_size(NonZeroUsize::new(3).unwrap())
         .finish()

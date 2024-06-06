@@ -222,7 +222,8 @@ impl PyDataFrame {
         py.allow_threads(move || {
             let mut builder = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::Json)
-                .infer_schema_len(infer_schema_length);
+                .infer_schema_len(infer_schema_length)
+                .map_err(PyPolarsErr::from)?;
 
             if let Some(schema) = schema {
                 builder = builder.with_schema(Arc::new(schema.0));
@@ -232,9 +233,7 @@ impl PyDataFrame {
                 builder = builder.with_schema_overwrite(&schema.0);
             }
 
-            let out = builder
-                .finish()
-                .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+            let out = builder.finish().map_err(PyPolarsErr::from)?;
             Ok(out.into())
         })
     }
