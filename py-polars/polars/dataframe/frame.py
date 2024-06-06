@@ -7999,27 +7999,13 @@ class DataFrame:
         ]
 
         if as_dict:
-            key_as_single_value = isinstance(by, str) and not more_by
-            if key_as_single_value:
-                issue_deprecation_warning(
-                    "`partition_by(..., as_dict=True)` will change to always return tuples as dictionary keys."
-                    f" Pass `by` as a list to silence this warning, e.g. `partition_by([{by!r}], as_dict=True)`.",
-                    version="0.20.4",
-                )
-
             if include_key:
-                if key_as_single_value:
-                    names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]
-                else:
-                    names = [p.select(by_parsed).row(0) for p in partitions]
+                names = [p.select(by_parsed).row(0) for p in partitions]
             else:
                 if not maintain_order:  # Group keys cannot be matched to partitions
                     msg = "cannot use `partition_by` with `maintain_order=False, include_key=False, as_dict=True`"
                     raise ValueError(msg)
-                if key_as_single_value:
-                    names = self.get_column(by).unique(maintain_order=True).to_list()  # type: ignore[arg-type]
-                else:
-                    names = self.select(by_parsed).unique(maintain_order=True).rows()
+                names = self.select(by_parsed).unique(maintain_order=True).rows()
 
             return dict(zip(names, partitions))
 
