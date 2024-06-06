@@ -39,7 +39,7 @@ def test_explain_query(test_frame: pl.LazyFrame) -> None:
     with pl.SQLContext(frame=test_frame) as ctx:
         plan = (
             ctx.execute("EXPLAIN SELECT * FROM frame")
-            .select(pl.col("Logical Plan").str.concat(""))
+            .select(pl.col("Logical Plan").str.join())
             .collect()
             .item()
         )

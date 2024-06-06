@@ -304,7 +304,7 @@ impl StringNameSpace {
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
     #[cfg(feature = "concat_str")]
-    pub fn concat(self, delimiter: &str, ignore_nulls: bool) -> Expr {
+    pub fn join(self, delimiter: &str, ignore_nulls: bool) -> Expr {
         self.0
             .apply_private(
                 StringFunction::ConcatVertical {

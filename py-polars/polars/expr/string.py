@@ -434,57 +434,6 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_len_chars())
 
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Expr:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`String`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df.select(pl.col("foo").str.concat("-"))
-        shape: (1, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ 1-2 │
-        └─────┘
-        >>> df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
-        shape: (1, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ str  │
-        ╞══════╡
-        │ null │
-        └──────┘
-        """
-        if delimiter is None:
-            issue_deprecation_warning(
-                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
-                " Pass a delimiter to silence this warning.",
-                version="0.20.5",
-            )
-            delimiter = "-"
-        return wrap_expr(self._pyexpr.str_concat(delimiter, ignore_nulls))
-
     def to_uppercase(self) -> Expr:
         """
         Transform to uppercase variant.
@@ -2553,6 +2502,101 @@ class ExprStringNameSpace:
                 patterns, replace_with, ascii_case_insensitive
             )
         )
+
+    def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, None, 3]})
+        >>> df.select(pl.col("foo").str.join("-"))
+        shape: (1, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ 1-3 │
+        └─────┘
+        >>> df.select(pl.col("foo").str.join(ignore_nulls=False))
+        shape: (1, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ str  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        """
+        return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
+
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Expr:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, None, 2]})
+        >>> df.select(pl.col("foo").str.concat("-"))  # doctest: +SKIP
+        shape: (1, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ 1-2 │
+        └─────┘
+        >>> df.select(
+        ...     pl.col("foo").str.concat("-", ignore_nulls=False)
+        ... )  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ str  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        """
+        if delimiter is None:
+            issue_deprecation_warning(
+                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
+                " Pass a delimiter to silence this warning.",
+                version="0.20.5",
+            )
+            delimiter = "-"
+        return self.join(delimiter, ignore_nulls=ignore_nulls)
 
 
 def _validate_format_argument(format: str | None) -> None:
