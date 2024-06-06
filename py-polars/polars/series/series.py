@@ -4427,7 +4427,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, None, 4], dtype=pl.Int16)
         >>> print(s.to_init_repr())
-        pl.Series("a", [1, 2, None, 4], dtype=pl.Int16)
+        pl.Series('a', [1, 2, None, 4], dtype=pl.Int16)
         >>> s_from_str_repr = eval(s.to_init_repr())
         >>> s_from_str_repr
         shape: (4,)
