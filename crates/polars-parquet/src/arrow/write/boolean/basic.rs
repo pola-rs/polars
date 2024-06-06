@@ -91,11 +91,7 @@ pub(super) fn build_statistics(
         null_count: options.null_count.then(|| array.null_count() as i64),
         distinct_count: options
             .distinct_count
-            .then(|| {
-                (array.distinct_count() - ((array.null_count() > 0) as usize))
-                    .try_into()
-                    .ok()
-            })
+            .then(|| array.distinct_non_null_count().try_into().ok())
             .flatten(),
         max_value: options
             .max_value
