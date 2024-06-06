@@ -14,8 +14,9 @@ version-resolver:
       - breaking python
   patch:
     labels:
-      - fix
-  default: minor
+      - performance
+      - enhancement
+  default: patch
 
 categories:
   - title: 🏆 Highlights
