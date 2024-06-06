@@ -108,9 +108,7 @@ class GroupBy:
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -805,9 +803,7 @@ class RollingGroupBy:
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -953,9 +949,7 @@ class DynamicGroupBy:
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 

@@ -7840,7 +7840,7 @@ class DataFrame:
     def partition_by(
         self,
         by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: str,
+        *more_by: ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[False] = ...,
@@ -7850,11 +7850,21 @@ class DataFrame:
     def partition_by(
         self,
         by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: str,
+        *more_by: ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[Any, Self]: ...
+    ) -> dict[tuple[object, ...], Self]: ...
+
+    @overload
+    def partition_by(
+        self,
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *more_by: ColumnNameOrSelector,
+        maintain_order: bool = ...,
+        include_key: bool = ...,
+        as_dict: bool,
+    ) -> list[Self] | dict[tuple[object, ...], Self]: ...
 
     def partition_by(
         self,
@@ -7863,7 +7873,7 @@ class DataFrame:
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
-    ) -> list[Self] | dict[Any, Self]:
+    ) -> list[Self] | dict[tuple[object, ...], Self]:
         """
         Group by the given columns and return the groups as separate dataframes.
 
