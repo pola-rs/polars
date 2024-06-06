@@ -873,18 +873,6 @@ def test_group_by_named() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_group_by_deprecated_by_arg() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
-    with pytest.deprecated_call():
-        result = df.group_by(by=(pl.col("a") * 2), maintain_order=True).agg(
-            pl.col("b").min()
-        )
-    expected = df.group_by((pl.col("a") * 2), maintain_order=True).agg(
-        pl.col("b").min()
-    )
-    assert_frame_equal(result, expected)
-
-
 def test_group_by_with_null() -> None:
     df = pl.DataFrame(
         {"a": [None, None, None, None], "b": [1, 1, 2, 2], "c": ["x", "y", "z", "u"]}
