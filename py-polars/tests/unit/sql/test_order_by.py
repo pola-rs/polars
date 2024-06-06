@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 
 
 @pytest.fixture()
@@ -189,3 +190,53 @@ def test_order_by_multi_nulls_first_last() -> None:
         "x": [None, None, 1, 3],
         "y": [None, 3, 2, 1],
     }
+
+
+def test_order_by_ordinal() -> None:
+    df = pl.DataFrame({"x": [None, 1, None, 3], "y": [3, 2, None, 1]})
+
+    res = df.sql("SELECT * FROM self ORDER BY 1, 2")
+    assert res.to_dict(as_series=False) == {
+        "x": [1, 3, None, None],
+        "y": [2, 1, 3, None],
+    }
+
+    res = df.sql("SELECT * FROM self ORDER BY 1 DESC, 2")
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 3, 1],
+        "y": [3, None, 1, 2],
+    }
+
+    res = df.sql("SELECT * FROM self ORDER BY 1 DESC NULLS LAST, 2 ASC")
+    assert res.to_dict(as_series=False) == {
+        "x": [3, 1, None, None],
+        "y": [1, 2, 3, None],
+    }
+
+    res = df.sql("SELECT * FROM self ORDER BY 1 DESC NULLS LAST, 2 ASC NULLS FIRST")
+    assert res.to_dict(as_series=False) == {
+        "x": [3, 1, None, None],
+        "y": [1, 2, None, 3],
+    }
+
+    res = df.sql("SELECT * FROM self ORDER BY 1 DESC, 2 DESC NULLS FIRST")
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 3, 1],
+        "y": [None, 3, 1, 2],
+    }
+
+
+def test_order_by_errors() -> None:
+    df = pl.DataFrame({"a": ["w", "x", "y", "z"], "b": [1, 2, 3, 4]})
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match="ORDER BY ordinal value must refer to a valid column; found 99",
+    ):
+        df.sql("SELECT * FROM self ORDER BY 99")
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match="negative ordinals values are invalid for ORDER BY; found -1",
+    ):
+        df.sql("SELECT * FROM self ORDER BY -1")

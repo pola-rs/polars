@@ -223,13 +223,13 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"expected a positive integer or valid expression; got -99",
+        match=r"negative ordinals values are invalid for GROUP BY; found -99",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"expected a positive integer or valid expression; got '!!!'",
+        match=r"GROUP BY requires a valid expression or positive ordinal; found '!!!'",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
 
