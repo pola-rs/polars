@@ -128,7 +128,7 @@ pub struct Select {
     #[pyo3(get)]
     expr: Vec<PyExprIR>,
     #[pyo3(get)]
-    options: (), //ProjectionOptions,
+    should_broadcast: bool,
 }
 
 #[pyclass]
@@ -195,7 +195,7 @@ pub struct HStack {
     #[pyo3(get)]
     exprs: Vec<PyExprIR>,
     #[pyo3(get)]
-    options: (), // ProjectionOptions,
+    should_broadcast: bool,
 }
 
 #[pyclass]
@@ -338,11 +338,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input,
             expr,
             schema: _,
-            options: _,
+            options,
         } => Select {
             expr: expr.iter().map(|e| e.into()).collect(),
             input: input.0,
-            options: (),
+            should_broadcast: options.should_broadcast,
         }
         .into_py(py),
         IR::Sort {
@@ -428,11 +428,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input,
             exprs,
             schema: _,
-            options: _,
+            options,
         } => HStack {
             input: input.0,
             exprs: exprs.iter().map(|e| e.into()).collect(),
-            options: (),
+            should_broadcast: options.should_broadcast,
         }
         .into_py(py),
         IR::Reduce {
