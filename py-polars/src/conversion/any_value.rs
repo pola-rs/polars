@@ -337,18 +337,17 @@ pub(crate) fn py_object_to_any_value<'py>(
 
     fn get_struct<'py>(ob: &Bound<'py, PyAny>, strict: bool) -> PyResult<AnyValue<'py>> {
         let convert = ob.hasattr("_asdict")?;
-        let dict: &Bound<'py, PyDict>;
         let cmd: Bound<'py, PyDict>;
         let cm: Bound<'py, PyAny>;
         let list: Bound<'py, PySequence>;
-        if convert {
+        let dict = if convert {
             list = ob.downcast::<PySequence>()?.clone();
             cm = list.call_method0("_asdict")?;
             cmd = cm.downcast::<PyDict>()?.clone();
-            dict = &cmd
+            &cmd
         } else {
-            dict = ob.downcast::<PyDict>()?;
-        }
+            ob.downcast::<PyDict>()?
+        };
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
