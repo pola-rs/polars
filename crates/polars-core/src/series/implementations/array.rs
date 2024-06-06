@@ -1,16 +1,14 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use super::private;
+use super::{private, MetadataFlags};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::{AsSinglePtr, Settings};
+use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn compute_len(&mut self) {
@@ -23,11 +21,11 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         self.0.ref_field().data_type()
     }
 
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -60,8 +58,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()

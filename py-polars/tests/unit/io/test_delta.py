@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pyarrow as pa
@@ -23,7 +24,7 @@ def test_scan_delta(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(str(delta_table_path), version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_version(delta_table_path: Path) -> None:
@@ -33,11 +34,39 @@ def test_scan_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
+@pytest.mark.write_disk()
+def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
+    df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
+    df_sample.write_delta(tmp_path, mode="append")
+
+    df_sample2 = pl.DataFrame({"name": ["Ivan"], "age": [34]})
+    df_sample2.write_delta(tmp_path, mode="append")
+
+    log_dir = tmp_path / "_delta_log"
+    log_mtime_pair = [
+        ("00000000000000000000.json", datetime(2010, 1, 1).timestamp()),
+        ("00000000000000000001.json", datetime(2024, 1, 1).timestamp()),
+    ]
+    for file_name, dt_epoch in log_mtime_pair:
+        file_path = log_dir / file_name
+        os.utime(str(file_path), (dt_epoch, dt_epoch))
+
+    df1 = pl.scan_delta(
+        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
+    ).collect()
+    df2 = pl.scan_delta(
+        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    ).collect()
+
+    assert_frame_equal(df1, df_sample)
+    assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)
+
+
 def test_scan_delta_columns(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(str(delta_table_path), version=0).select("name")
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_filesystem(delta_table_path: Path) -> None:
@@ -49,7 +78,7 @@ def test_scan_delta_filesystem(delta_table_path: Path) -> None:
     )
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
 def test_scan_delta_relative(delta_table_path: Path) -> None:
@@ -58,7 +87,7 @@ def test_scan_delta_relative(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(rel_delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtype=False)
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
     ldf = pl.scan_delta(rel_delta_table_path, version=1)
     assert_frame_not_equal(expected, ldf.collect())
@@ -68,7 +97,7 @@ def test_read_delta(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_version(delta_table_path: Path) -> None:
@@ -78,11 +107,39 @@ def test_read_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
+@pytest.mark.write_disk()
+def test_read_delta_timestamp_version(tmp_path: Path) -> None:
+    df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
+    df_sample.write_delta(tmp_path, mode="append")
+
+    df_sample2 = pl.DataFrame({"name": ["Ivan"], "age": [34]})
+    df_sample2.write_delta(tmp_path, mode="append")
+
+    log_dir = tmp_path / "_delta_log"
+    log_mtime_pair = [
+        ("00000000000000000000.json", datetime(2010, 1, 1).timestamp()),
+        ("00000000000000000001.json", datetime(2024, 1, 1).timestamp()),
+    ]
+    for file_name, dt_epoch in log_mtime_pair:
+        file_path = log_dir / file_name
+        os.utime(str(file_path), (dt_epoch, dt_epoch))
+
+    df1 = pl.read_delta(
+        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
+    )
+    df2 = pl.read_delta(
+        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    )
+
+    assert_frame_equal(df1, df_sample)
+    assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)
+
+
 def test_read_delta_columns(delta_table_path: Path) -> None:
     df = pl.read_delta(str(delta_table_path), version=0, columns=["name"])
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_filesystem(delta_table_path: Path) -> None:
@@ -94,7 +151,7 @@ def test_read_delta_filesystem(delta_table_path: Path) -> None:
     )
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 def test_read_delta_relative(delta_table_path: Path) -> None:
@@ -103,7 +160,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
     df = pl.read_delta(rel_delta_table_path, version=0)
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtype=False)
+    assert_frame_equal(expected, df, check_dtypes=False)
 
 
 @pytest.mark.write_disk()
@@ -427,3 +484,22 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
 
     expected = df.filter(pl.col("a") <= 2)
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk()
+def test_unsupported_dtypes(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [None]}, schema={"a": pl.Null})
+    with pytest.raises(TypeError, match="unsupported data type"):
+        df.write_delta(tmp_path / "null")
+
+    df = pl.DataFrame({"a": [123]}, schema={"a": pl.Time})
+    with pytest.raises(TypeError, match="unsupported data type"):
+        df.write_delta(tmp_path / "time")
+
+
+@pytest.mark.write_disk()
+def test_categorical_becomes_string(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
+    df.write_delta(tmp_path)
+    df2 = pl.read_delta(str(tmp_path))
+    assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))

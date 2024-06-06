@@ -187,6 +187,31 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_unique(maintain_order))
 
+    def n_unique(self) -> Expr:
+        """
+        Count the number of unique values in every sub-arrays.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1, 1, 2], [2, 3, 4]],
+        ...     },
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
+        ... )
+        >>> df.with_columns(n_unique=pl.col("a").arr.n_unique())
+        shape: (2, 2)
+        ┌───────────────┬──────────┐
+        │ a             ┆ n_unique │
+        │ ---           ┆ ---      │
+        │ array[i64, 3] ┆ u32      │
+        ╞═══════════════╪══════════╡
+        │ [1, 1, 2]     ┆ 2        │
+        │ [2, 3, 4]     ┆ 3        │
+        └───────────────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.arr_n_unique())
+
     def to_list(self) -> Expr:
         """
         Convert an Array column into a List column with the same inner data type.
@@ -416,7 +441,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_arg_max())
 
-    def get(self, index: int | IntoExprColumn) -> Expr:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = True) -> Expr:
         """
         Get the value by index in the sub-arrays.
 
@@ -428,28 +453,32 @@ class ExprArrayNameSpace:
         ----------
         index
             Index to return per sub-array
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"arr": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "idx": [1, -2, 4]},
+        ...     {"arr": [[1, 2, 3], [4, 5, 6], [7, 8, 9]], "idx": [1, -2, 0]},
         ...     schema={"arr": pl.Array(pl.Int32, 3), "idx": pl.Int32},
         ... )
-        >>> df.with_columns(get=pl.col("arr").arr.get("idx"))
+        >>> df.with_columns(get=pl.col("arr").arr.get("idx", null_on_oob=True))
         shape: (3, 3)
-        ┌───────────────┬─────┬──────┐
-        │ arr           ┆ idx ┆ get  │
-        │ ---           ┆ --- ┆ ---  │
-        │ array[i32, 3] ┆ i32 ┆ i32  │
-        ╞═══════════════╪═════╪══════╡
-        │ [1, 2, 3]     ┆ 1   ┆ 2    │
-        │ [4, 5, 6]     ┆ -2  ┆ 5    │
-        │ [7, 8, 9]     ┆ 4   ┆ null │
-        └───────────────┴─────┴──────┘
+        ┌───────────────┬─────┬─────┐
+        │ arr           ┆ idx ┆ get │
+        │ ---           ┆ --- ┆ --- │
+        │ array[i32, 3] ┆ i32 ┆ i32 │
+        ╞═══════════════╪═════╪═════╡
+        │ [1, 2, 3]     ┆ 1   ┆ 2   │
+        │ [4, 5, 6]     ┆ -2  ┆ 5   │
+        │ [7, 8, 9]     ┆ 0   ┆ 7   │
+        └───────────────┴─────┴─────┘
 
         """
         index = parse_as_expression(index)
-        return wrap_expr(self._pyexpr.arr_get(index))
+        return wrap_expr(self._pyexpr.arr_get(index, null_on_oob))
 
     def first(self) -> Expr:
         """

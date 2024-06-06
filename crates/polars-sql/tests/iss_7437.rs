@@ -24,14 +24,14 @@ fn iss_7437() -> PolarsResult<()> {
     "#,
         )?
         .collect()?
-        .sort(["category"], vec![false], false)?;
+        .sort(["category"], SortMultipleOptions::default())?;
 
     let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
         .finish()?
         .group_by(vec![col("category").alias("category")])
         .agg(vec![])
         .collect()?
-        .sort(["category"], vec![false], false)?;
+        .sort(["category"], Default::default())?;
 
     assert!(df_sql.equals(&expected));
     Ok(())

@@ -120,8 +120,8 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let input = input.first().unwrap();
-            let input = predicate_to_pa(*input, expr_arena, args)?;
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
             Some(format!("~({input})"))
         },
         AExpr::Function {
@@ -129,8 +129,8 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let input = input.first().unwrap();
-            let input = predicate_to_pa(*input, expr_arena, args)?;
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
             Some(format!("({input}).is_null()"))
         },
         AExpr::Function {
@@ -138,8 +138,8 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let input = input.first().unwrap();
-            let input = predicate_to_pa(*input, expr_arena, args)?;
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa(input, expr_arena, args)?;
             Some(format!("~({input}).is_null()"))
         },
         #[cfg(feature = "is_in")]
@@ -148,12 +148,39 @@ pub(super) fn predicate_to_pa(
             input,
             ..
         } => {
-            let col = predicate_to_pa(*input.first()?, expr_arena, args)?;
+            let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
             let mut args = args;
             args.allow_literal_series = true;
-            let values = predicate_to_pa(*input.get(1)?, expr_arena, args)?;
+            let values = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;
 
             Some(format!("({col}).isin({values})"))
+        },
+        #[cfg(feature = "is_between")]
+        AExpr::Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }),
+            input,
+            ..
+        } => {
+            if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
+                None
+            } else {
+                let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
+                let left_cmp_op = match closed {
+                    ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
+                    ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
+                };
+                let right_cmp_op = match closed {
+                    ClosedInterval::None | ClosedInterval::Left => Operator::Lt,
+                    ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
+                };
+
+                let lower = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;
+                let upper = predicate_to_pa(input.get(2)?.node(), expr_arena, args)?;
+
+                Some(format!(
+                    "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
+                ))
+            }
         },
         _ => None,
     }

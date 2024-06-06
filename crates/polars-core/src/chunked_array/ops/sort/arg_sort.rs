@@ -48,17 +48,10 @@ where
     let idx = if nulls_last {
         let mut idx = Vec::with_capacity(len);
         idx.extend(iter);
-        if descending {
-            idx.extend(nulls_idx.into_iter().rev());
-        } else {
-            idx.extend(nulls_idx);
-        }
+        idx.extend(nulls_idx);
         idx
     } else {
         let ptr = nulls_idx.as_ptr() as usize;
-        if descending {
-            nulls_idx.reverse();
-        }
         nulls_idx.extend(iter);
         // We had a realloc.
         debug_assert_eq!(nulls_idx.as_ptr() as usize, ptr);

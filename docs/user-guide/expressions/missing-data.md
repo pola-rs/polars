@@ -4,7 +4,7 @@ This page sets out how missing data is represented in Polars and how missing dat
 
 ## `null` and `NaN` values
 
-Each column in a `DataFrame` (or equivalently a `Series`) is an Arrow array or a collection of Arrow arrays [based on the Apache Arrow format](https://arrow.apache.org/docs/format/Columnar.html#null-count). Missing data is represented in Arrow and Polars with a `null` value. This `null` missing value applies for all data types including numerical values.
+Each column in a `DataFrame` (or equivalently a `Series`) is an Arrow array or a collection of Arrow arrays [based on the Apache Arrow spec](https://arrow.apache.org/docs/format/Columnar.html#null-count). Missing data is represented in Arrow and Polars with a `null` value. This `null` missing value applies for all data types including numerical values.
 
 Polars also allows `NotaNumber` or `NaN` values for float columns. These `NaN` values are considered to be a type of floating point data rather than missing data. We discuss `NaN` values separately below.
 

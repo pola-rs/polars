@@ -21,8 +21,8 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
         EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
 
-    let dict = PyDict::new(py);
-    fields_to_pydict(&metadata.schema.fields, dict, py)?;
+    let dict = PyDict::new_bound(py);
+    fields_to_pydict(&metadata.schema.fields, &dict, py)?;
     Ok(dict.to_object(py))
 }
 
@@ -37,13 +37,13 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
 
-    let dict = PyDict::new(py);
-    fields_to_pydict(&arrow_schema.fields, dict, py)?;
+    let dict = PyDict::new_bound(py);
+    fields_to_pydict(&arrow_schema.fields, &dict, py)?;
     Ok(dict.to_object(py))
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-fn fields_to_pydict(fields: &Vec<Field>, dict: &PyDict, py: Python) -> PyResult<()> {
+fn fields_to_pydict(fields: &Vec<Field>, dict: &Bound<'_, PyDict>, py: Python) -> PyResult<()> {
     for field in fields {
         let dt = if field.metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
             Wrap(create_enum_data_type(Utf8ViewArray::new_empty(
@@ -54,5 +54,29 @@ fn fields_to_pydict(fields: &Vec<Field>, dict: &PyDict, py: Python) -> PyResult<
         };
         dict.set_item(&field.name, dt.to_object(py))?;
     }
+    Ok(())
+}
+
+#[cfg(feature = "clipboard")]
+#[pyfunction]
+pub fn read_clipboard_string() -> PyResult<String> {
+    use arboard;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    let result = clipboard
+        .get_text()
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(result)
+}
+
+#[cfg(feature = "clipboard")]
+#[pyfunction]
+pub fn write_clipboard_string(s: &str) -> PyResult<()> {
+    use arboard;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    clipboard
+        .set_text(s)
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
     Ok(())
 }

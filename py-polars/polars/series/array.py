@@ -61,20 +61,14 @@ class ArrayNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(pl.Int64, 2)},
-        ... )
-        >>> df.select(pl.col("a").arr.sum())
-        shape: (2, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 3   │
-        │ 7   │
-        └─────┘
+        >>> s = pl.Series([[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.sum()
+        shape: (2,)
+        Series: '' [i64]
+        [
+            3
+            7
+        ]
         """
 
     def std(self, ddof: int = 1) -> Series:
@@ -134,23 +128,37 @@ class ArrayNameSpace:
         maintain_order
             Maintain order of data. This requires more work.
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`List`.
+
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [[1, 1, 2]],
-        ...     },
-        ...     schema_overrides={"a": pl.Array(pl.Int64, 3)},
-        ... )
-        >>> df.select(pl.col("a").arr.unique())
-        shape: (1, 1)
-        ┌───────────┐
-        │ a         │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2]    │
-        └───────────┘
+        >>> s = pl.Series([[1, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int64, 3))
+        >>> s.arr.unique()
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+            [1, 2]
+            [3, 4, 5]
+        ]
+        """
+
+    def n_unique(self) -> Series:
+        """
+        Count the number of unique values in every sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 4]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.n_unique()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            1
+        ]
         """
 
     def to_list(self) -> Series:
@@ -228,7 +236,13 @@ class ArrayNameSpace:
         ]
         """
 
-    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
+    def sort(
+        self,
+        *,
+        descending: bool = False,
+        nulls_last: bool = False,
+        multithreaded: bool = True,
+    ) -> Series:
         """
         Sort the arrays in this column.
 
@@ -238,6 +252,8 @@ class ArrayNameSpace:
             Sort in descending order.
         nulls_last
             Place null values last.
+        multithreaded
+            Sort using multiple threads.
 
         Examples
         --------
@@ -322,7 +338,7 @@ class ArrayNameSpace:
 
         """
 
-    def get(self, index: int | IntoExprColumn) -> Series:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = True) -> Series:
         """
         Get the value by index in the sub-arrays.
 
@@ -334,6 +350,10 @@ class ArrayNameSpace:
         ----------
         index
             Index to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
 
         Returns
         -------
@@ -345,13 +365,13 @@ class ArrayNameSpace:
         >>> s = pl.Series(
         ...     "a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
         ... )
-        >>> s.arr.get(pl.Series([1, -2, 4]))
+        >>> s.arr.get(pl.Series([1, -2, 0]), null_on_oob=True)
         shape: (3,)
         Series: 'a' [i32]
         [
             2
             5
-            null
+            7
         ]
 
         """

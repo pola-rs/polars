@@ -18,7 +18,6 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{Error, Result};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
-use crate::parquet::statistics::serialize_statistics;
 use crate::parquet::FallibleStreamingIterator;
 
 pub fn write_column_chunk<W, E>(
@@ -173,7 +172,7 @@ fn build_column_chunk(
 
     let statistics = specs.iter().map(|x| &x.statistics).collect::<Vec<_>>();
     let statistics = reduce(&statistics)?;
-    let statistics = statistics.map(|x| serialize_statistics(x.as_ref()));
+    let statistics = statistics.map(|x| x.serialize());
 
     let (type_, _): (Type, Option<i32>) = descriptor.descriptor.primitive_type.physical_type.into();
 

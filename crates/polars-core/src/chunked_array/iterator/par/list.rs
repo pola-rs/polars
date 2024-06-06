@@ -22,7 +22,7 @@ impl ListChunked {
             let arr = unsafe { &*(arr as *const dyn Array as *const ListArray<i64>) };
             (0..arr.len())
                 .into_par_iter()
-                .map(move |idx| unsafe { idx_to_array(idx, arr, &dtype) })
+                .map(move |idx| unsafe { idx_to_array(idx, arr, dtype) })
         })
     }
 
@@ -35,6 +35,6 @@ impl ListChunked {
         let dtype = self.inner_dtype();
         (0..arr.len())
             .into_par_iter()
-            .map(move |idx| unsafe { idx_to_array(idx, arr, &dtype) })
+            .map(move |idx| unsafe { idx_to_array(idx, arr, dtype) })
     }
 }

@@ -1,45 +1,28 @@
-use std::borrow::Cow;
+use std::ops::Deref;
 use std::path::Path;
+use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
+use either::Either;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::hive::HivePartitions;
 use crate::prelude::*;
 
-impl LogicalPlan {
-    pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        use LogicalPlan::*;
-        match self {
-            Scan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            #[cfg(feature = "python")]
-            PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
-            Union { inputs, .. } => inputs[0].schema(),
-            HConcat { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Cache { input, .. } => input.schema(),
-            Sort { input, .. } => input.schema(),
-            DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Selection { input, .. } => input.schema(),
-            Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Join { schema, .. } => Ok(Cow::Borrowed(schema)),
-            HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } | Sink { input, .. } => input.schema(),
-            Slice { input, .. } => input.schema(),
-            MapFunction {
-                input, function, ..
-            } => {
-                let input_schema = input.schema()?;
-                match input_schema {
-                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
-                    Cow::Borrowed(schema) => function.schema(schema),
-                }
-            },
-            Error { err, .. } => Err(err.take()),
-            ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
-        }
+impl DslPlan {
+    // Warning! This should not be used on the DSL internally.
+    // All schema resolving should be done during conversion to [`IR`].
+
+    /// Compute the schema. This requires conversion to [`IR`] and type-resolving.
+    pub fn compute_schema(&self) -> PolarsResult<SchemaRef> {
+        let mut lp_arena = Default::default();
+        let mut expr_arena = Default::default();
+        let node = to_alp(self.clone(), &mut expr_arena, &mut lp_arena, false, true)?;
+
+        Ok(lp_arena.get(node).schema(&lp_arena).into_owned())
     }
 }
 
@@ -49,17 +32,18 @@ pub struct FileInfo {
     pub schema: SchemaRef,
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
-    pub reader_schema: Option<ArrowSchemaRef>,
+    pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
-    pub hive_parts: Option<Arc<hive::HivePartitions>>,
+    pub hive_parts: Option<Arc<HivePartitions>>,
 }
 
 impl FileInfo {
+    /// Constructs a new [`FileInfo`].
     pub fn new(
         schema: SchemaRef,
-        reader_schema: Option<ArrowSchemaRef>,
+        reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
         row_estimation: (Option<usize>, usize),
     ) -> Self {
         Self {
@@ -70,35 +54,57 @@ impl FileInfo {
         }
     }
 
-    /// Updates the statistics and merges the hive partitions schema with the file one.
-    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
-        self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
-            let hive_schema = hive_parts.get_statistics().schema().clone();
-            let expected_len = self.schema.len() + hive_schema.len();
-
-            let schema = Arc::make_mut(&mut self.schema);
-            schema.merge((**hive_parts.get_statistics().schema()).clone());
-
-            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
-            Extending the schema with the hive partitioned columns creates duplicate fields.");
-
-            Ok(Arc::new(hive_parts))
-        }).transpose()?;
+    /// Set the [`HivePartitions`] information for this [`FileInfo`] from a path and an
+    /// optional schema.
+    pub fn init_hive_partitions(
+        &mut self,
+        path: &Path,
+        schema: Option<SchemaRef>,
+    ) -> PolarsResult<()> {
+        let hp = HivePartitions::try_from_path(path, schema)?;
+        if let Some(hp) = hp {
+            let hive_schema = hp.schema().clone();
+            self.update_schema_with_hive_schema(hive_schema)?;
+            self.hive_parts = Some(Arc::new(hp));
+        }
         Ok(())
     }
 
-    /// Updates the statistics, but not the schema.
-    pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
+    /// Merge the [`Schema`] of a [`HivePartitions`] with the schema of this [`FileInfo`].
+    ///
+    /// Returns an `Err` if any of the columns in either schema overlap.
+    fn update_schema_with_hive_schema(&mut self, hive_schema: SchemaRef) -> PolarsResult<()> {
+        let expected_len = self.schema.len() + hive_schema.len();
+
+        let file_schema = Arc::make_mut(&mut self.schema);
+        file_schema.merge(Arc::unwrap_or_clone(hive_schema));
+
+        polars_ensure!(
+            file_schema.len() == expected_len,
+            Duplicate: "invalid Hive partition schema\n\n\
+            Extending the schema with the Hive partition schema would create duplicate fields."
+        );
+        Ok(())
+    }
+
+    /// Update the [`HivePartitions`] statistics for this [`FileInfo`].
+    ///
+    /// If the Hive partitions were not yet initialized, this function has no effect.
+    pub fn update_hive_partitions(&mut self, path: &Path) -> PolarsResult<()> {
         if let Some(current) = &mut self.hive_parts {
-            let new = hive::HivePartitions::parse_url(url).ok_or_else(|| polars_err!(ComputeError: "expected hive partitioned path, got {}\n\n\
-            This error occurs if 'hive_partitioning=true' some paths are hive partitioned and some paths are not.", url.display()))?;
+            let schema = current.schema().clone();
+            let hp = HivePartitions::try_from_path(path, Some(schema))?;
+            let Some(new) = hp else {
+                polars_bail!(
+                    ComputeError: "expected Hive partitioned path, got {}\n\n\
+                    This error occurs if some paths are Hive partitioned and some paths are not.",
+                    path.display()
+                )
+            };
+
             match Arc::get_mut(current) {
-                Some(current) => {
-                    *current = new;
-                },
-                _ => {
-                    *current = Arc::new(new);
-                },
+                Some(hp) => *hp = new,
+                None => *current = Arc::new(new),
             }
         }
         Ok(())
@@ -124,12 +130,12 @@ fn estimate_sizes(
 #[cfg(feature = "streaming")]
 pub fn set_estimated_row_counts(
     root: Node,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     mut _filter_count: usize,
     scratch: &mut Vec<Node>,
 ) -> (Option<usize>, usize, usize) {
-    use ALogicalPlan::*;
+    use IR::*;
 
     fn apply_slice(out: &mut (Option<usize>, usize, usize), slice: Option<(i64, usize)>) {
         if let Some((_, len)) = slice {
@@ -139,9 +145,9 @@ pub fn set_estimated_row_counts(
     }
 
     match lp_arena.get(root) {
-        Selection { predicate, input } => {
+        Filter { predicate, input } => {
             _filter_count += expr_arena
-                .iter(*predicate)
+                .iter(predicate.node())
                 .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))
                 .count()
                 + 1;
@@ -203,7 +209,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross | JoinType::Outer { .. } => {
+                    JoinType::Cross | JoinType::Full { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
@@ -300,11 +306,11 @@ pub(crate) fn det_join_schema(
                 new_schema.with_column(field.name, field.dtype);
                 arena.clear();
             }
-            // except in asof joins. Asof joins are not equi-joins
+            // Except in asof joins. Asof joins are not equi-joins
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if !options.args.how.merges_join_keys() {
+            if !options.args.coalesce.coalesce(&options.args.how) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
@@ -329,10 +335,13 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
+            let are_coalesced = options.args.coalesce.coalesce(&options.args.how);
+            let is_asof = options.args.how.is_asof();
+
+            // Asof joins are special, if the names are equal they will not be coalesced.
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str())  // The names that are joined on are merged
-                || matches!(&options.args.how, JoinType::Outer{coalesce: false})
-                // The names are not merged
+                if !join_on_right.contains(name.as_str()) || (!are_coalesced && !is_asof)
+                // The names that are joined on are merged
                 {
                     if schema_left.contains(name.as_str()) {
                         #[cfg(feature = "asof_join")]
@@ -359,5 +368,37 @@ pub(crate) fn det_join_schema(
 
             Ok(Arc::new(new_schema))
         },
+    }
+}
+
+// We don't use an `Arc<Mutex>` because caches should live in different query plans.
+// For that reason we have a specialized deep clone.
+#[derive(Default)]
+pub struct CachedSchema(Mutex<Option<SchemaRef>>);
+
+impl AsRef<Mutex<Option<SchemaRef>>> for CachedSchema {
+    fn as_ref(&self) -> &Mutex<Option<SchemaRef>> {
+        &self.0
+    }
+}
+
+impl Deref for CachedSchema {
+    type Target = Mutex<Option<SchemaRef>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Clone for CachedSchema {
+    fn clone(&self) -> Self {
+        let inner = self.0.lock().unwrap();
+        Self(Mutex::new(inner.clone()))
+    }
+}
+
+impl CachedSchema {
+    pub fn get(&self) -> Option<SchemaRef> {
+        self.0.lock().unwrap().clone()
     }
 }

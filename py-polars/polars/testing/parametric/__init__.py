@@ -1,34 +1,33 @@
-from typing import Any
-
 from polars.dependencies import _HYPOTHESIS_AVAILABLE
 
-if _HYPOTHESIS_AVAILABLE:
-    from polars.testing.parametric.primitives import column, columns, dataframes, series
-    from polars.testing.parametric.profiles import load_profile, set_profile
-    from polars.testing.parametric.strategies import (
-        all_strategies,
-        create_array_strategy,
-        create_list_strategy,
-        nested_strategies,
-        scalar_strategies,
+if not _HYPOTHESIS_AVAILABLE:
+    msg = (
+        "polars.testing.parametric requires the 'hypothesis' module\n"
+        "Please install it using the command: pip install hypothesis"
     )
-else:
+    raise ModuleNotFoundError(msg)
 
-    def __getattr__(*args: Any, **kwargs: Any) -> Any:
-        msg = f"polars.testing.parametric.{args[0]} requires the 'hypothesis' module"
-        raise ModuleNotFoundError(msg) from None
-
+from polars.testing.parametric.profiles import load_profile, set_profile
+from polars.testing.parametric.strategies import (
+    column,
+    columns,
+    create_list_strategy,
+    dataframes,
+    dtypes,
+    lists,
+    series,
+)
 
 __all__ = [
-    "all_strategies",
+    # strategies
+    "dataframes",
+    "series",
     "column",
     "columns",
-    "create_array_strategy",
+    "dtypes",
+    "lists",
     "create_list_strategy",
-    "dataframes",
+    # profiles
     "load_profile",
-    "nested_strategies",
-    "scalar_strategies",
-    "series",
     "set_profile",
 ]

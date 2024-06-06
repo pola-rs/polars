@@ -28,10 +28,10 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -134,8 +134,12 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        self.0.deref().arg_sort_multiple(options)
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        self.0.deref().arg_sort_multiple(by, options)
     }
 }
 
@@ -144,8 +148,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -266,11 +270,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        self.0
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(self
+            .0
             .sort_with(options)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
+            .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -329,32 +334,29 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .max_as_series()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.max_reduce();
+
+        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .min_as_series()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone()))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.min_reduce();
+
+        Ok(Scalar::new(self.dtype().clone(), sc.value().clone()))
     }
 
-    fn median_as_series(&self) -> PolarsResult<Series> {
-        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        let av: AnyValue = self.median().map(|v| v as i64).into();
+        Ok(Scalar::new(self.dtype().clone(), av))
     }
 
-    fn quantile_as_series(
+    fn quantile_reduce(
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap())
+    ) -> PolarsResult<Scalar> {
+        Ok(Scalar::new(self.dtype().clone(), AnyValue::Null))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

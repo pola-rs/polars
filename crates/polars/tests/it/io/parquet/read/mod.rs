@@ -213,7 +213,7 @@ pub fn read_column<R: std::io::Read + std::io::Seek>(
     reader: &mut R,
     row_group: usize,
     field_name: &str,
-) -> Result<(Array, Option<std::sync::Arc<dyn Statistics>>)> {
+) -> Result<(Array, Option<Statistics>)> {
     let metadata = read_metadata(reader)?;
 
     let field = metadata
@@ -248,7 +248,7 @@ pub async fn read_column_async<
     reader: &mut R,
     row_group: usize,
     field_name: &str,
-) -> Result<(Array, Option<std::sync::Arc<dyn Statistics>>)> {
+) -> Result<(Array, Option<Statistics>)> {
     let metadata = read_metadata_async(reader).await?;
 
     let field = metadata
@@ -277,7 +277,7 @@ pub async fn read_column_async<
     Ok((arrays.pop().unwrap(), statistics.pop().unwrap()))
 }
 
-fn get_column(path: &str, column: &str) -> Result<(Array, Option<std::sync::Arc<dyn Statistics>>)> {
+fn get_column(path: &str, column: &str) -> Result<(Array, Option<Statistics>)> {
     let mut file = File::open(path).unwrap();
     read_column(&mut file, 0, column)
 }
@@ -288,7 +288,7 @@ fn test_column(column: &str) -> Result<()> {
     let path = path.to_str().unwrap();
     let (result, statistics) = get_column(path, column)?;
     // the file does not have statistics
-    assert_eq!(statistics.as_ref().map(|x| x.as_ref()), None);
+    assert_eq!(statistics.as_ref(), None);
     assert_eq!(result, alltypes_plain(column));
     Ok(())
 }

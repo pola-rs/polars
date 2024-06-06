@@ -81,7 +81,7 @@ impl Executor for GroupByDynamicExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run GroupbyDynamicExec")
+                eprintln!("run GroupbyDynamicExec")
             }
         }
         let df = self.input.execute(state)?;

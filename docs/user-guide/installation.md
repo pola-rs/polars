@@ -6,6 +6,9 @@ Polars is a library and installation is as simple as invoking the package manage
 
     ``` bash
     pip install polars
+
+    # Or for legacy CPUs without AVX2 support
+    pip install polars-lts-cpu
     ```
 
 === ":fontawesome-brands-rust: Rust"
@@ -16,6 +19,36 @@ Polars is a library and installation is as simple as invoking the package manage
     # Or Cargo.toml
     [dependencies]
     polars = { version = "x", features = ["lazy", ...]}
+    ```
+
+### Big Index
+
+By default, polars is limited to 2^32 (~4.2 billion rows). To increase this limit 2^64 (~18 quintillion) by enabling big index:
+
+=== ":fontawesome-brands-python: Python"
+
+    ``` bash
+    pip install polars-u64-idx
+    ```
+
+=== ":fontawesome-brands-rust: Rust"
+
+    ``` shell
+    cargo add polars -F bigidx
+
+    # Or Cargo.toml
+    [dependencies]
+    polars = { version = "x", features = ["bigidx", ...] }
+    ```
+
+### Legacy CPU
+
+To install polars on an old CPU without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support:
+
+=== ":fontawesome-brands-python: Python"
+
+    ``` bash
+    pip install polars-lts-cpu
     ```
 
 ## Importing
@@ -125,7 +158,6 @@ The opt-in features are:
     - `join_asof` - Join ASOF, to join on nearest keys instead of exact equality match.
     - `cross_join` - Create the Cartesian product of two DataFrames.
     - `semi_anti_join` - SEMI and ANTI joins.
-    - `group_by_list` - Allow group by operation on keys of type List.
     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)

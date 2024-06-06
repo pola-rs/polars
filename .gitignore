@@ -8,7 +8,6 @@
 .yarn/
 coverage.lcov
 coverage.xml
-data/
 polars/vendor
 
 # OS
@@ -31,6 +30,12 @@ __pycache__/
 # Rust
 .cargo/
 target/
+
+# Data
+*.csv
+*.parquet
+*.feather
+*.tbl
 
 # Project
 /docs/data/

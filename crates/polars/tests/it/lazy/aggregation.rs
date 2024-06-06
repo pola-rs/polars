@@ -29,7 +29,7 @@ fn test_lazy_agg() {
                 .quantile(lit(0.5), QuantileInterpolOptions::default())
                 .alias("median_rain"),
         ])
-        .sort("date", Default::default());
+        .sort(["date"], Default::default());
 
     let new = lf.collect().unwrap();
     let min = new.column("min").unwrap();

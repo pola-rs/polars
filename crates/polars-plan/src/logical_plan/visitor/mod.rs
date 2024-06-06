@@ -2,6 +2,8 @@
 
 use arrow::legacy::error::PolarsResult;
 mod expr;
+#[cfg(feature = "cse")]
+mod hash;
 mod lp;
 mod visitors;
 

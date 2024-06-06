@@ -1,59 +1,69 @@
 /// Macro that generates a packing function taking the number of bits as a const generic
 macro_rules! pack_impl {
-    ($t:ty, $bytes:literal, $bits:tt) => {
-        pub fn pack<const NUM_BITS: usize>(input: &[$t; $bits], output: &mut [u8]) {
+    ($t:ty, $bytes:literal, $bits:tt, $bits_minus_one:tt) => {
+        // Adapted from https://github.com/quickwit-oss/bitpacking
+        pub unsafe fn pack<const NUM_BITS: usize>(input: &[$t; $bits], output: &mut [u8]) {
             if NUM_BITS == 0 {
                 for out in output {
                     *out = 0;
                 }
                 return;
             }
-            assert!(NUM_BITS <= $bytes * 8);
+            assert!(NUM_BITS <= $bits);
             assert!(output.len() >= NUM_BITS * $bytes);
 
-            let mask = match NUM_BITS {
-                $bits => <$t>::MAX,
-                _ => ((1 << NUM_BITS) - 1),
-            };
+            let input_ptr = input.as_ptr();
+            let mut output_ptr = output.as_mut_ptr() as *mut $t;
+            let mut out_register: $t = read_unaligned(input_ptr);
 
-            for i in 0..$bits {
-                let start_bit = i * NUM_BITS;
-                let end_bit = start_bit + NUM_BITS;
+            if $bits == NUM_BITS {
+                write_unaligned(output_ptr, out_register);
+                output_ptr = output_ptr.offset(1);
+            }
 
-                let start_bit_offset = start_bit % $bits;
-                let end_bit_offset = end_bit % $bits;
-                let start_byte = start_bit / $bits;
-                let end_byte = end_bit / $bits;
-                if start_byte != end_byte && end_bit_offset != 0 {
-                    let a = input[i] << start_bit_offset;
-                    let val_a = <$t>::to_le_bytes(a);
-                    for i in 0..$bytes {
-                        output[start_byte * $bytes + i] |= val_a[i]
-                    }
+            // Using microbenchmark (79d1fff), unrolling this loop is over 10x
+            // faster than not (>20x faster than old algorithm)
+            seq_macro::seq!(i in 1..$bits_minus_one {
+                let bits_filled: usize = i * NUM_BITS;
+                let inner_cursor: usize = bits_filled % $bits;
+                let remaining: usize = $bits - inner_cursor;
 
-                    let b = (input[i] >> (NUM_BITS - end_bit_offset)) & mask;
-                    let val_b = <$t>::to_le_bytes(b);
-                    for i in 0..$bytes {
-                        output[end_byte * $bytes + i] |= val_b[i]
-                    }
-                } else {
-                    let val = (input[i] & mask) << start_bit_offset;
-                    let val = <$t>::to_le_bytes(val);
+                let offset_ptr = input_ptr.add(i);
+                let in_register: $t = read_unaligned(offset_ptr);
 
-                    for i in 0..$bytes {
-                        output[start_byte * $bytes + i] |= val[i]
+                out_register =
+                    if inner_cursor > 0 {
+                        out_register | (in_register << inner_cursor)
+                    } else {
+                        in_register
+                    };
+
+                if remaining <= NUM_BITS {
+                    write_unaligned(output_ptr, out_register);
+                    output_ptr = output_ptr.offset(1);
+                    if 0 < remaining && remaining < NUM_BITS {
+                        out_register = in_register >> remaining
                     }
                 }
-            }
+            });
+
+            let in_register: $t = read_unaligned(input_ptr.add($bits - 1));
+            out_register = if $bits - NUM_BITS > 0 {
+                out_register | (in_register << ($bits - NUM_BITS))
+            } else {
+                in_register
+            };
+            write_unaligned(output_ptr, out_register)
         }
     };
 }
 
 /// Macro that generates pack functions that accept num_bits as a parameter
 macro_rules! pack {
-    ($name:ident, $t:ty, $bytes:literal, $bits:tt) => {
+    ($name:ident, $t:ty, $bytes:literal, $bits:tt, $bits_minus_one:tt) => {
         mod $name {
-            pack_impl!($t, $bytes, $bits);
+            use std::ptr::{read_unaligned, write_unaligned};
+            pack_impl!($t, $bytes, $bits, $bits_minus_one);
         }
 
         /// Pack unpacked `input` into `output` with a bit width of `num_bits`
@@ -61,7 +71,9 @@ macro_rules! pack {
             // This will get optimised into a jump table
             seq_macro::seq!(i in 0..=$bits {
                 if i == num_bits {
-                    return $name::pack::<i>(input, output);
+                    unsafe {
+                        return $name::pack::<i>(input, output);
+                    }
                 }
             });
             unreachable!("invalid num_bits {}", num_bits);
@@ -69,13 +81,15 @@ macro_rules! pack {
     };
 }
 
-pack!(pack8, u8, 1, 8);
-pack!(pack16, u16, 2, 16);
-pack!(pack32, u32, 4, 32);
-pack!(pack64, u64, 8, 64);
+pack!(pack8, u8, 1, 8, 7);
+pack!(pack16, u16, 2, 16, 15);
+pack!(pack32, u32, 4, 32, 31);
+pack!(pack64, u64, 8, 64, 63);
 
 #[cfg(test)]
 mod tests {
+    use rand::distributions::{Distribution, Uniform};
+
     use super::super::unpack::*;
     use super::*;
 
@@ -103,6 +117,74 @@ mod tests {
             let mut other = [0u32; 32];
             unpack32(&output, &mut other, num_bits);
             assert_eq!(other, input);
+        }
+    }
+
+    #[test]
+    fn test_u8_random() {
+        let mut rng = rand::thread_rng();
+        let mut random_array = [0u8; 8];
+        let between = Uniform::from(0..6);
+        for num_bits in 3..=8 {
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
+            }
+            let mut output = [0u8; 8];
+            pack8(&random_array, &mut output, num_bits);
+            let mut other = [0u8; 8];
+            unpack8(&output, &mut other, num_bits);
+            assert_eq!(other, random_array);
+        }
+    }
+
+    #[test]
+    fn test_u16_random() {
+        let mut rng = rand::thread_rng();
+        let mut random_array = [0u16; 16];
+        let between = Uniform::from(0..128);
+        for num_bits in 7..=16 {
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
+            }
+            let mut output = [0u8; 16 * 2];
+            pack16(&random_array, &mut output, num_bits);
+            let mut other = [0u16; 16];
+            unpack16(&output, &mut other, num_bits);
+            assert_eq!(other, random_array);
+        }
+    }
+
+    #[test]
+    fn test_u32_random() {
+        let mut rng = rand::thread_rng();
+        let mut random_array = [0u32; 32];
+        let between = Uniform::from(0..131_072);
+        for num_bits in 17..=32 {
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
+            }
+            let mut output = [0u8; 32 * 4];
+            pack32(&random_array, &mut output, num_bits);
+            let mut other = [0u32; 32];
+            unpack32(&output, &mut other, num_bits);
+            assert_eq!(other, random_array);
+        }
+    }
+
+    #[test]
+    fn test_u64_random() {
+        let mut rng = rand::thread_rng();
+        let mut random_array = [0u64; 64];
+        let between = Uniform::from(0..131_072);
+        for num_bits in 17..=64 {
+            for i in &mut random_array {
+                *i = between.sample(&mut rng);
+            }
+            let mut output = [0u8; 64 * 8];
+            pack64(&random_array, &mut output, num_bits);
+            let mut other = [0u64; 64];
+            unpack64(&output, &mut other, num_bits);
+            assert_eq!(other, random_array);
         }
     }
 }

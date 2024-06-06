@@ -1,4 +1,4 @@
-#[cfg(feature = "temporal")]
+#[cfg(feature = "dtype-date")]
 mod date_range;
 #[cfg(feature = "dtype-datetime")]
 mod datetime_range;
@@ -28,19 +28,15 @@ pub enum RangeFunction {
         dtype: DataType,
     },
     IntRanges,
-    #[cfg(feature = "temporal")]
+    #[cfg(feature = "dtype-date")]
     DateRange {
         interval: Duration,
         closed: ClosedWindow,
-        time_unit: Option<TimeUnit>,
-        time_zone: Option<TimeZone>,
     },
-    #[cfg(feature = "temporal")]
+    #[cfg(feature = "dtype-date")]
     DateRanges {
         interval: Duration,
         closed: ClosedWindow,
-        time_unit: Option<TimeUnit>,
-        time_zone: Option<TimeZone>,
     },
     #[cfg(feature = "dtype-datetime")]
     DatetimeRange {
@@ -74,37 +70,11 @@ impl RangeFunction {
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
-            #[cfg(feature = "temporal")]
-            DateRange {
-                interval,
-                closed: _,
-                time_unit,
-                time_zone,
-            } => {
-                // output dtype may change based on `interval`, `time_unit`, and `time_zone`
-                let dtype = mapper.map_to_date_range_dtype(
-                    interval,
-                    time_unit.as_ref(),
-                    time_zone.as_deref(),
-                )?;
-                mapper.with_dtype(dtype)
-            },
-            #[cfg(feature = "temporal")]
-            DateRanges {
-                interval,
-                closed: _,
-                time_unit,
-                time_zone,
-            } => {
-                // output dtype may change based on `interval`, `time_unit`, and `time_zone`
-                let inner_dtype = mapper.map_to_date_range_dtype(
-                    interval,
-                    time_unit.as_ref(),
-                    time_zone.as_deref(),
-                )?;
-                mapper.with_dtype(DataType::List(Box::new(inner_dtype)))
-            },
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date")]
+            DateRange { .. } => mapper.with_dtype(DataType::Date),
+            #[cfg(feature = "dtype-date")]
+            DateRanges { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::Date))),
+            #[cfg(feature = "dtype-datetime")]
             DatetimeRange {
                 interval: _,
                 closed: _,
@@ -116,7 +86,7 @@ impl RangeFunction {
                     mapper.map_to_datetime_range_dtype(time_unit.as_ref(), time_zone.as_deref())?;
                 mapper.with_dtype(dtype)
             },
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-datetime")]
             DatetimeRanges {
                 interval: _,
                 closed: _,
@@ -142,7 +112,7 @@ impl Display for RangeFunction {
         let s = match self {
             IntRange { .. } => "int_range",
             IntRanges => "int_ranges",
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date")]
             DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
             DateRanges { .. } => "date_ranges",
@@ -169,35 +139,13 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IntRanges => {
                 map_as_slice!(int_range::int_ranges)
             },
-            #[cfg(feature = "temporal")]
-            DateRange {
-                interval,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    date_range::temporal_range,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
+            #[cfg(feature = "dtype-date")]
+            DateRange { interval, closed } => {
+                map_as_slice!(date_range::date_range, interval, closed)
             },
-            #[cfg(feature = "temporal")]
-            DateRanges {
-                interval,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    date_range::temporal_ranges,
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
+            #[cfg(feature = "dtype-date")]
+            DateRanges { interval, closed } => {
+                map_as_slice!(date_range::date_ranges, interval, closed)
             },
             #[cfg(feature = "dtype-datetime")]
             DatetimeRange {

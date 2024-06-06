@@ -53,7 +53,11 @@ fn test_agg_unique_first() -> PolarsResult<()> {
         .group_by_stable([col("g")])
         .agg([
             col("v").unique().first().alias("v_first"),
-            col("v").unique().sort(false).first().alias("true_first"),
+            col("v")
+                .unique()
+                .sort(Default::default())
+                .first()
+                .alias("true_first"),
             col("v").unique().implode(),
         ])
         .collect()?;
@@ -72,6 +76,7 @@ fn test_agg_unique_first() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
     let df = df![
         "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -86,7 +91,7 @@ fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
             .cum_sum(false)
             .alias("key")])
         .agg([col("depth").max().name().keep()])
-        .sort("depth", SortOptions::default())
+        .sort(["depth"], Default::default())
         .collect()?;
 
     assert_eq!(
@@ -168,25 +173,22 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
         .group_by([col("fruits")])
         .agg([
             col("A")
-                .rolling_min(RollingOptions {
-                    window_size: Duration::new(1),
+                .rolling_min(RollingOptionsFixedWindow {
+                    window_size: 1,
                     ..Default::default()
                 })
                 .alias("input"),
             col("A")
-                .rolling_min(RollingOptions {
-                    window_size: Duration::new(1),
+                .rolling_min(RollingOptionsFixedWindow {
+                    window_size: 1,
                     ..Default::default()
                 })
                 .pow(2.0)
                 .alias("foo"),
         ])
         .sort(
-            "fruits",
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
+            ["fruits"],
+            SortMultipleOptions::default().with_order_descending(true),
         )
         .collect()?;
 
@@ -209,8 +211,8 @@ fn test_power_in_agg_list2() -> PolarsResult<()> {
         .lazy()
         .group_by([col("fruits")])
         .agg([col("A")
-            .rolling_min(RollingOptions {
-                window_size: Duration::new(2),
+            .rolling_min(RollingOptionsFixedWindow {
+                window_size: 2,
                 min_periods: 2,
                 ..Default::default()
             })
@@ -218,11 +220,8 @@ fn test_power_in_agg_list2() -> PolarsResult<()> {
             .sum()
             .alias("foo")])
         .sort(
-            "fruits",
-            SortOptions {
-                descending: true,
-                ..Default::default()
-            },
+            ["fruits"],
+            SortMultipleOptions::default().with_order_descending(true),
         )
         .collect()?;
 
@@ -401,7 +400,7 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
         // Don't use maintain order here! That hides the bug
         .group_by([col("x")])
         .agg(&[(col("y").shift(lit(-1)) + col("x")).alias("sum")])
-        .sort("x", Default::default())
+        .sort(["x"], Default::default())
         .collect()?;
 
     let out = out.explode(["sum"])?;
@@ -429,7 +428,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .lazy()
         .group_by([col("user")])
         .agg([col("book").get(col("count").arg_max()).alias("fav_book")])
-        .sort("user", Default::default())
+        .sort(["user"], Default::default())
         .collect()?;
 
     let s = out.column("fav_book")?;
@@ -456,7 +455,7 @@ fn take_aggregations() -> PolarsResult<()> {
                 )
                 .alias("ordered"),
         ])
-        .sort("user", Default::default())
+        .sort(["user"], Default::default())
         .collect()?;
     let s = out.column("ordered")?;
     let flat = s.explode()?;
@@ -468,7 +467,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .lazy()
         .group_by([col("user")])
         .agg([col("book").get(lit(0)).alias("take_lit")])
-        .sort("user", Default::default())
+        .sort(["user"], Default::default())
         .collect()?;
 
     let taken = out.column("take_lit")?;
@@ -562,7 +561,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .sort("fruits", Default::default())
+        .sort(["fruits"], Default::default())
         .select([col("B").get(lit(0u32)).over([col("fruits")]).alias("taken")])
         .collect()?;
 

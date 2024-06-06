@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-SHELL=/bin/bash
+SHELL=bash
 BASE ?= main
 
 .PHONY: fmt
@@ -14,11 +14,11 @@ check:  ## Run cargo check with all features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy -p polars --all-features -- -W clippy::dbg_macro
+	cargo clippy --all-targets --all-features -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy -p polars -- -W clippy::dbg_macro
+	cargo clippy --all-targets -- -W clippy::dbg_macro
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
@@ -115,6 +115,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
 	cargo publish --allow-dirty -p polars-plan
+	cargo publish --allow-dirty -p polars-expr
 	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql

@@ -33,7 +33,7 @@ rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }
@@ -75,6 +75,7 @@ is_unique = []
 unique_counts = []
 is_between = []
 approx_unique = []
+business = ["dtype-date", "chrono"]
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
@@ -90,6 +91,7 @@ string_encoding = ["base64", "hex"]
 # ops
 to_dummies = []
 interpolate = []
+interpolate_by = []
 list_to_struct = ["polars-core/dtype-struct"]
 array_to_struct = ["polars-core/dtype-array", "polars-core/dtype-struct"]
 list_count = []
@@ -103,8 +105,8 @@ extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
 reinterpret = ["polars-core/reinterpret"]
-group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
+rolling_window_by = ["polars-core/rolling_window_by"]
 moment = []
 mode = []
 search_sorted = []
@@ -129,6 +131,7 @@ repeat_by = []
 peaks = []
 cum_agg = []
 ewma = []
+ewma_by = []
 abs = []
 cov = []
 gather = []

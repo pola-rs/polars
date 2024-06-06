@@ -3,8 +3,6 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import issue_deprecation_warning
-
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
     from polars.polars import PyStringCacheHolder
@@ -76,23 +74,13 @@ class StringCache(contextlib.ContextDecorator):
         del self._string_cache
 
 
-def enable_string_cache(enable: bool | None = None) -> None:
+def enable_string_cache() -> None:
     """
     Enable the global string cache.
 
     :class:`Categorical` columns created under the same global string cache have
     the same underlying physical value when string values are equal. This allows the
     columns to be concatenated or used in a join operation, for example.
-
-    Parameters
-    ----------
-    enable
-        Enable or disable the global string cache.
-
-        .. deprecated:: 0.19.3
-            `enable_string_cache` no longer accepts an argument.
-             Call `enable_string_cache()` to enable the string cache
-             and `disable_string_cache()` to disable the string cache.
 
     See Also
     --------
@@ -132,17 +120,6 @@ def enable_string_cache(enable: bool | None = None) -> None:
             "green"
     ]
     """
-    if enable is not None:
-        issue_deprecation_warning(
-            "`enable_string_cache` no longer accepts an argument."
-            " Call `enable_string_cache()` to enable the string cache"
-            " and `disable_string_cache()` to disable the string cache.",
-            version="0.19.3",
-        )
-        if enable is False:
-            plr.disable_string_cache()
-            return
-
     plr.enable_string_cache()
 
 

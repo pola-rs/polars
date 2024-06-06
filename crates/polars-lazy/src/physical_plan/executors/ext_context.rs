@@ -10,7 +10,7 @@ impl Executor for ExternalContext {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run ExternalContext")
+                eprintln!("run ExternalContext")
             }
         }
         // we evaluate contexts first as input may has pushed exprs.

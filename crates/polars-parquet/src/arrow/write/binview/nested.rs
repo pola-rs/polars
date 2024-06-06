@@ -20,8 +20,8 @@ pub fn array_to_page(
 
     encode_plain(array, &mut buffer);
 
-    let statistics = if options.write_statistics {
-        Some(build_statistics(array, type_.clone()))
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics))
     } else {
         None
     };

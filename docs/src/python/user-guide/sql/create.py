@@ -7,7 +7,7 @@ import polars as pl
 data = {"name": ["Alice", "Bob", "Charlie", "David"], "age": [25, 30, 35, 40]}
 df = pl.LazyFrame(data)
 
-ctx = pl.SQLContext(my_table=df, eager_execution=True)
+ctx = pl.SQLContext(my_table=df, eager=True)
 
 result = ctx.execute(
     """

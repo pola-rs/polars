@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pytest
 from hypothesis import given
-from hypothesis.strategies import booleans, floats
 
 import polars as pl
 from polars.expr.expr import _prepare_alpha
@@ -60,7 +60,7 @@ def test_ewm_mean() -> None:
             1.0,
             3.6666666666666665,
             5.571428571428571,
-            5.571428571428571,
+            None,
             3.6666666666666665,
             4.354838709677419,
             4.174603174603175,
@@ -73,7 +73,7 @@ def test_ewm_mean() -> None:
             1.0,
             3.666666666666667,
             5.571428571428571,
-            5.571428571428571,
+            None,
             3.08695652173913,
             4.2,
             4.092436974789916,
@@ -83,12 +83,12 @@ def test_ewm_mean() -> None:
         s.ewm_mean(alpha=0.5, adjust=True, ignore_nulls=False), expected
     )
 
-    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
+    expected = pl.Series([None, 1.0, 3.0, 5.0, None, 3.5, 4.25, 4.125])
     assert_series_equal(
         s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=True), expected
     )
 
-    expected = pl.Series([None, 1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0])
+    expected = pl.Series([None, 1.0, 3.0, 5.0, None, 3.0, 4.0, 4.0])
     assert_series_equal(
         s.ewm_mean(alpha=0.5, adjust=False, ignore_nulls=False), expected
     )
@@ -114,7 +114,7 @@ def test_ewm_mean_min_periods() -> None:
     series = pl.Series([1.0, None, None, None])
 
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1, ignore_nulls=True)
-    assert ewm_mean.to_list() == [1.0, 1.0, 1.0, 1.0]
+    assert ewm_mean.to_list() == [1.0, None, None, None]
     ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2, ignore_nulls=True)
     assert ewm_mean.to_list() == [None, None, None, None]
 
@@ -126,9 +126,9 @@ def test_ewm_mean_min_periods() -> None:
         pl.Series(
             [
                 1.0,
-                1.0,
+                None,
                 1.6666666666666665,
-                1.6666666666666665,
+                None,
                 2.4285714285714284,
             ]
         ),
@@ -141,7 +141,7 @@ def test_ewm_mean_min_periods() -> None:
                 None,
                 None,
                 1.6666666666666665,
-                1.6666666666666665,
+                None,
                 2.4285714285714284,
             ]
         ),
@@ -153,8 +153,25 @@ def test_ewm_std_var() -> None:
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
-
+    expected = pl.Series("a", [0, 4.5, 1.9285714285714288])
     assert np.allclose(var, std**2, rtol=1e-16)
+    assert_series_equal(var, expected)
+
+
+def test_ewm_std_var_with_nulls() -> None:
+    series = pl.Series("a", [2, 5, None, 3])
+
+    var = series.ewm_var(alpha=0.5, ignore_nulls=True)
+    std = series.ewm_std(alpha=0.5, ignore_nulls=True)
+    expected = pl.Series("a", [0, 4.5, None, 1.9285714285714288])
+    assert_series_equal(var, expected)
+    assert_series_equal(std**2, expected)
+
+    var = series.ewm_var(alpha=0.5, ignore_nulls=False)
+    std = series.ewm_std(alpha=0.5, ignore_nulls=False)
+    expected = pl.Series("a", [0, 4.5, None, 1.7307692307692308])
+    assert_series_equal(var, expected)
+    assert_series_equal(std**2, expected)
 
 
 def test_ewm_param_validation() -> None:
@@ -223,17 +240,17 @@ def alpha_guard(**decay_param: float) -> bool:
     s=series(
         min_size=4,
         dtype=pl.Float64,
-        null_probability=0.05,
-        strategy=floats(min_value=-1e8, max_value=1e8),
+        allow_null=True,
+        strategy=st.floats(min_value=-1e8, max_value=1e8),
     ),
-    half_life=floats(min_value=0, max_value=4, exclude_min=True).filter(
+    half_life=st.floats(min_value=0, max_value=4, exclude_min=True).filter(
         lambda x: alpha_guard(half_life=x)
     ),
-    com=floats(min_value=0, max_value=99).filter(lambda x: alpha_guard(com=x)),
-    span=floats(min_value=1, max_value=10).filter(lambda x: alpha_guard(span=x)),
-    ignore_nulls=booleans(),
-    adjust=booleans(),
-    bias=booleans(),
+    com=st.floats(min_value=0, max_value=99).filter(lambda x: alpha_guard(com=x)),
+    span=st.floats(min_value=1, max_value=10).filter(lambda x: alpha_guard(span=x)),
+    ignore_nulls=st.booleans(),
+    adjust=st.booleans(),
+    bias=st.booleans(),
 )
 def test_ewm_methods(
     s: pl.Series,
@@ -287,13 +304,3 @@ def test_ewm_methods(
             ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
             ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
             assert_series_equal(ewm_var_pl, ewm_var_pd, atol=1e-07)
-
-
-def test_ewm_ignore_nulls_deprecation() -> None:
-    s = pl.Series([1, None, 3])
-    with pytest.deprecated_call():
-        s.ewm_mean(com=1.0)
-    with pytest.deprecated_call():
-        s.ewm_std(com=1.0)
-    with pytest.deprecated_call():
-        s.ewm_var(com=1.0)

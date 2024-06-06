@@ -29,11 +29,14 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
 
 /// Get the key of a url for object store registration.
 /// The credential info will be removed
-fn url_to_key(url: &Url) -> String {
+fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
+    // We include credentials as they can expire, so users will send new credentials for the same url.
+    let creds = serde_json::to_string(&options).unwrap_or_else(|_| "".into());
     format!(
-        "{}://{}",
+        "{}://{}<\\creds\\>{}",
         url.scheme(),
         &url[url::Position::BeforeHost..url::Position::AfterPort],
+        creds
     )
 }
 
@@ -49,7 +52,7 @@ pub async fn build_object_store(
     let parsed = parse_url(url).map_err(to_compute_err)?;
     let cloud_location = CloudLocation::from_url(&parsed)?;
 
-    let key = url_to_key(&parsed);
+    let key = url_and_creds_to_key(&parsed, options);
     let mut allow_cache = true;
 
     {
@@ -117,7 +120,7 @@ pub async fn build_object_store(
     if allow_cache {
         let mut cache = OBJECT_STORE_CACHE.write().await;
         // Clear the cache if we surpass a certain amount of buckets.
-        if cache.len() > 32 {
+        if cache.len() > 8 {
             cache.clear()
         }
         cache.insert(key, store.clone());

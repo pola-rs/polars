@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.io.ipc
-from polars.io._utils import _prepare_file_arg
+from polars.io._utils import prepare_file_arg
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -17,8 +17,7 @@ def _scan_ipc_fsspec(
 ) -> LazyFrame:
     func = partial(_scan_ipc_impl, source, storage_options=storage_options)
 
-    storage_options = storage_options or {}
-    with _prepare_file_arg(source, storage_options=storage_options) as data:
+    with prepare_file_arg(source, storage_options=storage_options) as data:
         schema = polars.io.ipc.read_ipc_schema(data)
 
     return pl.LazyFrame._scan_python_function(schema, func)

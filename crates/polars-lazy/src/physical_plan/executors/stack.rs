@@ -1,12 +1,15 @@
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 
 pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) has_windows: bool,
-    pub(crate) cse_exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
+    // Can run all operations elementwise
+    pub(crate) streamable: bool,
 }
 
 impl StackExec {
@@ -15,18 +18,71 @@ impl StackExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let res = evaluate_physical_expressions(
-            &mut df,
-            &self.cse_exprs,
-            &self.exprs,
-            state,
-            self.has_windows,
-            self.options.run_parallel,
-        )?;
-        state.clear_window_expr_cache();
-
         let schema = &*self.input_schema;
-        df._add_columns(res, schema)?;
+
+        // Vertical and horizontal parallelism.
+        let df =
+            if self.streamable && df.n_chunks() > 1 && df.height() > 0 && self.options.run_parallel
+            {
+                let chunks = df.split_chunks().collect::<Vec<_>>();
+                let iter = chunks.into_par_iter().map(|mut df| {
+                    let res = evaluate_physical_expressions(
+                        &mut df,
+                        &self.exprs,
+                        state,
+                        self.has_windows,
+                        self.options.run_parallel,
+                    )?;
+                    if !self.options.should_broadcast {
+                        debug_assert!(
+                            res.iter()
+                                .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                            "non-broadcasting hstack should only be used for CSE columns"
+                        );
+                        // Safety: this case only appears as a result
+                        // of CSE optimization, and the usage there
+                        // produces new, unique column names. It is
+                        // immediately followed by a projection which
+                        // pulls out the possibly mismatching column
+                        // lengths.
+                        unsafe { df.get_columns_mut().extend(res) };
+                    } else {
+                        df._add_columns(res, schema)?;
+                    }
+                    Ok(df)
+                });
+
+                let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+                accumulate_dataframes_vertical_unchecked(df)
+            }
+            // Only horizontal parallelism
+            else {
+                let res = evaluate_physical_expressions(
+                    &mut df,
+                    &self.exprs,
+                    state,
+                    self.has_windows,
+                    self.options.run_parallel,
+                )?;
+                if !self.options.should_broadcast {
+                    debug_assert!(
+                        res.iter()
+                            .all(|column| column.name().starts_with("__POLARS_CSER_0x")),
+                        "non-broadcasting hstack should only be used for CSE columns"
+                    );
+                    // Safety: this case only appears as a result of
+                    // CSE optimization, and the usage there produces
+                    // new, unique column names. It is immediately
+                    // followed by a projection which pulls out the
+                    // possibly mismatching column lengths.
+                    unsafe { df.get_columns_mut().extend(res) };
+                } else {
+                    df._add_columns(res, schema)?;
+                }
+                df
+            };
+
+        state.clear_window_expr_cache();
 
         Ok(df)
     }
@@ -38,11 +94,7 @@ impl Executor for StackExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                if self.cse_exprs.is_empty() {
-                    println!("run StackExec");
-                } else {
-                    println!("run StackExec with {} CSE", self.cse_exprs.len());
-                };
+                eprintln!("run StackExec");
             }
         }
         let df = self.input.execute(state)?;
@@ -51,13 +103,7 @@ impl Executor for StackExec {
             let by = self
                 .exprs
                 .iter()
-                .map(|s| {
-                    profile_name(
-                        s.as_ref(),
-                        self.input_schema.as_ref(),
-                        !self.cse_exprs.is_empty(),
-                    )
-                })
+                .map(|s| profile_name(s.as_ref(), self.input_schema.as_ref()))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("with_column".to_string(), &by);
             Cow::Owned(name)

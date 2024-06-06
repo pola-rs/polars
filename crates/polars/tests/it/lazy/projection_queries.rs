@@ -34,7 +34,7 @@ fn test_swap_rename() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_outer_join_with_column_2988() -> PolarsResult<()> {
+fn test_full_outer_join_with_column_2988() -> PolarsResult<()> {
     let ldf1 = df![
         "key1" => ["foo", "bar"],
         "key2" => ["foo", "bar"],
@@ -54,7 +54,7 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
             ldf2,
             [col("key1"), col("key2")],
             [col("key1"), col("key2")],
-            JoinType::Outer { coalesce: true }.into(),
+            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .with_columns([col("key1")])
         .collect()?;
@@ -77,20 +77,6 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
     );
 
     Ok(())
-}
-
-#[test]
-fn test_err_no_found() {
-    let df = df![
-        "a" => [1, 2, 3],
-        "b" => [None, Some("a"), Some("b")]
-    ]
-    .unwrap();
-
-    assert!(matches!(
-        df.lazy().filter(col("nope").gt(lit(2))).collect(),
-        Err(PolarsError::ColumnNotFound(_))
-    ));
 }
 
 #[test]

@@ -193,7 +193,8 @@ else:
 @lru_cache(maxsize=None)
 def _might_be(cls: type, type_: str) -> bool:
     # infer whether the given class "might" be associated with the given
-    # module (in which case it's reasonable to do a real isinstance check)
+    # module (in which case it's reasonable to do a real isinstance check;
+    # we defer that so as not to unnecessarily trigger module import)
     try:
         return any(f"{type_}." in str(o) for o in cls.mro())
     except TypeError:
@@ -226,9 +227,11 @@ def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
 
 def import_optional(
     module_name: str,
-    err_prefix: str = "Required package",
-    err_suffix: str = "not installed",
+    err_prefix: str = "required package",
+    err_suffix: str = "not found",
     min_version: str | tuple[int, ...] | None = None,
+    min_err_prefix: str = "requires",
+    install_message: str | None = None,
 ) -> Any:
     """
     Import an optional dependency, returning the module.
@@ -243,26 +246,45 @@ def import_optional(
         Error suffix to use in the raised exception (follows the module name).
     min_version : {str, tuple[int]}, optional
         If a minimum module version is required, specify it here.
+    min_err_prefix : str, optional
+        Override the standard "requires" prefix for the minimum version error message.
+    install_message : str, optional
+        Override the standard "Please install it using..." exception message fragment.
+
+    Examples
+    --------
+    >>> from polars.dependencies import import_optional
+    >>> import_optional(
+    ...     "definitely_a_real_module",
+    ...     err_prefix="super-important package",
+    ... )  # doctest: +SKIP
+    ImportError: super-important package 'definitely_a_real_module' not installed.
+    Please install it using the command `pip install definitely_a_real_module`.
     """
     from polars._utils.various import parse_version
     from polars.exceptions import ModuleUpgradeRequired
 
+    module_root = module_name.split(".", 1)[0]
     try:
         module = import_module(module_name)
     except ImportError:
         prefix = f"{err_prefix.strip(' ')} " if err_prefix else ""
-        suffix = f" {err_prefix.strip(' ')}" if err_suffix else ""
-        err_message = (
-            f"{prefix}'{module_name}'{suffix}.\n"
-            f"Please install it using the command `pip install {module_name}`."
+        suffix = f" {err_suffix.strip(' ')}" if err_suffix else ""
+        err_message = f"{prefix}'{module_name}'{suffix}.\n" + (
+            install_message
+            or f"Please install using the command `pip install {module_root}`."
         )
-        raise ImportError(err_message) from None
+        raise ModuleNotFoundError(err_message) from None
 
     if min_version:
         min_version = parse_version(min_version)
         mod_version = parse_version(module.__version__)
         if mod_version < min_version:
-            msg = f"requires module_name {min_version} or higher, found {mod_version}"
+            msg = (
+                f"{min_err_prefix} {module_root} "
+                f"{'.'.join(str(v) for v in min_version)} or higher"
+                f" (found {'.'.join(str(v) for v in mod_version)})"
+            )
             raise ModuleUpgradeRequired(msg)
 
     return module
@@ -291,7 +313,6 @@ __all__ = [
     "_check_for_pandas",
     "_check_for_pyarrow",
     "_check_for_pydantic",
-    "_LazyModule",
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
     "_PYICEBERG_AVAILABLE",

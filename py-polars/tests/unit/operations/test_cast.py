@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars._utils.convert import (
-    MS_PER_SECOND,
-    NS_PER_SECOND,
-    US_PER_SECOND,
-)
+from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
@@ -611,15 +607,15 @@ def test_cast_categorical_name_retention(
 
 def test_cast_date_to_time() -> None:
     s = pl.Series([date(1970, 1, 1), date(2000, 12, 31)])
-    msg = "cannot cast `Date` to `Time`"
-    with pytest.raises(pl.ComputeError, match=msg):
+    msg = "casting from Date to Time not supported"
+    with pytest.raises(pl.InvalidOperationError, match=msg):
         s.cast(pl.Time)
 
 
 def test_cast_time_to_date() -> None:
     s = pl.Series([time(0, 0), time(20, 00)])
-    msg = "cannot cast `Time` to `Date`"
-    with pytest.raises(pl.ComputeError, match=msg):
+    msg = "casting from Time to Date not supported"
+    with pytest.raises(pl.InvalidOperationError, match=msg):
         s.cast(pl.Date)
 
 
@@ -640,3 +636,39 @@ def test_cast_array_to_different_width() -> None:
         pl.InvalidOperationError, match="cannot cast Array to a different width"
     ):
         s.cast(pl.Array(pl.Int16, 3))
+
+
+def test_cast_decimal_to_decimal_high_precision() -> None:
+    precision = 22
+    values = [Decimal("9" * precision)]
+    s = pl.Series(values, dtype=pl.Decimal(None, 0))
+
+    target_dtype = pl.Decimal(precision, 0)
+    result = s.cast(target_dtype)
+
+    assert result.dtype == target_dtype
+    assert result.to_list() == values
+
+
+def test_err_on_time_datetime_cast() -> None:
+    s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+    ):
+        s.cast(pl.Datetime)
+
+
+def test_err_on_invalid_time_zone_cast() -> None:
+    s = pl.Series([datetime(2021, 1, 1)])
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+        s.cast(pl.Datetime("us", "qwerty"))
+
+
+def test_invalid_inner_type_cast_list() -> None:
+    s = pl.Series([[-1, 1]])
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"cannot cast List inner type: 'Int64' to Categorical",
+    ):
+        s.cast(pl.List(pl.Categorical))

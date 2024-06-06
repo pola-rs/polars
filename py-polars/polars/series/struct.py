@@ -136,7 +136,7 @@ class StructNameSpace:
         shape: (2,)
         Series: 'a' [str]
         [
-            "{"a":[1,2],"b"…
-            "{"a":[9,1,3],"…
+            "{"a":[1,2],"b":[45]}"
+            "{"a":[9,1,3],"b":null}"
         ]
         """

@@ -33,7 +33,7 @@ impl IntoPy<PyObject> for BufferInfo {
     }
 }
 impl<'a> FromPyObject<'a> for BufferInfo {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
         let (pointer, offset, length) = ob.extract()?;
         Ok(Self {
             pointer,
@@ -170,7 +170,7 @@ impl PySeries {
         py: Python,
         dtype: Wrap<DataType>,
         buffer_info: BufferInfo,
-        owner: &PyAny,
+        owner: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dtype = dtype.0;
         let BufferInfo {

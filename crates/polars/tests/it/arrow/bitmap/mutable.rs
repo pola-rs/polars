@@ -274,19 +274,28 @@ fn extend_from_bitmap_offset() {
 #[test]
 fn debug() {
     let mut b = MutableBitmap::new();
-    assert_eq!(format!("{b:?}"), "[]");
+    assert_eq!(format!("{b:?}"), "Bitmap { len: 0, offset: 0, bytes: [] }");
     b.push(true);
     b.push(false);
-    assert_eq!(format!("{b:?}"), "[0b______01]");
+    assert_eq!(
+        format!("{b:?}"),
+        "Bitmap { len: 2, offset: 0, bytes: [0b______01] }"
+    );
     b.push(false);
     b.push(false);
     b.push(false);
     b.push(false);
     b.push(true);
     b.push(true);
-    assert_eq!(format!("{b:?}"), "[0b11000001]");
+    assert_eq!(
+        format!("{b:?}"),
+        "Bitmap { len: 8, offset: 0, bytes: [0b11000001] }"
+    );
     b.push(true);
-    assert_eq!(format!("{b:?}"), "[0b11000001, 0b_______1]");
+    assert_eq!(
+        format!("{b:?}"),
+        "Bitmap { len: 9, offset: 0, bytes: [0b11000001, 0b_______1] }"
+    );
 }
 
 #[test]

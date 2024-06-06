@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -214,7 +214,7 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").set_sorted())
 
     result = df.group_by_dynamic(
-        "date", every="1w", offset="1d", by="label", start_by="monday"
+        "date", every="1w", offset="1d", group_by="label", start_by="monday"
     ).agg(pl.col("value").sum())
 
     assert result.to_dict(as_series=False) == {
@@ -232,23 +232,11 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     result_empty = (
         df.filter(pl.col("date") == date(1, 1, 1))
         .group_by_dynamic(
-            "date", every="1w", offset="1d", by="label", start_by="monday"
+            "date", every="1w", offset="1d", group_by="label", start_by="monday"
         )
         .agg(pl.col("value").sum())
     )
     assert result_empty.schema == result.schema
-
-
-def test_group_by_dynamic_truncate_to_label_deprecation() -> None:
-    df = pl.LazyFrame({"ts": [], "n": []})
-    with pytest.warns(
-        DeprecationWarning, match="replace `truncate=False` with `label='datapoint'`"
-    ):
-        df.group_by_dynamic("ts", every="1d", truncate=False)
-    with pytest.warns(
-        DeprecationWarning, match="replace `truncate=True` with `label='left'`"
-    ):
-        df.group_by_dynamic("ts", every="1d", truncate=True)
 
 
 @pytest.mark.parametrize(
@@ -273,7 +261,7 @@ def test_group_by_dynamic_label(label: Label, expected: list[datetime]) -> None:
         }
     ).sort("ts")
     result = (
-        df.group_by_dynamic("ts", every="1d", label=label, by="group")
+        df.group_by_dynamic("ts", every="1d", label=label, group_by="group")
         .agg(pl.col("n"))["ts"]
         .to_list()
     )
@@ -314,7 +302,7 @@ def test_group_by_dynamic_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
-        .group_by_dynamic("a", by="b", every="2i")
+        .group_by_dynamic("a", group_by="b", every="2i")
         .agg((pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c"))
     )
     assert df.head(2).collect().to_dict(as_series=False) == {
@@ -333,11 +321,11 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
         pl.col("value").max().alias("max_value"),
         pl.col("value").sum().alias("sum_value"),
     ).to_dict(as_series=False) == {
-        "time": [-1, 0, 1, 2, 3],
-        "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
-        "min_value": [0, 0, 1, 2, 3],
-        "max_value": [1, 2, 3, 3, 3],
-        "sum_value": [1, 3, 6, 5, 3],
+        "time": [0, 1, 2, 3],
+        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
+        "min_value": [0, 1, 2, 3],
+        "max_value": [2, 3, 3, 3],
+        "sum_value": [3, 6, 5, 3],
     }
 
 
@@ -366,38 +354,16 @@ def test_rolling_dynamic_sortedness_check() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.group_by_dynamic("idx", every="2i", by="group").agg(
+        df.group_by_dynamic("idx", every="2i", group_by="group").agg(
             pl.col("idx").alias("idx1")
         )
 
     # no `by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
+        match=r"argument in operation 'group_by_dynamic' is not sorted",
     ):
         df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
-
-
-def test_groupby_dynamic_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "date": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
-            ),
-            "value": [1, 2, 3, 4, 5],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.groupby_dynamic("date", every="2d").agg(pl.sum("value"))
-    with pytest.deprecated_call():
-        result_lazy = (
-            df.lazy().groupby_dynamic("date", every="2d").agg(pl.sum("value")).collect()
-        )
-
-    expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("time_zone", [None, "UTC", "Asia/Kathmandu"])
@@ -423,11 +389,10 @@ def test_group_by_dynamic_elementwise_following_mean_agg_6904(
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2020, 12, 31, 23, 59, 50),
                     datetime(2021, 1, 1, 0, 0),
                     datetime(2021, 1, 1, 0, 0, 10),
                 ],
-                "c": [0.9092974268256817, 0.9092974268256817, -0.7568024953079282],
+                "c": [0.9092974268256817, -0.7568024953079282],
             }
         ).with_columns(pl.col("a").dt.replace_time_zone(time_zone)),
     )
@@ -476,17 +441,7 @@ def test_group_by_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) 
     ]
 
 
-@pytest.mark.parametrize(
-    ("every", "match"),
-    [
-        ("-1i", r"'every' argument must be positive"),
-        (
-            "2h",
-            r"you cannot combine time durations like '2h' with integer durations like '3i'",
-        ),
-    ],
-)
-def test_group_by_dynamic_validation(every: str, match: str) -> None:
+def test_group_by_dynamic_validation() -> None:
     df = pl.DataFrame(
         {
             "index": [0, 0, 1, 1],
@@ -495,23 +450,29 @@ def test_group_by_dynamic_validation(every: str, match: str) -> None:
         }
     )
 
-    with pytest.raises(pl.ComputeError, match=match):
-        df.group_by_dynamic("index", by="group", every=every, period="2i").agg(
+    with pytest.raises(pl.ComputeError, match="'every' argument must be positive"):
+        df.group_by_dynamic("index", group_by="group", every="-1i", period="2i").agg(
             pl.col("weight")
         )
 
 
-def test_no_sorted_err() -> None:
+def test_no_sorted_no_error() -> None:
     df = pl.DataFrame(
         {
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
         }
     )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
-    ):
-        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().name.suffix("_foo"))
+    result = df.group_by_dynamic("dt", every="1h").agg(
+        pl.all().count().name.suffix("_foo")
+    )
+    expected = pl.DataFrame(
+        {
+            "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
+            "dt_foo": [1, 1],
+        },
+        schema_overrides={"dt_foo": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("UTC"), ZoneInfo("Asia/Kathmandu")])
@@ -564,7 +525,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     out = df.group_by_dynamic(
         index_column="event_date",
         every="1mo",
-        by=["admin", "five_type", "actor"],
+        group_by=["admin", "five_type", "actor"],
     ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
 
     assert out["event_date"].to_list() == [
@@ -589,9 +550,8 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             "idx", every="2i", period="3i", include_boundaries=True
         ).agg(pl.col("A"))
 
-        assert out.shape == (4, 4)
+        assert out.shape == (3, 4)
         assert out["A"].to_list() == [
-            ["A"],
             ["A", "A", "B"],
             ["B", "B", "B"],
             ["B", "C"],
@@ -617,14 +577,13 @@ def test_groupy_by_dynamic_median_10695() -> None:
         period="3m",
     ).agg(pl.col("foo").median()).to_dict(as_series=False) == {
         "timestamp": [
-            datetime(2023, 8, 22, 15, 43),
             datetime(2023, 8, 22, 15, 44),
             datetime(2023, 8, 22, 15, 45),
             datetime(2023, 8, 22, 15, 46),
             datetime(2023, 8, 22, 15, 47),
             datetime(2023, 8, 22, 15, 48),
         ],
-        "foo": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        "foo": [1.0, 1.0, 1.0, 1.0, 1.0],
     }
 
 
@@ -885,7 +844,7 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
     result2 = [
         (name, data.shape)
         for name, data in df.group_by_dynamic(
-            "datetime", every=every, closed="left", by="a"
+            "datetime", every=every, closed="left", group_by="a"
         )
     ]
     expected2 = [
@@ -968,3 +927,108 @@ def test_group_by_dynamic_agg_bad_input_types(input: Any) -> None:
         df.group_by_dynamic(
             index_column="index_column", every="2i", closed="right"
         ).agg(input)
+
+
+def test_group_by_dynamic_check_sorted_15225() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "c": [1, 1, 2],
+        }
+    )
+    with pytest.deprecated_call(match="`check_sorted` is now deprecated"):
+        result = df.group_by_dynamic("b", every="2d", check_sorted=False).agg(
+            pl.sum("a")
+        )
+    expected = pl.DataFrame({"b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]})
+    assert_frame_equal(result, expected)
+    result = df.group_by_dynamic("b", every="2d", group_by="c").agg(pl.sum("a"))
+    expected = pl.DataFrame(
+        {"c": [1, 2], "b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]}
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("start_by", ["window", "friday"])
+def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> None:
+    df = pl.DataFrame(
+        data={
+            "t": pl.Series(
+                [
+                    datetime(2024, 3, 22, 3, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 4, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 6, 0, tzinfo=timezone.utc),
+                ]
+            ),
+            "v": [1, 10, 100, 1000],
+        }
+    ).set_sorted("t")
+    result = df.group_by_dynamic(
+        index_column="t",
+        every="1d",
+        offset=timedelta(hours=5),
+        start_by=start_by,
+    ).agg("v")
+    expected = pl.DataFrame(
+        {
+            "t": [
+                datetime(2024, 3, 21, 5, 0, tzinfo=timezone.utc),
+                datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+            ],
+            "v": [[1, 10], [100, 1000]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_dynamic_invalid() -> None:
+    df = pl.DataFrame(
+        {
+            "values": [1, 4],
+            "times": [datetime(2020, 1, 3), datetime(2020, 1, 1)],
+        },
+    )
+    with pytest.raises(
+        pl.InvalidOperationError, match="duration may not be a parsed integer"
+    ):
+        (
+            df.sort("times")
+            .group_by_dynamic("times", every="3000i")
+            .agg(pl.col("values").sum().alias("sum"))
+        )
+    with pytest.raises(
+        pl.InvalidOperationError, match="duration must be a parsed integer"
+    ):
+        (
+            df.with_row_index()
+            .group_by_dynamic("index", every="3000d")
+            .agg(pl.col("values").sum().alias("sum"))
+        )
+
+
+def test_group_by_dynamic_get() -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.date_range(pl.date(2021, 1, 1), pl.date(2021, 1, 8), eager=True),
+            "data": pl.arange(8, eager=True),
+        }
+    )
+
+    assert df.group_by_dynamic(
+        index_column="time",
+        every="2d",
+        period="3d",
+        start_by="datapoint",
+    ).agg(
+        get=pl.col("data").get(1),
+    ).to_dict(as_series=False) == {
+        "time": [
+            date(2021, 1, 1),
+            date(2021, 1, 3),
+            date(2021, 1, 5),
+            date(2021, 1, 7),
+        ],
+        "get": [1, 3, 5, 7],
+    }

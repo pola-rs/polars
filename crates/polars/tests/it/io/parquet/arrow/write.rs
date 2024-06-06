@@ -45,13 +45,13 @@ fn round_trip_opt_stats(
     let schema = ArrowSchema::from(vec![field]);
 
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: StatisticsOptions::full(),
         compression,
         version,
         data_pagesize_limit: None,
     };
 
-    let iter = vec![Chunk::try_new(vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(vec![array.clone()])];
 
     let row_groups =
         RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;

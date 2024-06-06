@@ -6,6 +6,12 @@ import numpy as np
 import polars as pl
 
 
+def test_series_init_instantiated_object() -> None:
+    s = pl.Series([object(), object()], dtype=pl.Object())
+    assert isinstance(s, pl.Series)
+    assert isinstance(s.dtype, pl.Object)
+
+
 def test_object_empty_filter_5911() -> None:
     df = pl.DataFrame(
         data=[

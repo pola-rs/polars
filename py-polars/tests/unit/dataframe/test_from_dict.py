@@ -146,7 +146,7 @@ def test_from_dict_with_scalars() -> None:
 
 
 @pytest.mark.slow()
-def test_from_dict_with_scalars_mixed() -> None:
+def test_from_dict_with_values_mixed() -> None:
     # a bit of everything
     mixed_dtype_data: dict[str, Any] = {
         "a": 0,
@@ -164,11 +164,10 @@ def test_from_dict_with_scalars_mixed() -> None:
     # note: deliberately set this value large; if all dtypes are
     # on the fast-path it'll only take ~0.03secs. if it becomes
     # even remotely noticeable that will indicate a regression.
-    # TODO: This is now slow (~0.15 seconds). Needs to be looked into.
     n_range = 1_000_000
     index_and_data: dict[str, Any] = {"idx": range(n_range)}
     index_and_data.update(mixed_dtype_data.items())
-    df8 = pl.DataFrame(
+    df = pl.DataFrame(
         data=index_and_data,
         schema={
             "idx": pl.Int32,
@@ -185,12 +184,44 @@ def test_from_dict_with_scalars_mixed() -> None:
             "k": pl.String,
         },
     )
-    dfx = df8.select(pl.exclude("idx"))
+    dfx = df.select(pl.exclude("idx"))
 
-    assert len(df8) == n_range
+    assert len(df) == n_range
     assert dfx[:5].rows() == dfx[5:10].rows()
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
+
+
+def test_from_dict_expand_nested_struct() -> None:
+    # confirm consistent init of nested struct from dict data
+    dt = date(2077, 10, 10)
+    expected = pl.DataFrame(
+        [
+            pl.Series("x", [dt]),
+            pl.Series("nested", [{"y": -1, "z": 1}]),
+        ]
+    )
+    for df in (
+        pl.DataFrame({"x": dt, "nested": {"y": -1, "z": 1}}),
+        pl.DataFrame({"x": dt, "nested": [{"y": -1, "z": 1}]}),
+        pl.DataFrame({"x": [dt], "nested": {"y": -1, "z": 1}}),
+        pl.DataFrame({"x": [dt], "nested": [{"y": -1, "z": 1}]}),
+    ):
+        assert_frame_equal(expected, df)
+
+    # confirm expansion to 'n' nested values
+    nested_values = [{"y": -1, "z": 1}, {"y": -1, "z": 1}, {"y": -1, "z": 1}]
+    expected = pl.DataFrame(
+        [
+            pl.Series("x", [0, 1, 2]),
+            pl.Series("nested", nested_values),
+        ]
+    )
+    for df in (
+        pl.DataFrame({"x": range(3), "nested": {"y": -1, "z": 1}}),
+        pl.DataFrame({"x": [0, 1, 2], "nested": {"y": -1, "z": 1}}),
+    ):
+        assert_frame_equal(expected, df)
 
 
 def test_from_dict_duration_subseconds() -> None:

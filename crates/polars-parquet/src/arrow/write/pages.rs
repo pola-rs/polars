@@ -295,6 +295,54 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
         .collect()
 }
 
+pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
+    arrays: &[A],
+    type_: ParquetType,
+    options: WriteOptions,
+    encoding: &[Encoding],
+) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
+    let array = arrays[0].as_ref();
+    let nested = to_nested(array, &type_)?;
+
+    let types = to_parquet_leaves(type_);
+
+    // leaves; index level is nesting depth.
+    // index i: has a vec because we have multiple chunks.
+    let mut leaves = vec![];
+
+    // Ensure we transpose the leaves. So that all the leaves from the same columns are at the same level vec.
+    let mut scratch = vec![];
+    for arr in arrays {
+        scratch.clear();
+        to_leaves_recursive(arr.as_ref(), &mut scratch);
+        for (i, leave) in scratch.iter().copied().enumerate() {
+            while i < leaves.len() {
+                leaves.push(vec![]);
+            }
+            leaves[i].push(leave);
+        }
+    }
+
+    leaves
+        .into_iter()
+        .zip(nested)
+        .zip(types)
+        .zip(encoding.iter())
+        .map(move |(((values, nested), type_), encoding)| {
+            let iter = values.into_iter().map(|leave_values| {
+                array_to_pages(leave_values, type_.clone(), &nested, options, *encoding)
+            });
+
+            // Need a scratch to bubble up the error :/
+            let mut scratch = Vec::with_capacity(iter.size_hint().0);
+            for v in iter {
+                scratch.push(v?)
+            }
+            Ok(DynIter::new(scratch.into_iter().flatten()))
+        })
+        .collect::<PolarsResult<Vec<_>>>()
+}
+
 #[cfg(test)]
 mod tests {
     use arrow::array::*;

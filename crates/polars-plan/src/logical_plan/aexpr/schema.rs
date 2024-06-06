@@ -1,3 +1,5 @@
+use recursive::recursive;
+
 use super::*;
 
 fn float_type(field: &mut Field) {
@@ -9,7 +11,17 @@ fn float_type(field: &mut Field) {
 }
 
 impl AExpr {
+    pub fn to_dtype(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        arena: &Arena<AExpr>,
+    ) -> PolarsResult<DataType> {
+        self.to_field(schema, ctxt, arena).map(|f| f.dtype)
+    }
+
     /// Get Field result of the expression. The schema is the input data.
+    #[recursive]
     pub fn to_field(
         &self,
         schema: &Schema,
@@ -40,7 +52,7 @@ impl AExpr {
             Column(name) => {
                 let field = schema
                     .get_field(name)
-                    .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name));
+                    .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into()));
 
                 match ctxt {
                     Context::Default => field,
@@ -53,7 +65,7 @@ impl AExpr {
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new("literal", sv.get_datatype()),
+                _ => Field::new(sv.output_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
@@ -63,12 +75,12 @@ impl AExpr {
                     | Operator::Gt
                     | Operator::Eq
                     | Operator::NotEq
-                    | Operator::And
+                    | Operator::LogicalAnd
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::NotEqValidity
                     | Operator::EqValidity
-                    | Operator::Or => {
+                    | Operator::LogicalOr => {
                         let out_field;
                         let out_name = {
                             out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
@@ -98,7 +110,7 @@ impl AExpr {
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
-                use AAggExpr::*;
+                use IRAggExpr::*;
                 match agg {
                     Max { input: expr, .. }
                     | Min { input: expr, .. }
@@ -203,22 +215,14 @@ impl AExpr {
             } => {
                 let tmp = function.get_output();
                 let output_type = tmp.as_ref().unwrap_or(output_type);
-                let fields = input
-                    .iter()
-                    // default context because `col()` would return a list in aggregation context
-                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let fields = func_args_to_fields(input, schema, arena)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 Ok(output_type.get_field(schema, ctxt, &fields))
             },
             Function {
                 function, input, ..
             } => {
-                let fields = input
-                    .iter()
-                    // default context because `col()` would return a list in aggregation context
-                    .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let fields = func_args_to_fields(input, schema, arena)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
@@ -226,11 +230,31 @@ impl AExpr {
             Wildcard => {
                 polars_bail!(ComputeError: "wildcard column selection not supported at this point")
             },
-            Nth(_) => {
-                polars_bail!(ComputeError: "nth column selection not supported at this point")
+            Nth(n) => {
+                polars_bail!(ComputeError: "nth column selection not supported at this point (n={})", n)
             },
         }
     }
+}
+
+fn func_args_to_fields(
+    input: &[ExprIR],
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Vec<Field>> {
+    input
+        .iter()
+        // Default context because `col()` would return a list in aggregation context
+        .map(|e| {
+            arena
+                .get(e.node())
+                .to_field(schema, Context::Default, arena)
+                .map(|mut field| {
+                    field.name = e.output_name().into();
+                    field
+                })
+        })
+        .collect()
 }
 
 fn get_arithmetic_field(
@@ -274,25 +298,36 @@ fn get_arithmetic_field(
         _ => {
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
 
-            // Avoid needlessly type casting numeric columns during arithmetic
-            // with literals.
-            if (left_field.dtype.is_integer() && right_type.is_integer())
-                || (left_field.dtype.is_float() && right_type.is_float())
-            {
-                match (left_ae, right_ae) {
-                    (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                    (AExpr::Literal(_), _) => {
-                        // literal will be coerced to match right type
-                        left_field.coerce(right_type);
+            match (&left_field.dtype, &right_type) {
+                #[cfg(feature = "dtype-struct")]
+                (Struct(_), Struct(_)) => {
+                    if op.is_arithmetic() {
                         return Ok(left_field);
-                    },
-                    (_, AExpr::Literal(_)) => {
-                        // literal will be coerced to match right type
-                        return Ok(left_field);
-                    },
-                    _ => {},
-                }
+                    }
+                },
+                _ => {
+                    // Avoid needlessly type casting numeric columns during arithmetic
+                    // with literals.
+                    if (left_field.dtype.is_integer() && right_type.is_integer())
+                        || (left_field.dtype.is_float() && right_type.is_float())
+                    {
+                        match (left_ae, right_ae) {
+                            (AExpr::Literal(_), AExpr::Literal(_)) => {},
+                            (AExpr::Literal(_), _) => {
+                                // literal will be coerced to match right type
+                                left_field.coerce(right_type);
+                                return Ok(left_field);
+                            },
+                            (_, AExpr::Literal(_)) => {
+                                // literal will be coerced to match right type
+                                return Ok(left_field);
+                            },
+                            _ => {},
+                        }
+                    }
+                },
             }
+
             try_get_supertype(&left_field.dtype, &right_type)?
         },
     };

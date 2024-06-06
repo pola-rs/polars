@@ -1,39 +1,35 @@
+use std::sync::atomic::Ordering;
+
 use super::*;
 
 pub struct CacheExec {
     pub input: Box<dyn Executor>,
     pub id: usize,
-    pub count: usize,
+    pub count: u32,
 }
 
 impl Executor for CacheExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        // skip cache and always re-execute
-        if self.count == 0 {
-            if state.verbose() {
-                println!("CACHE IGNORE: cache id: {:x}", self.id);
-            }
-            return self.input.execute(state);
-        }
-
-        let cache = state.get_df_cache(self.id);
+        let cache = state.get_df_cache(self.id, self.count);
         let mut cache_hit = true;
+        let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
+        debug_assert!(previous >= 0);
 
-        let df = cache.get_or_try_init(|| {
+        let df = cache.1.get_or_try_init(|| {
             cache_hit = false;
             self.input.execute(state)
         })?;
 
-        // decrement count on cache hits
-        if cache_hit {
-            self.count -= 1;
+        // Decrement count on cache hits.
+        if cache_hit && previous == 0 {
+            state.remove_df_cache(self.id);
         }
 
         if state.verbose() {
             if cache_hit {
-                println!("CACHE HIT: cache id: {:x}", self.id);
+                eprintln!("CACHE HIT: cache id: {:x}", self.id);
             } else {
-                println!("CACHE SET: cache id: {:x}", self.id);
+                eprintln!("CACHE SET: cache id: {:x}", self.id);
             }
         }
 

@@ -14,10 +14,10 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
@@ -84,8 +84,12 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(options)
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, options)
     }
 }
 
@@ -94,8 +98,8 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -173,8 +177,8 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        ChunkSort::sort_with(&self.0, options).into_series()
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(ChunkSort::sort_with(&self.0, options).into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -224,11 +228,11 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::max_as_series(&self.0))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::max_reduce(&self.0))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(ChunkAggSeries::min_as_series(&self.0))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(ChunkAggSeries::min_reduce(&self.0))
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))

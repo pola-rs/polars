@@ -4,17 +4,17 @@ extend-ignore-identifiers-re = [
 ]
 
 [default.extend-identifiers]
-ba = "ba"
+bck = "bck"
 Fo = "Fo"
-nd = "nd"
 ND = "ND"
+ba = "ba"
+nd = "nd"
 opt_nd = "opt_nd"
 ser = "ser"
-strat = "strat"
-width_strat = "width_strat"
 
 [default.extend-words]
-iif = "iif"
+arange = "arange"
+strat = "strat"
 '"r0ot"' = "r0ot"
 wee = "wee"
 
@@ -27,4 +27,4 @@ extend-glob = ["*.gz"]
 check-file = false
 
 [files]
-extend-exclude = ["_typos.toml"]
+extend-exclude = ["_typos.toml", "dists.dss"]

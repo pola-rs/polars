@@ -5,6 +5,7 @@ try:
         ComputeError,
         DuplicateError,
         InvalidOperationError,
+        MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
         PolarsError,
@@ -13,6 +14,8 @@ try:
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
+        SQLInterfaceError,
+        SQLSyntaxError,
         StringCacheMismatchError,
         StructFieldNotFoundError,
     )
@@ -23,16 +26,40 @@ except ImportError:
         """Base class for all Polars errors."""
 
     class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified column is not found."""
+        """
+        Exception raised when a specified column is not found.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select("b")
+        polars.exceptions.ColumnNotFoundError: b
+        """
 
     class ComputeError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when Polars could not perform an underlying computation."""
 
     class DuplicateError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a column name is duplicated."""
+        """
+        Exception raised when a column name is duplicated.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 1, 1]})
+        >>> pl.concat([df, df], how="horizontal")
+        polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
+        """  # noqa: W505
 
     class InvalidOperationError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an operation is not allowed (or possible) against a given object or data structure."""  # noqa: W505
+        """
+        Exception raised when an operation is not allowed (or possible) against a given object or data structure.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_in(["x", "y"])
+        polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
+        """  # noqa: W505
 
     class NoDataError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
@@ -52,6 +79,12 @@ except ImportError:
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
 
+    class SQLInterfaceError(PolarsError):  # type: ignore[no-redef, misc]
+        """Exception raised when an error occurs in the SQL interface."""
+
+    class SQLSyntaxError(PolarsError):  # type: ignore[no-redef, misc]
+        """Exception raised from the SQL interface when encountering invalid syntax."""
+
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when string caches come from different sources."""
 
@@ -63,6 +96,9 @@ except ImportError:
 
     class CategoricalRemappingWarning(PolarsWarning):  # type: ignore[no-redef, misc]
         """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
+
+    class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef, misc]
+        """Warning raised when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
 class InvalidAssert(PolarsError):  # type: ignore[misc]
@@ -117,31 +153,29 @@ class UnstableWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when unstable functionality is used."""
 
 
-class ArrowError(Exception):
-    """Deprecated: will be removed."""
-
-
 class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
 
 
 __all__ = [
-    "ArrowError",
+    "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
-    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
+    "MapWithoutReturnDtypeWarning",
     "ModuleUpgradeRequired",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
-    "PolarsInefficientMapWarning",
-    "CategoricalRemappingWarning",
     "PolarsError",
+    "PolarsInefficientMapWarning",
     "PolarsPanicError",
     "PolarsWarning",
     "RowsError",
+    "SQLInterfaceError",
+    "SQLSyntaxError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",

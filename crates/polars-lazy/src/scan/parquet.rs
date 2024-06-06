@@ -2,36 +2,39 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::ParallelStrategy;
-use polars_io::RowIndex;
+use polars_io::parquet::read::ParallelStrategy;
+use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct ScanArgsParquet {
     pub n_rows: Option<usize>,
-    pub cache: bool,
     pub parallel: ParallelStrategy,
-    pub rechunk: bool,
     pub row_index: Option<RowIndex>,
-    pub low_memory: bool,
     pub cloud_options: Option<CloudOptions>,
+    pub hive_options: HiveOptions,
     pub use_statistics: bool,
-    pub hive_partitioning: bool,
+    pub low_memory: bool,
+    pub rechunk: bool,
+    pub cache: bool,
+    /// Expand path given via globbing rules.
+    pub glob: bool,
 }
 
 impl Default for ScanArgsParquet {
     fn default() -> Self {
         Self {
             n_rows: None,
-            cache: true,
             parallel: Default::default(),
-            rechunk: false,
             row_index: None,
-            low_memory: false,
             cloud_options: None,
+            hive_options: Default::default(),
             use_statistics: true,
-            hive_partitioning: false,
+            rechunk: false,
+            low_memory: false,
+            cache: true,
+            glob: true,
         }
     }
 }
@@ -56,6 +59,9 @@ impl LazyParquetReader {
 impl LazyFileListReader for LazyParquetReader {
     /// Get the final [LazyFrame].
     fn finish(mut self) -> PolarsResult<LazyFrame> {
+        if !self.args.glob {
+            return self.finish_no_glob();
+        }
         if let Some(paths) = self.iter_paths()? {
             let paths = paths
                 .into_iter()
@@ -73,7 +79,7 @@ impl LazyFileListReader for LazyParquetReader {
         } else {
             self.paths
         };
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
+        let mut lf: LazyFrame = DslBuilder::scan_parquet(
             paths,
             self.args.n_rows,
             self.args.cache,
@@ -83,7 +89,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.low_memory,
             self.args.cloud_options,
             self.args.use_statistics,
-            self.args.hive_partitioning,
+            self.args.hive_options,
         )?
         .build()
         .into();

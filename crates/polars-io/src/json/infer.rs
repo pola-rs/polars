@@ -1,4 +1,7 @@
-use super::*;
+use polars_core::prelude::DataType;
+use polars_core::utils::try_get_supertype;
+use polars_error::PolarsResult;
+use simd_json::BorrowedValue;
 
 pub(crate) fn json_values_to_supertype(
     values: &[BorrowedValue],

@@ -102,8 +102,12 @@ impl PyExpr {
             .into()
     }
 
-    fn str_explode(&self) -> Self {
-        self.inner.clone().str().explode().into()
+    fn str_head(&self, n: Self) -> Self {
+        self.inner.clone().str().head(n.inner).into()
+    }
+
+    fn str_tail(&self, n: Self) -> Self {
+        self.inner.clone().str().tail(n.inner).into()
     }
 
     fn str_to_uppercase(&self) -> Self {
@@ -205,11 +209,11 @@ impl PyExpr {
         self.inner.clone().str().base64_decode(strict).into()
     }
 
-    fn str_to_integer(&self, base: u32, strict: bool) -> Self {
+    fn str_to_integer(&self, base: Self, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .to_integer(base, strict)
+            .to_integer(base.inner, strict)
             .with_fmt("str.to_integer")
             .into()
     }
@@ -229,19 +233,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_path_match(&self, pat: String) -> Self {
-        let function = move |s: Series| {
-            let ca = s.str()?;
-            match ca.json_path_match(&pat) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-        self.inner
-            .clone()
-            .map(function, GetOutput::from_type(DataType::String))
-            .with_fmt("str.json_path_match")
-            .into()
+    fn str_json_path_match(&self, pat: Self) -> Self {
+        self.inner.clone().str().json_path_match(pat.inner).into()
     }
 
     fn str_extract(&self, pat: Self, group_index: usize) -> Self {

@@ -596,3 +596,30 @@ def test_when_then_parametric(
             assert_frame_equal(ref, ans)
         else:
             assert ref["if_true"].to_list() == ans["if_true"].to_list()
+
+
+def test_when_then_supertype_15975() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.with_columns(
+        pl.when(True).then(1 ** pl.col("a") + 1.0 * pl.col("a"))
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "literal": [2.0, 3.0, 4.0]}
+
+
+def test_when_then_supertype_15975_comment() -> None:
+    df = pl.LazyFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
+
+    q = df.with_columns(
+        pl.when(pl.col("foo") == 1)
+        .then(1)
+        .when(pl.col("foo") == 2)
+        .then(4)
+        .when(pl.col("foo") == 3)
+        .then(1.5)
+        .when(pl.col("foo") == 4)
+        .then(16)
+        .otherwise(0)
+        .alias("val")
+    )
+
+    assert q.collect()["val"].to_list() == [1.0, 1.5, 16.0]

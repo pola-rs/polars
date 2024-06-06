@@ -5,9 +5,9 @@ mod utf8;
 use std::io::Write;
 
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::ArrowSchema;
 use arrow::io::iterator::StreamingIterator;
+use arrow::record_batch::RecordBatchT;
 pub use fallible_streaming_iterator::*;
 use polars_error::{PolarsError, PolarsResult};
 pub(crate) use serialize::new_serializer;
@@ -65,7 +65,7 @@ where
     }
 }
 
-/// [`FallibleStreamingIterator`] that serializes a [`Chunk`] into bytes of JSON
+/// [`FallibleStreamingIterator`] that serializes a [`RecordBatchT`] into bytes of JSON
 /// in a (pandas-compatible) record-oriented format.
 ///
 /// # Implementation
@@ -80,7 +80,7 @@ pub struct RecordSerializer<'a> {
 
 impl<'a> RecordSerializer<'a> {
     /// Creates a new [`RecordSerializer`].
-    pub fn new<A>(schema: ArrowSchema, chunk: &'a Chunk<A>, buffer: Vec<u8>) -> Self
+    pub fn new<A>(schema: ArrowSchema, chunk: &'a RecordBatchT<A>, buffer: Vec<u8>) -> Self
     where
         A: AsRef<dyn Array>,
     {

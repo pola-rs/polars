@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import cast
 
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.dataframe import DataFrame
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
@@ -9,13 +10,14 @@ from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
     check_row_order: bool = True,
     check_column_order: bool = True,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -41,7 +43,7 @@ def assert_frame_equal(
             frames that contain unsortable columns.
     check_column_order
         Require column order to match.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
@@ -94,7 +96,7 @@ def assert_frame_equal(
         left,
         right,
         check_column_order=check_column_order,
-        check_dtype=check_dtype,
+        check_dtypes=check_dtypes,
         objects=objects,
     )
 
@@ -153,7 +155,7 @@ def _assert_frame_schema_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
-    check_dtype: bool,
+    check_dtypes: bool,
     check_column_order: bool,
     objects: str,
 ) -> None:
@@ -181,7 +183,7 @@ def _assert_frame_schema_equal(
             detail = "columns are not in the same order"
             raise_assertion_error(objects, detail, left_columns, right_columns)
 
-    if check_dtype:
+    if check_dtypes:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
         if check_column_order or left_schema_dict != right_schema_dict:
             detail = "dtypes do not match"
@@ -199,13 +201,14 @@ def _sort_dataframes(left: DataFrame, right: DataFrame) -> tuple[DataFrame, Data
     return left, right
 
 
+@deprecate_renamed_parameter("check_dtype", "check_dtypes", version="0.20.31")
 def assert_frame_not_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
     check_row_order: bool = True,
     check_column_order: bool = True,
-    check_dtype: bool = True,
+    check_dtypes: bool = True,
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
@@ -230,7 +233,7 @@ def assert_frame_not_equal(
             frames that contain unsortable columns.
     check_column_order
         Require column order to match.
-    check_dtype
+    check_dtypes
         Require data types to match.
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
@@ -267,7 +270,7 @@ def assert_frame_not_equal(
             right=right,
             check_column_order=check_column_order,
             check_row_order=check_row_order,
-            check_dtype=check_dtype,
+            check_dtypes=check_dtypes,
             check_exact=check_exact,
             rtol=rtol,
             atol=atol,

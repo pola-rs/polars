@@ -74,7 +74,7 @@ Let's try that out and see what we get:
 
 Ouch.. we clearly get the wrong results here. Group `"b"` even got a value from group `"a"` 😵.
 
-This went horribly wrong, because the `map_batches` applies the function before we aggregate! So that means the whole column `[10, 7, 1`\] got shifted to `[null, 10, 7]` and was then aggregated.
+This went horribly wrong because `map_batches` applied the function before aggregation, due to the `is_elementwise=True` parameter being provided. So that means the whole column `[10, 7, 1]` got shifted to `[null, 10, 7]` and was then aggregated.
 
 So my advice is to never use `map_batches` in the `group_by` context unless you know you need it and know what you are doing.
 

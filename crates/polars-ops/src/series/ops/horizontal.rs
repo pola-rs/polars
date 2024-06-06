@@ -1,45 +1,5 @@
-use std::ops::{BitAnd, BitOr};
-
 use polars_core::frame::NullStrategy;
 use polars_core::prelude::*;
-use polars_core::POOL;
-use rayon::prelude::*;
-
-pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new("", &[false]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitor(b))
-                    },
-                )
-                .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
-        })?
-        .with_name(s[0].name());
-    Ok(out.into_series())
-}
-
-pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new("", &[true]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitand(b))
-                    },
-                )
-                .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
-        })?
-        .with_name(s[0].name());
-    Ok(out.into_series())
-}
 
 pub fn max_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = unsafe { DataFrame::new_no_checks(Vec::from(s)) };

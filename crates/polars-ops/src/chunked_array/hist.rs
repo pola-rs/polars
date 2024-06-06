@@ -135,7 +135,7 @@ where
         fields.push(categories);
     };
     if include_breakpoint {
-        fields.insert(0, Series::new("break_point", breaks))
+        fields.insert(0, Series::new("breakpoint", breaks))
     }
 
     let count = Series::new("count", count);

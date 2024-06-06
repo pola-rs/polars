@@ -52,32 +52,12 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
 impl StringChunkedBuilder {
     pub fn finish(mut self) -> StringChunked {
         let arr = self.chunk_builder.as_box();
-
-        let mut ca = ChunkedArray {
-            field: self.field,
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        ca.compute_len();
-        ca
+        ChunkedArray::new_with_compute_len(self.field, vec![arr])
     }
 }
 impl BinaryChunkedBuilder {
     pub fn finish(mut self) -> BinaryChunked {
         let arr = self.chunk_builder.as_box();
-
-        let mut ca = ChunkedArray {
-            field: self.field,
-            chunks: vec![arr],
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        ca.compute_len();
-        ca
+        ChunkedArray::new_with_compute_len(self.field, vec![arr])
     }
 }

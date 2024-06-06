@@ -51,13 +51,20 @@ def test_value_counts_expr() -> None:
 
 
 def test_value_counts_duplicate_name() -> None:
-    s = pl.Series("count", [1])
+    s = pl.Series("count", [1, 0, 1])
 
-    with pytest.raises(pl.DuplicateError, match="count"):
+    # default name is 'count' ...
+    with pytest.raises(
+        pl.DuplicateError,
+        match="duplicate column names; change `name` to fix",
+    ):
         s.value_counts()
 
-    def test_count() -> None:
-        assert pl.Series([None, 1, None, 2, 3]).count() == 3
+    # ... but can customize that
+    assert_frame_equal(
+        pl.DataFrame({"count": [1, 0], "n": [2, 1]}, schema_overrides={"n": pl.UInt32}),
+        s.value_counts(name="n", sort=True),
+    )
 
     df = pl.DataFrame({"a": [None, 1, None, 2, 3]})
     assert df.select(pl.col("a").count()).item() == 3
@@ -66,3 +73,7 @@ def test_value_counts_duplicate_name() -> None:
         "literal": [1],
         "a": [3],
     }
+
+
+def test_count() -> None:
+    assert pl.Series([None, 1, None, 2, 3]).count() == 3

@@ -3,13 +3,13 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_generic(
     proj_pd: &mut ProjectionPushDown,
-    lp: ALogicalPlan,
-    acc_projections: Vec<Node>,
+    lp: IR,
+    acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<IR> {
     let inputs = lp.get_inputs();
     let exprs = lp.get_exprs();
 
@@ -45,8 +45,9 @@ pub(super) fn process_generic(
             // df1 => a
             // so we ensure we do the 'a' projection again before we concatenate
             if !acc_projections.is_empty() && inputs.len() > 1 {
-                alp = ALogicalPlanBuilder::from_lp(alp, expr_arena, lp_arena)
-                    .project(acc_projections.clone(), Default::default())
+                alp = IRBuilder::from_lp(alp, expr_arena, lp_arena)
+                    .project_simple_nodes(acc_projections.iter().map(|e| e.0))
+                    .unwrap()
                     .build()
             }
             lp_arena.replace(node, alp);

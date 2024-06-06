@@ -1,4 +1,4 @@
-use super::Array;
+use super::{Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
@@ -232,6 +232,34 @@ impl Array for FixedSizeBinaryArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl Splitable for FixedSizeBinaryArray {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset < self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_values, rhs_values) = unsafe { self.values.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        let size = self.size;
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                values: lhs_values,
+                validity: lhs_validity,
+                size,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                values: rhs_values,
+                validity: rhs_validity,
+                size,
+            },
+        )
     }
 }
 

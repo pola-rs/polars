@@ -8,6 +8,10 @@ macro_rules! impl_float_arith_kernel {
         impl PrimitiveArithmeticKernelImpl for $T {
             type TrueDivT = $T;
 
+            fn prim_wrapping_abs(lhs: PArr<$T>) -> PArr<$T> {
+                prim_unary_values(lhs, |x| x.abs())
+            }
+
             fn prim_wrapping_neg(lhs: PArr<$T>) -> PArr<$T> {
                 prim_unary_values(lhs, |x| -x)
             }

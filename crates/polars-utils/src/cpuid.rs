@@ -21,18 +21,42 @@ fn detect_fast_bmi2() -> bool {
         // Hardcoded blacklist of known-bad AMD families.
         // We'll assume any future releases that support BMI2 have a
         // proper implementation.
-        !(family_id >= 0x15 && family_id <= 0x18)
+        !(0x15..=0x18).contains(&family_id)
     } else {
         true
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn has_fast_bmi2() -> bool {
     #[cfg(target_feature = "bmi2")]
     {
         static CACHE: OnceLock<bool> = OnceLock::new();
         return *CACHE.get_or_init(detect_fast_bmi2);
+    }
+
+    false
+}
+
+#[inline]
+pub fn is_avx512_enabled() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        static CACHE: OnceLock<bool> = OnceLock::new();
+        return *CACHE.get_or_init(|| {
+            if !std::arch::is_x86_feature_detected!("avx512f") {
+                return false;
+            }
+
+            if std::env::var("POLARS_DISABLE_AVX512")
+                .map(|var| var == "1")
+                .unwrap_or(false)
+            {
+                return false;
+            }
+
+            true
+        });
     }
 
     false

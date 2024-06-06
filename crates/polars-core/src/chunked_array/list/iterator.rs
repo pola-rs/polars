@@ -69,7 +69,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 unsafe { *self.inner.as_mut() = array_ref };
 
                 // last iteration could have set the sorted flag (e.g. in compute_len)
-                self.series_container.clear_settings();
+                self.series_container.clear_flags();
                 // make sure that the length is correct
                 self.series_container._get_inner_mut().compute_len();
 
@@ -151,7 +151,7 @@ impl ListChunked {
                 vec![inner_values.clone()],
                 &iter_dtype,
             );
-            s.clear_settings();
+            s.clear_flags();
             Box::pin(s)
         };
 
@@ -162,7 +162,7 @@ impl ListChunked {
             series_container,
             NonNull::new(ptr).unwrap(),
             self.downcast_iter().flat_map(|arr| arr.iter()),
-            inner_dtype,
+            inner_dtype.clone(),
         )
     }
 

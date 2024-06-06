@@ -1,7 +1,7 @@
 use polars_core::prelude::PolarsResult;
 
 use crate::logical_plan::aexpr::AExpr;
-use crate::logical_plan::alp::ALogicalPlan;
+use crate::logical_plan::alp::IR;
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
@@ -12,24 +12,23 @@ impl StackOptimizer {
         &self,
         rules: &mut [Box<dyn OptimizationRule>],
         expr_arena: &mut Arena<AExpr>,
-        lp_arena: &mut Arena<ALogicalPlan>,
+        lp_arena: &mut Arena<IR>,
         lp_top: Node,
     ) -> PolarsResult<Node> {
         let mut changed = true;
 
-        let mut plans = Vec::with_capacity(32);
-
-        // nodes of expressions and lp node from which the expressions are a member of
-        let mut exprs = Vec::with_capacity(32);
+        // Nodes of expressions and lp node from which the expressions are a member of.
+        let mut plans = vec![];
+        let mut exprs = vec![];
         let mut scratch = vec![];
 
-        // run loop until reaching fixed point
+        // Run loop until reaching fixed point.
         while changed {
-            // recurse into sub plans and expressions and apply rules
+            // Recurse into sub plans and expressions and apply rules.
             changed = false;
             plans.push(lp_top);
             while let Some(current_node) = plans.pop() {
-                // apply rules
+                // Apply rules
                 for rule in rules.iter_mut() {
                     // keep iterating over same rule
                     while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
@@ -44,24 +43,18 @@ impl StackOptimizer {
                 plan.copy_exprs(&mut scratch);
                 plan.copy_inputs(&mut plans);
 
-                // first do a single pass to ensure we process
-                // from leaves to root.
-                // this ensures for instance
-                // that we first do constant folding on operands
-                // before we decide that multiple binary expression
-                // can be replaced with a fused operator
-                while let Some(expr_node) = scratch.pop() {
-                    exprs.push(expr_node);
-                    // traverse all subexpressions and add to the stack
-                    let expr = unsafe { expr_arena.get_unchecked(expr_node) };
-                    expr.nodes(&mut exprs);
+                if scratch.is_empty() {
+                    continue;
+                }
+
+                while let Some(expr_ir) = scratch.pop() {
+                    exprs.push(expr_ir.node());
                 }
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-                        // don't apply rules to `col`, `lit` etc.
                         if expr.is_leaf() {
                             continue;
                         }
@@ -97,17 +90,17 @@ pub trait OptimizationRule {
     /// * `node` - node of the current LogicalPlan node
     fn optimize_plan(
         &mut self,
-        _lp_arena: &mut Arena<ALogicalPlan>,
+        _lp_arena: &mut Arena<IR>,
         _expr_arena: &mut Arena<AExpr>,
         _node: Node,
-    ) -> Option<ALogicalPlan> {
+    ) -> Option<IR> {
         None
     }
     fn optimize_expr(
         &mut self,
         _expr_arena: &mut Arena<AExpr>,
         _expr_node: Node,
-        _lp_arena: &Arena<ALogicalPlan>,
+        _lp_arena: &Arena<IR>,
         _lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         Ok(None)

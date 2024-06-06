@@ -42,6 +42,12 @@ macro_rules! eval_binary_same_type {
                 (LiteralValue::UInt64($l), LiteralValue::UInt64($r)) => {
                     Some(AExpr::Literal(LiteralValue::UInt64($ret)))
                 },
+                (LiteralValue::Float($l), LiteralValue::Float($r)) => {
+                    Some(AExpr::Literal(LiteralValue::Float($ret)))
+                },
+                (LiteralValue::Int($l), LiteralValue::Int($r)) => {
+                    Some(AExpr::Literal(LiteralValue::Int($ret)))
+                },
                 _ => None,
             }
         } else {
@@ -90,6 +96,12 @@ macro_rules! eval_binary_cmp_same_type {
             }
             (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+            },
+            (LiteralValue::Int(x), LiteralValue::Int(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+            }
+            (LiteralValue::Float(x), LiteralValue::Float(y)) => {
+                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
             _ => None,
         }
@@ -107,10 +119,12 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _: &Arena<ALogicalPlan>,
-        _: Node,
+        lp_arena: &Arena<IR>,
+        lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
+        let in_filter = matches!(lp_arena.get(lp_node), IR::Filter { .. });
+
         let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr {
@@ -120,10 +134,11 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(true))
-            ) =>
+            ) && in_filter =>
             {
-                // We alias because of the left-hand naming rule.
-                Some(AExpr::Alias(*right, "literal".into()))
+                // Only in filter as we we might change the name from "literal"
+                // to whatever lhs columns is.
+                return Ok(Some(expr_arena.get(*right).clone()));
             },
             // x AND true => x
             AExpr::BinaryExpr {
@@ -177,10 +192,11 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(
                 expr_arena.get(*left),
                 AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
+            ) && in_filter =>
             {
-                // We alias because of the left-hand naming rule.
-                Some(AExpr::Alias(*right, "literal".into()))
+                // Only in filter as we we might change the name from "literal"
+                // to whatever lhs columns is.
+                return Ok(Some(expr_arena.get(*right).clone()));
             },
             // x or false => x
             AExpr::BinaryExpr {
@@ -231,19 +247,9 @@ impl OptimizationRule for SimplifyBooleanRule {
                 function: FunctionExpr::Negate,
                 ..
             } if input.len() == 1 => {
-                let input = input[0];
-                let ae = expr_arena.get(input);
+                let input = &input[0];
+                let ae = expr_arena.get(input.node());
                 eval_negate(ae)
-            },
-            // Flatten Aliases.
-            AExpr::Alias(inner, name) => {
-                let input = expr_arena.get(*inner);
-
-                if let AExpr::Alias(input, _) = input {
-                    Some(AExpr::Alias(*input, name.clone()))
-                } else {
-                    None
-                }
             },
             _ => None,
         };
@@ -262,6 +268,8 @@ fn eval_negate(ae: &AExpr) -> Option<AExpr> {
             LiteralValue::Int64(v) => LiteralValue::Int64(-*v),
             LiteralValue::Float32(v) => LiteralValue::Float32(-*v),
             LiteralValue::Float64(v) => LiteralValue::Float64(-*v),
+            LiteralValue::Float(v) => LiteralValue::Float(-*v),
+            LiteralValue::Int(v) => LiteralValue::Int(-*v),
             _ => return None,
         },
         _ => return None,
@@ -286,11 +294,11 @@ where
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 fn string_addition_to_linear_concat(
-    lp_arena: &Arena<ALogicalPlan>,
+    lp_arena: &Arena<IR>,
     lp_node: Node,
     expr_arena: &Arena<AExpr>,
-    left_ae: Node,
-    right_ae: Node,
+    left_node: Node,
+    right_node: Node,
     left_aexpr: &AExpr,
     right_aexpr: &AExpr,
 ) -> Option<AExpr> {
@@ -298,6 +306,8 @@ fn string_addition_to_linear_concat(
         let lp = lp_arena.get(lp_node);
         let input = lp.get_input()?;
         let schema = lp_arena.get(input).schema(lp_arena);
+        let left_e = ExprIR::from_node(left_node, expr_arena);
+        let right_e = ExprIR::from_node(right_node, expr_arena);
 
         let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
@@ -307,7 +317,7 @@ fn string_addition_to_linear_concat(
             return None;
         }
 
-        if type_a == DataType::String {
+        if type_a.is_string() {
             match (left_aexpr, right_aexpr) {
                 // concat + concat
                 (
@@ -358,7 +368,7 @@ fn string_addition_to_linear_concat(
                 ) => {
                     if sep.is_empty() && !ignore_nulls {
                         let mut input = input.clone();
-                        input.push(right_ae);
+                        input.push(right_e);
                         Some(AExpr::Function {
                             input,
                             function: fun.clone(),
@@ -383,7 +393,7 @@ fn string_addition_to_linear_concat(
                 ) => {
                     if sep.is_empty() && !ignore_nulls {
                         let mut input = Vec::with_capacity(1 + input_right.len());
-                        input.push(left_ae);
+                        input.push(left_e);
                         input.extend_from_slice(input_right);
                         Some(AExpr::Function {
                             input,
@@ -395,7 +405,7 @@ fn string_addition_to_linear_concat(
                     }
                 },
                 _ => Some(AExpr::Function {
-                    input: vec![left_ae, right_ae],
+                    input: vec![left_e, right_e],
                     function: StringFunction::ConcatHorizontal {
                         delimiter: "".to_string(),
                         ignore_nulls: false,
@@ -423,8 +433,8 @@ impl OptimizationRule for SimplifyExprRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _lp_arena: &Arena<ALogicalPlan>,
-        _lp_node: Node,
+        lp_arena: &Arena<IR>,
+        lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node).clone();
 
@@ -447,8 +457,8 @@ impl OptimizationRule for SimplifyExprRule {
                                 #[cfg(all(feature = "strings", feature = "concat_str"))]
                                 {
                                     string_addition_to_linear_concat(
-                                        _lp_arena,
-                                        _lp_node,
+                                        lp_arena,
+                                        lp_node,
                                         expr_arena,
                                         *left,
                                         *right,
@@ -476,6 +486,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float64(x / y)))
                                 },
+                                (LiteralValue::Float(x), LiteralValue::Float(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float64(x / y)))
+                                },
                                 #[cfg(feature = "dtype-i8")]
                                 (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Int8(
@@ -495,6 +508,11 @@ impl OptimizationRule for SimplifyExprRule {
                                 },
                                 (LiteralValue::Int64(x), LiteralValue::Int64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Int64(
+                                        x.wrapping_floor_div_mod(*y).0,
+                                    )))
+                                },
+                                (LiteralValue::Int(x), LiteralValue::Int(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Int(
                                         x.wrapping_floor_div_mod(*y).0,
                                     )))
                                 },
@@ -529,6 +547,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
                                     Some(AExpr::Literal(LiteralValue::Float64(x / y)))
                                 },
+                                (LiteralValue::Float(x), LiteralValue::Float(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float(x / y)))
+                                },
                                 #[cfg(feature = "dtype-i8")]
                                 (LiteralValue::Int8(x), LiteralValue::Int8(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
@@ -557,6 +578,9 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
                                 ),
+                                (LiteralValue::Int(x), LiteralValue::Int(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float(*x as f64 / *y as f64)))
+                                },
                                 _ => None,
                             }
                         } else {
@@ -593,72 +617,10 @@ impl OptimizationRule for SimplifyExprRule {
                 options,
                 ..
             } => return optimize_functions(input, function, options, expr_arena),
-            AExpr::Cast {
-                expr,
-                data_type,
-                strict,
-            } => {
-                let input = expr_arena.get(*expr);
-                inline_cast(input, data_type, *strict)?
-            },
             _ => None,
         };
         Ok(out)
     }
-}
-
-fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Option<AExpr>> {
-    if !dtype.is_known() {
-        return Ok(None);
-    }
-    let lv = match (input, dtype) {
-        (AExpr::Literal(lv), _) => match lv {
-            LiteralValue::Series(s) => {
-                let s = if strict {
-                    s.strict_cast(dtype)
-                } else {
-                    s.cast(dtype)
-                }?;
-                LiteralValue::Series(SpecialEq::new(s))
-            },
-            _ => {
-                let Some(av) = lv.to_any_value() else {
-                    return Ok(None);
-                };
-                if dtype == &av.dtype() {
-                    return Ok(Some(input.clone()));
-                }
-                match (av, dtype) {
-                    // casting null always remains null
-                    (AnyValue::Null, _) => return Ok(None),
-                    // series cast should do this one
-                    #[cfg(feature = "dtype-datetime")]
-                    (AnyValue::Datetime(_, _, _), DataType::Datetime(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-duration")]
-                    (AnyValue::Duration(_, _), _) => return Ok(None),
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
-                        return Ok(None)
-                    },
-                    #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),
-                    #[cfg(feature = "dtype-struct")]
-                    (_, DataType::Struct(_)) => return Ok(None),
-                    (av, _) => {
-                        let out = {
-                            match av.strict_cast(dtype) {
-                                Ok(out) => out,
-                                Err(_) => return Ok(None),
-                            }
-                        };
-                        out.try_into()?
-                    },
-                }
-            },
-        },
-        _ => return Ok(None),
-    };
-    Ok(Some(AExpr::Literal(lv)))
 }
 
 #[test]

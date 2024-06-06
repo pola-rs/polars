@@ -113,7 +113,7 @@ impl TakeChunked for Series {
                 let ca = phys.str().unwrap();
                 let ca = ca.as_binary();
                 let out = take_unchecked_binview(&ca, by, sorted);
-                out.to_string().into_series()
+                out.to_string_unchecked().into_series()
             },
             List(_) => {
                 let ca = phys.list().unwrap();
@@ -169,7 +169,7 @@ impl TakeChunked for Series {
                 let ca = phys.str().unwrap();
                 let ca = ca.as_binary();
                 let out = take_unchecked_binview_opt(&ca, by);
-                out.to_string().into_series()
+                out.to_string_unchecked().into_series()
             },
             List(_) => {
                 let ca = phys.list().unwrap();

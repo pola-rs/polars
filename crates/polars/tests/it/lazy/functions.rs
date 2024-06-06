@@ -1,9 +1,6 @@
-// used only if feature="format_str"
-#[allow(unused_imports)]
 use super::*;
 
 #[test]
-#[cfg(feature = "format_str")]
 fn test_format_str() {
     let a = df![
         "a" => [1, 2],

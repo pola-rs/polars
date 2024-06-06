@@ -1,29 +1,29 @@
 use arrow::array::Array;
-use arrow::chunk::Chunk;
 use arrow::datatypes::ArrowSchema;
+use arrow::record_batch::RecordBatchT;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
-    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding, RowGroupIter,
-    SchemaDescriptor, WriteOptions,
+    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding,
+    RowGroupIterColumns, SchemaDescriptor, WriteOptions,
 };
 use crate::parquet::error::Error as ParquetError;
 use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
 use crate::parquet::FallibleStreamingIterator;
 
-/// Maps a [`Chunk`] and parquet-specific options to an [`RowGroupIter`] used to
+/// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIterColumns`] used to
 /// write to parquet
 /// # Panics
 /// Iff
 /// * `encodings.len() != fields.len()` or
 /// * `encodings.len() != chunk.arrays().len()`
 pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
-    chunk: Chunk<A>,
+    chunk: RecordBatchT<A>,
     encodings: Vec<Vec<Encoding>>,
     fields: Vec<ParquetType>,
     options: WriteOptions,
-) -> RowGroupIter<'static, PolarsError> {
+) -> RowGroupIterColumns<'static, PolarsError> {
     assert_eq!(encodings.len(), fields.len());
     assert_eq!(encodings.len(), chunk.arrays().len());
     DynIter::new(
@@ -54,12 +54,12 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
     )
 }
 
-/// An iterator adapter that converts an iterator over [`Chunk`] into an iterator
+/// An iterator adapter that converts an iterator over [`RecordBatchT`] into an iterator
 /// of row groups.
 /// Use it to create an iterator consumable by the parquet's API.
 pub struct RowGroupIterator<
     A: AsRef<dyn Array> + 'static,
-    I: Iterator<Item = PolarsResult<Chunk<A>>>,
+    I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
 > {
     iter: I,
     options: WriteOptions,
@@ -67,10 +67,10 @@ pub struct RowGroupIterator<
     encodings: Vec<Vec<Encoding>>,
 }
 
-impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
+impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
     RowGroupIterator<A, I>
 {
-    /// Creates a new [`RowGroupIterator`] from an iterator over [`Chunk`].
+    /// Creates a new [`RowGroupIterator`] from an iterator over [`RecordBatchT`].
     ///
     /// # Errors
     /// Iff
@@ -103,10 +103,12 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
     }
 }
 
-impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<Chunk<A>>>>
-    Iterator for RowGroupIterator<A, I>
+impl<
+        A: AsRef<dyn Array> + 'static + Send + Sync,
+        I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
+    > Iterator for RowGroupIterator<A, I>
 {
-    type Item = PolarsResult<RowGroupIter<'static, PolarsError>>;
+    type Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let options = self.options;

@@ -20,65 +20,100 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         validate.validate_probe(&lhs, &rhs, false)?;
 
         use DataType::*;
-        if matches!(lhs.dtype(), String | Binary) {
-            let lhs = lhs.cast(&Binary).unwrap();
-            let rhs = rhs.cast(&Binary).unwrap();
-            let lhs = lhs.binary().unwrap();
-            let rhs = rhs.binary().unwrap();
-            let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
-            let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
-        } else if lhs.dtype().is_float() {
-            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                num_group_join_left(lhs, rhs, validate, join_nulls)
-            })
-        } else if s_self.bit_repr_is_large() {
-            let lhs = lhs.bit_repr_large();
-            let rhs = rhs.bit_repr_large();
-            num_group_join_left(&lhs, &rhs, validate, join_nulls)
-        } else {
-            let lhs = lhs.bit_repr_small();
-            let rhs = rhs.bit_repr_small();
-            num_group_join_left(&lhs, &rhs, validate, join_nulls)
+
+        match lhs.dtype() {
+            String | Binary => {
+                let lhs = lhs.cast(&Binary).unwrap();
+                let rhs = rhs.cast(&Binary).unwrap();
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryType>(lhs, rhs, false);
+                let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+                hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
+            },
+            BinaryOffset => {
+                let lhs = lhs.binary_offset().unwrap();
+                let rhs = rhs.binary_offset().unwrap();
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, false);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
+            },
+            _ => {
+                if lhs.dtype().is_float() {
+                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                        num_group_join_left(lhs, rhs, validate, join_nulls)
+                    })
+                } else if s_self.bit_repr_is_large() {
+                    let lhs = lhs.bit_repr_large();
+                    let rhs = rhs.bit_repr_large();
+                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
+                } else {
+                    let lhs = lhs.bit_repr_small();
+                    let rhs = rhs.bit_repr_small();
+                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
+                }
+            },
         }
     }
 
     #[cfg(feature = "semi_anti_join")]
-    fn hash_join_semi_anti(&self, other: &Series, anti: bool) -> Vec<IdxSize> {
+    fn hash_join_semi_anti(&self, other: &Series, anti: bool, join_nulls: bool) -> Vec<IdxSize> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
-        if matches!(lhs.dtype(), String | Binary) {
-            let lhs = lhs.cast(&Binary).unwrap();
-            let rhs = rhs.cast(&Binary).unwrap();
-            let lhs = lhs.binary().unwrap();
-            let rhs = rhs.binary().unwrap();
-            let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
-            let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            if anti {
-                hash_join_tuples_left_anti(lhs, rhs)
-            } else {
-                hash_join_tuples_left_semi(lhs, rhs)
-            }
-        } else if lhs.dtype().is_float() {
-            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                num_group_join_anti_semi(lhs, rhs, anti)
-            })
-        } else if s_self.bit_repr_is_large() {
-            let lhs = lhs.bit_repr_large();
-            let rhs = rhs.bit_repr_large();
-            num_group_join_anti_semi(&lhs, &rhs, anti)
-        } else {
-            let lhs = lhs.bit_repr_small();
-            let rhs = rhs.bit_repr_small();
-            num_group_join_anti_semi(&lhs, &rhs, anti)
+
+        match lhs.dtype() {
+            String | Binary => {
+                let lhs = lhs.cast(&Binary).unwrap();
+                let rhs = rhs.cast(&Binary).unwrap();
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryType>(lhs, rhs, false);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                if anti {
+                    hash_join_tuples_left_anti(lhs, rhs, join_nulls)
+                } else {
+                    hash_join_tuples_left_semi(lhs, rhs, join_nulls)
+                }
+            },
+            BinaryOffset => {
+                let lhs = lhs.binary_offset().unwrap();
+                let rhs = rhs.binary_offset().unwrap();
+                let (lhs, rhs, _, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, false);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                if anti {
+                    hash_join_tuples_left_anti(lhs, rhs, join_nulls)
+                } else {
+                    hash_join_tuples_left_semi(lhs, rhs, join_nulls)
+                }
+            },
+            _ => {
+                if lhs.dtype().is_float() {
+                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                        num_group_join_anti_semi(lhs, rhs, anti, join_nulls)
+                    })
+                } else if s_self.bit_repr_is_large() {
+                    let lhs = lhs.bit_repr_large();
+                    let rhs = rhs.bit_repr_large();
+                    num_group_join_anti_semi(&lhs, &rhs, anti, join_nulls)
+                } else {
+                    let lhs = lhs.bit_repr_small();
+                    let rhs = rhs.bit_repr_small();
+                    num_group_join_anti_semi(&lhs, &rhs, anti, join_nulls)
+                }
+            },
         }
     }
 
@@ -94,32 +129,50 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
-        if matches!(lhs.dtype(), String | Binary) {
-            let lhs = lhs.cast(&Binary).unwrap();
-            let rhs = rhs.cast(&Binary).unwrap();
-            let lhs = lhs.binary().unwrap();
-            let rhs = rhs.binary().unwrap();
-            let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
-            let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            Ok((
-                hash_join_tuples_inner(lhs, rhs, swapped, validate, join_nulls)?,
-                !swapped,
-            ))
-        } else if lhs.dtype().is_float() {
-            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
-            })
-        } else if s_self.bit_repr_is_large() {
-            let lhs = s_self.bit_repr_large();
-            let rhs = other.bit_repr_large();
-            group_join_inner::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
-        } else {
-            let lhs = s_self.bit_repr_small();
-            let rhs = other.bit_repr_small();
-            group_join_inner::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+        match lhs.dtype() {
+            String | Binary => {
+                let lhs = lhs.cast(&Binary).unwrap();
+                let rhs = rhs.cast(&Binary).unwrap();
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                Ok((
+                    hash_join_tuples_inner(lhs, rhs, swapped, validate, join_nulls)?,
+                    !swapped,
+                ))
+            },
+            BinaryOffset => {
+                let lhs = lhs.binary_offset().unwrap();
+                let rhs = rhs.binary_offset()?;
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                Ok((
+                    hash_join_tuples_inner(lhs, rhs, swapped, validate, join_nulls)?,
+                    !swapped,
+                ))
+            },
+            _ => {
+                if lhs.dtype().is_float() {
+                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                        group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
+                    })
+                } else if s_self.bit_repr_is_large() {
+                    let lhs = s_self.bit_repr_large();
+                    let rhs = other.bit_repr_large();
+                    group_join_inner::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                } else {
+                    let lhs = s_self.bit_repr_small();
+                    let rhs = other.bit_repr_small();
+                    group_join_inner::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                }
+            },
         }
     }
 
@@ -134,29 +187,44 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
-        if matches!(lhs.dtype(), String | Binary) {
-            let lhs = lhs.cast(&Binary).unwrap();
-            let rhs = rhs.cast(&Binary).unwrap();
-            let lhs = lhs.binary().unwrap();
-            let rhs = rhs.binary().unwrap();
-            let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
-            let lhs = lhs.iter().collect::<Vec<_>>();
-            let rhs = rhs.iter().collect::<Vec<_>>();
-            hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
-        } else if lhs.dtype().is_float() {
-            with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                hash_join_outer(lhs, rhs, validate, join_nulls)
-            })
-        } else if s_self.bit_repr_is_large() {
-            let lhs = s_self.bit_repr_large();
-            let rhs = other.bit_repr_large();
-            hash_join_outer(&lhs, &rhs, validate, join_nulls)
-        } else {
-            let lhs = s_self.bit_repr_small();
-            let rhs = other.bit_repr_small();
-            hash_join_outer(&lhs, &rhs, validate, join_nulls)
+        match lhs.dtype() {
+            String | Binary => {
+                let lhs = lhs.cast(&Binary).unwrap();
+                let rhs = rhs.cast(&Binary).unwrap();
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+            },
+            BinaryOffset => {
+                let lhs = lhs.binary_offset().unwrap();
+                let rhs = rhs.binary_offset()?;
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+            },
+            _ => {
+                if lhs.dtype().is_float() {
+                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                        hash_join_outer(lhs, rhs, validate, join_nulls)
+                    })
+                } else if s_self.bit_repr_is_large() {
+                    let lhs = s_self.bit_repr_large();
+                    let rhs = other.bit_repr_large();
+                    hash_join_outer(&lhs, &rhs, validate, join_nulls)
+                } else {
+                    let lhs = s_self.bit_repr_small();
+                    let rhs = other.bit_repr_small();
+                    hash_join_outer(&lhs, &rhs, validate, join_nulls)
+                }
+            },
         }
     }
 }
@@ -366,6 +434,7 @@ where
     }
 }
 
+#[cfg(feature = "asof_join")]
 pub fn prepare_bytes<'a>(
     been_split: &'a [BinaryChunked],
     hb: &RandomState,
@@ -385,9 +454,9 @@ pub fn prepare_bytes<'a>(
     })
 }
 
-fn prepare_binary<'a>(
-    ca: &'a BinaryChunked,
-    other: &'a BinaryChunked,
+fn prepare_binary<'a, T>(
+    ca: &'a ChunkedArray<T>,
+    other: &'a ChunkedArray<T>,
     // In inner join and outer join, the shortest relation will be used to create a hash table.
     // In left join, always use the right side to create.
     build_shortest_table: bool,
@@ -396,27 +465,21 @@ fn prepare_binary<'a>(
     Vec<Vec<BytesHash<'a>>>,
     bool,
     RandomState,
-) {
-    let n_threads = POOL.current_num_threads();
-
+)
+where
+    T: PolarsDataType,
+    for<'b> <T::Array as StaticArray>::ValueT<'b>: AsRef<[u8]>,
+{
     let (a, b, swapped) = if build_shortest_table {
         det_hash_prone_order!(ca, other)
     } else {
         (ca, other, false)
     };
-
     let hb = RandomState::default();
-    let splitted_a = split_ca(a, n_threads).unwrap();
-    let splitted_b = split_ca(b, n_threads).unwrap();
-    let str_hashes_a = prepare_bytes(&splitted_a, &hb);
-    let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+    let bh_a = a.to_bytes_hashes(true, hb.clone());
+    let bh_b = b.to_bytes_hashes(true, hb.clone());
 
-    // SAFETY:
-    // Splitting a Ca keeps the same buffers, so the lifetime is still valid.
-    let str_hashes_a = unsafe { std::mem::transmute::<_, Vec<Vec<BytesHash<'a>>>>(str_hashes_a) };
-    let str_hashes_b = unsafe { std::mem::transmute::<_, Vec<Vec<BytesHash<'a>>>>(str_hashes_b) };
-
-    (str_hashes_a, str_hashes_b, swapped, hb)
+    (bh_a, bh_b, swapped, hb)
 }
 
 #[cfg(feature = "semi_anti_join")]
@@ -424,12 +487,13 @@ fn num_group_join_anti_semi<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     anti: bool,
+    join_nulls: bool,
 ) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
-    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();
@@ -444,27 +508,27 @@ where
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b)
+                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b)
+                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
             }
         },
         (0, 0, _, _) => {
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b)
+                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b)
+                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
             }
         },
         _ => {
             let keys_a = get_arrays(&splitted_a);
             let keys_b = get_arrays(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b)
+                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b)
+                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
             }
         },
     }

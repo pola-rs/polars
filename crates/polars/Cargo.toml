@@ -26,12 +26,14 @@ polars-utils = { workspace = true }
 [dev-dependencies]
 ahash = { workspace = true }
 apache-avro = { version = "0.16", features = ["snappy"] }
+arrow = { workspace = true, features = ["arrow_rs"] }
+arrow-buffer = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
 either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
 # used to run formal property testing
-proptest = { version = "1", default_features = false, features = ["std"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
 rand = { workspace = true }
 # used to test async readers
 tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
@@ -129,6 +131,7 @@ array_any_all = ["polars-lazy?/array_any_all", "dtype-array"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx"]
 binary_encoding = ["polars-ops/binary_encoding", "polars-lazy?/binary_encoding", "polars-sql?/binary_encoding"]
+business = ["polars-lazy?/business", "polars-ops/business"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 chunked_ids = ["polars-ops?/chunked_ids"]
 coalesce = ["polars-lazy?/coalesce"]
@@ -150,6 +153,7 @@ dot_diagram = ["polars-lazy?/dot_diagram"]
 dot_product = ["polars-core/dot_product"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "polars-lazy?/dynamic_group_by"]
 ewma = ["polars-ops/ewma", "polars-lazy?/ewma"]
+ewma_by = ["polars-ops/ewma_by", "polars-lazy?/ewma_by"]
 extract_groups = ["polars-lazy?/extract_groups"]
 extract_jsonpath = [
   "polars-core/strings",
@@ -159,8 +163,8 @@ extract_jsonpath = [
 ]
 find_many = ["polars-plan/find_many"]
 fused = ["polars-ops/fused", "polars-lazy?/fused"]
-group_by_list = ["polars-core/group_by_list", "polars-ops/group_by_list"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
+interpolate_by = ["polars-ops/interpolate_by", "polars-lazy?/interpolate_by"]
 is_between = ["polars-lazy?/is_between", "polars-ops/is_between"]
 is_first_distinct = ["polars-lazy?/is_first_distinct", "polars-ops/is_first_distinct"]
 is_in = ["polars-lazy?/is_in"]
@@ -194,7 +198,8 @@ reinterpret = ["polars-core/reinterpret", "polars-lazy?/reinterpret", "polars-op
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
 rle = ["polars-lazy?/rle"]
-rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window", "polars-time/rolling_window"]
+rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window"]
+rolling_window_by = ["polars-core/rolling_window_by", "polars-lazy?/rolling_window_by", "polars-time/rolling_window_by"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
 row_hash = ["polars-core/row_hash", "polars-lazy?/row_hash"]
 search_sorted = ["polars-lazy?/search_sorted"]
@@ -365,7 +370,9 @@ docs-selection = [
   "take_opt_iter",
   "cum_agg",
   "rolling_window",
+  "rolling_window_by",
   "interpolate",
+  "interpolate_by",
   "diff",
   "rank",
   "range",

@@ -72,7 +72,7 @@ pub trait ToStruct: AsList {
             (0..n_fields)
                 .into_par_iter()
                 .map(|i| {
-                    ca.lst_get(i as i64).map(|mut s| {
+                    ca.lst_get(i as i64, true).map(|mut s| {
                         s.rename(&name_generator(i));
                         s
                     })

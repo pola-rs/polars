@@ -6,15 +6,13 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
+    deprecate_function,
     issue_deprecation_warning,
-    rename_use_earliest_to_ambiguous,
 )
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
+from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -93,7 +91,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
@@ -124,15 +121,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -153,7 +141,6 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
-        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(
@@ -213,7 +200,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
@@ -239,15 +225,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -306,8 +283,8 @@ class ExprStringNameSpace:
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
-            time_unit = dtype.time_unit  # type: ignore[union-attr]
-            time_zone = dtype.time_zone  # type: ignore[union-attr]
+            time_unit = getattr(dtype, "time_unit", None)
+            time_zone = getattr(dtype, "time_zone", None)
             return self.to_datetime(
                 format,
                 time_unit=time_unit,
@@ -315,7 +292,6 @@ class ExprStringNameSpace:
                 strict=strict,
                 exact=exact,
                 cache=cache,
-                use_earliest=use_earliest,
                 ambiguous=ambiguous,
             )
         elif dtype == Time:
@@ -927,7 +903,6 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
-    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
         Pad the start of the string with zeros until it reaches the given length.
@@ -1304,7 +1279,7 @@ class ExprStringNameSpace:
             dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
-    def json_path_match(self, json_path: str) -> Expr:
+    def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
         Extract the first match of JSON string with the provided JSONPath expression.
 
@@ -1345,6 +1320,7 @@ class ExprStringNameSpace:
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
         """
+        json_path = parse_as_expression(json_path, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
@@ -1668,15 +1644,15 @@ class ExprStringNameSpace:
         ...     ).with_columns(name=pl.col("captures").struct["1"].str.to_uppercase())
         ... )
         shape: (3, 3)
-        ┌───────────────────────────────────┬───────────────────────┬──────────┐
-        │ url                               ┆ captures              ┆ name     │
-        │ ---                               ┆ ---                   ┆ ---      │
-        │ str                               ┆ struct[2]             ┆ str      │
-        ╞═══════════════════════════════════╪═══════════════════════╪══════════╡
-        │ http://vote.com/ballon_dor?candi… ┆ {"messi","python"}    ┆ MESSI    │
-        │ http://vote.com/ballon_dor?candi… ┆ {"weghorst","polars"} ┆ WEGHORST │
-        │ http://vote.com/ballon_dor?error… ┆ {null,null}           ┆ null     │
-        └───────────────────────────────────┴───────────────────────┴──────────┘
+        ┌─────────────────────────────────┬───────────────────────┬──────────┐
+        │ url                             ┆ captures              ┆ name     │
+        │ ---                             ┆ ---                   ┆ ---      │
+        │ str                             ┆ struct[2]             ┆ str      │
+        ╞═════════════════════════════════╪═══════════════════════╪══════════╡
+        │ http://vote.com/ballon_dor?can… ┆ {"messi","python"}    ┆ MESSI    │
+        │ http://vote.com/ballon_dor?can… ┆ {"weghorst","polars"} ┆ WEGHORST │
+        │ http://vote.com/ballon_dor?err… ┆ {null,null}           ┆ null     │
+        └─────────────────────────────────┴───────────────────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
@@ -2205,9 +2181,168 @@ class ExprStringNameSpace:
         length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
+    def head(self, n: int | IntoExprColumn) -> Expr:
+        """
+        Return the first n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When the `n` input is negative, `head` returns characters up to the `n`th
+           from the end of the string. For example, if `n = -3`, then all characters
+           except the last three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the first 5 characters:
+
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_columns(pl.col("s").str.head(5).alias("s_head_5"))
+        shape: (4, 2)
+        ┌─────────────┬──────────┐
+        │ s           ┆ s_head_5 │
+        │ ---         ┆ ---      │
+        │ str         ┆ str      │
+        ╞═════════════╪══════════╡
+        │ pear        ┆ pear     │
+        │ null        ┆ null     │
+        │ papaya      ┆ papay    │
+        │ dragonfruit ┆ drago    │
+        └─────────────┴──────────┘
+
+        Return characters determined by column `n`:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["pear", None, "papaya", "dragonfruit"],
+        ...         "n": [3, 4, -2, -5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("s").str.head("n").alias("s_head_n"))
+        shape: (4, 3)
+        ┌─────────────┬─────┬──────────┐
+        │ s           ┆ n   ┆ s_head_n │
+        │ ---         ┆ --- ┆ ---      │
+        │ str         ┆ i64 ┆ str      │
+        ╞═════════════╪═════╪══════════╡
+        │ pear        ┆ 3   ┆ pea      │
+        │ null        ┆ 4   ┆ null     │
+        │ papaya      ┆ -2  ┆ papa     │
+        │ dragonfruit ┆ -5  ┆ dragon   │
+        └─────────────┴─────┴──────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.str_head(n))
+
+    def tail(self, n: int | IntoExprColumn) -> Expr:
+        """
+        Return the last n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When the `n` input is negative, `tail` returns characters starting from the
+           `n`th from the beginning of the string. For example, if `n = -3`, then all
+           characters except the first three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the last 5 characters:
+
+        >>> df = pl.DataFrame({"s": ["pear", None, "papaya", "dragonfruit"]})
+        >>> df.with_columns(pl.col("s").str.tail(5).alias("s_tail_5"))
+        shape: (4, 2)
+        ┌─────────────┬──────────┐
+        │ s           ┆ s_tail_5 │
+        │ ---         ┆ ---      │
+        │ str         ┆ str      │
+        ╞═════════════╪══════════╡
+        │ pear        ┆ pear     │
+        │ null        ┆ null     │
+        │ papaya      ┆ apaya    │
+        │ dragonfruit ┆ fruit    │
+        └─────────────┴──────────┘
+
+        Return characters determined by column `n`:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "s": ["pear", None, "papaya", "dragonfruit"],
+        ...         "n": [3, 4, -2, -5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("s").str.tail("n").alias("s_tail_n"))
+        shape: (4, 3)
+        ┌─────────────┬─────┬──────────┐
+        │ s           ┆ n   ┆ s_tail_n │
+        │ ---         ┆ --- ┆ ---      │
+        │ str         ┆ i64 ┆ str      │
+        ╞═════════════╪═════╪══════════╡
+        │ pear        ┆ 3   ┆ ear      │
+        │ null        ┆ 4   ┆ null     │
+        │ papaya      ┆ -2  ┆ paya     │
+        │ dragonfruit ┆ -5  ┆ nfruit   │
+        └─────────────┴─────┴──────────┘
+        """
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.str_tail(n))
+
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -2217,7 +2352,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["foo", "bar"]})
-        >>> df.select(pl.col("a").str.explode())
+        >>> df.select(pl.col("a").str.explode())  # doctest: +SKIP
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -2232,16 +2367,20 @@ class ExprStringNameSpace:
         │ r   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.str_explode())
+        split = self.split("")
+        return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
+    def to_integer(
+        self, *, base: int | IntoExprColumn = 10, strict: bool = True
+    ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
 
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
+            Positive integer or expression which is the base of the string
+            we are parsing.
             Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
@@ -2282,182 +2421,8 @@ class ExprStringNameSpace:
         │ null ┆ null   │
         └──────┴────────┘
         """
+        base = parse_as_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
-
-    @deprecate_renamed_function("to_integer", version="0.19.14")
-    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
-    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Expr:
-        """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`to_integer`.
-
-        Parameters
-        ----------
-        base
-            Positive integer which is the base of the string we are parsing.
-        strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
-        """
-        if base is None:
-            base = 2
-        return self.to_integer(base=base, strict=strict).cast(Int32, strict=strict)
-
-    @deprecate_renamed_function("strip_chars", version="0.19.3")
-    def strip(self, characters: str | None = None) -> Expr:
-        """
-        Remove leading and trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-        return self.strip_chars(characters)
-
-    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
-    def lstrip(self, characters: str | None = None) -> Expr:
-        """
-        Remove leading characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars_start`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-        return self.strip_chars_start(characters)
-
-    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
-    def rstrip(self, characters: str | None = None) -> Expr:
-        """
-        Remove trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars_end`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-        return self.strip_chars_end(characters)
-
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(self, pattern: str | Expr) -> Expr:
-        """
-        Count all successive non-overlapping regex matches.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`UInt32`. Returns null if the
-            original value is null.
-        """
-        return self.count_matches(pattern)
-
-    @deprecate_renamed_function("len_bytes", version="0.19.8")
-    def lengths(self) -> Expr:
-        """
-        Return the length of each string as the number of bytes.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_bytes`.
-        """
-        return self.len_bytes()
-
-    @deprecate_renamed_function("len_chars", version="0.19.8")
-    def n_chars(self) -> Expr:
-        """
-        Return the length of each string as the number of characters.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_chars`.
-        """
-        return self.len_chars()
-
-    @deprecate_renamed_function("pad_end", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def ljust(self, length: int, fill_char: str = " ") -> Expr:
-        """
-        Return the string left justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_end`.
-
-        Parameters
-        ----------
-        length
-            Justify left to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-        return self.pad_end(length, fill_char)
-
-    @deprecate_renamed_function("pad_start", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def rjust(self, length: int, fill_char: str = " ") -> Expr:
-        """
-        Return the string right justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_start`.
-
-        Parameters
-        ----------
-        length
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-        return self.pad_start(length, fill_char)
-
-    @deprecate_renamed_function("json_decode", version="0.19.12")
-    def json_extract(
-        self,
-        dtype: PolarsDataType | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Expr:
-        """
-        Parse string values as JSON.
-
-        .. deprecated:: 0.19.15
-            This method has been renamed to :meth:`json_decode`.
-
-        Parameters
-        ----------
-        dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
-        infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
-        """
-        return self.json_decode(dtype, infer_schema_length)
 
     def contains_any(
         self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False

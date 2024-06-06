@@ -67,6 +67,7 @@ pub enum ArrowDataType {
     /// * As used in the Olson time zone database (the "tz database" or
     ///   "tzdata"), such as "America/New_York"
     /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
     Timestamp(TimeUnit, Option<String>),
@@ -301,13 +302,16 @@ impl From<arrow_schema::DataType> for ArrowDataType {
             DataType::RunEndEncoded(_, _) => {
                 panic!("Run-end encoding not supported by polars_arrow")
             },
+            // This ensures that it doesn't fail to compile when new variants are added to Arrow
+            #[allow(unreachable_patterns)]
+            dtype => unimplemented!("unsupported datatype: {dtype}"),
         }
     }
 }
 
 /// Mode of [`ArrowDataType::Union`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UnionMode {
     /// Dense union
     Dense,

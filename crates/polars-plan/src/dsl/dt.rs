@@ -4,6 +4,27 @@ use super::*;
 pub struct DateLikeNameSpace(pub(crate) Expr);
 
 impl DateLikeNameSpace {
+    /// Add a given number of business days.
+    #[cfg(feature = "business")]
+    pub fn add_business_days(
+        self,
+        n: Expr,
+        week_mask: [bool; 7],
+        holidays: Vec<i32>,
+        roll: Roll,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::Business(BusinessFunction::AddBusinessDay {
+                week_mask,
+                holidays,
+                roll,
+            }),
+            &[n],
+            false,
+            false,
+        )
+    }
+
     /// Convert from Date/Time/Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(self, format: &str) -> Expr {
@@ -182,9 +203,9 @@ impl DateLikeNameSpace {
     }
 
     /// Truncate the Datetime/Date range into buckets.
-    pub fn truncate(self, every: Expr, offset: String) -> Expr {
+    pub fn truncate(self, every: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate),
             &[every],
             false,
             false,
@@ -220,13 +241,13 @@ impl DateLikeNameSpace {
     }
 
     /// Round the Datetime/Date range into buckets.
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
-        let every = every.as_ref().into();
-        let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+    pub fn round(self, every: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round),
+            &[every],
+            false,
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].

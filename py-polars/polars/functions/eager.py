@@ -24,7 +24,7 @@ def concat(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    rechunk: bool = True,
+    rechunk: bool = False,
     parallel: bool = True,
 ) -> PolarsType:
     """
@@ -156,12 +156,12 @@ def concat(
             msg = "'align' strategy requires at least one common column"
             raise InvalidOperationError(msg)
 
-        # align the frame data using an outer join with no suffix-resolution
+        # align the frame data using a full outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
         lf: LazyFrame = reduce(
             lambda x, y: (
-                x.join(y, how="outer", on=common_cols, suffix="_PL_CONCAT_RIGHT")
-                # Coalesce outer join columns
+                x.join(y, how="full", on=common_cols, suffix="_PL_CONCAT_RIGHT")
+                # Coalesce full outer join columns
                 .with_columns(
                     [
                         F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
@@ -262,22 +262,20 @@ def concat(
 def _alignment_join(
     *idx_frames: tuple[int, LazyFrame],
     align_on: list[str],
-    how: JoinStrategy = "outer",
+    how: JoinStrategy = "full",
     descending: bool | Sequence[bool] = False,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
     # note: can stackoverflow if the join becomes too large, so we
     # collect eagerly when hitting a large enough number of frames
     post_align_collect = len(idx_frames) >= 250
-    if how == "outer":
-        how = "outer_coalesce"
 
     def join_func(
         idx_x: tuple[int, LazyFrame],
         idx_y: tuple[int, LazyFrame],
     ) -> tuple[int, LazyFrame]:
         (_, x), (y_idx, y) = idx_x, idx_y
-        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}")
+        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}", coalesce=True)
 
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:
@@ -288,7 +286,7 @@ def _alignment_join(
 def align_frames(
     *frames: FrameType,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
-    how: JoinStrategy = "outer",
+    how: JoinStrategy = "full",
     select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
 ) -> list[FrameType]:

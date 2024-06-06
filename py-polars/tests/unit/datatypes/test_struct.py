@@ -86,8 +86,6 @@ def test_struct_equality_strict() -> None:
 
     # strict
     assert s1.is_(s2) is False
-    with pytest.deprecated_call():
-        assert s1.is_not(s2) is True
 
     # permissive (default)
     assert s1 == s2
@@ -735,13 +733,19 @@ def test_struct_concat_self_no_rechunk() -> None:
 
 
 def test_sort_structs() -> None:
-    assert pl.DataFrame(
-        {"sex": ["male", "female", "female"], "age": [22, 38, 26]}
-    ).select(pl.struct(["sex", "age"]).sort()).unnest("sex").to_dict(
-        as_series=False
-    ) == {
-        "sex": ["female", "female", "male"],
-        "age": [26, 38, 22],
+    df = pl.DataFrame(
+        {
+            "sex": ["m", "f", "f", "f", "m", "m", "f"],
+            "age": [22, 38, 26, 24, 21, 46, 22],
+        },
+    )
+    df_sorted_as_struct = df.select(pl.struct(["sex", "age"]).sort()).unnest("sex")
+    df_expected = df.sort(by=["sex", "age"])
+
+    assert_frame_equal(df_expected, df_sorted_as_struct)
+    assert df_sorted_as_struct.to_dict(as_series=False) == {
+        "sex": ["f", "f", "f", "f", "m", "m", "m"],
+        "age": [22, 24, 26, 38, 21, 22, 46],
     }
 
 
@@ -868,3 +872,69 @@ def test_struct_null_count_10130() -> None:
 
     s = pl.Series([{"a": None}])
     assert s.null_count() == 1
+
+
+def test_struct_arithmetic_schema() -> None:
+    q = pl.LazyFrame({"A": [1], "B": [2]})
+
+    assert q.select(pl.struct("A") - pl.struct("B")).schema["A"] == pl.Struct(
+        {"A": pl.Int64}
+    )
+
+
+def test_struct_field() -> None:
+    df = pl.DataFrame(
+        {
+            "item": [
+                {"name": "John", "age": 30, "car": None},
+                {"name": "Alice", "age": 65, "car": "Volvo"},
+            ]
+        }
+    )
+
+    assert df.select(
+        pl.col("item").struct.with_fields(
+            pl.field("name").str.to_uppercase(), pl.field("car").fill_null("Mazda")
+        )
+    ).to_dict(as_series=False) == {
+        "item": [
+            {"name": "JOHN", "age": 30, "car": "Mazda"},
+            {"name": "ALICE", "age": 65, "car": "Volvo"},
+        ]
+    }
+
+
+def test_struct_field_recognized_as_renaming_expr_16480() -> None:
+    q = pl.LazyFrame(
+        {
+            "foo": "bar",
+            "my_struct": [{"x": 1, "y": 2}],
+        }
+    ).select(pl.col("my_struct").struct.field("x"))
+
+    q = q.select("x")
+    assert q.collect().to_dict(as_series=False) == {"x": [1]}
+
+
+def test_struct_filter_chunked_16498() -> None:
+    with pl.StringCache():
+        N = 5
+        df_orig1 = pl.DataFrame({"cat_a": ["remove"] * N, "cat_b": ["b"] * N})
+
+        df_orig2 = pl.DataFrame({"cat_a": ["a"] * N, "cat_b": ["b"] * N})
+
+        df = pl.concat([df_orig1, df_orig2], rechunk=False).cast(pl.Categorical)
+        df = df.select(pl.struct(pl.all()).alias("s"))
+        df = df.filter(pl.col("s").struct.field("cat_a") != pl.lit("remove"))
+        assert df.shape == (5, 1)
+
+
+def test_struct_field_dynint_nullable_16243() -> None:
+    pl.select(pl.lit(None).fill_null(pl.struct(42)))
+
+
+def test_struct_split_16536() -> None:
+    df = pl.DataFrame({"struct": [{"a": {"a": {"a": 1}}}], "list": [[1]], "int": [1]})
+
+    df = pl.concat([df, df, df, df], rechunk=False)
+    assert df.filter(pl.col("int") == 1).shape == (4, 3)

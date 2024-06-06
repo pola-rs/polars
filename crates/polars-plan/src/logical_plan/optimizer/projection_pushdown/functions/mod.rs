@@ -8,27 +8,29 @@ use super::*;
 pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    function: &FunctionNode,
-    mut acc_projections: Vec<Node>,
+    function: FunctionNode,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<IR> {
     use FunctionNode::*;
     match function {
         Rename {
-            existing,
-            new,
+            ref existing,
+            ref new,
             swapping,
+            schema: _,
         } => {
+            let clear = !acc_projections.is_empty();
             process_rename(
                 &mut acc_projections,
                 &mut projected_names,
                 expr_arena,
                 existing,
                 new,
-                *swapping,
+                swapping,
             )?;
             proj_pd.pushdown_and_assign(
                 input,
@@ -39,10 +41,11 @@ pub(super) fn process_functions(
                 expr_arena,
             )?;
 
-            let lp = ALogicalPlan::MapFunction {
-                input,
-                function: function.clone(),
-            };
+            if clear {
+                function.clear_cached_schema()
+            }
+
+            let lp = IR::MapFunction { input, function };
             Ok(lp)
         },
         Explode { columns, .. } => {
@@ -57,12 +60,12 @@ pub(super) fn process_functions(
                 lp_arena,
                 expr_arena,
             )?;
-            Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+            Ok(IRBuilder::new(input, expr_arena, lp_arena)
                 .explode(columns.clone())
                 .build())
         },
-        Melt { args, .. } => {
-            let lp = ALogicalPlan::MapFunction {
+        Melt { ref args, .. } => {
+            let lp = IR::MapFunction {
                 input,
                 function: function.clone(),
             };
@@ -79,10 +82,6 @@ pub(super) fn process_functions(
             )
         },
         _ => {
-            let lp = ALogicalPlan::MapFunction {
-                input,
-                function: function.clone(),
-            };
             if function.allow_projection_pd() && !acc_projections.is_empty() {
                 let original_acc_projection_len = acc_projections.len();
 
@@ -106,22 +105,35 @@ pub(super) fn process_functions(
                     expr_arena,
                     expands_schema,
                 )?;
+
+                // Remove the cached schema
+                function.clear_cached_schema();
+                let lp = IR::MapFunction {
+                    input,
+                    function: function.clone(),
+                };
+
                 if local_projections.is_empty() {
                     Ok(lp)
                 } else {
                     // if we would project, we would remove pushed down predicates
                     if local_projections.len() < original_acc_projection_len {
-                        Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .with_columns(local_projections, Default::default())
+                        Ok(IRBuilder::from_lp(lp, expr_arena, lp_arena)
+                            .with_columns_simple(local_projections, Default::default())
                             .build())
                         // all projections are local
                     } else {
-                        Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .project(local_projections, Default::default())
+                        Ok(IRBuilder::from_lp(lp, expr_arena, lp_arena)
+                            .project_simple_nodes(local_projections)
+                            .unwrap()
                             .build())
                     }
                 }
             } else {
+                let lp = IR::MapFunction {
+                    input,
+                    function: function.clone(),
+                };
                 // restart projection pushdown
                 proj_pd.no_pushdown_restart_opt(
                     lp,

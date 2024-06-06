@@ -29,15 +29,6 @@ pub(crate) const FMT_TABLE_INLINE_COLUMN_DATA_TYPE: &str =
 pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_CORNERS";
 pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
 
-// Other env vars
-#[cfg(all(feature = "dtype-decimal", feature = "python"))]
-pub(crate) const DECIMAL_ACTIVE: &str = "POLARS_ACTIVATE_DECIMAL";
-
-#[cfg(all(feature = "dtype-decimal", feature = "python"))]
-pub(crate) fn decimal_is_active() -> bool {
-    std::env::var(DECIMAL_ACTIVE).as_deref().unwrap_or("") == "1"
-}
-
 pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
@@ -55,7 +46,7 @@ pub fn get_rg_prefetch_size() -> usize {
         .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
 }
 
-pub fn env_force_async() -> bool {
+pub fn force_async() -> bool {
     std::env::var("POLARS_FORCE_ASYNC")
         .map(|value| value == "1")
         .unwrap_or_default()

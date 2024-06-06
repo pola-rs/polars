@@ -21,7 +21,7 @@ impl ExprNameNameSpace {
     /// }
     /// ```
     pub fn keep(self) -> Expr {
-        Expr::KeepName(Box::new(self.0))
+        Expr::KeepName(Arc::new(self.0))
     }
 
     /// Define an alias by mapping a function over the original root column name.
@@ -31,7 +31,7 @@ impl ExprNameNameSpace {
     {
         let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
         Expr::RenameAlias {
-            expr: Box::new(self.0),
+            expr: Arc::new(self.0),
             function,
         }
     }
@@ -94,7 +94,7 @@ impl ExprNameNameSpace {
     pub fn prefix_fields(self, prefix: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::PrefixFields(
-                Arc::from(prefix),
+                ColumnName::from(prefix),
             )))
     }
 
@@ -102,7 +102,7 @@ impl ExprNameNameSpace {
     pub fn suffix_fields(self, suffix: &str) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::SuffixFields(
-                Arc::from(suffix),
+                ColumnName::from(suffix),
             )))
     }
 }

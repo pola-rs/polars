@@ -38,7 +38,7 @@ impl Default for StrptimeOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
@@ -96,4 +96,12 @@ pub enum WindowMapping {
     /// Join the groups as 'List<group_dtype>' to the row positions.
     /// warning: this can be memory intensive
     Join,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum NestedType {
+    #[cfg(feature = "dtype-array")]
+    Array,
+    List,
 }

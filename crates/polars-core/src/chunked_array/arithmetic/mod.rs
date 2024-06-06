@@ -23,7 +23,7 @@ impl Add for &StringChunked {
     type Output = StringChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        unsafe { (self.as_binary() + rhs.as_binary()).to_string() }
+        unsafe { (self.as_binary() + rhs.as_binary()).to_string_unchecked() }
     }
 }
 
@@ -39,7 +39,7 @@ impl Add<&str> for &StringChunked {
     type Output = StringChunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_string() }
+        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_string_unchecked() }
     }
 }
 

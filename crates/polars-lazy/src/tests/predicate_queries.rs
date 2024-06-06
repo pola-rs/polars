@@ -19,7 +19,7 @@ fn test_multiple_roots() -> PolarsResult<()> {
     // and that we don't have any filter node
     assert!(!(&lp_arena)
         .iter(root)
-        .any(|(_, lp)| matches!(lp, ALogicalPlan::Selection { .. })));
+        .any(|(_, lp)| matches!(lp, IR::Filter { .. })));
 
     Ok(())
 }

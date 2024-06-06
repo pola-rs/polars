@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -63,7 +62,7 @@ def test_overflow_uint16_agg_mean() -> None:
         pl.DataFrame(
             {
                 "col1": ["A" for _ in range(1025)],
-                "col3": [64 for i in range(1025)],
+                "col3": [64 for _ in range(1025)],
             }
         )
         .with_columns(
@@ -115,9 +114,7 @@ def test_maintain_order_after_sampling() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_sorted_group_by_optimization(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_NO_STREAMING_GROUPBY", "1")
-
+def test_sorted_group_by_optimization() -> None:
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
 
     # the sorted optimization should not randomize the

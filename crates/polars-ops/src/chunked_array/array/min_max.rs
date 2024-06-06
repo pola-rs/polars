@@ -25,7 +25,9 @@ where
         (0..values.len())
             .step_by(width)
             .map(|start| {
-                let sliced = unsafe { values.clone().sliced_unchecked(start, start + width) };
+                // SAFETY: This value array from a FixedSizeListArray,
+                // we can ensure that `start + width` will not out out range
+                let sliced = unsafe { values.clone().sliced_unchecked(start, width) };
                 arr_agg(&sliced)
             })
             .collect_arr()

@@ -3,14 +3,14 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_melt(
     proj_pd: &mut ProjectionPushDown,
-    lp: ALogicalPlan,
+    lp: IR,
     args: &Arc<MeltArgs>,
     input: Node,
-    acc_projections: Vec<Node>,
+    acc_projections: Vec<ColumnNode>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<IR> {
     if args.value_vars.is_empty() {
         // restart projection pushdown
         proj_pd.no_pushdown_restart_opt(lp, acc_projections, projections_seen, lp_arena, expr_arena)
@@ -45,15 +45,16 @@ pub(super) fn process_melt(
         )?;
 
         // re-make melt node so that the schema is updated
-        let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+        let lp = IRBuilder::new(input, expr_arena, lp_arena)
             .melt(args.clone())
             .build();
 
         if local_projections.is_empty() {
             Ok(lp)
         } else {
-            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                .project(local_projections, Default::default())
+            Ok(IRBuilder::from_lp(lp, expr_arena, lp_arena)
+                .project_simple_nodes(local_projections)
+                .unwrap()
                 .build())
         }
     }

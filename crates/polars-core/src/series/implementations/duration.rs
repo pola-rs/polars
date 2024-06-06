@@ -39,10 +39,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.deref_mut().set_flags(flags)
     }
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.deref().get_flags()
     }
 
@@ -194,8 +194,12 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        self.0.deref().arg_sort_multiple(options)
+    fn arg_sort_multiple(
+        &self,
+        by: &[Series],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        self.0.deref().arg_sort_multiple(by, options)
     }
 }
 
@@ -204,8 +208,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -326,11 +330,12 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
-        self.0
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        Ok(self
+            .0
             .sort_with(options)
             .into_duration(self.0.time_unit())
-            .into_series()
+            .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -388,47 +393,67 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _sum_as_series(&self) -> PolarsResult<Series> {
-        Ok(self.0.sum_as_series().into_duration(self.0.time_unit()))
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.sum_reduce();
+        let v = sc.value().as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), v))
     }
 
-    fn max_as_series(&self) -> PolarsResult<Series> {
-        Ok(self.0.max_as_series().into_duration(self.0.time_unit()))
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.max_reduce();
+        let v = sc.value().as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), v))
     }
-    fn min_as_series(&self) -> PolarsResult<Series> {
-        Ok(self.0.min_as_series().into_duration(self.0.time_unit()))
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        let sc = self.0.min_reduce();
+        let v = sc.value().as_duration(self.0.time_unit());
+        Ok(Scalar::new(self.dtype().clone(), v))
     }
-    fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
-        Ok(self
-            .0
-            .std_as_series(ddof)
-            .cast(&self.dtype().to_physical())
-            .unwrap()
-            .into_duration(self.0.time_unit()))
+    fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        let sc = self.0.std_reduce(ddof);
+        let to = self.dtype().to_physical();
+        let v = sc.value().cast(&to);
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
 
-    fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
-        Ok(self
+    fn var_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
+        // Why do we go via MilliSeconds here? Seems wrong to me.
+        // I think we should fix/inspect the tests that fail if we remain on the time-unit here.
+        let sc = self
             .0
             .cast_time_unit(TimeUnit::Milliseconds)
-            .var_as_series(ddof)
-            .cast(&self.dtype().to_physical())
-            .unwrap()
-            .into_duration(TimeUnit::Milliseconds))
+            .var_reduce(ddof);
+        let to = self.dtype().to_physical();
+        let v = sc.value().cast(&to);
+        Ok(Scalar::new(
+            DataType::Duration(TimeUnit::Milliseconds),
+            v.as_duration(TimeUnit::Milliseconds),
+        ))
     }
-    fn median_as_series(&self) -> PolarsResult<Series> {
-        Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        let v: AnyValue = self.median().map(|v| v as i64).into();
+        let to = self.dtype().to_physical();
+        let v = v.cast(&to);
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
-    fn quantile_as_series(
+    fn quantile_reduce(
         &self,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        self.0
-            .quantile_as_series(quantile, interpol)?
-            .cast(&self.dtype().to_physical())
-            .unwrap()
-            .cast(self.dtype())
+    ) -> PolarsResult<Scalar> {
+        let v = self.0.quantile_reduce(quantile, interpol)?;
+        let to = self.dtype().to_physical();
+        let v = v.value().cast(&to);
+        Ok(Scalar::new(
+            self.dtype().clone(),
+            v.as_duration(self.0.time_unit()),
+        ))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

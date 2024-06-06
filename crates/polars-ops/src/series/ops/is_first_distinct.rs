@@ -88,7 +88,6 @@ fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
-#[cfg(feature = "group_by_list")]
 fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     let groups = ca.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
@@ -136,8 +135,11 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_distinct_struct(&s),
-        #[cfg(feature = "group_by_list")]
-        List(inner) if inner.is_numeric() => {
+        List(inner) => {
+            polars_ensure!(
+                !inner.is_nested(),
+                InvalidOperation: "`is_first_distinct` on list type is only allowed if the inner type is not nested."
+            );
             let ca = s.list().unwrap();
             return is_first_distinct_list(ca);
         },

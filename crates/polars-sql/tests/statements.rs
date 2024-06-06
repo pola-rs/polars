@@ -188,11 +188,17 @@ fn iss_9560_join_as() {
     let expected = df! {
         "id" => [1, 2, 3, 4],
         "ano" => [2, 3, 4, 5],
-        "ano_right" => [2, 3, 4, 5],
+        "id:t2" => [1, 2, 3, 4],
+        "ano:t2" => [2, 3, 4, 5],
     }
     .unwrap();
 
-    assert!(actual.equals(&expected));
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
 }
 
 fn prepare_compound_join_context() -> SQLContext {
@@ -206,11 +212,10 @@ fn prepare_compound_join_context() -> SQLContext {
         "b" => [0, 3, 4, 5, 6]
     }
     .unwrap();
-
     let df3 = df! {
         "a" => [1, 2, 3, 4, 5],
-        "b" => [0, 3, 4, 5, 6],
-        "c" => [0, 3, 4, 5, 6]
+        "b" => [0, 3, 4, 5, 7],
+        "c" => [1, 3, 4, 5, 7]
     }
     .unwrap();
     let mut ctx = SQLContext::new();
@@ -232,6 +237,8 @@ fn test_compound_join_basic() {
     let expected = df! {
         "a" => [2, 3],
         "b" => [3, 4],
+        "a:df2" => [2, 3],
+        "b:df2" => [3, 4],
     }
     .unwrap();
 
@@ -253,22 +260,26 @@ fn test_compound_join_different_column_names() {
     let df2 = df! {
         "a" => [0, 2, 3, 4, 5],
         "b" => [1, 2, 3, 5, 6],
-        "c" => [7, 8, 9, 10, 11],
+        "c" => [7, 5, 3, 5, 7],
     }
     .unwrap();
+
     let mut ctx = SQLContext::new();
-    ctx.register("df1", df1.lazy());
-    ctx.register("df2", df2.lazy());
+    ctx.register("lf1", df1.lazy());
+    ctx.register("lf2", df2.lazy());
 
     let sql = r#"
-        SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.b AND df1.b = df2.a
+        SELECT lf1.a, lf2.b, lf2.c
+        FROM lf1 INNER JOIN lf2
+          -- note: uses "lf1.a" for *both* constraint arms
+          ON lf1.a = lf2.b AND lf1.a = lf2.c
+        ORDER BY a
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-
     let expected = df! {
-        "a" => [2, 3],
-        "b" => [2, 3],
-        "c" => [8, 9],
+        "a" => [3, 5],
+        "b" => [3, 5],
+        "c" => [3, 5],
     }
     .unwrap();
 
@@ -284,14 +295,13 @@ fn test_compound_join_different_column_names() {
 fn test_compound_join_three_tables() {
     let mut ctx = prepare_compound_join_context();
     let sql = r#"
-        SELECT * FROM df1
-            INNER JOIN df2
-                ON df1.a = df2.a AND df1.b = df2.b
-            INNER JOIN df3
-                ON df1.a = df3.a AND df1.b = df3.b
+        SELECT df3.* FROM df1
+          INNER JOIN df2
+            ON df1.a = df2.a AND df1.b = df2.b
+          INNER JOIN df3
+            ON df3.a = df1.a AND df3.b = df1.b
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-
     let expected = df! {
         "a" => [2, 3],
         "b" => [3, 4],
@@ -323,17 +333,142 @@ fn test_compound_join_nested_and() {
         "d" => [0, 3, 4, 5, 6]
     }
     .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+
+    for cols in [
+        "df1.*",
+        "df2.*",
+        "df1.a, df1.b, df2.c, df2.d",
+        "df2.a, df2.b, df1.c, df1.d",
+    ] {
+        let sql = format!(
+            r#"
+            SELECT {} FROM df1
+                INNER JOIN df2 ON
+                    df1.a = df2.a AND
+                    df1.b = df2.b AND
+                    df1.c = df2.c AND
+                    df1.d = df2.d
+         "#,
+            cols
+        );
+        let actual = ctx.execute(sql.as_str()).unwrap().collect().unwrap();
+        let expected = df! {
+            "a" => [1, 3],
+            "b" => [1, 3],
+            "c" => [0, 4],
+            "d" => [0, 4],
+        }
+        .unwrap();
+
+        assert!(
+            actual.equals(&expected),
+            "expected = {:?}\nactual={:?}",
+            expected,
+            actual
+        );
+    }
+}
+
+#[test]
+fn test_resolve_join_column_select_13618() {
+    let df1 = df! {
+        "A" => [1, 2, 3, 4, 5],
+        "B" => [5, 4, 3, 2, 1],
+        "fruits" => ["banana", "banana", "apple", "apple", "banana"],
+        "cars" => ["beetle", "audi", "beetle", "beetle", "beetle"],
+    }
+    .unwrap();
+    let df2 = df1.clone();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("tbl", df1.lazy());
+    ctx.register("other", df2.lazy());
+
+    let join_types = vec!["LEFT", "INNER", "FULL OUTER", ""];
+    for join_type in join_types {
+        let sql = format!(
+            r#"
+            SELECT tbl.A, other.B, tbl.fruits, other.cars
+            FROM tbl
+            {} JOIN other ON tbl.A = other.B
+            ORDER BY tbl.A ASC
+            "#,
+            join_type
+        );
+        let actual = ctx.execute(sql.as_str()).unwrap().collect().unwrap();
+        let expected = df! {
+            "A" => [1, 2, 3, 4, 5],
+            "B" => [1, 2, 3, 4, 5],
+            "fruits" => ["banana", "banana", "apple", "apple", "banana"],
+            "cars" => ["beetle", "beetle", "beetle", "audi", "beetle"],
+        }
+        .unwrap();
+
+        assert!(
+            actual.equals(&expected),
+            "({} JOIN) expected = {:?}\nactual={:?}",
+            join_type,
+            expected,
+            actual
+        );
+    }
+}
+
+#[test]
+fn test_compound_join_nested_and_with_brackets() {
+    let df1 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 2, 3, 4, 5],
+        "c" => [0, 3, 4, 5, 6],
+        "d" => [0, 3, 4, 5, 6],
+        "e" => ["a", "b", "c", "d", "?"],
+    }
+    .unwrap();
+    let df2 = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 3, 3, 5, 6],
+        "c" => [0, 3, 4, 5, 6],
+        "d" => [0, 3, 4, 5, 6],
+        "e" => ["w", "x", "y", "z", "!"],
+    }
+    .unwrap();
+
     let mut ctx = SQLContext::new();
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
 
     let sql = r#"
-        SELECT * FROM df1
-            INNER JOIN df2 ON
-                df1.a = df2.a AND
-                df1.b = df2.b AND
-                df1.c = df2.c AND
-                df1.d = df2.d
+        SELECT df1.* EXCLUDE "e", df2.e
+        FROM df1
+          INNER JOIN df2 ON df1.a = df2.a AND
+            ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
+     "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    let expected = df! {
+        "a" => [1, 3],
+        "b" => [1, 3],
+        "c" => [0, 4],
+        "d" => [0, 4],
+        "e" => ["w", "y"],
+    }
+    .unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
+
+    let sql = r#"
+        SELECT * EXCLUDE ("e", "e:df2"), df1.e
+        FROM df1
+          INNER JOIN df2 ON df1.a = df2.a AND
+            ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -342,6 +477,11 @@ fn test_compound_join_nested_and() {
         "b" => [1, 3],
         "c" => [0, 4],
         "d" => [0, 4],
+        "a:df2" => [1, 3],
+        "b:df2" => [1, 3],
+        "c:df2" => [0, 4],
+        "d:df2" => [0, 4],
+        "e" => ["a", "c"],
     }
     .unwrap();
 
@@ -354,42 +494,65 @@ fn test_compound_join_nested_and() {
 }
 
 #[test]
-fn test_compound_join_nested_and_with_brackets() {
-    let df1 = df! {
-        "a" => [1, 2, 3, 4, 5],
-        "b" => [1, 2, 3, 4, 5],
-        "c" => [0, 3, 4, 5, 6],
-        "d" => [0, 3, 4, 5, 6],
-    }
-    .unwrap();
-    let df2 = df! {
-        "a" => [1, 2, 3, 4, 5],
-        "b" => [1, 3, 3, 5, 6],
-        "c" => [0, 3, 4, 5, 6],
-        "d" => [0, 3, 4, 5, 6]
-    }
-    .unwrap();
+fn test_join_on_different_keys() {
+    let df1 = df! {"x" => [-1, 0, 1, 2, 3, 4]}.unwrap();
+    let df2 = df! {"y" => [0, 1, -2, 3, 5, 6]}.unwrap();
+
     let mut ctx = SQLContext::new();
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
 
+    // join on x = y
     let sql = r#"
-        SELECT * FROM df1
-            INNER JOIN df2 ON
-                df1.a = df2.a AND
-                ((df1.b = df2.b AND
-                df1.c = df2.c) AND
-                df1.d = df2.d)
-     "#;
+        SELECT df2.*
+        FROM df1
+        INNER JOIN df2 ON df1.x = df2.y
+        ORDER BY y
+    "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    let expected = df! {"y" => [0, 1, 3]}.unwrap();
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
+}
 
-    let expected = df! {
-        "a" => [1, 3],
-        "b" => [1, 3],
-        "c" => [0, 4],
-        "d" => [0, 4],
+#[test]
+fn test_join_utf8() {
+    // (色) color and (野菜) vegetable
+    let df1 = df! {
+        "色" => ["赤", "緑", "黄色"],
+        "野菜" => ["トマト", "ケール", "コーン"],
     }
     .unwrap();
+
+    // (色) color and (動物) animal
+    let df2 = df! {
+        "色" => ["黄色", "緑", "赤"],
+        "動物" => ["ゴシキヒワ", "蛙", "レッサーパンダ"],
+    }
+    .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df1", df1.lazy());
+    ctx.register("df2", df2.lazy());
+
+    let expected = df! {
+        "色" => ["緑", "赤", "黄色"],  // green, red, yellow
+        "野菜" => ["ケール", "トマト", "コーン"],  // kale, tomato, corn
+        "動物" => ["蛙", "レッサーパンダ", "ゴシキヒワ"],  // frog, red panda, goldfinch
+    }
+    .unwrap();
+
+    let sql = r#"
+        SELECT df1.*, df2.動物
+        FROM df1
+        INNER JOIN df2 ON df1.色 = df2.色
+        ORDER BY 色
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
     assert!(
         actual.equals(&expected),

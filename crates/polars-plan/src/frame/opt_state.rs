@@ -5,6 +5,8 @@ pub struct OptState {
     pub projection_pushdown: bool,
     /// Apply predicates/filters as early as possible.
     pub predicate_pushdown: bool,
+    /// Cluster sequential `with_columns` calls to independent calls.
+    pub cluster_with_columns: bool,
     /// Run many type coercion optimization rules until fixed point.
     pub type_coercion: bool,
     /// Run many expression optimization rules until fixed point.
@@ -36,6 +38,7 @@ impl Default for OptState {
         OptState {
             projection_pushdown: true,
             predicate_pushdown: true,
+            cluster_with_columns: true,
             type_coercion: true,
             simplify_expr: true,
             slice_pushdown: true,

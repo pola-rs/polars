@@ -71,12 +71,20 @@ use std::ops::Deref;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_core::utils::try_get_supertype;
 use polars_json::json::write::FallibleStreamingIterator;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct JsonWriterOptions {
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
 /// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose

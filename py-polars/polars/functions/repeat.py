@@ -45,7 +45,7 @@ def _one_or_zero_by_dtype(value: int, dtype: PolarsDataType) -> Any:
     elif isinstance(dtype, Decimal):
         return D(value)
     elif isinstance(dtype, (List, Array)):
-        arr_width = getattr(dtype, "width", 1)
+        arr_width = getattr(dtype, "size", 1)
         return [_one_or_zero_by_dtype(value, dtype.inner)] * arr_width
     return None
 

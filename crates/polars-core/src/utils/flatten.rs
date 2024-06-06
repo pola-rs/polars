@@ -19,7 +19,7 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
             })
             .collect();
         let df = unsafe { DataFrame::new_no_checks(columns) };
-        if df.height() == 0 {
+        if df.is_empty() {
             None
         } else {
             Some(df)
@@ -106,7 +106,7 @@ pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
 
             for id in s {
                 if id.is_null_idx() {
-                    unsafe { validity.set_bit_unchecked(count, false) };
+                    unsafe { validity.set_unchecked(count, false) };
                 }
 
                 count += 1;

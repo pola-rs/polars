@@ -339,7 +339,7 @@ def test_set_tbl_width_chars() -> None:
             "this is 10": [4, 5, 6],
         }
     )
-    assert max(len(line) for line in str(df).split("\n")) == 70
+    assert max(len(line) for line in str(df).split("\n")) == 68
 
     pl.Config.set_tbl_width_chars(60)
     assert max(len(line) for line in str(df).split("\n")) == 60
@@ -572,7 +572,7 @@ def test_numeric_right_alignment() -> None:
             )
 
     df = pl.DataFrame(
-        {"a": [1.1, 22.2, 3.33], "b": [444, 55.5, 6.6], "c": [77.7, 8888, 9.9999]}
+        {"a": [1.1, 22.2, 3.33], "b": [444.0, 55.5, 6.6], "c": [77.7, 8888.0, 9.9999]}
     )
     with pl.Config(fmt_float="full", float_precision=1):
         assert (
@@ -733,14 +733,6 @@ def test_config_state_env_only() -> None:
     assert "set_fmt_float" not in state_env_only
 
 
-def test_activate_decimals() -> None:
-    with pl.Config() as cfg:
-        cfg.activate_decimals(True)
-        assert os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1"
-        cfg.activate_decimals(False)
-        assert "POLARS_ACTIVATE_DECIMAL" not in os.environ
-
-
 def test_set_streaming_chunk_size() -> None:
     with pl.Config() as cfg:
         cfg.set_streaming_chunk_size(8)
@@ -776,7 +768,6 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
-        ("POLARS_ACTIVATE_DECIMAL", "activate_decimals", True, "1"),
         ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),

@@ -139,17 +139,17 @@ pub fn when<E: Into<Expr>>(condition: E) -> When {
 
 pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
     Expr::Ternary {
-        predicate: Box::new(predicate),
-        truthy: Box::new(truthy),
-        falsy: Box::new(falsy),
+        predicate: Arc::new(predicate),
+        truthy: Arc::new(truthy),
+        falsy: Arc::new(falsy),
     }
 }
 
 /// Compute `op(l, r)` (or equivalently `l op r`). `l` and `r` must have types compatible with the Operator.
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
-        left: Box::new(l),
+        left: Arc::new(l),
         op,
-        right: Box::new(r),
+        right: Arc::new(r),
     }
 }

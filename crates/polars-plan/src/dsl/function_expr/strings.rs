@@ -39,7 +39,6 @@ pub enum StringFunction {
     },
     CountMatches(bool),
     EndsWith,
-    Explode,
     Extract(usize),
     ExtractAll,
     #[cfg(feature = "extract_groups")]
@@ -53,7 +52,7 @@ pub enum StringFunction {
         strict: bool,
     },
     #[cfg(feature = "string_to_integer")]
-    ToInteger(u32, bool),
+    ToInteger(bool),
     LenBytes,
     LenChars,
     Lowercase,
@@ -62,6 +61,8 @@ pub enum StringFunction {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     },
+    #[cfg(feature = "extract_jsonpath")]
+    JsonPathMatch,
     #[cfg(feature = "regex")]
     Replace {
         // negative is replace all
@@ -82,6 +83,8 @@ pub enum StringFunction {
         fill_char: char,
     },
     Slice,
+    Head,
+    Tail,
     #[cfg(feature = "string_encoding")]
     HexEncode,
     #[cfg(feature = "binary_encoding")]
@@ -133,7 +136,6 @@ impl StringFunction {
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-            Explode => mapper.with_same_dtype(),
             Extract(_) => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
@@ -144,6 +146,8 @@ impl StringFunction {
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
@@ -166,7 +170,7 @@ impl StringFunction {
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => mapper.with_dtype(DataType::Binary),
             Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
-            | StripSuffix | Slice => mapper.with_same_dtype(),
+            | StripSuffix | Slice | Head | Tail => mapper.with_same_dtype(),
             #[cfg(feature = "string_pad")]
             PadStart { .. } | PadEnd { .. } | ZFill => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
@@ -202,7 +206,6 @@ impl Display for StringFunction {
             ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
-            Explode => "explode",
             ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
@@ -210,8 +213,12 @@ impl Display for StringFunction {
             ToInteger { .. } => "to_integer",
             #[cfg(feature = "regex")]
             Find { .. } => "find",
+            Head { .. } => "head",
+            Tail { .. } => "tail",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
             Lowercase => "lowercase",
             LenChars => "len_chars",
@@ -343,8 +350,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_to_integer")]
-            ToInteger(base, strict) => map!(strings::to_integer, base, strict),
+            ToInteger(strict) => map_as_slice!(strings::to_integer, strict),
             Slice => map_as_slice!(strings::str_slice),
+            Head => map_as_slice!(strings::str_head),
+            Tail => map_as_slice!(strings::str_tail),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
             #[cfg(feature = "binary_encoding")]
@@ -353,7 +362,6 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Base64Encode => map!(strings::base64_encode),
             #[cfg(feature = "binary_encoding")]
             Base64Decode(strict) => map!(strings::base64_decode, strict),
-            Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
             #[cfg(feature = "extract_jsonpath")]
@@ -361,6 +369,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 dtype,
                 infer_schema_len,
             } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
             ContainsMany {
                 ascii_case_insensitive,
@@ -888,11 +898,14 @@ pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "string_to_integer")]
-pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    ca.to_integer(base, strict).map(|ok| ok.into_series())
+pub(super) fn to_integer(s: &[Series], strict: bool) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let base = s[1].strict_cast(&DataType::UInt32)?;
+    ca.to_integer(base.u32()?, strict)
+        .map(|ok| ok.into_series())
 }
-pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
+
+fn _ensure_lengths(s: &[Series]) -> bool {
     // Calculate the post-broadcast length and ensure everything is consistent.
     let len = s
         .iter()
@@ -900,14 +913,39 @@ pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
         .filter(|l| *l != 1)
         .max()
         .unwrap_or(1);
+    s.iter()
+        .all(|series| series.len() == 1 || series.len() == len)
+}
+
+pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
     polars_ensure!(
-        s.iter().all(|series| series.len() == 1 || series.len() == len),
-        ComputeError: "all series in `str_slice` should have equal or unit length"
+        _ensure_lengths(s),
+        ComputeError: "all series in `str_slice` should have equal or unit length",
     );
     let ca = s[0].str()?;
     let offset = &s[1];
     let length = &s[2];
     Ok(ca.str_slice(offset, length)?.into_series())
+}
+
+pub(super) fn str_head(s: &[Series]) -> PolarsResult<Series> {
+    polars_ensure!(
+        _ensure_lengths(s),
+        ComputeError: "all series in `str_head` should have equal or unit length",
+    );
+    let ca = s[0].str()?;
+    let n = &s[1];
+    Ok(ca.str_head(n)?.into_series())
+}
+
+pub(super) fn str_tail(s: &[Series]) -> PolarsResult<Series> {
+    polars_ensure!(
+        _ensure_lengths(s),
+        ComputeError: "all series in `str_tail` should have equal or unit length",
+    );
+    let ca = s[0].str()?;
+    let n = &s[1];
+    Ok(ca.str_tail(n)?.into_series())
 }
 
 #[cfg(feature = "string_encoding")]
@@ -930,11 +968,6 @@ pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
     s.str()?.base64_decode(strict).map(|ca| ca.into_series())
 }
 
-pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    ca.explode()
-}
-
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
     let ca = s.str()?;
@@ -949,4 +982,11 @@ pub(super) fn json_decode(
 ) -> PolarsResult<Series> {
     let ca = s.str()?;
     ca.json_decode(dtype, infer_schema_len)
+}
+
+#[cfg(feature = "extract_jsonpath")]
+pub(super) fn json_path_match(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    Ok(ca.json_path_match(pat)?.into_series())
 }

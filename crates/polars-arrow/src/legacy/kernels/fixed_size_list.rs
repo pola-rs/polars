@@ -1,3 +1,5 @@
+use polars_error::{polars_bail, PolarsResult};
+use polars_utils::index::NullCount;
 use polars_utils::IdxSize;
 
 use crate::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
@@ -38,18 +40,34 @@ fn sub_fixed_size_list_get_indexes(width: usize, index: &PrimitiveArray<i64>) ->
         .collect_trusted()
 }
 
-pub fn sub_fixed_size_list_get_literal(arr: &FixedSizeListArray, index: i64) -> ArrayRef {
+pub fn sub_fixed_size_list_get_literal(
+    arr: &FixedSizeListArray,
+    index: i64,
+    null_on_oob: bool,
+) -> PolarsResult<ArrayRef> {
     let take_by = sub_fixed_size_list_get_indexes_literal(arr.size(), arr.len(), index);
+    if !null_on_oob && take_by.null_count() > 0 {
+        polars_bail!(ComputeError: "get index is out of bounds");
+    }
+
     let values = arr.values();
     // SAFETY:
     // the indices we generate are in bounds
-    unsafe { take_unchecked(&**values, &take_by) }
+    unsafe { Ok(take_unchecked(&**values, &take_by)) }
 }
 
-pub fn sub_fixed_size_list_get(arr: &FixedSizeListArray, index: &PrimitiveArray<i64>) -> ArrayRef {
+pub fn sub_fixed_size_list_get(
+    arr: &FixedSizeListArray,
+    index: &PrimitiveArray<i64>,
+    null_on_oob: bool,
+) -> PolarsResult<ArrayRef> {
     let take_by = sub_fixed_size_list_get_indexes(arr.size(), index);
+    if !null_on_oob && take_by.null_count() > 0 {
+        polars_bail!(ComputeError: "get index is out of bounds");
+    }
+
     let values = arr.values();
     // SAFETY:
     // the indices we generate are in bounds
-    unsafe { take_unchecked(&**values, &take_by) }
+    unsafe { Ok(take_unchecked(&**values, &take_by)) }
 }

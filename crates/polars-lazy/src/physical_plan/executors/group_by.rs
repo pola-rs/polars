@@ -119,7 +119,7 @@ impl Executor for GroupByExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run GroupbyExec")
+                eprintln!("run GroupbyExec")
             }
         }
         if state.verbose() {

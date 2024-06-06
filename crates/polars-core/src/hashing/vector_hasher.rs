@@ -1,6 +1,4 @@
 use arrow::bitmap::utils::get_bit_unchecked;
-#[cfg(feature = "group_by_list")]
-use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
@@ -112,7 +110,13 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    *h = folded_multiply(random_state.hash_one(v.to_total_ord()) ^ *h, MULTIPLE);
+                    // Inlined from ahash. This ensures we combine with the previous state.
+                    *h = folded_multiply(
+                        // Be careful not to xor the hash directly with the existing hash,
+                        // it would lead to 0-hashes for 2 columns containing equal values.
+                        random_state.hash_one(v.to_total_ord()) ^ folded_multiply(*h, MULTIPLE),
+                        MULTIPLE,
+                    );
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -124,9 +128,7 @@ where
                     .for_each(|((valid, h), l)| {
                         let lh = random_state.hash_one(l.to_total_ord());
                         let to_hash = [null_h, lh][valid as usize];
-
-                        // inlined from ahash. This ensures we combine with the previous state
-                        *h = folded_multiply(to_hash ^ *h, MULTIPLE);
+                        *h = folded_multiply(to_hash ^ folded_multiply(*h, MULTIPLE), MULTIPLE);
                     });
             },
         }
@@ -371,58 +373,6 @@ impl VecHash for BooleanChunked {
             }
             offset += arr.len();
         });
-        Ok(())
-    }
-}
-
-#[cfg(feature = "group_by_list")]
-impl VecHash for ListChunked {
-    fn vec_hash(&self, _random_state: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
-        polars_ensure!(
-        self.inner_dtype().to_physical().is_numeric(),
-        ComputeError: "grouping on list type is only allowed if the inner type is numeric"
-        );
-        _buf.clear();
-        _buf.reserve(self.len());
-        let null_h = get_null_hash_value(&_random_state);
-
-        for arr in self.downcast_iter() {
-            _buf.extend(
-                numeric_list_bytes_iter(arr)?.map(|opt_bytes| match opt_bytes {
-                    Some(s) => xxh3_64_with_seed(s, null_h),
-                    None => null_h,
-                }),
-            )
-        }
-        Ok(())
-    }
-
-    fn vec_hash_combine(
-        &self,
-        _random_state: RandomState,
-        _hashes: &mut [u64],
-    ) -> PolarsResult<()> {
-        polars_ensure!(
-        self.inner_dtype().to_physical().is_numeric(),
-        ComputeError: "grouping on list type is only allowed if the inner type is numeric"
-        );
-
-        let null_h = get_null_hash_value(&_random_state);
-
-        let mut offset = 0;
-        self.downcast_iter().try_for_each(|arr| {
-            numeric_list_bytes_iter(arr)?
-                .zip(&mut _hashes[offset..])
-                .for_each(|(opt_bytes, h)| {
-                    let l = match opt_bytes {
-                        Some(s) => xxh3_64_with_seed(s, null_h),
-                        None => null_h,
-                    };
-                    *h = _boost_hash_combine(l, *h)
-                });
-            offset += arr.len();
-            PolarsResult::Ok(())
-        })?;
         Ok(())
     }
 }

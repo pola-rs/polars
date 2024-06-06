@@ -32,7 +32,7 @@ def test_rolling_map_clear_reuse_series_state_10681() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1, 1, 2, 2, 2, 2],
-            "b": [0, 1, 11.0, 7, 4, 2, 3, 8],
+            "b": [0.0, 1.0, 11.0, 7.0, 4.0, 2.0, 3.0, 8.0],
         }
     )
 
@@ -126,10 +126,3 @@ def test_rolling_map_rolling_std() -> None:
 
     expected = s.rolling_std(window_size=4, min_periods=3, center=False)
     assert_series_equal(result, expected)
-
-
-def test_rolling_apply_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").rolling_apply(lambda x: x + 1, window_size=2)
-    with pytest.deprecated_call():
-        pl.Series([1, 2, 3]).rolling_apply(lambda x: x + 1, window_size=2)

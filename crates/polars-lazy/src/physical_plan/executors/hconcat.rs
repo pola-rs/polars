@@ -12,14 +12,14 @@ impl Executor for HConcatExec {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run HConcatExec")
+                eprintln!("run HConcatExec")
             }
         }
         let mut inputs = std::mem::take(&mut self.inputs);
 
         let dfs = if !self.options.parallel {
             if state.verbose() {
-                println!("HCONCAT: `parallel=false` hconcat is run sequentially")
+                eprintln!("HCONCAT: `parallel=false` hconcat is run sequentially")
             }
             let mut dfs = Vec::with_capacity(inputs.len());
             for (idx, mut input) in inputs.into_iter().enumerate() {
@@ -33,7 +33,7 @@ impl Executor for HConcatExec {
             dfs
         } else {
             if state.verbose() {
-                println!("HCONCAT: hconcat is run in parallel")
+                eprintln!("HCONCAT: hconcat is run in parallel")
             }
             // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
             // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing

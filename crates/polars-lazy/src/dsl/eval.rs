@@ -2,8 +2,7 @@ use polars_core::prelude::*;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::planner::create_physical_expr;
-use crate::physical_plan::state::ExecutionState;
+use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::prelude::*;
 
 pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
@@ -55,13 +54,13 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
             let expr = expr.clone();
             let mut arena = Arena::with_capacity(10);
-            let aexpr = to_aexpr(expr, &mut arena);
+            let aexpr = to_expr_ir(expr, &mut arena);
             let phys_expr = create_physical_expr(
-                aexpr,
+                &aexpr,
                 Context::Default,
                 &arena,
                 None,
-                &mut Default::default(),
+                &mut ExpressionConversionState::new(true, 0),
             )?;
 
             let state = ExecutionState::new();

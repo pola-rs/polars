@@ -175,7 +175,7 @@ fn read_dict_array(
     let bit_width = values[0];
     let values = &values[1..];
 
-    let (_, consumed) = uleb128::decode(values)?;
+    let (_, consumed) = uleb128::decode(values);
     let values = &values[consumed..];
 
     let indices = bitpacked::Decoder::<u32>::try_new(values, bit_width as usize, length as usize)?;

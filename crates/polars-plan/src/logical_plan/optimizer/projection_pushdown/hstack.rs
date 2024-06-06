@@ -4,32 +4,24 @@ use super::*;
 pub(super) fn process_hstack(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
-    mut exprs: Vec<Node>,
+    mut exprs: Vec<ExprIR>,
     options: ProjectionOptions,
-    mut acc_projections: Vec<Node>,
+    mut acc_projections: Vec<ColumnNode>,
     mut projected_names: PlHashSet<Arc<str>>,
     projections_seen: usize,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<ALogicalPlan> {
+) -> PolarsResult<IR> {
     if !acc_projections.is_empty() {
-        let input_schema = lp_arena.get(input).schema(lp_arena);
         let mut pruned_with_cols = Vec::with_capacity(exprs.len());
 
         // Check if output names are used upstream
         // if not, we can prune the `with_column` expression
         // as it is not used in the output.
-        for node in &exprs {
-            let output_field = expr_arena
-                .get(*node)
-                .to_field(input_schema.as_ref(), Context::Default, expr_arena)
-                .unwrap();
-            let output_name = output_field.name();
-
-            let is_used_upstream = projected_names.contains(output_name.as_str());
-
+        for e in exprs {
+            let is_used_upstream = projected_names.contains(e.output_name());
             if is_used_upstream {
-                pruned_with_cols.push(*node);
+                pruned_with_cols.push(e);
             }
         }
 
@@ -47,9 +39,9 @@ pub(super) fn process_hstack(
 
         // Make sure that columns selected with_columns are available
         // only if not empty. If empty we already select everything.
-        for expression in &pruned_with_cols {
+        for e in &pruned_with_cols {
             add_expr_to_accumulated(
-                *expression,
+                e.node(),
                 &mut acc_projections,
                 &mut projected_names,
                 expr_arena,
@@ -82,7 +74,8 @@ pub(super) fn process_hstack(
         lp_arena,
         expr_arena,
     )?;
-    let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+
+    let lp = IRBuilder::new(input, expr_arena, lp_arena)
         .with_columns(exprs, options)
         .build();
     Ok(lp)

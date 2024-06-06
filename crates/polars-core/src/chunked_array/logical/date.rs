@@ -20,16 +20,17 @@ impl LogicalType for DateChunked {
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.0.get_any_value(i).map(|av| av.into_date())
+        self.0.get_any_value(i).map(|av| av.as_date())
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        self.0.get_any_value_unchecked(i).into_date()
+        self.0.get_any_value_unchecked(i).as_date()
     }
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
         match dtype {
+            Date => Ok(self.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
             Datetime(tu, tz) => {
                 let casted = self.0.cast(dtype)?;
@@ -43,11 +44,14 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             },
-            #[cfg(feature = "dtype-time")]
-            Time => {
-                polars_bail!(ComputeError: "cannot cast `Date` to `Time`");
+            dt if dt.is_numeric() => self.0.cast(dtype),
+            dt => {
+                polars_bail!(
+                    InvalidOperation:
+                    "casting from {:?} to {:?} not supported",
+                    self.dtype(), dt
+                )
             },
-            _ => self.0.cast(dtype),
         }
     }
 }

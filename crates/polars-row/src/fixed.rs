@@ -8,7 +8,7 @@ use arrow::types::NativeType;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
-use crate::row::{RowsEncoded, SortField};
+use crate::row::{EncodingField, RowsEncoded};
 
 pub(crate) trait FromSlice {
     fn from_slice(slice: &[u8]) -> Self;
@@ -168,7 +168,7 @@ fn encode_value<T: FixedLengthEncoding>(
 pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     input: &[T],
     out: &mut RowsEncoded,
-    field: &SortField,
+    field: &EncodingField,
 ) {
     out.values.set_len(0);
     let values = out.values.spare_capacity_mut();
@@ -178,7 +178,7 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
 }
 
 #[inline]
-pub(crate) fn get_null_sentinel(field: &SortField) -> u8 {
+pub(crate) fn get_null_sentinel(field: &EncodingField) -> u8 {
     if field.nulls_last {
         0xFF
     } else {
@@ -189,7 +189,7 @@ pub(crate) fn get_null_sentinel(field: &SortField) -> u8 {
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     input: I,
     out: &mut RowsEncoded,
-    field: &SortField,
+    field: &EncodingField,
 ) {
     out.values.set_len(0);
     let values = out.values.spare_capacity_mut();
@@ -214,7 +214,7 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
 
 pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
-    field: &SortField,
+    field: &EncodingField,
 ) -> PrimitiveArray<T>
 where
     T::Encoded: FromSlice,
@@ -255,7 +255,7 @@ where
     PrimitiveArray::new(data_type, values.into(), validity)
 }
 
-pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> BooleanArray {
+pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &EncodingField) -> BooleanArray {
     let mut has_nulls = false;
     let null_sentinel = get_null_sentinel(field);
 

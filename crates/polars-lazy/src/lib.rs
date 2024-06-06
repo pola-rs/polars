@@ -120,7 +120,7 @@
 //!         col("rain").sum().alias("sum_rain"),
 //!         col("rain").quantile(lit(0.5), QuantileInterpolOptions::Nearest).alias("median_rain"),
 //!     ])
-//!     .sort("date", Default::default())
+//!     .sort(["date"], Default::default())
 //!     .collect()
 //! }
 //! ```

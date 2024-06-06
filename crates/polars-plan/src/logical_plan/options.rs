@@ -1,17 +1,15 @@
-#[cfg(feature = "csv")]
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
-use polars_io::csv::SerializeOptions;
-#[cfg(feature = "csv")]
-use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
+use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
-use polars_io::ipc::IpcCompression;
+use polars_io::ipc::IpcWriterOptions;
+#[cfg(feature = "json")]
+use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetCompression;
-use polars_io::RowIndex;
+use polars_io::parquet::write::ParquetWriteOptions;
+use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
@@ -22,102 +20,9 @@ use crate::prelude::python_udf::PythonFunction;
 
 pub type FileCount = u32;
 
-#[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvParserOptions {
-    pub separator: u8,
-    pub comment_prefix: Option<CommentPrefix>,
-    pub quote_char: Option<u8>,
-    pub eol_char: u8,
-    pub has_header: bool,
-    pub skip_rows: usize,
-    pub low_memory: bool,
-    pub ignore_errors: bool,
-    pub null_values: Option<NullValues>,
-    pub encoding: CsvEncoding,
-    pub try_parse_dates: bool,
-    pub raise_if_empty: bool,
-    pub truncate_ragged_lines: bool,
-    pub n_threads: Option<usize>,
-}
-
-#[cfg(feature = "parquet")]
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetOptions {
-    pub parallel: polars_io::parquet::ParallelStrategy,
-    pub low_memory: bool,
-    pub use_statistics: bool,
-}
-
-#[cfg(feature = "parquet")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ParquetWriteOptions {
-    /// Data page compression
-    pub compression: ParquetCompression,
-    /// Compute and write column statistics.
-    pub statistics: bool,
-    /// If `None` will be all written to a single row group.
-    pub row_group_size: Option<usize>,
-    /// if `None` will be 1024^2 bytes
-    pub data_pagesize_limit: Option<usize>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
-
-#[cfg(feature = "ipc")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcWriterOptions {
-    /// Data page compression
-    pub compression: Option<IpcCompression>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
-
-#[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvWriterOptions {
-    pub include_bom: bool,
-    pub include_header: bool,
-    pub batch_size: NonZeroUsize,
-    pub maintain_order: bool,
-    pub serialize_options: SerializeOptions,
-}
-
-#[cfg(feature = "csv")]
-impl Default for CsvWriterOptions {
-    fn default() -> Self {
-        Self {
-            include_bom: false,
-            include_header: true,
-            batch_size: NonZeroUsize::new(1024).unwrap(),
-            maintain_order: false,
-            serialize_options: SerializeOptions::default(),
-        }
-    }
-}
-
-#[cfg(feature = "json")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JsonWriterOptions {
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptions {
-    pub memmap: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-/// Generic options for all file types
+/// Generic options for all file types.
 pub struct FileScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Arc<Vec<String>>>,
@@ -125,10 +30,10 @@ pub struct FileScanOptions {
     pub row_index: Option<RowIndex>,
     pub rechunk: bool,
     pub file_counter: FileCount,
-    pub hive_partitioning: bool,
+    pub hive_options: HiveOptions,
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
@@ -140,13 +45,13 @@ pub struct UnionOptions {
     pub rechunk: bool,
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HConcatOptions {
     pub parallel: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_group_by")]
@@ -157,7 +62,7 @@ pub struct GroupbyOptions {
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     /// Subset of columns that will be taken into account.
@@ -209,18 +114,14 @@ pub struct FunctionOptions {
     pub fmt_str: &'static str,
     /// There can be two ways of expanding wildcards:
     ///
-    /// Say the schema is 'a', 'b' and there is a function f
-    /// f('*')
-    /// can expand to:
-    /// 1.
-    ///     f('a', 'b')
-    /// or
-    /// 2.
-    ///     f('a'), f('b')
+    /// Say the schema is 'a', 'b' and there is a function `f`. In this case, `f('*')` can expand
+    /// to:
+    /// 1. `f('a', 'b')`
+    /// 2. `f('a'), f('b')`
     ///
-    /// setting this to true, will lead to behavior 1.
+    /// Setting this to true, will lead to behavior 1.
     ///
-    /// this also accounts for regex expansion
+    /// This also accounts for regex expansion.
     pub input_wildcard_expansion: bool,
     /// Automatically explode on unit length if it ran as final aggregation.
     ///
@@ -247,6 +148,7 @@ pub struct FunctionOptions {
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
+    // Raise if use in group by
     pub allow_group_aware: bool,
 }
 
@@ -297,15 +199,6 @@ pub struct LogicalPlanUdfOptions {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SortArguments {
-    pub descending: Vec<bool>,
-    pub nulls_last: bool,
-    pub slice: Option<(i64, usize)>,
-    pub maintain_order: bool,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg(feature = "python")]
 pub struct PythonOptions {
     pub scan_fn: Option<PythonFunction>,
@@ -320,7 +213,7 @@ pub struct PythonOptions {
     pub n_rows: Option<usize>,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
@@ -328,7 +221,7 @@ pub struct AnonymousScanOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SinkType {
     Memory,
     File {
@@ -351,7 +244,7 @@ pub struct FileSinkOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FileType {
     #[cfg(feature = "parquet")]
     Parquet(ParquetWriteOptions),
@@ -364,10 +257,13 @@ pub enum FileType {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectionOptions {
     pub run_parallel: bool,
     pub duplicate_check: bool,
+    // Should length-1 Series be broadcast to the length of the dataframe.
+    // Only used by CSE optimizer
+    pub should_broadcast: bool,
 }
 
 impl Default for ProjectionOptions {
@@ -375,6 +271,55 @@ impl Default for ProjectionOptions {
         Self {
             run_parallel: true,
             duplicate_check: true,
+            should_broadcast: true,
+        }
+    }
+}
+
+impl ProjectionOptions {
+    /// Conservatively merge the options of two [`ProjectionOptions`]
+    pub fn merge_options(&self, other: &Self) -> Self {
+        Self {
+            run_parallel: self.run_parallel & other.run_parallel,
+            duplicate_check: self.duplicate_check & other.duplicate_check,
+            should_broadcast: self.should_broadcast | other.should_broadcast,
+        }
+    }
+}
+
+// Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct UnionArgs {
+    pub parallel: bool,
+    pub rechunk: bool,
+    pub to_supertypes: bool,
+    pub diagonal: bool,
+    // If it is a union from a scan over multiple files.
+    pub from_partitioned_ds: bool,
+}
+
+impl Default for UnionArgs {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            rechunk: false,
+            to_supertypes: false,
+            diagonal: false,
+            from_partitioned_ds: false,
+        }
+    }
+}
+
+impl From<UnionArgs> for UnionOptions {
+    fn from(args: UnionArgs) -> Self {
+        UnionOptions {
+            slice: None,
+            parallel: args.parallel,
+            rows: (None, 0),
+            from_partitioned_ds: args.from_partitioned_ds,
+            flattened_by_opt: false,
+            rechunk: args.rechunk,
         }
     }
 }

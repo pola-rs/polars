@@ -8,6 +8,7 @@ pub trait ArithmeticKernel: Sized + Array {
     type Scalar;
     type TrueDivT: NativeType;
 
+    fn wrapping_abs(self) -> Self;
     fn wrapping_neg(self) -> Self;
     fn wrapping_add(self, rhs: Self) -> Self;
     fn wrapping_sub(self, rhs: Self) -> Self;
@@ -84,6 +85,7 @@ use PrimitiveArray as PArr;
 pub trait PrimitiveArithmeticKernelImpl: NativeType {
     type TrueDivT: NativeType;
 
+    fn prim_wrapping_abs(lhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_neg(lhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_add(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
     fn prim_wrapping_sub(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
@@ -113,6 +115,7 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PrimitiveArray<T> {
     type Scalar = T;
     type TrueDivT = T::TrueDivT;
 
+    fn wrapping_abs(self) -> Self { T::prim_wrapping_abs(self) }
     fn wrapping_neg(self) -> Self { T::prim_wrapping_neg(self) }
     fn wrapping_add(self, rhs: Self) -> Self { T::prim_wrapping_add(self, rhs) }
     fn wrapping_sub(self, rhs: Self) -> Self { T::prim_wrapping_sub(self, rhs) }

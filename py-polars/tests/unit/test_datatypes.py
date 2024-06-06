@@ -67,12 +67,8 @@ def test_dtype_temporal_units() -> None:
     assert pl.Duration("ns") != pl.Duration("us")
 
     # check timeunit from pytype
-    for inferred_dtype, expected_dtype in (
-        (py_type_to_dtype(datetime), pl.Datetime),
-        (py_type_to_dtype(timedelta), pl.Duration),
-    ):
-        assert inferred_dtype == expected_dtype
-        assert inferred_dtype.time_unit == "us"  # type: ignore[union-attr]
+    assert py_type_to_dtype(datetime) == pl.Datetime("us")
+    assert py_type_to_dtype(timedelta) == pl.Duration
 
     with pytest.raises(ValueError, match="invalid `time_unit`"):
         pl.Datetime("?")  # type: ignore[arg-type]

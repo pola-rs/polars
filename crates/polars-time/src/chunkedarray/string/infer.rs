@@ -15,9 +15,9 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         ^
         ['"]?                        # optional quotes
         (?:\d{1,2})                  # day
-        [-/]                         # separator
+        [-/\.]                       # separator
         (?P<month>[01]?\d{1})        # month
-        [-/]                         # separator
+        [-/\.]                       # separator
         (?:\d{4,})                   # year
         (?:
             [T\ ]                    # separator
@@ -41,9 +41,9 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ^
         ['"]?                      # optional quotes
         (?:\d{4,})                 # year
-        [-/]                       # separator
+        [-/\.]                     # separator
         (?P<month>[01]?\d{1})      # month
-        [-/]                       # separator
+        [-/\.]                     # separator
         (?:\d{1,2})                # day
         (?:
             [T\ ]                  # separator
@@ -66,9 +66,9 @@ const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ^
         ['"]?                  # optional quotes
         (?:\d{4,})             # year
-        [-/]                   # separator
+        [-/\.]                 # separator
         (?P<month>[01]?\d{1})  # month
-        [-/]                   # separator
+        [-/\.]                 # separator
         (?:\d{1,2})            # year
         [T\ ]                  # separator
         (?:\d{2})              # hour

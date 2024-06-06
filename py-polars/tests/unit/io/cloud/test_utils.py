@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from polars.io._utils import _is_supported_cloud
+from polars.io._utils import is_supported_cloud
 
 
 @pytest.mark.parametrize(
@@ -22,4 +22,4 @@ from polars.io._utils import _is_supported_cloud
     ],
 )
 def test_is_cloud_url(url: str, expected: bool) -> None:
-    assert _is_supported_cloud(url) is expected
+    assert is_supported_cloud(url) is expected

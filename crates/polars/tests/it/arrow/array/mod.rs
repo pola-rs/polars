@@ -1,4 +1,5 @@
 mod binary;
+mod binview;
 mod boolean;
 mod dictionary;
 mod equal;
@@ -135,6 +136,7 @@ fn test_with_validity() {
 }
 
 // check that we ca derive stuff
+#[allow(dead_code)]
 #[derive(PartialEq, Clone, Debug)]
 struct A {
     array: Box<dyn Array>,

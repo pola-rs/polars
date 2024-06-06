@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import (
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-)
+from polars._utils.deprecation import deprecate_function
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
@@ -85,7 +82,6 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -125,15 +121,6 @@ class StringNameSpace:
                 Offset-naive strings are parsed as `pl.Datetime(time_unit)`,
                 and offset-aware strings are converted to
                 `pl.Datetime(time_unit, "UTC")`.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -197,7 +184,6 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -223,15 +209,6 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -730,7 +707,7 @@ class StringNameSpace:
         ]
         """
 
-    def json_path_match(self, json_path: str) -> Series:
+    def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
         Extract the first match of json string with provided JSONPath expression.
 
@@ -1216,7 +1193,7 @@ class StringNameSpace:
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         r"""
-        Replace first matching regex/literal substring with a new string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -1227,12 +1204,10 @@ class StringNameSpace:
             String that will replace the matched substring.
         literal
             Treat `pattern` as a literal string.
-        n
-            Number of matches to replace.
 
         See Also
         --------
-        replace_all
+        replace
 
         Notes
         -----
@@ -1502,7 +1477,6 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int | IntoExprColumn) -> Series:
         """
         Pad the start of the string with zeros until it reaches the given length.
@@ -1582,8 +1556,8 @@ class StringNameSpace:
         shape: (2,)
         Series: 'sing' [str]
         [
-            "Welcome To My …
-            "There's No Tur…
+            "Welcome To My World"
+            "There's No Turning Back"
         ]
         """
 
@@ -1658,9 +1632,142 @@ class StringNameSpace:
         ]
         """
 
+    def head(self, n: int | IntoExprColumn) -> Series:
+        """
+        Return the first n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When `n` is negative, `head` returns characters up to the `n`th from the end
+           of the string. For example, if `n = -3`, then all characters except the last
+           three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the first 5 characters.
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.head(5)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "pear"
+            null
+            "papay"
+            "drago"
+        ]
+
+        Return up to the 3rd character from the end.
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.head(-3)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "p"
+            null
+            "pap"
+            "dragonfr"
+        ]
+        """
+
+    def tail(self, n: int | IntoExprColumn) -> Series:
+        """
+        Return the last n characters of each string in a String Series.
+
+        Parameters
+        ----------
+        n
+            Length of the slice (integer or expression). Negative indexing is supported;
+            see note (2) below.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Notes
+        -----
+        1) The `n` input is defined in terms of the number of characters in the (UTF8)
+           string. A character is defined as a `Unicode scalar value`_. A single
+           character is represented by a single byte when working with ASCII text, and a
+           maximum of 4 bytes otherwise.
+
+           .. _Unicode scalar value: https://www.unicode.org/glossary/#unicode_scalar_value
+
+        2) When `n` is negative, `tail` returns characters starting from the `n`th from
+           the beginning of the string. For example, if `n = -3`, then all characters
+           except the first three are returned.
+
+        3) If the length of the string has fewer than `n` characters, the full string is
+           returned.
+
+        Examples
+        --------
+        Return up to the last 5 characters:
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.tail(5)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "pear"
+            null
+            "apaya"
+            "fruit"
+        ]
+
+        Return from the 3rd character to the end:
+
+        >>> s = pl.Series(["pear", None, "papaya", "dragonfruit"])
+        >>> s.str.tail(-3)
+        shape: (4,)
+        Series: '' [str]
+        [
+            "r"
+            null
+            "aya"
+            "gonfruit"
+        ]
+        """
+
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -1670,7 +1777,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", ["foo", "bar"])
-        >>> s.str.explode()
+        >>> s.str.explode()  # doctest: +SKIP
         shape: (6,)
         Series: 'a' [str]
         [
@@ -1690,7 +1797,8 @@ class StringNameSpace:
         Parameters
         ----------
         base
-            Positive integer which is the base of the string we are parsing.
+            Positive integer or expression which is the base of the string
+            we are parsing.
             Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
@@ -1725,169 +1833,6 @@ class StringNameSpace:
                 null
         ]
         """
-
-    @deprecate_renamed_function("to_integer", version="0.19.14")
-    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
-    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Series:
-        """
-        Parse integers with base radix from strings.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`to_integer`.
-
-        Parameters
-        ----------
-        base
-            Positive integer which is the base of the string we are parsing.
-        strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
-        """
-
-    @deprecate_renamed_function("strip_chars", version="0.19.3")
-    def strip(self, characters: str | None = None) -> Series:
-        """
-        Remove leading and trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-
-    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
-    def lstrip(self, characters: str | None = None) -> Series:
-        """
-        Remove leading characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars_start`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-
-    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
-    def rstrip(self, characters: str | None = None) -> Series:
-        """
-        Remove trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.strip_chars_end`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(self, pattern: str | Series) -> Series:
-        """
-        Count all successive non-overlapping regex matches.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
-            regular expressions.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`UInt32`. Returns null if the original
-            value is null.
-        """
-
-    @deprecate_renamed_function("len_bytes", version="0.19.8")
-    def lengths(self) -> Series:
-        """
-        Return the number of bytes in each string.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_bytes`.
-        """
-
-    @deprecate_renamed_function("len_chars", version="0.19.8")
-    def n_chars(self) -> Series:
-        """
-        Return the length of each string as the number of characters.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_chars`.
-        """
-
-    @deprecate_renamed_function("pad_end", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def ljust(self, length: int, fill_char: str = " ") -> Series:
-        """
-        Return the string left justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_end`.
-
-        Parameters
-        ----------
-        length
-            Justify left to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-
-    @deprecate_renamed_function("pad_start", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def rjust(self, length: int, fill_char: str = " ") -> Series:
-        """
-        Return the string right justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_start`.
-
-        Parameters
-        ----------
-        length
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-
-    @deprecate_renamed_function("json_decode", version="0.19.15")
-    def json_extract(
-        self,
-        dtype: PolarsDataType | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Series:
-        """
-        Parse string values as JSON.
-
-        .. deprecated:: 0.19.15
-            This method has been renamed to :meth:`json_decode`.
-
-        Parameters
-        ----------
-        dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
-        infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
-        """
-        return self.json_decode(dtype, infer_schema_length)
 
     def contains_any(
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False

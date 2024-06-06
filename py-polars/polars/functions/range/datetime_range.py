@@ -4,7 +4,6 @@ import contextlib
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils.deprecation import deprecate_saturating
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
@@ -96,6 +95,11 @@ def datetime_range(
     Expr or Series
         Column of data type :class:`Datetime`.
 
+    See Also
+    --------
+    datetime_ranges
+    date_range
+
     Notes
     -----
     `interval` is created according to the following string language:
@@ -174,7 +178,6 @@ def datetime_range(
         2022-03-01 00:00:00 EST
     ]
     """
-    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
@@ -292,6 +295,11 @@ def datetime_ranges(
     Expr or Series
         Column of data type `List(Datetime)`.
 
+    See Also
+    --------
+    datetime_range
+    date_ranges
+
     Examples
     --------
     >>> from datetime import datetime
@@ -313,7 +321,6 @@ def datetime_ranges(
     │ [2022-01-02 00:00:00, 2022-01-03 00:00:00]                      │
     └─────────────────────────────────────────────────────────────────┘
     """
-    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"

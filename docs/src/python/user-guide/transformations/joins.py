@@ -36,10 +36,17 @@ df_left_join = df_customers.join(df_orders, on="customer_id", how="left")
 print(df_left_join)
 # --8<-- [end:left]
 
-# --8<-- [start:outer]
-df_outer_join = df_customers.join(df_orders, on="customer_id", how="outer")
+# --8<-- [start:full]
+df_outer_join = df_customers.join(df_orders, on="customer_id", how="full")
 print(df_outer_join)
-# --8<-- [end:outer]
+# --8<-- [end:full]
+
+# --8<-- [start:full_coalesce]
+df_outer_coalesce_join = df_customers.join(
+    df_orders, on="customer_id", how="full", coalesce=True
+)
+print(df_outer_coalesce_join)
+# --8<-- [end:full_coalesce]
 
 # --8<-- [start:df3]
 df_colors = pl.DataFrame(

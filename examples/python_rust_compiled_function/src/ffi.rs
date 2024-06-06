@@ -7,7 +7,7 @@ use pyo3::{PyAny, PyObject, PyResult};
 
 /// Take an arrow array from python and convert it to a rust arrow array.
 /// This operation does not copy data.
-fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
+fn array_to_rust(arrow_array: &Bound<PyAny>) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
     let array = Box::new(ffi::ArrowArray::empty());
     let schema = Box::new(ffi::ArrowSchema::empty());
@@ -30,7 +30,7 @@ fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
 }
 
 /// Arrow array to Python.
-pub(crate) fn to_py_array(py: Python, pyarrow: &PyModule, array: ArrayRef) -> PyResult<PyObject> {
+pub(crate) fn to_py_array(py: Python, pyarrow: &Bound<PyModule>, array: ArrayRef) -> PyResult<PyObject> {
     let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
         "",
         array.data_type().clone(),
@@ -49,7 +49,7 @@ pub(crate) fn to_py_array(py: Python, pyarrow: &PyModule, array: ArrayRef) -> Py
     Ok(array.to_object(py))
 }
 
-pub fn py_series_to_rust_series(series: &PyAny) -> PyResult<Series> {
+pub fn py_series_to_rust_series(series: &Bound<PyAny>) -> PyResult<Series> {
     // rechunk series so that they have a single arrow array
     let series = series.call_method0("rechunk")?;
 
@@ -59,7 +59,7 @@ pub fn py_series_to_rust_series(series: &PyAny) -> PyResult<Series> {
     let array = series.call_method0("to_arrow")?;
 
     // retrieve rust arrow array
-    let array = array_to_rust(array)?;
+    let array = array_to_rust(&array)?;
 
     Series::try_from((name.as_str(), array)).map_err(|e| PyValueError::new_err(format!("{}", e)))
 }
@@ -71,13 +71,13 @@ pub fn rust_series_to_py_series(series: &Series) -> PyResult<PyObject> {
 
     Python::with_gil(|py| {
         // import pyarrow
-        let pyarrow = py.import("pyarrow")?;
+        let pyarrow = py.import_bound("pyarrow")?;
 
         // pyarrow array
-        let pyarrow_array = to_py_array(py, pyarrow, array)?;
+        let pyarrow_array = to_py_array(py, &pyarrow, array)?;
 
         // import polars
-        let polars = py.import("polars")?;
+        let polars = py.import_bound("polars")?;
         let out = polars.call_method1("from_arrow", (pyarrow_array,))?;
         Ok(out.to_object(py))
     })

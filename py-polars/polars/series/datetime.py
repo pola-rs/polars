@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from polars._utils.convert import to_py_date, to_py_datetime
-from polars._utils.deprecation import deprecate_function, deprecate_renamed_function
+from polars._utils.deprecation import deprecate_function
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
-from polars.datatypes import Date, Datetime, Duration
+from polars.datatypes import Date, Datetime, Duration, Time
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -17,7 +17,10 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         Ambiguous,
         EpochTimeUnit,
+        IntoExpr,
+        IntoExprColumn,
         NonExistent,
+        Roll,
         TemporalLiteral,
         TimeUnit,
     )
@@ -35,6 +38,97 @@ class DateTimeNameSpace:
     def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:
         s = wrap_s(self._s)
         return s[item]
+
+    def add_business_days(
+        self,
+        n: int | IntoExpr,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+        roll: Roll = "raise",
+    ) -> Expr:
+        """
+        Offset by `n` business days.
+
+        Parameters
+        ----------
+        n
+            Number of business days to offset by. Can be a single number of an
+            expression.
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `business_day_count`.
+        roll
+            What to do when the start date lands on a non-business day. Options are:
+
+            - `'raise'`: raise an error
+            - `'forward'`: move to the next business day
+            - `'backward'`: move to the previous business day
+
+        Returns
+        -------
+        Expr
+            Data type is preserved.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series("start", [date(2020, 1, 1), date(2020, 1, 2)])
+        >>> s.dt.add_business_days(5)
+        shape: (2,)
+        Series: 'start' [date]
+        [
+                2020-01-08
+                2020-01-09
+        ]
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> s.dt.add_business_days(5, week_mask)
+        shape: (2,)
+        Series: 'start' [date]
+        [
+                2020-01-07
+                2020-01-08
+        ]
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> s.dt.add_business_days(5, holidays=holidays)
+        shape: (2,)
+        Series: 'start' [date]
+        [
+                2020-01-10
+                2020-01-13
+        ]
+
+        Roll all dates forwards to the next business day:
+
+        >>> s = pl.Series("start", [date(2020, 1, 5), date(2020, 1, 6)])
+        >>> s.dt.add_business_days(0, roll="forward")
+        shape: (2,)
+        Series: 'start' [date]
+        [
+                2020-01-06
+                2020-01-06
+        ]
+        """
 
     def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
@@ -88,7 +182,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 return to_py_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype in (Datetime, Duration):
+            elif s.dtype in (Datetime, Duration, Time):
                 return out  # type: ignore[return-value]
             else:
                 return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
@@ -112,7 +206,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 return to_py_date(int(out))  # type: ignore[arg-type]
-            elif s.dtype in (Datetime, Duration):
+            elif s.dtype in (Datetime, Duration, Time):
                 return out  # type: ignore[return-value]
             else:
                 return to_py_datetime(int(out), s.dtype.time_unit)  # type: ignore[arg-type, attr-defined]
@@ -1135,7 +1229,6 @@ class DateTimeNameSpace:
         self,
         time_zone: str | None,
         *,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
         non_existent: NonExistent = "raise",
     ) -> Series:
@@ -1149,15 +1242,6 @@ class DateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -1512,7 +1596,6 @@ class DateTimeNameSpace:
             - 1mo   (1 calendar month)
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
-            - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -1565,14 +1648,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def truncate(
-        self,
-        every: str | dt.timedelta | Expr,
-        offset: str | dt.timedelta | None = None,
-        *,
-        use_earliest: bool | None = None,
-        ambiguous: Ambiguous | Series | None = None,
-    ) -> Series:
+    def truncate(self, every: str | dt.timedelta | Expr) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
@@ -1587,30 +1663,10 @@ class DateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        offset
-            Offset the window
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
-        ambiguous
-            Determine how to deal with ambiguous datetimes:
-
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-
-            .. deprecated:: 0.19.3
-                This is now auto-inferred, you can safely remove this argument.
 
         Notes
         -----
-        The `every` and `offset` argument are created with the
+        The `every` argument is created with the
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -1628,7 +1684,6 @@ class DateTimeNameSpace:
         These strings can be combined:
 
         - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -1709,8 +1764,7 @@ class DateTimeNameSpace:
     @unstable()
     def round(
         self,
-        every: str | dt.timedelta,
-        offset: str | dt.timedelta | None = None,
+        every: str | dt.timedelta | IntoExprColumn,
         *,
         ambiguous: Ambiguous | Series | None = None,
     ) -> Series:
@@ -1734,8 +1788,6 @@ class DateTimeNameSpace:
         ----------
         every
             Every interval start and period length
-        offset
-            Offset the window
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -1744,7 +1796,7 @@ class DateTimeNameSpace:
             - `'latest'`: use the latest datetime
 
             .. deprecated:: 0.19.3
-                This is now auto-inferred, you can safely remove this argument.
+                This is now automatically inferred; you can safely omit this argument.
 
         Returns
         -------
@@ -1753,7 +1805,7 @@ class DateTimeNameSpace:
 
         Notes
         -----
-        The `every` and `offset` argument are created with the
+        The `every` argument is created with the
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -2006,73 +2058,3 @@ class DateTimeNameSpace:
                 0ms
         ]
         """
-
-    @deprecate_renamed_function("total_days", version="0.19.13")
-    def days(self) -> Series:
-        """
-        Extract the total days from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_days` instead.
-        """
-        return self.total_days()
-
-    @deprecate_renamed_function("total_hours", version="0.19.13")
-    def hours(self) -> Series:
-        """
-        Extract the total hours from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_hours` instead.
-        """
-        return self.total_hours()
-
-    @deprecate_renamed_function("total_minutes", version="0.19.13")
-    def minutes(self) -> Series:
-        """
-        Extract the total minutes from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_minutes` instead.
-        """
-        return self.total_minutes()
-
-    @deprecate_renamed_function("total_seconds", version="0.19.13")
-    def seconds(self) -> Series:
-        """
-        Extract the total seconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_seconds` instead.
-        """
-        return self.total_seconds()
-
-    @deprecate_renamed_function("total_milliseconds", version="0.19.13")
-    def milliseconds(self) -> Series:
-        """
-        Extract the total milliseconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_milliseconds` instead.
-        """
-        return self.total_milliseconds()
-
-    @deprecate_renamed_function("total_microseconds", version="0.19.13")
-    def microseconds(self) -> Series:
-        """
-        Extract the total microseconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_microseconds` instead.
-        """
-        return self.total_microseconds()
-
-    @deprecate_renamed_function("total_nanoseconds", version="0.19.13")
-    def nanoseconds(self) -> Series:
-        """
-        Extract the total nanoseconds from a Duration type.
-
-        .. deprecated:: 0.19.13
-            Use :meth:`total_nanoseconds` instead.
-        """
-        return self.total_nanoseconds()

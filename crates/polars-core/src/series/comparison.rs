@@ -79,25 +79,25 @@ macro_rules! impl_compare {
             _ => unimplemented!(),
         };
         out.rename(lhs.name());
-        Ok(out) as PolarsResult<BooleanChunked>
+        PolarsResult::Ok(out)
     }};
 }
 
 fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
-    #[cfg(feature = "dtype-categorical")]
-    {
-        let mismatch = matches!(left, String | Categorical(_, _) | Enum(_, _))
-            && right.is_numeric()
-            || left.is_numeric() && matches!(right, String | Categorical(_, _) | Enum(_, _));
-        polars_ensure!(!mismatch, ComputeError: "cannot compare string with numeric data");
-    }
-    #[cfg(not(feature = "dtype-categorical"))]
-    {
-        let mismatch = matches!(left, String) && right.is_numeric()
-            || left.is_numeric() && matches!(right, String);
-        polars_ensure!(!mismatch, ComputeError: "cannot compare string with numeric data");
-    }
+
+    match (left, right) {
+        (String, dt) | (dt, String) if dt.is_numeric() => {
+            polars_bail!(ComputeError: "cannot compare string with numeric type ({})", dt)
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (Categorical(_, _) | Enum(_, _), dt) | (dt, Categorical(_, _) | Enum(_, _))
+            if !(dt.is_categorical() | dt.is_string() | dt.is_enum()) =>
+        {
+            polars_bail!(ComputeError: "cannot compare categorical with {}", dt);
+        },
+        _ => (),
+    };
     Ok(())
 }
 

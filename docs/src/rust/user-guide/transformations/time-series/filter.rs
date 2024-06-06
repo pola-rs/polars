@@ -6,9 +6,10 @@ use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:df]
-    let df = CsvReader::from_path("docs/data/apple_stock.csv")
+    let df = CsvReadOptions::default()
+        .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
+        .try_into_reader_with_file_path(Some("docs/data/apple_stock.csv".into()))
         .unwrap()
-        .with_try_parse_dates(true)
         .finish()
         .unwrap();
     println!("{}", &df);

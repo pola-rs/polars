@@ -4,7 +4,6 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
-from polars._utils.deprecation import rename_use_earliest_to_ambiguous
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -34,7 +33,6 @@ def datetime_(
     *,
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
-    use_earliest: bool | None = None,
     ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
@@ -60,15 +58,6 @@ def datetime_(
         Time unit of the resulting expression.
     time_zone
         Time zone of the resulting expression.
-    use_earliest
-        Determine how to deal with ambiguous datetimes:
-
-        - `None` (default): raise
-        - `True`: use the earliest datetime
-        - `False`: use the latest datetime
-
-        .. deprecated:: 0.19.0
-            Use `ambiguous` instead
     ambiguous
         Determine how to deal with ambiguous datetimes:
 
@@ -81,10 +70,67 @@ def datetime_(
     -------
     Expr
         Expression of data type :class:`Datetime`.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "month": [1, 2, 3],
+    ...         "day": [4, 5, 6],
+    ...         "hour": [12, 13, 14],
+    ...         "minute": [15, 30, 45],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     pl.datetime(
+    ...         2024,
+    ...         pl.col("month"),
+    ...         pl.col("day"),
+    ...         pl.col("hour"),
+    ...         pl.col("minute"),
+    ...         time_zone="Australia/Sydney",
+    ...     )
+    ... )
+    shape: (3, 5)
+    ┌───────┬─────┬──────┬────────┬────────────────────────────────┐
+    │ month ┆ day ┆ hour ┆ minute ┆ datetime                       │
+    │ ---   ┆ --- ┆ ---  ┆ ---    ┆ ---                            │
+    │ i64   ┆ i64 ┆ i64  ┆ i64    ┆ datetime[μs, Australia/Sydney] │
+    ╞═══════╪═════╪══════╪════════╪════════════════════════════════╡
+    │ 1     ┆ 4   ┆ 12   ┆ 15     ┆ 2024-01-04 12:15:00 AEDT       │
+    │ 2     ┆ 5   ┆ 13   ┆ 30     ┆ 2024-02-05 13:30:00 AEDT       │
+    │ 3     ┆ 6   ┆ 14   ┆ 45     ┆ 2024-03-06 14:45:00 AEDT       │
+    └───────┴─────┴──────┴────────┴────────────────────────────────┘
+
+    We can also use `pl.datetime` for filtering:
+
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...             datetime(2024, 1, 1, 0, 0, 0),
+    ...         ],
+    ...         "end": [
+    ...             datetime(2024, 5, 1, 20, 15, 10),
+    ...             datetime(2024, 7, 1, 21, 25, 20),
+    ...             datetime(2024, 9, 1, 22, 35, 30),
+    ...         ],
+    ...     }
+    ... )
+    >>> df.filter(pl.col("end") > pl.datetime(2024, 6, 1))
+        shape: (2, 2)
+    ┌─────────────────────┬─────────────────────┐
+    │ start               ┆ end                 │
+    │ ---                 ┆ ---                 │
+    │ datetime[μs]        ┆ datetime[μs]        │
+    ╞═════════════════════╪═════════════════════╡
+    │ 2024-01-01 00:00:00 ┆ 2024-07-01 21:25:20 │
+    │ 2024-01-01 00:00:00 ┆ 2024-09-01 22:35:30 │
+    └─────────────────────┴─────────────────────┘
     """
-    ambiguous = parse_as_expression(
-        rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
-    )
+    ambiguous_expr = parse_as_expression(ambiguous, str_as_lit=True)
     year_expr = parse_as_expression(year)
     month_expr = parse_as_expression(month)
     day_expr = parse_as_expression(day)
@@ -109,7 +155,7 @@ def datetime_(
             microsecond,
             time_unit,
             time_zone,
-            ambiguous,
+            ambiguous_expr,
         )
     )
 
@@ -135,6 +181,46 @@ def date_(
     -------
     Expr
         Expression of data type :class:`Date`.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "month": [1, 2, 3],
+    ...         "day": [4, 5, 6],
+    ...     }
+    ... )
+    >>> df.with_columns(pl.date(2024, pl.col("month"), pl.col("day")))
+    shape: (3, 3)
+    ┌───────┬─────┬────────────┐
+    │ month ┆ day ┆ date       │
+    │ ---   ┆ --- ┆ ---        │
+    │ i64   ┆ i64 ┆ date       │
+    ╞═══════╪═════╪════════════╡
+    │ 1     ┆ 4   ┆ 2024-01-04 │
+    │ 2     ┆ 5   ┆ 2024-02-05 │
+    │ 3     ┆ 6   ┆ 2024-03-06 │
+    └───────┴─────┴────────────┘
+
+    We can also use `pl.date` for filtering:
+
+    >>> from datetime import date
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [date(2024, 1, 1), date(2024, 1, 1), date(2024, 1, 1)],
+    ...         "end": [date(2024, 5, 1), date(2024, 7, 1), date(2024, 9, 1)],
+    ...     }
+    ... )
+    >>> df.filter(pl.col("end") > pl.date(2024, 6, 1))
+    shape: (2, 2)
+    ┌────────────┬────────────┐
+    │ start      ┆ end        │
+    │ ---        ┆ ---        │
+    │ date       ┆ date       │
+    ╞════════════╪════════════╡
+    │ 2024-01-01 ┆ 2024-07-01 │
+    │ 2024-01-01 ┆ 2024-09-01 │
+    └────────────┴────────────┘
     """
     return datetime_(year, month, day).cast(Date).alias("date")
 
@@ -163,6 +249,27 @@ def time_(
     -------
     Expr
         Expression of data type :class:`Date`.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "hour": [12, 13, 14],
+    ...         "minute": [15, 30, 45],
+    ...     }
+    ... )
+
+    >>> df.with_columns(pl.time(pl.col("hour"), pl.col("minute")))
+    shape: (3, 3)
+    ┌──────┬────────┬──────────┐
+    │ hour ┆ minute ┆ time     │
+    │ ---  ┆ ---    ┆ ---      │
+    │ i64  ┆ i64    ┆ time     │
+    ╞══════╪════════╪══════════╡
+    │ 12   ┆ 15     ┆ 12:15:00 │
+    │ 13   ┆ 30     ┆ 13:30:00 │
+    │ 14   ┆ 45     ┆ 14:45:00 │
+    └──────┴────────┴──────────┘
     """
     epoch_start = (1970, 1, 1)
     return (
@@ -182,7 +289,7 @@ def duration(
     milliseconds: Expr | str | int | None = None,
     microseconds: Expr | str | int | None = None,
     nanoseconds: Expr | str | int | None = None,
-    time_unit: TimeUnit = "us",
+    time_unit: TimeUnit | None = None,
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -205,8 +312,10 @@ def duration(
         Number of microseconds.
     nanoseconds
         Number of nanoseconds.
-    time_unit : {'us', 'ms', 'ns'}
-        Time unit of the resulting expression.
+    time_unit : {None, 'us', 'ms', 'ns'}
+        Time unit of the resulting expression. If set to `None` (default), the time
+        unit will be inferred from the other inputs: `'ns'` if `nanoseconds` was
+        specified, `'us'` otherwise.
 
     Returns
     -------
@@ -299,6 +408,11 @@ def duration(
         microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
+        if time_unit is None:
+            time_unit = "ns"
+
+    if time_unit is None:
+        time_unit = "us"
 
     return wrap_expr(
         plr.duration(
@@ -491,10 +605,10 @@ def concat_str(
     separator
         String that will be used to separate the values of each column.
     ignore_nulls
-        Ignore null values (default).
+        Ignore null values (default is ``False``).
 
         If set to ``False``, null values will be propagated.
-        if the row contains any null values, the output is ``None``.
+        if the row contains any null values, the output is null.
 
     Examples
     --------

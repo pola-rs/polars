@@ -139,6 +139,7 @@ pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::new();
+    array.reserve(from.len());
     array.try_extend(from.iter())?;
 
     Ok(array.into())

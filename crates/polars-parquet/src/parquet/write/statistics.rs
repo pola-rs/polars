@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::parquet::error::{Error, Result};
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::*;
@@ -25,15 +23,14 @@ fn reduce_vec8(lhs: Option<Vec<u8>>, rhs: &Option<Vec<u8>>, max: bool) -> Option
     }
 }
 
-pub fn reduce(stats: &[&Option<Arc<dyn Statistics>>]) -> Result<Option<Arc<dyn Statistics>>> {
+pub fn reduce(stats: &[&Option<Statistics>]) -> Result<Option<Statistics>> {
     if stats.is_empty() {
         return Ok(None);
     }
     let stats = stats
         .iter()
         .filter_map(|x| x.as_ref())
-        .map(|x| x.as_ref())
-        .collect::<Vec<&dyn Statistics>>();
+        .collect::<Vec<&Statistics>>();
     if stats.is_empty() {
         return Ok(None);
     };
@@ -45,37 +42,22 @@ pub fn reduce(stats: &[&Option<Arc<dyn Statistics>>]) -> Result<Option<Arc<dyn S
     if !same_type {
         return Err(Error::oos("The statistics do not have the same data_type"));
     };
-    Ok(match stats[0].physical_type() {
-        PhysicalType::Boolean => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_boolean(stats)))
-        },
-        PhysicalType::Int32 => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_primitive::<i32, _>(stats)))
-        },
-        PhysicalType::Int64 => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_primitive::<i64, _>(stats)))
-        },
-        PhysicalType::Float => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_primitive::<f32, _>(stats)))
-        },
-        PhysicalType::Double => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_primitive::<f64, _>(stats)))
-        },
-        PhysicalType::ByteArray => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_binary(stats)))
-        },
-        PhysicalType::FixedLenByteArray(_) => {
-            let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
-            Some(Arc::new(reduce_fix_len_binary(stats)))
+
+    use PhysicalType as T;
+    let stats = match stats[0].physical_type() {
+        T::Boolean => reduce_boolean(stats.iter().map(|x| x.expect_as_boolean())).into(),
+        T::Int32 => reduce_primitive::<i32, _>(stats.iter().map(|x| x.expect_as_int32())).into(),
+        T::Int64 => reduce_primitive(stats.iter().map(|x| x.expect_as_int64())).into(),
+        T::Float => reduce_primitive(stats.iter().map(|x| x.expect_as_float())).into(),
+        T::Double => reduce_primitive(stats.iter().map(|x| x.expect_as_double())).into(),
+        T::ByteArray => reduce_binary(stats.iter().map(|x| x.expect_as_binary())).into(),
+        T::FixedLenByteArray(_) => {
+            reduce_fix_len_binary(stats.iter().map(|x| x.expect_as_fixedlen())).into()
         },
         _ => todo!(),
-    })
+    };
+
+    Ok(Some(stats))
 }
 
 fn reduce_binary<'a, I: Iterator<Item = &'a BinaryStatistics>>(mut stats: I) -> BinaryStatistics {

@@ -70,7 +70,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     {
         match how {
             JoinType::Left => LeftRight(false, true),
-            JoinType::Outer { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
+            JoinType::Full { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
             _ => LeftRight(false, false),
         }
     }
@@ -78,51 +78,48 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     {
         match how {
             JoinType::Left => LeftRight(false, true),
-            JoinType::Outer { .. } | JoinType::Cross => LeftRight(true, true),
+            JoinType::Full { .. } | JoinType::Cross => LeftRight(true, true),
             _ => LeftRight(false, false),
         }
     }
 }
 
 fn all_pred_cols_in_left_on(
-    predicate: Node,
+    predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    left_on: &[Node],
+    left_on: &[ExprIR],
 ) -> bool {
-    let left_on_col_exprs: Vec<Expr> = left_on
-        .iter()
-        .map(|&node| node_to_expr(node, expr_arena))
-        .collect();
-    let mut col_exprs_in_predicate = aexpr_to_column_nodes_iter(predicate, expr_arena)
-        .map(|node| node_to_expr(node, expr_arena));
-
-    col_exprs_in_predicate.all(|expr| left_on_col_exprs.contains(&expr))
+    aexpr_to_leaf_names_iter(predicate.node(), expr_arena).all(|pred_column_name| {
+        left_on
+            .iter()
+            .any(|e| e.output_name() == pred_column_name.as_ref())
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
     opt: &PredicatePushDown,
-    lp_arena: &mut Arena<ALogicalPlan>,
+    lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input_left: Node,
     input_right: Node,
-    left_on: Vec<Node>,
-    right_on: Vec<Node>,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
     schema: SchemaRef,
     options: Arc<JoinOptions>,
-    acc_predicates: PlHashMap<Arc<str>, Node>,
-) -> PolarsResult<ALogicalPlan> {
-    use ALogicalPlan::*;
+    acc_predicates: PlHashMap<Arc<str>, ExprIR>,
+) -> PolarsResult<IR> {
+    use IR::*;
     let schema_left = lp_arena.get(input_left).schema(lp_arena);
     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
     let on_names = left_on
         .iter()
-        .flat_map(|n| aexpr_to_leaf_names_iter(*n, expr_arena))
+        .flat_map(|e| aexpr_to_leaf_names_iter(e.node(), expr_arena))
         .chain(
             right_on
                 .iter()
-                .flat_map(|n| aexpr_to_leaf_names_iter(*n, expr_arena)),
+                .flat_map(|e| aexpr_to_leaf_names_iter(e.node(), expr_arena)),
         )
         .collect::<PlHashSet<_>>();
 
@@ -132,7 +129,7 @@ pub(super) fn process_join(
 
     for (_, predicate) in acc_predicates {
         // check if predicate can pass the joins node
-        let block_pushdown_left = has_aexpr(predicate, expr_arena, |ae| {
+        let block_pushdown_left = has_aexpr(predicate.node(), expr_arena, |ae| {
             should_block_join_specific(
                 ae,
                 &options.args.how,
@@ -143,7 +140,7 @@ pub(super) fn process_join(
             )
             .0
         });
-        let block_pushdown_right = has_aexpr(predicate, expr_arena, |ae| {
+        let block_pushdown_right = has_aexpr(predicate.node(), expr_arena, |ae| {
             should_block_join_specific(
                 ae,
                 &options.args.how,
@@ -159,22 +156,22 @@ pub(super) fn process_join(
         let mut filter_left = false;
         let mut filter_right = false;
 
-        debug_assert_aexpr_allows_predicate_pushdown(predicate, expr_arena);
+        debug_assert_aexpr_allows_predicate_pushdown(predicate.node(), expr_arena);
 
-        if !block_pushdown_left && check_input_node(predicate, &schema_left, expr_arena) {
-            insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
+        if !block_pushdown_left && check_input_node(predicate.node(), &schema_left, expr_arena) {
+            insert_and_combine_predicate(&mut pushdown_left, &predicate, expr_arena);
             filter_left = true;
             // If we push down to the left and all predicate columns are also
             // join columns, we also push down right for inner, left or semi join
-            if all_pred_cols_in_left_on(predicate, expr_arena, &left_on) {
+            if all_pred_cols_in_left_on(&predicate, expr_arena, &left_on) {
                 filter_right = match &options.args.how {
                     // TODO! if join_on right has a different name
                     // we can set this to `true` IFF we rename the predicate
                     JoinType::Inner | JoinType::Left => {
-                        check_input_node(predicate, &schema_right, expr_arena)
+                        check_input_node(predicate.node(), &schema_right, expr_arena)
                     },
                     #[cfg(feature = "semi_anti_join")]
-                    JoinType::Semi => check_input_node(predicate, &schema_right, expr_arena),
+                    JoinType::Semi => check_input_node(predicate.node(), &schema_right, expr_arena),
                     _ => false,
                 }
             }
@@ -182,11 +179,13 @@ pub(super) fn process_join(
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
-        } else if !block_pushdown_right && check_input_node(predicate, &schema_right, expr_arena) {
+        } else if !block_pushdown_right
+            && check_input_node(predicate.node(), &schema_right, expr_arena)
+        {
             filter_right = true
         }
         if filter_right {
-            insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
+            insert_and_combine_predicate(&mut pushdown_right, &predicate, expr_arena);
         }
 
         match (filter_left, filter_right, &options.args.how) {

@@ -28,6 +28,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
         (8, 2, pl.UInt8, pl.UInt8),
         (date(2023, 2, 2), 3, pl.Datetime, pl.Datetime),
         (7.5, 5, pl.UInt16, pl.UInt16),
+        ([1, 2, 3], 2, pl.List(pl.Int64), pl.List(pl.Int64)),
+        (b"ab12", 3, pl.Binary, pl.Binary),
     ],
 )
 def test_repeat(
@@ -95,8 +97,8 @@ def test_repeat_n_negative() -> None:
         (2, ["1"], pl.List(pl.Utf8)),
         (4, True, pl.Boolean),
         (2, [True], pl.List(pl.Boolean)),
-        (2, [1], pl.Array(pl.Int16, width=1)),
-        (2, [1, 1, 1], pl.Array(pl.Int8, width=3)),
+        (2, [1], pl.Array(pl.Int16, shape=1)),
+        (2, [1, 1, 1], pl.Array(pl.Int8, shape=3)),
         (1, [1], pl.List(pl.UInt32)),
     ],
 )
@@ -124,8 +126,8 @@ def test_ones(
         (2, ["0"], pl.List(pl.Utf8)),
         (4, False, pl.Boolean),
         (2, [False], pl.List(pl.Boolean)),
-        (3, [0], pl.Array(pl.UInt32, width=1)),
-        (2, [0, 0, 0], pl.Array(pl.UInt32, width=3)),
+        (3, [0], pl.Array(pl.UInt32, shape=1)),
+        (2, [0, 0, 0], pl.Array(pl.UInt32, shape=3)),
         (1, [0], pl.List(pl.UInt32)),
     ],
 )
