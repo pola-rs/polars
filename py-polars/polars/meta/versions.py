@@ -69,6 +69,7 @@ def _get_dependency_info() -> dict[str, str]:
         "fastexcel",
         "fsspec",
         "gevent",
+        "great_tables",
         "hvplot",
         "matplotlib",
         "nest_asyncio",

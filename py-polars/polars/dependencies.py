@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
+_GREAT_TABLES_AVAILABLE = True
 _HVPLOT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
@@ -152,6 +153,7 @@ if TYPE_CHECKING:
     import deltalake
     import fsspec
     import gevent
+    import great_tables
     import hvplot
     import hypothesis
     import numpy
@@ -175,6 +177,7 @@ else:
     # heavy/optional third party libs
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    great_tables, _GREAT_TABLES_AVAILABLE = _lazy_import("great_tables")
     hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
@@ -301,6 +304,7 @@ __all__ = [
     "deltalake",
     "fsspec",
     "gevent",
+    "great_tables",
     "hvplot",
     "numpy",
     "pandas",
