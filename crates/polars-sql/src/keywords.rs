@@ -39,6 +39,7 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::IN,
         keywords::INNER,
         keywords::INT,
+        keywords::INTERVAL,
         keywords::JOIN,
         keywords::LEFT,
         keywords::LIMIT,
