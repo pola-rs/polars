@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
@@ -17,6 +18,7 @@ pub struct LazyCsvReader {
     glob: bool,
     cache: bool,
     read_options: CsvReadOptions,
+    cloud_options: Option<CloudOptions>,
 }
 
 #[cfg(feature = "csv")]
@@ -38,6 +40,7 @@ impl LazyCsvReader {
             glob: true,
             cache: true,
             read_options: Default::default(),
+            cloud_options: Default::default(),
         }
     }
 
@@ -203,6 +206,11 @@ impl LazyCsvReader {
         self
     }
 
+    pub fn with_cloud_options(mut self, cloud_options: Option<CloudOptions>) -> Self {
+        self.cloud_options = cloud_options;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -276,9 +284,10 @@ impl LazyFileListReader for LazyCsvReader {
             self.paths
         };
 
-        let mut lf: LazyFrame = DslBuilder::scan_csv(paths, self.read_options, self.cache)?
-            .build()
-            .into();
+        let mut lf: LazyFrame =
+            DslBuilder::scan_csv(paths, self.read_options, self.cache, self.cloud_options)?
+                .build()
+                .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
     }

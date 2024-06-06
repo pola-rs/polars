@@ -150,7 +150,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema, cloud_options, retries
     )
     )]
     fn new_from_csv(
@@ -181,6 +181,8 @@ impl PyLazyFrame {
         decimal_comma: bool,
         glob: bool,
         schema: Option<Wrap<Schema>>,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
@@ -197,6 +199,32 @@ impl PyLazyFrame {
                 .map(|(name, dtype)| Field::new(&name, dtype.0))
                 .collect::<Schema>()
         });
+
+        #[cfg(feature = "cloud")]
+        let cloud_options = {
+            let first_path = if let Some(path) = &path {
+                path
+            } else {
+                paths
+                    .first()
+                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+            };
+
+            let first_path_url = first_path.to_string_lossy();
+            let mut cloud_options = cloud_options
+                .map(|kv| parse_cloud_options(&first_path_url, kv))
+                .transpose()?;
+            if retries > 0 {
+                cloud_options =
+                    cloud_options
+                        .or_else(|| Some(CloudOptions::default()))
+                        .map(|mut options| {
+                            options.max_retries = retries;
+                            options
+                        });
+            }
+            cloud_options
+        };
 
         let r = if let Some(path) = path.as_ref() {
             LazyCsvReader::new(path)
@@ -228,7 +256,8 @@ impl PyLazyFrame {
             .with_truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
-            .with_raise_if_empty(raise_if_empty);
+            .with_raise_if_empty(raise_if_empty)
+            .with_cloud_options(cloud_options);
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {

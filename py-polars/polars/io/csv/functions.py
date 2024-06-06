@@ -934,6 +934,8 @@ def scan_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
+    storage_options: dict[str, Any] | None = None,
+    retries: int = 0,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1030,6 +1032,22 @@ def scan_csv(
         Parse floats using a comma as the decimal separator instead of a period.
     glob
         Expand path given via globbing rules.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+        If the cloud provider is not supported by Polars, the storage options
+        are passed to `fsspec.open()`.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
+    retries
+        Number of retries if accessing a cloud instance fails.
 
     Returns
     -------
@@ -1150,6 +1168,8 @@ def scan_csv(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         glob=glob,
+        retries=retries,
+        storage_options=storage_options,
     )
 
 
@@ -1182,6 +1202,8 @@ def _scan_csv_impl(
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
     glob: bool = True,
+    storage_options: dict[str, Any] | None = None,
+    retries: int = 0,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
@@ -1195,6 +1217,12 @@ def _scan_csv_impl(
         source = None  # type: ignore[assignment]
     else:
         sources = []
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
         source,
@@ -1224,5 +1252,7 @@ def _scan_csv_impl(
         decimal_comma=decimal_comma,
         schema=schema,
         glob=glob,
+        retries=retries,
+        cloud_options=storage_options,
     )
     return wrap_ldf(pylf)

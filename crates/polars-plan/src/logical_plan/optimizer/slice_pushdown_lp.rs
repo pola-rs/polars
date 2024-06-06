@@ -168,7 +168,7 @@ impl SlicePushDown {
                 output_schema,
                 mut file_options,
                 predicate,
-                scan_type: FileScan::Csv { options },
+                scan_type: FileScan::Csv { options, cloud_options },
             }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
                 file_options.n_rows = Some(state.offset as usize + state.len as usize);
 
@@ -176,7 +176,7 @@ impl SlicePushDown {
                     paths,
                     file_info,
                     output_schema,
-                    scan_type: FileScan::Csv { options },
+                    scan_type: FileScan::Csv { options, cloud_options },
                     file_options,
                     predicate,
                 };

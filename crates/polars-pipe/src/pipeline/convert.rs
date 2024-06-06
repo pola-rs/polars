@@ -99,7 +99,7 @@ where
             }
             match scan_type {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options } => {
+                FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
                         paths,
                         file_info.schema,

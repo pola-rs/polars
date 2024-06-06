@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
-use polars_core::POOL;
+use polars_core::{config, POOL};
 use polars_utils::index::Bounded;
 use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
@@ -12,6 +12,7 @@ use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
+use crate::prelude::is_cloud_url;
 use crate::utils::get_reader_bytes;
 
 /// Read the number of rows without parsing columns
@@ -24,7 +25,22 @@ pub fn count_rows(
     eol_char: u8,
     has_header: bool,
 ) -> PolarsResult<usize> {
-    let mut reader = polars_utils::open_file(path)?;
+    let mut reader = if is_cloud_url(path) || config::force_async() {
+        #[cfg(feature = "cloud")]
+        {
+            crate::file_cache::FILE_CACHE
+                .get_entry(path.to_str().unwrap())
+                // Safety: This was initialized by schema inference.
+                .unwrap()
+                .try_open_assume_latest()?
+        }
+        #[cfg(not(feature = "cloud"))]
+        {
+            panic!("required feature `cloud` is not enabled")
+        }
+    } else {
+        polars_utils::open_file(path)?
+    };
     let reader_bytes = get_reader_bytes(&mut reader)?;
     const MIN_ROWS_PER_THREAD: usize = 1024;
     let max_threads = POOL.current_num_threads();
@@ -44,7 +60,7 @@ pub fn count_rows(
     })
     .unwrap_or(1);
 
-    let file_chunks = get_file_chunks(
+    let file_chunks: Vec<(usize, usize)> = get_file_chunks(
         &reader_bytes,
         n_threads,
         None,
