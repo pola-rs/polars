@@ -43,8 +43,8 @@ xlsx2csv
 XlsxWriter
 # Skip deltalake version 0.18.0 due to MacOS issues:
 # https://github.com/delta-io/delta-rs/issues/2577
-deltalake>=0.15.0; platform_system != 'darwin'
-deltalake>=0.15.0,!=0.18.0; platform_system == 'darwin'
+deltalake>=0.15.0; platform_system != 'Darwin'
+deltalake>=0.15.0,!=0.18.0; platform_system == 'Darwin'
 # Csv
 zstandard
 # Plotting
