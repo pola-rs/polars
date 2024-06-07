@@ -101,7 +101,12 @@ pub fn can_convert_to_hash_agg(
                     }
                 ) && {
                     if let Ok(field) = ae.to_field(input_schema, Context::Default, expr_arena) {
-                        field.dtype.to_physical().is_numeric()
+                        match field.dtype {
+                            DataType::Date => {
+                                matches!(agg_fn, IRAggExpr::Mean(_) | IRAggExpr::Median(_))
+                            },
+                            _ => field.dtype.to_physical().is_numeric(),
+                        }
                     } else {
                         false
                     }
