@@ -641,7 +641,7 @@ class DataFrame:
 
         >>> df.style.tab_style(
         ...     style.fill("yellow"),
-        ...     loc.body(rows=pl.col("measure_a") == pl.col("measure_a").max())
+        ...     loc.body(rows=pl.col("measure_a") == pl.col("measure_a").max()),
         ... )  # doctest: +SKIP
 
         Put a spanner (high-level label) over measure columns:
