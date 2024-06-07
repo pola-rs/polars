@@ -103,6 +103,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Agg>().unwrap();
     m.add_class::<Ternary>().unwrap();
     m.add_class::<Function>().unwrap();
+    m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
     m.add_class::<Window>().unwrap();
     m.add_class::<PyOperator>().unwrap();
