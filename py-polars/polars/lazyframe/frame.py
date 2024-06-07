@@ -81,7 +81,7 @@ from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame
+    from polars.polars import PyLazyFrame, col
 
 if TYPE_CHECKING:
     import sys
@@ -5905,27 +5905,34 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str | Iterable[str],
-        *more_columns: str,
+        column: str,
+        *,
         descending: bool = False,
     ) -> Self:
         """
         Indicate that one or multiple columns are sorted.
 
+        This can speed up future operations.
+
         Parameters
         ----------
         column
             Columns that are sorted
-        more_columns
-            Additional columns that are sorted, specified as positional arguments.
         descending
             Whether the columns are sorted in descending order.
-        """
-        columns = parse_as_list_of_expressions(column, *more_columns)
 
-        return self.with_columns(
-            wrap_expr(e).set_sorted(descending=descending) for e in columns
-        )
+        Warnings
+        --------
+        This can lead to incorrect results if the data is NOT sorted!!
+        Use with care!
+
+        """
+        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
+        # the combined multicolumn values.
+        if not isinstance(column, str):
+            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
+            raise TypeError(msg)
+        return self.with_columns(col(column).set_sorted(descending=descending))
 
     @unstable()
     def update(

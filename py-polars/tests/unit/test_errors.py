@@ -658,3 +658,10 @@ def test_raise_invalid_arithmetic() -> None:
 
     with pytest.raises(pl.InvalidOperationError):
         df.select(pl.col("a") - pl.col("a"))
+
+
+def test_raise_on_sorted_multi_args() -> None:
+    with pytest.raises(TypeError):
+        pl.DataFrame({"a": [1], "b": [1]}).set_sorted(
+            ["a", "b"]  # type: ignore[arg-type]
+        )

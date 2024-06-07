@@ -9825,7 +9825,7 @@ class Expr:
 
         Warnings
         --------
-        This can lead to incorrect results if this `Series` is not sorted!!
+        This can lead to incorrect results if the data is NOT sorted!!
         Use with care!
 
         Examples
