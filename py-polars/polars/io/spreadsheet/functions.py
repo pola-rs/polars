@@ -203,7 +203,7 @@ def read_excel(
         The maximum number of rows to scan for schema inference. If set to `None`, the
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks. Note that only the "calamine" and "xlsx2csv" engines support
-        this parameter; for all others it is a no-op.
+        this parameter.
     raise_if_empty
         When there is no data in the sheet,`NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -832,6 +832,10 @@ def _read_spreadsheet_calamine(
         df = df.cast(dtypes=schema_overrides)
 
     df = _drop_null_data(df, raise_if_empty=raise_if_empty)
+
+    # standardise on string dtype for null columns in empty frame
+    if df.is_empty():
+        df = df.cast({Null: String})
 
     # further refine dtypes
     type_checks = []
