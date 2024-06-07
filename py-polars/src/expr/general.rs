@@ -294,28 +294,18 @@ impl PyExpr {
 
     #[cfg(feature = "top_k")]
     fn top_k(&self, k: Self) -> Self {
-        self.inner.clone().top_k(k.inner, SortOptions::new()).into()
+        self.inner.clone().top_k(k.inner).into()
     }
 
     #[cfg(feature = "top_k")]
     fn top_k_by(&self, by: Vec<Self>, k: Self, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner
-            .clone()
-            .top_k_by(
-                k.inner,
-                by,
-                SortMultipleOptions::new().with_order_descending_multi(descending),
-            )
-            .into()
+        self.inner.clone().top_k_by(k.inner, by, descending).into()
     }
 
     #[cfg(feature = "top_k")]
     fn bottom_k(&self, k: Self) -> Self {
-        self.inner
-            .clone()
-            .bottom_k(k.inner, SortOptions::new())
-            .into()
+        self.inner.clone().bottom_k(k.inner).into()
     }
 
     #[cfg(feature = "top_k")]
@@ -323,11 +313,7 @@ impl PyExpr {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
         self.inner
             .clone()
-            .bottom_k_by(
-                k.inner,
-                by,
-                SortMultipleOptions::new().with_order_descending_multi(descending),
-            )
+            .bottom_k_by(k.inner, by, descending)
             .into()
     }
 

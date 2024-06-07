@@ -1111,9 +1111,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     has_max: _,
                 } => return Err(PyNotImplementedError::new_err("clip")),
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
-                FunctionExpr::TopK { sort_options: _ } => {
-                    return Err(PyNotImplementedError::new_err("top k"))
-                },
+                FunctionExpr::TopK { .. } => return Err(PyNotImplementedError::new_err("top k")),
                 FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
                 FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
                 FunctionExpr::CumProd { reverse } => ("cumprod", reverse).to_object(py),
@@ -1234,7 +1232,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"))
                 },
-                FunctionExpr::TopKBy { sort_options: _ } => {
+                FunctionExpr::TopKBy { .. } => {
                     return Err(PyNotImplementedError::new_err("top_k_by"))
                 },
                 FunctionExpr::EwmMeanBy { half_life: _ } => {

@@ -3114,9 +3114,13 @@ class Series:
         r"""
         Return the `k` largest elements.
 
+        Non-null elements are always preferred over null elements. The output is
+        not guaranteed to be in any particular order, call :func:`sort` after
+        this function if you wish the output to be sorted.
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n})
+        .. math:: O(n)
 
         Parameters
         ----------
@@ -3144,9 +3148,14 @@ class Series:
         r"""
         Return the `k` smallest elements.
 
+        Non-null elements are always preferred over null elements. The output is
+        not guaranteed to be in any particular order, call :func:`sort` after
+        this function if you wish the output to be sorted. This has time
+        complexity:
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n})
+        .. math:: O(n)
 
         Parameters
         ----------

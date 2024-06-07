@@ -1,15 +1,18 @@
 import pytest
+from hypothesis import given
+from hypothesis.strategies import booleans
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 
 def test_top_k() -> None:
     # expression
     s = pl.Series("a", [3, 8, 1, 5, 2])
 
-    assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
-    assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
+    assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]), check_order=False)
+    assert_series_equal(s.bottom_k(4), pl.Series("a", [3, 2, 1, 5]), check_order=False)
 
     # 5886
     df = pl.DataFrame(
@@ -23,6 +26,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df.select(pl.col("test").top_k(10)),
         pl.DataFrame({"test": [4, 3, 2, 1]}),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -31,6 +35,7 @@ def test_top_k() -> None:
             bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
         ),
         pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -39,6 +44,7 @@ def test_top_k() -> None:
             pl.col("bool_val").bottom_k(2).alias("bottom_k"),
         ),
         pl.DataFrame({"top_k": [True, True], "bottom_k": [False, False]}),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -47,6 +53,7 @@ def test_top_k() -> None:
             pl.col("str_value").bottom_k(2).alias("bottom_k"),
         ),
         pl.DataFrame({"top_k": ["d", "c"], "bottom_k": ["a", "b"]}),
+        check_row_order=False,
     )
 
     with pytest.raises(pl.ComputeError, match="`k` must be set for `top_k`"):
@@ -70,15 +77,18 @@ def test_top_k() -> None:
     assert_frame_equal(
         df.top_k(3, by=["a", "b"]),
         pl.DataFrame({"a": [4, 3, 2], "b": [4, 1, 3]}),
+        check_row_order=False,
     )
 
     assert_frame_equal(
         df.top_k(3, by=["a", "b"], descending=True),
         pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
+        check_row_order=False,
     )
     assert_frame_equal(
         df.bottom_k(4, by=["a", "b"], descending=True),
         pl.DataFrame({"a": [4, 3, 2, 2], "b": [4, 1, 3, 2]}),
+        check_row_order=False,
     )
 
     df2 = pl.DataFrame(
@@ -102,6 +112,7 @@ def test_top_k() -> None:
                 "b_top_by_b": [12, 11],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -117,6 +128,7 @@ def test_top_k() -> None:
                 "b_top_by_b": [7, 8],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -132,6 +144,7 @@ def test_top_k() -> None:
                 "b_bottom_by_b": [7, 8],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -151,6 +164,7 @@ def test_top_k() -> None:
                 "b_bottom_by_b": [12, 11],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -164,6 +178,7 @@ def test_top_k() -> None:
                 "b": [9, 10, 11, 7, 8],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -177,6 +192,7 @@ def test_top_k() -> None:
                 "b": [12, 10, 11, 8, 7],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -194,6 +210,7 @@ def test_top_k() -> None:
                 "c_top_by_cb": ["Orange", "Banana"],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -215,6 +232,7 @@ def test_top_k() -> None:
                 "c_bottom_by_cb": ["Apple", "Apple"],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -236,6 +254,7 @@ def test_top_k() -> None:
                 "c_top_by_cb": ["Apple", "Apple"],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -257,6 +276,7 @@ def test_top_k() -> None:
                 "c_bottom_by_cb": ["Orange", "Banana"],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -278,6 +298,7 @@ def test_top_k() -> None:
                 "c_top_by_cb": ["Orange", "Banana"],
             }
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -299,6 +320,7 @@ def test_top_k() -> None:
                 "c_bottom_by_cb": ["Orange", "Banana"],
             }
         ),
+        check_row_order=False,
     )
 
     with pytest.raises(
@@ -318,9 +340,9 @@ def test_top_k_descending() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     result = df.top_k(1, by=["a", "b"], descending=True)
     expected = pl.DataFrame({"a": [1], "b": [4]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
     result = df.top_k(1, by=["a", "b"], descending=[True, True])
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
     with pytest.raises(
         ValueError,
         match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
@@ -334,21 +356,16 @@ def test_top_k_9385() -> None:
     assert result.collect()["b"].to_list() == [False]
 
 
-def test_top_k_sorted_flag() -> None:
-    # top-k/bottom-k
-    df = pl.DataFrame({"foo": [56, 2, 3]})
-    assert df.top_k(2, by="foo")["foo"].flags["SORTED_DESC"]
-    assert df.bottom_k(2, by="foo")["foo"].flags["SORTED_ASC"]
-
-
 def test_top_k_empty() -> None:
     df = pl.DataFrame({"test": []})
 
     assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
 
 
-def test_top_k_nulls() -> None:
-    s = pl.Series([1, 2, 3, None, None])
+@given(s=series(excluded_dtypes=[pl.Null, pl.Struct]), should_sort=booleans())
+def test_top_k_nulls(s: pl.Series, should_sort: bool) -> None:
+    if should_sort:
+        s = s.sort()
 
     valid_count = s.len() - s.null_count()
     result = s.top_k(valid_count)
@@ -358,14 +375,14 @@ def test_top_k_nulls() -> None:
     assert result.null_count() == s.null_count()
 
     result = s.top_k(s.len() * 2)
-    assert_series_equal(result.sort(), s.sort())
+    assert_series_equal(result, s, check_order=False)
 
 
-@pytest.mark.xfail(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/16748"
-)
-def test_bottom_k_nulls() -> None:
-    s = pl.Series([1, 2, 3, None, None])
+@given(s=series(excluded_dtypes=[pl.Null, pl.Struct]), should_sort=booleans())
+def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
+    if should_sort:
+        s = s.sort()
+
     valid_count = s.len() - s.null_count()
 
     result = s.bottom_k(valid_count)
@@ -375,4 +392,4 @@ def test_bottom_k_nulls() -> None:
     assert result.null_count() == s.null_count()
 
     result = s.bottom_k(s.len() * 2)
-    assert_series_equal(result.sort(), s.sort())
+    assert_series_equal(result, s, check_order=False)

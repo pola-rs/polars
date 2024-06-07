@@ -657,6 +657,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => s.clone(),
         List(inner) if !inner.is_nested() => s.clone(),
+        Null => s.clone(),
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(

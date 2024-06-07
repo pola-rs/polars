@@ -190,11 +190,11 @@ pub enum FunctionExpr {
     AsStruct,
     #[cfg(feature = "top_k")]
     TopK {
-        sort_options: SortOptions,
+        descending: bool,
     },
     #[cfg(feature = "top_k")]
     TopKBy {
-        sort_options: SortMultipleOptions,
+        descending: Vec<bool>,
     },
     #[cfg(feature = "cum_agg")]
     CumCount {
@@ -452,7 +452,7 @@ impl Hash for FunctionExpr {
                 has_max.hash(state);
             },
             #[cfg(feature = "top_k")]
-            TopK { sort_options } => sort_options.hash(state),
+            TopK { descending } => descending.hash(state),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
@@ -575,7 +575,7 @@ impl Hash for FunctionExpr {
             Reinterpret(signed) => signed.hash(state),
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
-            TopKBy { sort_options } => sort_options.hash(state),
+            TopKBy { descending } => descending.hash(state),
         }
     }
 }
@@ -650,9 +650,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
-            TopK {
-                sort_options: SortOptions { descending, .. },
-            } => {
+            TopK { descending } => {
                 if *descending {
                     "bottom_k"
                 } else {
@@ -989,11 +987,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
-            TopK { sort_options } => {
-                map_as_slice!(top_k, sort_options)
+            TopK { descending } => {
+                map_as_slice!(top_k, descending)
             },
             #[cfg(feature = "top_k")]
-            TopKBy { sort_options } => map_as_slice!(top_k_by, sort_options.clone()),
+            TopKBy { descending } => map_as_slice!(top_k_by, descending.clone()),
             Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => map!(cum::cum_count, reverse),

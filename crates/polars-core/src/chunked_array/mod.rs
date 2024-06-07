@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
+use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::*;
 
@@ -148,16 +149,21 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// If you want to explicitly the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_dims`]
     pub fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
-        let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
-        chunked_arr.compute_len();
-        chunked_arr
+        unsafe {
+            let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
+            chunked_arr.compute_len();
+            chunked_arr
+        }
     }
 
     /// Create a new [`ChunkedArray`] and explicitly set its `length` and `null_count`.
     ///
     /// If you want to compute the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_compute_len`]
-    pub fn new_with_dims(
+    ///
+    /// # Safety
+    /// The length and null_count must be correct.
+    pub unsafe fn new_with_dims(
         field: Arc<Field>,
         chunks: Vec<ArrayRef>,
         length: IdxSize,
@@ -421,6 +427,31 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             Some(out)
         } else {
             last_non_null(self.iter_validities(), self.len())
+        }
+    }
+
+    pub fn drop_nulls(&self) -> Self {
+        if self.null_count() == 0 {
+            self.clone()
+        } else {
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    if arr.null_count() == 0 {
+                        arr.to_boxed()
+                    } else {
+                        filter_with_bitmap(arr, arr.validity().unwrap())
+                    }
+                })
+                .collect();
+            unsafe {
+                Self::new_with_dims(
+                    self.field.clone(),
+                    chunks,
+                    (self.len() - self.null_count()) as IdxSize,
+                    0,
+                )
+            }
         }
     }
 

@@ -239,6 +239,10 @@ impl SeriesTrait for NullChunked {
         .into_series()
     }
 
+    fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
+        Ok(self.clone().into_series())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         BooleanChunked::full(self.name(), true, self.len())
     }

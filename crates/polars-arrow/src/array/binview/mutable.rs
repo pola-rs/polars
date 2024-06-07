@@ -343,24 +343,30 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked(i);
-        let len = v.length;
+        self.value_from_view_unchecked(self.views.get_unchecked(i))
+    }
 
-        // view layout:
+    /// Returns the element indicated by the given view.
+    ///
+    /// # Safety
+    /// Assumes the View belongs to this MutableBinaryViewArray.
+    pub unsafe fn value_from_view_unchecked<'a>(&'a self, view: &'a View) -> &'a T {
+        // View layout:
         // length: 4 bytes
         // prefix: 4 bytes
         // buffer_index: 4 bytes
         // offset: 4 bytes
 
-        // inlined layout:
+        // Inlined layout:
         // length: 4 bytes
         // data: 12 bytes
+        let len = view.length;
         let bytes = if len <= 12 {
-            let ptr = self.views.as_ptr() as *const u8;
-            std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
+            let ptr = view as *const View as *const u8;
+            std::slice::from_raw_parts(ptr.add(4), len as usize)
         } else {
-            let buffer_idx = v.buffer_idx as usize;
-            let offset = v.offset;
+            let buffer_idx = view.buffer_idx as usize;
+            let offset = view.offset;
 
             let data = if buffer_idx == self.completed_buffers.len() {
                 self.in_progress_buffer.as_slice()

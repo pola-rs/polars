@@ -205,6 +205,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         &self.views
     }
 
+    pub fn into_views(self) -> Vec<View> {
+        self.views.make_mut()
+    }
+
     pub fn try_new(
         data_type: ArrowDataType,
         views: Buffer<View>,
@@ -265,28 +269,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked_release(i);
-        let len = v.length;
-
-        // view layout:
-        // length: 4 bytes
-        // prefix: 4 bytes
-        // buffer_index: 4 bytes
-        // offset: 4 bytes
-
-        // inlined layout:
-        // length: 4 bytes
-        // data: 12 bytes
-
-        let bytes = if len <= 12 {
-            let ptr = self.views.as_ptr() as *const u8;
-            std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
-        } else {
-            let data = self.buffers.get_unchecked_release(v.buffer_idx as usize);
-            let offset = v.offset as usize;
-            data.get_unchecked_release(offset..offset + len as usize)
-        };
-        T::from_bytes_unchecked(bytes)
+        let v = self.views.get_unchecked_release(i);
+        T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
