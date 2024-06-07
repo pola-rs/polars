@@ -71,8 +71,10 @@ impl<'a> UnstableSeries<'a> {
     #[inline]
     /// Swaps inner state with the `array`. Prefer `UnstableSeries::with_array` as this
     /// restores the state.
-    pub fn swap(&mut self, array: &mut ArrayRef) {
-        unsafe { std::mem::swap(self.inner.as_mut(), array) }
+    /// # Safety
+    /// This swaps an underlying pointer that might be hold by other cloned series.
+    pub unsafe fn swap(&mut self, array: &mut ArrayRef) {
+        std::mem::swap(self.inner.as_mut(), array);
         // ensure lengths are correct.
         self.as_mut()._get_inner_mut().compute_len();
     }
@@ -84,9 +86,28 @@ impl<'a> UnstableSeries<'a> {
     where
         F: Fn(&UnstableSeries) -> T,
     {
-        self.swap(array);
-        let out = f(self);
-        self.swap(array);
-        out
+        unsafe {
+            self.swap(array);
+            let out = f(self);
+            self.swap(array);
+            out
+        }
     }
+}
+
+// SAFETY:
+// type must be matching
+pub(crate) unsafe fn unstable_series_container_and_ptr(
+    name: &str,
+    inner_values: ArrayRef,
+    iter_dtype: &DataType,
+) -> (Series, *mut ArrayRef) {
+    let series_container = {
+        let mut s = Series::from_chunks_and_dtype_unchecked(name, vec![inner_values], iter_dtype);
+        s.clear_flags();
+        s
+    };
+
+    let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+    (series_container, ptr)
 }

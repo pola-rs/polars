@@ -42,10 +42,12 @@ pub(super) fn std_with_nulls(ca: &ArrayChunked, ddof: u8) -> PolarsResult<Series
             out.into_duration(*tu).into_series()
         },
         _ => {
-            let out: Float64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().std(ddof)))
-                .collect();
+            // SAFETY: lifetime of iterator bound to scope of function
+            let out: Float64Chunked = unsafe {
+                ca.amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().std(ddof)))
+                    .collect()
+            };
             out.into_series()
         },
     };
