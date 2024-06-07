@@ -27,8 +27,8 @@ use arrow::record_batch::RecordBatch;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
-use crate::chunked_array::cast::CastOptions;
 
+use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
@@ -2579,7 +2579,11 @@ impl DataFrame {
                     numeric_df
                         .columns
                         .par_iter()
-                        .map(|s| s.is_null().cast_with_options(&DataType::UInt32, CastOptions::NonStrict).unwrap())
+                        .map(|s| {
+                            s.is_null()
+                                .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
+                                .unwrap()
+                        })
                         .reduce_with(|l, r| &l + &r)
                         // we can unwrap the option, because we are certain there is a column
                         // we started this operation on 2 columns

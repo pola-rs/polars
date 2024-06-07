@@ -10,6 +10,7 @@ mod scatter;
 
 use std::io::Cursor;
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
@@ -709,13 +710,17 @@ impl PySeries {
         Ok(out)
     }
 
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool) -> PyResult<Self> {
-        let dtype = dtype.0;
-        let out = if strict {
-            self.series.strict_cast(&dtype)
+    fn cast(&self, dtype: Wrap<DataType>, strict: bool, allow_overflow: bool) -> PyResult<Self> {
+        let options = if allow_overflow {
+            CastOptions::Overflowing
+        } else if strict {
+            CastOptions::Strict
         } else {
-            self.series.cast(&dtype)
+            CastOptions::NonStrict
         };
+
+        let dtype = dtype.0;
+        let out = self.series.cast_with_options(&dtype, options);
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

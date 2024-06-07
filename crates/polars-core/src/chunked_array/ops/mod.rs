@@ -41,8 +41,8 @@ pub mod zip;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
-use crate::chunked_array::cast::CastOptions;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::series::IsSorted;
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
@@ -188,7 +188,8 @@ pub trait ChunkCast {
     }
 
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series>;
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions)
+        -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
     ///

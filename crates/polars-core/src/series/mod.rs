@@ -25,8 +25,8 @@ pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
-use crate::chunked_array::cast::CastOptions;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
@@ -433,23 +433,23 @@ impl Series {
             Some(ref dtype) => dtype,
         };
 
+        // Always allow casting all nulls to other all nulls.
+        let len = self.len();
+        if self.null_count() == len {
+            return Ok(Series::full_null(self.name(), len, dtype));
+        }
+
         let ret = self.0.cast(dtype, options);
 
         match options {
-            CastOptions::NonStrict | CastOptions::Overflowing => {
-                let len = self.len();
-                if self.null_count() == len {
-                    return Ok(Series::full_null(self.name(), len, dtype));
-                }
-                ret
-            },
+            CastOptions::NonStrict | CastOptions::Overflowing => ret,
             CastOptions::Strict => {
                 let ret = ret?;
                 if self.null_count() != ret.null_count() {
                     handle_casting_failures(self, &ret)?;
                 }
                 Ok(ret)
-            }
+            },
         }
     }
 

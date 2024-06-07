@@ -30,8 +30,8 @@ pub use categorical::*;
 pub use struct_::*;
 #[cfg(feature = "dtype-time")]
 pub use time::*;
-use crate::chunked_array::cast::CastOptions;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 
 /// Maps a logical type to a chunked array implementation of the physical type.

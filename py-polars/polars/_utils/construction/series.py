@@ -150,7 +150,7 @@ def sequence_to_pyseries(
             Decimal,
         ):
             if pyseries.dtype() != dtype:
-                pyseries = pyseries.cast(dtype, strict=strict)
+                pyseries = pyseries.cast(dtype, strict=strict, allow_overflow=False)
         return pyseries
 
     elif dtype == Struct:
@@ -289,7 +289,7 @@ def sequence_to_pyseries(
                     name, values, dtype, strict=strict
                 )
             if dtype != pyseries.dtype():
-                pyseries = pyseries.cast(dtype, strict=False)
+                pyseries = pyseries.cast(dtype, strict=False, allow_overflow=False)
             return pyseries
 
     elif python_dtype == pl.Series:
@@ -308,7 +308,7 @@ def sequence_to_pyseries(
                     np.bool_(True), np.generic
                 ):
                     dtype = numpy_char_code_to_dtype(np.dtype(python_dtype).char)
-                    return srs.cast(dtype, strict=strict)
+                    return srs.cast(dtype, strict=strict, allow_overflow=False)
                 else:
                     return srs
 
@@ -480,7 +480,11 @@ def arrow_to_pyseries(
         if rechunk:
             pys.rechunk(in_place=True)
 
-    return pys.cast(dtype, strict=strict) if dtype is not None else pys
+    return (
+        pys.cast(dtype, strict=strict, allow_overflow=False)
+        if dtype is not None
+        else pys
+    )
 
 
 def numpy_to_pyseries(

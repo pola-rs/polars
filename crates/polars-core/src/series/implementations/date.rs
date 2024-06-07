@@ -89,7 +89,10 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
                 lhs.subtract(&rhs)
             },
             DataType::Duration(_) => ((&self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None), CastOptions::NonStrict)
+                .cast(
+                    &DataType::Datetime(TimeUnit::Milliseconds, None),
+                    CastOptions::NonStrict,
+                )
                 .unwrap())
                 - rhs)
                 .cast(&DataType::Date),
@@ -100,7 +103,10 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         match rhs.dtype() {
             DataType::Duration(_) => ((&self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None), CastOptions::NonStrict)
+                .cast(
+                    &DataType::Datetime(TimeUnit::Milliseconds, None),
+                    CastOptions::NonStrict,
+                )
                 .unwrap())
                 + rhs)
                 .cast(&DataType::Date),
@@ -236,7 +242,9 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self.0.cast_with_options(data_type, CastOptions::NonStrict)?;
+                let mut out = self
+                    .0
+                    .cast_with_options(data_type, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },

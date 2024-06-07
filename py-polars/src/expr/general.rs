@@ -4,6 +4,7 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
@@ -259,13 +260,18 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> Self {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool, allow_overflow: bool) -> Self {
         let dt = data_type.0;
-        let expr = if strict {
-            self.inner.clone().strict_cast(dt)
+
+        let options = if allow_overflow {
+            CastOptions::Overflowing
+        } else if strict {
+            CastOptions::Strict
         } else {
-            self.inner.clone().cast(dt)
+            CastOptions::NonStrict
         };
+
+        let expr = self.inner.clone().cast_with_options(dt, options);
         expr.into()
     }
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {

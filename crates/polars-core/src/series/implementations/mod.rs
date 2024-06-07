@@ -147,7 +147,10 @@ macro_rules! impl_dyn_series {
             unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
                 use DataType::*;
                 match self.dtype() {
-                    Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64, CastOptions::Overflowing).unwrap().agg_sum(groups),
+                    Int8 | UInt8 | Int16 | UInt16 => self
+                        .cast(&Int64, CastOptions::Overflowing)
+                        .unwrap()
+                        .agg_sum(groups),
                     _ => self.0.agg_sum(groups),
                 }
             }

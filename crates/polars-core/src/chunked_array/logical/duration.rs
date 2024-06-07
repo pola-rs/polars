@@ -27,7 +27,11 @@ impl LogicalType for DurationChunked {
             .as_duration(self.time_unit())
     }
 
-    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
         use DataType::*;
         use TimeUnit::*;
         match dtype {

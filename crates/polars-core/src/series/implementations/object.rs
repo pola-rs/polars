@@ -2,9 +2,9 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use ahash::RandomState;
-use crate::chunked_array::cast::CastOptions;
 
 use super::MetadataFlags;
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::*;

@@ -3869,6 +3869,7 @@ class Series:
         dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
         *,
         strict: bool = True,
+        allow_overflow: bool = False,
     ) -> Self:
         """
         Cast between data types.
@@ -3880,6 +3881,8 @@ class Series:
         strict
             Throw an error if a cast could not be done (for instance, due to an
             overflow).
+        allow_overflow
+            Don't check for numeric overflow and instead do a `wrapping` numeric cast.
 
         Examples
         --------
@@ -3904,7 +3907,7 @@ class Series:
         """
         # Do not dispatch cast as it is expensive and used in other functions.
         dtype = py_type_to_dtype(dtype)
-        return self._from_pyseries(self._s.cast(dtype, strict))
+        return self._from_pyseries(self._s.cast(dtype, strict, allow_overflow))
 
     def to_physical(self) -> Series:
         """

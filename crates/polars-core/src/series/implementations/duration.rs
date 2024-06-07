@@ -148,7 +148,8 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     TimeUnit::Microseconds => 86_400_000_000,
                     TimeUnit::Nanoseconds => 86_400_000_000_000,
                 };
-                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap() / one_day_in_tu;
+                let lhs =
+                    self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap() / one_day_in_tu;
                 let rhs = rhs
                     .cast(&DataType::Int32)
                     .unwrap()

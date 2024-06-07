@@ -56,6 +56,7 @@ pub use list::*;
 pub use meta::*;
 pub use name::*;
 pub use options::*;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
@@ -379,7 +380,7 @@ impl Expr {
         Expr::Cast {
             expr: Arc::new(self),
             data_type,
-            strict: true,
+            options: CastOptions::Strict,
         }
     }
 
@@ -388,7 +389,16 @@ impl Expr {
         Expr::Cast {
             expr: Arc::new(self),
             data_type,
-            strict: false,
+            options: CastOptions::NonStrict,
+        }
+    }
+
+    /// Cast expression to another data type.
+    pub fn cast_with_options(self, data_type: DataType, cast_options: CastOptions) -> Self {
+        Expr::Cast {
+            expr: Arc::new(self),
+            data_type,
+            options: cast_options,
         }
     }
 

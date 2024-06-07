@@ -312,7 +312,12 @@ impl StructChunked {
         ))
     }
 
-    unsafe fn cast_impl(&self, dtype: &DataType, cast_options: CastOptions, unchecked: bool) -> PolarsResult<Series> {
+    unsafe fn cast_impl(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+        unchecked: bool,
+    ) -> PolarsResult<Series> {
         match dtype {
             DataType::Struct(dtype_fields) => {
                 let map = BTreeMap::from_iter(self.fields().iter().map(|s| (s.name(), s)));
@@ -450,7 +455,11 @@ impl LogicalType for StructChunked {
     }
 
     // in case of a struct, a cast will coerce the inner types
-    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
         unsafe { self.cast_impl(dtype, cast_options, false) }
     }
 }

@@ -155,7 +155,8 @@ impl Series {
         match dtype {
             ArrowDataType::Utf8View => Ok(StringChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
-                let chunks = cast_chunks(&chunks, &DataType::String, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::String, CastOptions::NonStrict).unwrap();
                 Ok(StringChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::BinaryView => Ok(BinaryChunked::from_chunks(name, chunks).into_series()),
@@ -165,11 +166,13 @@ impl Series {
                         return Ok(BinaryOffsetChunked::from_chunks(name, chunks).into_series());
                     }
                 }
-                let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::Binary => {
-                let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict).unwrap();
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
@@ -205,21 +208,24 @@ impl Series {
             ArrowDataType::Int32 => Ok(Int32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int64 => Ok(Int64Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float16 => {
-                let chunks = cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
                 Ok(Float32Chunked::from_chunks(name, chunks).into_series())
             },
             ArrowDataType::Float32 => Ok(Float32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Float64 => Ok(Float64Chunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-date")]
             ArrowDataType::Date32 => {
-                let chunks = cast_chunks(&chunks, &DataType::Int32, CastOptions::Overflowing).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Int32, CastOptions::Overflowing).unwrap();
                 Ok(Int32Chunked::from_chunks(name, chunks)
                     .into_date()
                     .into_series())
             },
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Date64 => {
-                let chunks = cast_chunks(&chunks, &DataType::Int64, CastOptions::Overflowing).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Int64, CastOptions::Overflowing).unwrap();
                 let ca = Int64Chunked::from_chunks(name, chunks);
                 Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
             },
@@ -234,7 +240,8 @@ impl Series {
                     },
                     _ => canonical_tz,
                 };
-                let chunks = cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)
                     .into_series();
@@ -247,7 +254,8 @@ impl Series {
             },
             #[cfg(feature = "dtype-duration")]
             ArrowDataType::Duration(tu) => {
-                let chunks = cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_duration(tu.into())
                     .into_series();
@@ -262,9 +270,11 @@ impl Series {
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
                 let mut chunks = chunks;
                 if matches!(dtype, ArrowDataType::Time32(_)) {
-                    chunks = cast_chunks(&chunks, &DataType::Int32, CastOptions::NonStrict).unwrap();
+                    chunks =
+                        cast_chunks(&chunks, &DataType::Int32, CastOptions::NonStrict).unwrap();
                 }
-                let chunks = cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
+                let chunks =
+                    cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()
                     .into_series();
@@ -459,9 +469,12 @@ impl Series {
                     #[cfg(feature = "python")]
                     {
                         let (precision, scale) = (Some(*precision), *scale);
-                        let chunks =
-                            cast_chunks(&chunks, &DataType::Decimal(precision, Some(scale)), CastOptions::NonStrict)
-                                .unwrap();
+                        let chunks = cast_chunks(
+                            &chunks,
+                            &DataType::Decimal(precision, Some(scale)),
+                            CastOptions::NonStrict,
+                        )
+                        .unwrap();
                         Ok(Int128Chunked::from_chunks(name, chunks)
                             .into_decimal_unchecked(precision, scale)
                             .into_series())
@@ -470,9 +483,12 @@ impl Series {
                     #[cfg(not(feature = "python"))]
                     {
                         let (precision, scale) = (Some(*precision), *scale);
-                        let chunks =
-                            cast_chunks(&chunks, &DataType::Decimal(precision, Some(scale)), CastOptions::NonStrict)
-                                .unwrap();
+                        let chunks = cast_chunks(
+                            &chunks,
+                            &DataType::Decimal(precision, Some(scale)),
+                            CastOptions::NonStrict,
+                        )
+                        .unwrap();
                         // or DecimalChunked?
                         Ok(Int128Chunked::from_chunks(name, chunks)
                             .into_decimal_unchecked(precision, scale)

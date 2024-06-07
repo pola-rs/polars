@@ -52,8 +52,8 @@ mod inner_mod {
     use num_traits::pow::Pow;
     use num_traits::{Float, Zero};
     use polars_utils::float::IsFloat;
-    use crate::chunked_array::cast::CastOptions;
 
+    use crate::chunked_array::cast::CastOptions;
     use crate::prelude::*;
 
     /// utility

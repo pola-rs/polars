@@ -11,9 +11,9 @@ pub use merge::*;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 pub use revmap::*;
-use crate::chunked_array::cast::CastOptions;
 
 use super::*;
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -400,7 +400,9 @@ impl LogicalType for CategoricalChunked {
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self.physical.cast_with_options(&DataType::UInt64, options)?;
+                    let s = self
+                        .physical
+                        .cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
@@ -459,7 +461,7 @@ mod test {
             Some("bar"),
         ];
         let ca = StringChunked::new("a", slice);
-        let ca = ca.cast_with_options(&DataType::Categorical(None, Default::default()))?;
+        let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
         let arr = ca.to_arrow(true, false);

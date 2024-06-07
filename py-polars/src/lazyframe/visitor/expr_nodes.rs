@@ -270,8 +270,11 @@ pub struct Cast {
     expr: usize,
     #[pyo3(get)]
     dtype: PyObject,
+    // 0: strict
+    // 1: non-strict
+    // 2: overflow
     #[pyo3(get)]
-    strict: bool,
+    options: u8,
 }
 
 #[pyclass]
@@ -580,11 +583,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         AExpr::Cast {
             expr,
             data_type,
-            strict,
+            options,
         } => Cast {
             expr: expr.0,
             dtype: Wrap(data_type.clone()).to_object(py),
-            strict: *strict,
+            options: *options as u8,
         }
         .into_py(py),
         AExpr::Sort { expr, options } => Sort {

@@ -28,13 +28,19 @@ impl LogicalType for TimeChunked {
         self.0.get_any_value_unchecked(i).as_time()
     }
 
-    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
         use DataType::*;
         match dtype {
             Time => Ok(self.clone().into_series()),
             #[cfg(feature = "dtype-duration")]
             Duration(tu) => {
-                let out = self.0.cast_with_options(&DataType::Duration(TimeUnit::Nanoseconds), cast_options);
+                let out = self
+                    .0
+                    .cast_with_options(&DataType::Duration(TimeUnit::Nanoseconds), cast_options);
                 if !matches!(tu, TimeUnit::Nanoseconds) {
                     out?.cast_with_options(dtype, cast_options)
                 } else {

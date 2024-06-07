@@ -2,10 +2,10 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use super::{private, MetadataFlags};
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;

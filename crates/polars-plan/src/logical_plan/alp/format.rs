@@ -551,10 +551,10 @@ impl<'a> Display for ExprIRDisplay<'a> {
             Cast {
                 expr,
                 data_type,
-                strict,
+                options,
             } => {
                 self.with_root(expr).fmt(f)?;
-                if *strict {
+                if options.strict() {
                     write!(f, ".strict_cast({data_type:?})")
                 } else {
                     write!(f, ".cast({data_type:?})")

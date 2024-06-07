@@ -1,6 +1,7 @@
 use std::fmt::Write;
-use crate::chunked_array::cast::CastOptions;
 
+#[cfg(feature = "dtype-categorical")]
+use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
 use crate::prelude::*;
