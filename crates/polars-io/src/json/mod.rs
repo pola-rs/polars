@@ -25,7 +25,7 @@
 //! let file = Cursor::new(basic_json);
 //! let df = JsonReader::new(file)
 //! .with_json_format(JsonFormat::JsonLines)
-//! .infer_schema_len(Some(3))
+//! .infer_schema_len(NonZeroUsize::new(3))
 //! .with_batch_size(NonZeroUsize::new(3).unwrap())
 //! .finish()
 //! .unwrap();
@@ -206,7 +206,7 @@ where
     reader: R,
     rechunk: bool,
     ignore_errors: bool,
-    infer_schema_len: Option<usize>,
+    infer_schema_len: Option<NonZeroUsize>,
     batch_size: NonZeroUsize,
     projection: Option<Vec<String>>,
     schema: Option<SchemaRef>,
@@ -223,7 +223,7 @@ where
             reader,
             rechunk: true,
             ignore_errors: false,
-            infer_schema_len: Some(100),
+            infer_schema_len: Some(NonZeroUsize::new(100).unwrap()),
             batch_size: NonZeroUsize::new(8192).unwrap(),
             projection: None,
             schema: None,
@@ -265,7 +265,8 @@ where
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
                         infer::json_values_to_supertype(
                             values,
-                            self.infer_schema_len.unwrap_or(usize::MAX),
+                            self.infer_schema_len
+                                .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
                         )?
                         .to_arrow(true)
                     } else {
@@ -360,7 +361,7 @@ where
     ///
     /// It is an error to pass `max_records = Some(0)`, as a schema cannot be inferred from 0 records when deserializing
     /// from JSON (unlike CSVs, there is no header row to inspect for column names).
-    pub fn infer_schema_len(mut self, max_records: Option<usize>) -> Self {
+    pub fn infer_schema_len(mut self, max_records: Option<NonZeroUsize>) -> Self {
         self.infer_schema_len = max_records;
         self
     }

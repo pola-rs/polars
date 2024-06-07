@@ -26,7 +26,7 @@ where
     rechunk: bool,
     n_rows: Option<usize>,
     n_threads: Option<usize>,
-    infer_schema_len: Option<usize>,
+    infer_schema_len: Option<NonZeroUsize>,
     chunk_size: NonZeroUsize,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
@@ -58,7 +58,7 @@ where
         self
     }
 
-    pub fn infer_schema_len(mut self, infer_schema_len: Option<usize>) -> Self {
+    pub fn infer_schema_len(mut self, infer_schema_len: Option<NonZeroUsize>) -> Self {
         self.infer_schema_len = infer_schema_len;
         self
     }
@@ -112,7 +112,7 @@ where
             rechunk: true,
             n_rows: None,
             n_threads: None,
-            infer_schema_len: Some(128),
+            infer_schema_len: Some(NonZeroUsize::new(100).unwrap()),
             schema: None,
             schema_overwrite: None,
             path: None,
@@ -166,7 +166,7 @@ impl<'a> CoreJsonReader<'a> {
         sample_size: usize,
         chunk_size: NonZeroUsize,
         low_memory: bool,
-        infer_schema_len: Option<usize>,
+        infer_schema_len: Option<NonZeroUsize>,
         ignore_errors: bool,
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
