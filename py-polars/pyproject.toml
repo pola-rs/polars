@@ -90,6 +90,7 @@ module = [
   "deltalake.*",
   "fsspec.*",
   "gevent",
+  "great_tables",
   "hvplot.*",
   "jax.*",
   "kuzu",
