@@ -621,7 +621,6 @@ class DataFrame:
 
         Examples
         --------
-
         Import some styling helpers, and create example data:
 
         >>> import polars.selectors as cs
@@ -647,7 +646,7 @@ class DataFrame:
 
         Put a spanner (high-level label) over measure columns:
 
-        >>> df.style.tab_spanner("Measures", cs.starts_with("measure"))    # doctest: +SKIP
+        >>> df.style.tab_spanner("Measures", cs.starts_with("measure")) # doctest: +SKIP
 
         Format measure_b values to two decimal places:
 
@@ -655,7 +654,8 @@ class DataFrame:
 
         """
         if not _GREAT_TABLES_AVAILABLE:
-            raise ModuleNotFoundError("great_tables is required for `.style`")
+            msg = "great_tables is required for `.style`"
+            raise ModuleNotFoundError(msg)
 
         return great_tables.GT(self)
 
