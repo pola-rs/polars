@@ -1823,7 +1823,7 @@ class Expr:
     def top_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` largest elements.
-        
+
         Non-null elements are always preferred over null elements. The output
         is not guaranteed to be in any particular order, call :func:`sort`
         after this function if you wish the output to be sorted.
