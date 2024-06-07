@@ -611,9 +611,14 @@ class DataFrame:
         return hvplot.plotting.core.hvPlotTabularPolars(self)
 
     @property
+    @unstable()
     def style(self) -> GT:
         """
         Create a Great Table for styling.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Polars does not implement styling logic itself, but instead defers to
         the Great Tables package. Please see the `Great Tables reference <https://posit-dev.github.io/great-tables/reference/>`_
