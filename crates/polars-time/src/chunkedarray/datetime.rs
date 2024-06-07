@@ -1,5 +1,5 @@
 use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::cast::{cast, CastOptions};
+use arrow::compute::cast::{cast, CastOptionsImpl};
 use arrow::compute::temporal;
 use polars_core::prelude::*;
 
@@ -17,7 +17,7 @@ fn cast_and_apply<
         let arr = cast(
             arr,
             &dtype,
-            CastOptions {
+            CastOptionsImpl {
                 wrapped: true,
                 partial: false,
             },

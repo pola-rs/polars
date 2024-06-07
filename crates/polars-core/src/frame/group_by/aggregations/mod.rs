@@ -33,6 +33,7 @@ use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 use crate::{apply_method_physical_integer, POOL};
+use crate::chunked_array::cast::CastOptions;
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -376,7 +377,7 @@ where
         GroupsProxy::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
-                let s = ca.cast(&K::get_dtype()).unwrap();
+                let s = ca.cast(&K::get_dtype(), CastOptions::Overflowing).unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
@@ -987,7 +988,7 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self.cast(&DataType::Float64, CastOptions::Overflowing).unwrap();
                     ca.agg_mean(groups)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
@@ -1029,7 +1030,7 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self.cast(&DataType::Float64, CastOptions::Overflowing).unwrap();
                     ca.agg_var(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
@@ -1077,7 +1078,7 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self.cast(&DataType::Float64, CastOptions::Overflowing).unwrap();
                     ca.agg_std(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {

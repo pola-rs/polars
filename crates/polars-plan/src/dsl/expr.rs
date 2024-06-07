@@ -81,7 +81,10 @@ pub enum Expr {
     Cast {
         expr: Arc<Expr>,
         data_type: DataType,
+        /// Raise if any cast overflowed.
         strict: bool,
+        /// Allow wrapping overflow. If `false` overflowing casts, will be replaced with `Null`.
+        wrapping: bool,
     },
     Sort {
         expr: Arc<Expr>,

@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use ahash::RandomState;
+use crate::chunked_array::cast::CastOptions;
 
 use super::MetadataFlags;
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -148,7 +149,7 @@ where
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+    fn cast(&self, data_type: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
         if matches!(data_type, DataType::Object(_, None)) {
             Ok(self.0.clone().into_series())
         } else {

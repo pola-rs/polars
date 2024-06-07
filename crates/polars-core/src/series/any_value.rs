@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use crate::chunked_array::cast::CastOptions;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::ObjectRegistry;
@@ -432,7 +433,7 @@ fn any_values_to_categorical(
     if strict {
         ca.into_series().strict_cast(dtype)
     } else {
-        ca.cast(dtype)
+        ca.cast(dtype, CastOptions::NonStrict)
     }
 }
 

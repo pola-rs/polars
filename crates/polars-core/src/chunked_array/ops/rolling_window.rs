@@ -52,6 +52,7 @@ mod inner_mod {
     use num_traits::pow::Pow;
     use num_traits::{Float, Zero};
     use polars_utils::float::IsFloat;
+    use crate::chunked_array::cast::CastOptions;
 
     use crate::prelude::*;
 
@@ -97,7 +98,7 @@ mod inner_mod {
             if options.weights.is_some()
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
-                let s = self.cast(&DataType::Float64)?;
+                let s = self.cast(&DataType::Float64, CastOptions::NonStrict)?;
                 return s.rolling_map(f, options);
             }
 

@@ -30,6 +30,7 @@ pub use categorical::*;
 pub use struct_::*;
 #[cfg(feature = "dtype-time")]
 pub use time::*;
+use crate::chunked_array::cast::CastOptions;
 
 use crate::prelude::*;
 
@@ -84,7 +85,7 @@ pub trait LogicalType {
         unimplemented!()
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series>;
+    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>

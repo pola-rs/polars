@@ -5,6 +5,7 @@ use super::{private, MetadataFlags};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -140,8 +141,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast(data_type, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

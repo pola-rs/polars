@@ -1,3 +1,4 @@
+use crate::chunked_array::cast::CastOptions;
 use super::*;
 
 pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
@@ -105,6 +106,6 @@ impl BooleanChunked {
         }
     }
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
-        self.cast(&IDX_DTYPE).unwrap().agg_sum(groups)
+        self.cast(&IDX_DTYPE, CastOptions::Overflowing).unwrap().agg_sum(groups)
     }
 }

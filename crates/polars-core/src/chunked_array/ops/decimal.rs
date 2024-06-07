@@ -1,3 +1,4 @@
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 
 impl StringChunked {
@@ -21,7 +22,7 @@ impl StringChunked {
             }
         }
 
-        self.cast(&DataType::Decimal(None, Some(scale as usize)))
+        self.cast(&DataType::Decimal(None, Some(scale as usize)), CastOptions::NonStrict)
     }
 }
 

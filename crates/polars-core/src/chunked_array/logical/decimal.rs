@@ -80,7 +80,7 @@ impl LogicalType for DecimalChunked {
         }
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         let (precision_src, scale_src) = (self.precision(), self.scale());
         if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
             let scale_dst = scale_dst.unwrap_or(scale_src);
@@ -94,10 +94,10 @@ impl LogicalType for DecimalChunked {
             };
             if scale_src == scale_dst && is_widen {
                 let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
-                return self.0.cast(dtype); // no conversion or checks needed
+                return self.0.cast(dtype, cast_options); // no conversion or checks needed
             }
         }
-        let chunks = cast_chunks(&self.chunks, dtype, true)?;
+        let chunks = cast_chunks(&self.chunks, dtype, cast_options)?;
         unsafe {
             Ok(Series::from_chunks_and_dtype_unchecked(
                 self.name(),
@@ -129,7 +129,7 @@ impl DecimalChunked {
         }
 
         let dtype = DataType::Decimal(None, Some(scale));
-        let chunks = cast_chunks(&self.chunks, &dtype, true)?;
+        let chunks = cast_chunks(&self.chunks, &dtype, CastOptions::NonStrict)?;
         let mut dt = Self::new_logical(unsafe { Int128Chunked::from_chunks(self.name(), chunks) });
         dt.2 = Some(dtype);
         Ok(Cow::Owned(dt))
