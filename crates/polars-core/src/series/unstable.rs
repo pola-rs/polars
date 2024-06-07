@@ -90,3 +90,20 @@ impl<'a> UnstableSeries<'a> {
         out
     }
 }
+
+// SAFETY:
+// type must be matching
+pub(crate) unsafe fn unstable_series_container_and_ptr(
+    name: &str,
+    inner_values: ArrayRef,
+    iter_dtype: &DataType,
+) -> (Series, *mut ArrayRef) {
+    let series_container = {
+        let mut s = Series::from_chunks_and_dtype_unchecked(name, vec![inner_values], iter_dtype);
+        s.clear_flags();
+        s
+    };
+
+    let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+    (series_container, ptr)
+}

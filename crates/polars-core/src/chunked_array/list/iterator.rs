@@ -1,13 +1,12 @@
 use std::marker::PhantomData;
-use std::pin::Pin;
 use std::ptr::NonNull;
 
 use crate::prelude::*;
-use crate::series::unstable::{ArrayBox, UnstableSeries};
+use crate::series::unstable::{unstable_series_container_and_ptr, ArrayBox, UnstableSeries};
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
-    series_container: Pin<Box<Series>>,
+    series_container: Box<Series>,
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
@@ -19,14 +18,14 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
     pub(crate) fn new(
         len: usize,
-        series_container: Pin<Box<Series>>,
+        series_container: Series,
         inner: NonNull<ArrayRef>,
         iter: I,
         inner_dtype: DataType,
     ) -> Self {
         Self {
             len,
-            series_container,
+            series_container: Box::new(series_container),
             inner,
             lifetime: PhantomData,
             iter,
@@ -64,14 +63,26 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                         );
                     }
                 }
+                // The series is cloned, we make a new container.
+                if Arc::strong_count(&self.series_container.0) > 1 {
+                    let (s, ptr) = unsafe {
+                        unstable_series_container_and_ptr(
+                            self.series_container.name(),
+                            array_ref,
+                            self.series_container.dtype(),
+                        )
+                    };
+                    *self.series_container.as_mut() = s;
+                    self.inner = NonNull::new(ptr).unwrap();
+                } else {
+                    // update the inner state
+                    unsafe { *self.inner.as_mut() = array_ref };
 
-                // update the inner state
-                unsafe { *self.inner.as_mut() = array_ref };
-
-                // last iteration could have set the sorted flag (e.g. in compute_len)
-                self.series_container.clear_flags();
-                // make sure that the length is correct
-                self.series_container._get_inner_mut().compute_len();
+                    // last iteration could have set the sorted flag (e.g. in compute_len)
+                    self.series_container.clear_flags();
+                    // make sure that the length is correct
+                    self.series_container._get_inner_mut().compute_len();
+                }
 
                 // SAFETY:
                 // we cannot control the lifetime of an iterators `next` method.
@@ -145,21 +156,12 @@ impl ListChunked {
 
         // SAFETY:
         // inner type passed as physical type
-        let series_container = unsafe {
-            let mut s = Series::from_chunks_and_dtype_unchecked(
-                name,
-                vec![inner_values.clone()],
-                &iter_dtype,
-            );
-            s.clear_flags();
-            Box::pin(s)
-        };
-
-        let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+        let (s, ptr) =
+            unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
         AmortizedListIter::new(
             self.len(),
-            series_container,
+            s,
             NonNull::new(ptr).unwrap(),
             self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype.clone(),
