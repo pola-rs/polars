@@ -92,8 +92,7 @@ where
     let validity = first_n_valid_mask(non_null_count, out_len);
 
     let arr = PrimitiveArray::from_vec(vec).with_validity_typed(validity);
-    let ret = ChunkedArray::with_chunk_like(ca, arr);
-    ret
+    ChunkedArray::with_chunk_like(ca, arr)
 }
 
 fn top_k_binary_impl(
