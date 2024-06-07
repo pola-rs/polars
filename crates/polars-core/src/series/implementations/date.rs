@@ -325,11 +325,14 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av = AnyValue::from(self.median().map(|v| v as i64))
-            .cast(self.dtype())
-            .into_static()
-            .unwrap();
-        Ok(Scalar::new(self.dtype().clone(), av))
+        let av: AnyValue = self
+            .median()
+            .map(|v| (v * (MS_IN_DAY as f64)) as i64)
+            .into();
+        Ok(Scalar::new(
+            DataType::Datetime(TimeUnit::Milliseconds, None),
+            av,
+        ))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

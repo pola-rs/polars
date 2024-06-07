@@ -135,13 +135,19 @@ impl AExpr {
                     Median(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        float_type(&mut field);
+                        match field.dtype {
+                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            _ => float_type(&mut field),
+                        }
                         Ok(field)
                     },
                     Mean(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        float_type(&mut field);
+                        match field.dtype {
+                            Date => field.coerce(Datetime(TimeUnit::Milliseconds, None)),
+                            _ => float_type(&mut field),
+                        }
                         Ok(field)
                     },
                     Implode(expr) => {

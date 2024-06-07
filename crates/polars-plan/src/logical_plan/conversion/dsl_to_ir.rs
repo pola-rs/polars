@@ -471,16 +471,7 @@ pub fn to_alp_impl(
                             &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(
-                            |dt| {
-                                dt.is_numeric()
-                                    || matches!(
-                                        dt,
-                                        DataType::Boolean
-                                            | DataType::Duration(_)
-                                            | DataType::Datetime(_, _)
-                                            | DataType::Time
-                                    )
-                            },
+                            |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
                             |name| col(name).mean(),
                             &input_schema,
                         ),
@@ -500,16 +491,7 @@ pub fn to_alp_impl(
                             stats_helper(|dt| dt.is_ord(), |name| col(name).max(), &input_schema)
                         },
                         StatsFunction::Median => stats_helper(
-                            |dt| {
-                                dt.is_numeric()
-                                    || matches!(
-                                        dt,
-                                        DataType::Boolean
-                                            | DataType::Duration(_)
-                                            | DataType::Datetime(_, _)
-                                            | DataType::Time
-                                    )
-                            },
+                            |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
                             |name| col(name).median(),
                             &input_schema,
                         ),
