@@ -218,7 +218,7 @@ def test_joins_dispatch() -> None:
             "datetime": [13241324, 12341256, 12341234, 13241324],
         }
     ).with_columns(
-        [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
+        pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)
     )
 
     join_strategies: list[JoinStrategy] = ["left", "inner", "full"]

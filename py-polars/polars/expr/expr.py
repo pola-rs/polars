@@ -389,13 +389,11 @@ class Expr:
         function.
 
         >>> pl.DataFrame({"vals": ["a", "x", None, "a"]}).with_columns(
-        ...     [
-        ...         pl.col("vals").cast(pl.Categorical),
-        ...         pl.col("vals")
-        ...         .cast(pl.Categorical)
-        ...         .to_physical()
-        ...         .alias("vals_physical"),
-        ...     ]
+        ...     pl.col("vals").cast(pl.Categorical),
+        ...     pl.col("vals")
+        ...     .cast(pl.Categorical)
+        ...     .to_physical()
+        ...     .alias("vals_physical"),
         ... )
         shape: (4, 2)
         ┌──────┬───────────────┐
@@ -1726,10 +1724,8 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("a").cast(pl.Float64),
-        ...         pl.col("b").cast(pl.Int32),
-        ...     ]
+        ...     pl.col("a").cast(pl.Float64),
+        ...     pl.col("b").cast(pl.Int32),
         ... )
         shape: (3, 2)
         ┌─────┬─────┐

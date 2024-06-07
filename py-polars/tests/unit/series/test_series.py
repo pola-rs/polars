@@ -818,12 +818,10 @@ def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, None, 2, None]})
 
     out = df.with_columns(
-        [
-            pl.col("a").cast(pl.UInt8).alias("u8"),
-            pl.col("a").cast(pl.UInt16).alias("u16"),
-            pl.col("a").cast(pl.UInt32).alias("u32"),
-            pl.col("a").cast(pl.UInt64).alias("u64"),
-        ]
+        pl.col("a").cast(pl.UInt8).alias("u8"),
+        pl.col("a").cast(pl.UInt16).alias("u16"),
+        pl.col("a").cast(pl.UInt32).alias("u32"),
+        pl.col("a").cast(pl.UInt64).alias("u64"),
     ).fill_null(3)
 
     assert out.to_dict(as_series=False) == {
@@ -1153,11 +1151,9 @@ def test_bitwise() -> None:
 
     df = pl.DataFrame([a, b])
     out = df.select(
-        [
-            (pl.col("a") & pl.col("b")).alias("and"),
-            (pl.col("a") | pl.col("b")).alias("or"),
-            (pl.col("a") ^ pl.col("b")).alias("xor"),
-        ]
+        (pl.col("a") & pl.col("b")).alias("and"),
+        (pl.col("a") | pl.col("b")).alias("or"),
+        (pl.col("a") ^ pl.col("b")).alias("xor"),
     )
     assert_series_equal(out["and"], pl.Series("and", [1, 0, 1]))
     assert_series_equal(out["or"], pl.Series("or", [3, 6, 7]))

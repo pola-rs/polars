@@ -47,10 +47,8 @@ def test_list_arr_get() -> None:
         pl.DataFrame(
             {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
         ).with_columns(
-            [
-                pl.col("a").list.get(i, null_on_oob=False).alias(f"get_{i}")
-                for i in range(4)
-            ]
+            pl.col("a").list.get(i, null_on_oob=False).alias(f"get_{i}")
+            for i in range(4)
         )
 
     # get by indexes where some are out of bounds
@@ -115,7 +113,7 @@ def test_list_arr_get_null_on_oob() -> None:
     assert pl.DataFrame(
         {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
     ).with_columns(
-        [pl.col("a").list.get(i, null_on_oob=True).alias(f"get_{i}") for i in range(4)]
+        pl.col("a").list.get(i, null_on_oob=True).alias(f"get_{i}") for i in range(4)
     ).to_dict(as_series=False) == {
         "a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]],
         "get_0": [1, 2, 3, 4, 7, None],
@@ -224,15 +222,13 @@ def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
 
     out = df.select(
-        [
-            pl.col("cars").list.first().alias("cars_first"),
-            pl.when(pl.col("cars").list.first() == 2)
-            .then(1)
-            .when(pl.col("cars").list.contains(2))
-            .then(2)
-            .otherwise(3)
-            .alias("cars_literal"),
-        ]
+        pl.col("cars").list.first().alias("cars_first"),
+        pl.when(pl.col("cars").list.first() == 2)
+        .then(1)
+        .when(pl.col("cars").list.contains(2))
+        .then(2)
+        .otherwise(3)
+        .alias("cars_literal"),
     )
     expected = pl.DataFrame(
         {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]},
@@ -356,12 +352,10 @@ def test_list_eval_dtype_inference() -> None:
     assert grades.with_columns(
         pl.concat_list(pl.all().exclude("student")).alias("all_grades")
     ).select(
-        [
-            pl.col("all_grades")
-            .list.eval(rank_pct, parallel=True)
-            .alias("grades_rank")
-            .list.first()
-        ]
+        pl.col("all_grades")
+        .list.eval(rank_pct, parallel=True)
+        .alias("grades_rank")
+        .list.first()
     ).to_series().to_list() == [
         0.3333333333333333,
         0.6666666666666666,
@@ -425,18 +419,12 @@ def test_arr_contains_categorical() -> None:
 
 def test_list_eval_type_coercion() -> None:
     last_non_null_value = pl.element().fill_null(3).last()
-    df = pl.DataFrame(
-        {
-            "array_cols": [[1, None]],
-        }
-    )
+    df = pl.DataFrame({"array_cols": [[1, None]]})
 
     assert df.select(
-        [
-            pl.col("array_cols")
-            .list.eval(last_non_null_value, parallel=False)
-            .alias("col_last")
-        ]
+        pl.col("array_cols")
+        .list.eval(last_non_null_value, parallel=False)
+        .alias("col_last")
     ).to_dict(as_series=False) == {"col_last": [[3]]}
 
 

@@ -65,11 +65,7 @@ def test_overflow_uint16_agg_mean() -> None:
                 "col3": [64 for _ in range(1025)],
             }
         )
-        .with_columns(
-            [
-                pl.col("col3").cast(pl.UInt16),
-            ]
-        )
+        .with_columns(pl.col("col3").cast(pl.UInt16))
         .group_by(["col1"])
         .agg(pl.col("col3").mean())
         .to_dict(as_series=False)

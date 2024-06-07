@@ -104,13 +104,11 @@ def test_struct_hashes() -> None:
 def test_struct_unnesting() -> None:
     df_base = pl.DataFrame({"a": [1, 2]})
     df = df_base.select(
-        [
-            pl.all().alias("a_original"),
-            pl.col("a")
-            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
-            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
-            .alias("foo"),
-        ]
+        pl.all().alias("a_original"),
+        pl.col("a")
+        .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+        .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+        .alias("foo"),
     )
     expected = pl.DataFrame(
         {
@@ -130,13 +128,11 @@ def test_struct_unnesting() -> None:
     out = (
         df_base.lazy()
         .select(
-            [
-                pl.all().alias("a_original"),
-                pl.col("a")
-                .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
-                .struct.rename_fields(["a", "a_squared", "mod2eq0"])
-                .alias("foo"),
-            ]
+            pl.all().alias("a_original"),
+            pl.col("a")
+            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+            .alias("foo"),
         )
         .unnest("foo")
         .collect()
@@ -278,7 +274,7 @@ def test_list_to_struct() -> None:
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").list.to_struct(fields=lambda idx: f"col_name_{idx}")]
+        pl.col("a").list.to_struct(fields=lambda idx: f"col_name_{idx}")
     ).to_series().to_list() == [
         {"col_name_0": 1, "col_name_1": 2},
         {"col_name_0": 1, "col_name_1": 2},
@@ -286,7 +282,7 @@ def test_list_to_struct() -> None:
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").list.to_struct(n_field_strategy="max_width")]
+        pl.col("a").list.to_struct(n_field_strategy="max_width")
     ).to_series().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
@@ -317,10 +313,8 @@ def test_struct_list_head_tail() -> None:
             ]
         }
     ).with_columns(
-        [
-            pl.col("list_of_struct").list.head(1).alias("head"),
-            pl.col("list_of_struct").list.tail(1).alias("tail"),
-        ]
+        pl.col("list_of_struct").list.head(1).alias("head"),
+        pl.col("list_of_struct").list.tail(1).alias("tail"),
     ).to_dict(as_series=False) == {
         "list_of_struct": [
             [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
@@ -401,9 +395,9 @@ def test_struct_concat_list() -> None:
                 [{"a": 6, "b": 7}],
             ],
         }
-    ).with_columns(
-        [pl.col("list_struct1").list.concat("list_struct2").alias("result")]
-    )["result"].to_list() == [
+    ).with_columns(pl.col("list_struct1").list.concat("list_struct2").alias("result"))[
+        "result"
+    ].to_list() == [
         [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
         [{"a": 1, "b": 2}, {"a": 6, "b": 7}],
     ]
@@ -589,7 +583,7 @@ def test_struct_getitem() -> None:
     assert pl.Series([{"a": 1, "b": 2}]).struct[1].name == "b"
     assert pl.Series([{"a": 1, "b": 2}]).struct[-1].name == "b"
     assert pl.Series([{"a": 1, "b": 2}]).to_frame().select(
-        [pl.col("").struct[0]]
+        pl.col("").struct[0]
     ).to_dict(as_series=False) == {"a": [1]}
 
 

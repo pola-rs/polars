@@ -401,20 +401,19 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
 
     for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
         out = df.sort("fruits").select(
-            [
-                pl.col("B")
-                .reverse()
-                .gather(index)  # type: ignore[arg-type]
-                .over("fruits", mapping_strategy="join"),
-                "fruits",
-            ]
+            pl.col("B")
+            .reverse()
+            .gather(index)  # type: ignore[arg-type]
+            .over("fruits", mapping_strategy="join"),
+            "fruits",
         )
 
         assert out[0, "B"].to_list() == [2, 3]
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().get(pl.lit(1)).over("fruits"), "fruits"]
+        pl.col("B").reverse().get(pl.lit(1)).over("fruits"),
+        "fruits",
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -1755,10 +1754,8 @@ def test_fill_null() -> None:
     )
 
     assert df.select(
-        [
-            pl.all().forward_fill().name.suffix("_forward"),
-            pl.all().backward_fill().name.suffix("_backward"),
-        ]
+        pl.all().forward_fill().name.suffix("_forward"),
+        pl.all().backward_fill().name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "c_forward": [
             ["Apple", "Orange"],
@@ -2082,10 +2079,8 @@ def test_fill_null_limits() -> None:
             "c": [True, None, None, None, False, True, None, None, None, False],
         }
     ).select(
-        [
-            pl.all().fill_null(strategy="forward", limit=2),
-            pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
-        ]
+        pl.all().fill_null(strategy="forward", limit=2),
+        pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
@@ -2147,11 +2142,9 @@ def test_selection_regex_and_multicol() -> None:
 
     # Selection only
     test_df.select(
-        [
-            pl.col(["a", "b", "c"]).name.suffix("_list"),
-            pl.all().exclude("foo").name.suffix("_wild"),
-            pl.col("^\\w$").name.suffix("_regex"),
-        ]
+        pl.col(["a", "b", "c"]).name.suffix("_list"),
+        pl.all().exclude("foo").name.suffix("_wild"),
+        pl.col("^\\w$").name.suffix("_regex"),
     )
 
     # Multi * Single
@@ -2615,9 +2608,7 @@ def test_format_empty_df() -> None:
             pl.Series("val2", [], dtype=pl.Categorical),
         ]
     ).select(
-        [
-            pl.format("{}:{}", pl.col("val1"), pl.col("val2")).alias("cat"),
-        ]
+        pl.format("{}:{}", pl.col("val1"), pl.col("val2")).alias("cat"),
     )
     assert df.shape == (0, 1)
     assert df.dtypes == [pl.String]
@@ -2637,7 +2628,7 @@ def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [1, 2, 3]})
         .with_columns(
-            [pl.col("col1").cumulative_eval(pl.element().map_batches(lambda x: 0))]
+            pl.col("col1").cumulative_eval(pl.element().map_batches(lambda x: 0))
         )
         .to_dict(as_series=False)
     ) == {"col1": [0, 0, 0]}
@@ -2728,12 +2719,10 @@ def test_window_deadlock() -> None:
         }
     )
 
-    df = df.select(
-        [
-            pl.col("*"),  # select all
-            pl.col("random").sum().over("groups").alias("sum[random]/groups"),
-            pl.col("random").implode().over("names").alias("random/name"),
-        ]
+    _df = df.select(
+        pl.col("*"),  # select all
+        pl.col("random").sum().over("groups").alias("sum[random]/groups"),
+        pl.col("random").implode().over("names").alias("random/name"),
     )
 
 

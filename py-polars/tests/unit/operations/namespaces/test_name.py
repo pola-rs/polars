@@ -53,12 +53,10 @@ def test_name_update_all() -> None:
     )
     assert (
         df.select(
-            [
-                pl.col("col2").append(pl.col("other")),
-                pl.col("col1").append(pl.col("other")).name.keep(),
-                pl.col("col1").append(pl.col("other")).name.prefix("prefix_"),
-                pl.col("col1").append(pl.col("other")).name.suffix("_suffix"),
-            ]
+            pl.col("col2").append(pl.col("other")),
+            pl.col("col1").append(pl.col("other")).name.keep(),
+            pl.col("col1").append(pl.col("other")).name.prefix("prefix_"),
+            pl.col("col1").append(pl.col("other")).name.suffix("_suffix"),
         )
     ).schema == OrderedDict(
         [

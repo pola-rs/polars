@@ -460,16 +460,11 @@ def test_arg_sort_sort_by_groups_update__4360() -> None:
     out = df.with_columns(
         pl.col("col2").arg_sort().over("group").alias("col2_arg_sort")
     ).with_columns(
-        [
-            pl.col("col1")
-            .sort_by(pl.col("col2_arg_sort"))
-            .over("group")
-            .alias("result_a"),
-            pl.col("col1")
-            .sort_by(pl.col("col2").arg_sort())
-            .over("group")
-            .alias("result_b"),
-        ]
+        pl.col("col1").sort_by(pl.col("col2_arg_sort")).over("group").alias("result_a"),
+        pl.col("col1")
+        .sort_by(pl.col("col2").arg_sort())
+        .over("group")
+        .alias("result_b"),
     )
 
     assert_series_equal(out["result_a"], out["result_b"], check_names=False)

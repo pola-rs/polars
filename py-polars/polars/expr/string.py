@@ -1767,12 +1767,10 @@ class ExprStringNameSpace:
         each part to a new column.
 
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("x")
-        ...         .str.split_exact("_", 1)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
+        ...     pl.col("x")
+        ...     .str.split_exact("_", 1)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
         ... ).unnest("fields")
         shape: (4, 3)
         ┌──────┬────────────┬─────────────┐
@@ -1832,12 +1830,10 @@ class ExprStringNameSpace:
         each part to a new column.
 
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("s")
-        ...         .str.splitn(" ", 2)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
+        ...     pl.col("s")
+        ...     .str.splitn(" ", 2)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
         ... ).unnest("fields")
         shape: (4, 3)
         ┌─────────────┬────────────┬─────────────┐

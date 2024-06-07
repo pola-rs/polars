@@ -72,11 +72,9 @@ def test_issue_2529() -> None:
     )
 
     out = df.select(
-        [
-            "*",
-            stdize_out("val1", "cat").alias("out1"),
-            stdize_out("val2", "cat").alias("out2"),
-        ]
+        "*",
+        stdize_out("val1", "cat").alias("out1"),
+        stdize_out("val2", "cat").alias("out2"),
     )
     assert out["out1"].to_list() == out["out2"].to_list()
 
@@ -91,18 +89,16 @@ def test_window_function_cache() -> None:
             "values": range(5),
         }
     ).with_columns(
-        [
-            pl.col("values")
-            .over("groups", mapping_strategy="join")
-            .alias("values_list"),  # aggregation to list + join
-            pl.col("values")
-            .over("groups", mapping_strategy="explode")
-            .alias("values_flat"),  # aggregation to list + explode and concat back
-            pl.col("values")
-            .reverse()
-            .over("groups", mapping_strategy="explode")
-            .alias("values_rev"),  # use flatten to reverse within a group
-        ]
+        pl.col("values")
+        .over("groups", mapping_strategy="join")
+        .alias("values_list"),  # aggregation to list + join
+        pl.col("values")
+        .over("groups", mapping_strategy="explode")
+        .alias("values_flat"),  # aggregation to list + explode and concat back
+        pl.col("values")
+        .reverse()
+        .over("groups", mapping_strategy="explode")
+        .alias("values_rev"),  # use flatten to reverse within a group
     )
 
     assert out["values_list"].to_list() == [
@@ -213,13 +209,8 @@ def test_window_cached_keys_sorted_update_4183() -> None:
         }
     )
     result = df.sort(by=["customer_ID", "date"]).select(
-        [
-            pl.count("date").over(pl.col("customer_ID")).alias("count"),
-            pl.col("date")
-            .rank(method="ordinal")
-            .over(pl.col("customer_ID"))
-            .alias("rank"),
-        ]
+        pl.count("date").over(pl.col("customer_ID")).alias("count"),
+        pl.col("date").rank(method="ordinal").over(pl.col("customer_ID")).alias("rank"),
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
@@ -334,14 +325,8 @@ def test_window_function_implode_contention_8536() -> None:
     )
 
     assert df.select(
-        [
-            (pl.lit("LE").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
-            | (
-                pl.lit("RM").is_in(
-                    pl.col("memo").over("policy", mapping_strategy="join")
-                )
-            )
-        ]
+        (pl.lit("LE").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
+        | (pl.lit("RM").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
     ).to_series().to_list() == [
         True,
         True,
@@ -439,10 +424,8 @@ def test_window_10417() -> None:
     df = pl.DataFrame({"a": [1], "b": [1.2], "c": [2.1]})
 
     assert df.lazy().with_columns(
-        [
-            pl.col("b") - pl.col("b").mean().over("a"),
-            pl.col("c") - pl.col("c").mean().over("a"),
-        ]
+        pl.col("b") - pl.col("b").mean().over("a"),
+        pl.col("c") - pl.col("c").mean().over("a"),
     ).collect().to_dict(as_series=False) == {"a": [1], "b": [0.0], "c": [0.0]}
 
 

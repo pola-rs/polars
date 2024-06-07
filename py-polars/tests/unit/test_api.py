@@ -61,12 +61,10 @@ def test_custom_expr_namespace() -> None:
 
     df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     assert df.select(
-        [
-            pl.col("n"),
-            pl.col("n").power.next(p=2).alias("next_pow2"),  # type: ignore[attr-defined]
-            pl.col("n").power.previous(p=2).alias("prev_pow2"),  # type: ignore[attr-defined]
-            pl.col("n").power.nearest(p=2).alias("nearest_pow2"),  # type: ignore[attr-defined]
-        ]
+        pl.col("n"),
+        pl.col("n").power.next(p=2).alias("next_pow2"),  # type: ignore[attr-defined]
+        pl.col("n").power.previous(p=2).alias("prev_pow2"),  # type: ignore[attr-defined]
+        pl.col("n").power.nearest(p=2).alias("nearest_pow2"),  # type: ignore[attr-defined]
     ).rows() == [
         (1.4, 2, 1, 1),
         (24.3, 32, 16, 32),

@@ -211,9 +211,7 @@ def test_ewm_with_multiple_chunks() -> None:
         ],
         schema=["a", "b", "c"],
     ).with_columns(
-        [
-            pl.col(pl.Float64).log().diff().name.prefix("ld_"),
-        ]
+        pl.col(pl.Float64).log().diff().name.prefix("ld_"),
     )
     assert df0.n_chunks() == 1
 

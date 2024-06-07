@@ -448,10 +448,8 @@ def test_str_to_integer_base_literal() -> None:
 
     with pytest.raises(pl.ComputeError):
         df.with_columns(
-            [
-                pl.col("bin").str.to_integer(base=2),
-                pl.col("hex").str.to_integer(base=16),
-            ]
+            pl.col("bin").str.to_integer(base=2),
+            pl.col("hex").str.to_integer(base=16),
         )
 
 
@@ -464,11 +462,9 @@ def test_str_strip_chars_expr() -> None:
     )
 
     all_expr = df.select(
-        [
-            pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
-            pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
-            pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
-        ]
+        pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
+        pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
+        pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
     )
 
     expected = pl.DataFrame(
@@ -841,14 +837,12 @@ def test_contains_expr() -> None:
     )
 
     assert df.select(
-        [
-            pl.col("text")
-            .str.contains(pl.col("pattern"), literal=False, strict=False)
-            .alias("contains"),
-            pl.col("text")
-            .str.contains(pl.col("pattern"), literal=True)
-            .alias("contains_lit"),
-        ]
+        pl.col("text")
+        .str.contains(pl.col("pattern"), literal=False, strict=False)
+        .alias("contains"),
+        pl.col("text")
+        .str.contains(pl.col("pattern"), literal=True)
+        .alias("contains_lit"),
     ).to_dict(as_series=False) == {
         "contains": [True, True, False, None, None, None],
         "contains_lit": [False, True, False, None, None, False],
@@ -1107,14 +1101,12 @@ def test_starts_ends_with() -> None:
     )
 
     assert df.select(
-        [
-            pl.col("a").str.ends_with("pop").alias("ends_pop"),
-            pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
-            pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
-            pl.col("a").str.starts_with("ham").alias("starts_ham"),
-            pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
-            pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
-        ]
+        pl.col("a").str.ends_with("pop").alias("ends_pop"),
+        pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
+        pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
+        pl.col("a").str.starts_with("ham").alias("starts_ham"),
+        pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
+        pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
     ).to_dict(as_series=False) == {
         "ends_pop": [False, False, True, None],
         "ends_None": [None, None, None, None],

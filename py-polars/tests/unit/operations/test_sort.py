@@ -175,10 +175,8 @@ def test_expr_arg_sort_nulls_last(
 def test_arg_sort_window_functions() -> None:
     df = pl.DataFrame({"Id": [1, 1, 2, 2, 3, 3], "Age": [1, 2, 3, 4, 5, 6]})
     out = df.select(
-        [
-            pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
-            pl.arg_sort_by("Age").over("Id").alias("arg_sort_by"),
-        ]
+        pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
+        pl.arg_sort_by("Age").over("Id").alias("arg_sort_by"),
     )
     assert (
         out["arg_sort"].to_list() == out["arg_sort_by"].to_list() == [0, 1, 0, 1, 0, 1]
@@ -216,10 +214,8 @@ def test_sort_aggregation_fast_paths() -> None:
     )
 
     expected = df.select(
-        [
-            pl.all().max().name.suffix("_max"),
-            pl.all().min().name.suffix("_min"),
-        ]
+        pl.all().max().name.suffix("_max"),
+        pl.all().min().name.suffix("_min"),
     )
 
     assert expected.to_dict(as_series=False) == {
@@ -238,16 +234,14 @@ def test_sort_aggregation_fast_paths() -> None:
     for descending in [True, False]:
         for null_last in [True, False]:
             out = df.select(
-                [
-                    pl.all()
-                    .sort(descending=descending, nulls_last=null_last)
-                    .max()
-                    .name.suffix("_max"),
-                    pl.all()
-                    .sort(descending=descending, nulls_last=null_last)
-                    .min()
-                    .name.suffix("_min"),
-                ]
+                pl.all()
+                .sort(descending=descending, nulls_last=null_last)
+                .max()
+                .name.suffix("_max"),
+                pl.all()
+                .sort(descending=descending, nulls_last=null_last)
+                .min()
+                .name.suffix("_min"),
             )
             assert_frame_equal(out, expected)
 
@@ -331,10 +325,8 @@ def test_arg_sort_rank_nans() -> None:
             }
         )
         .with_columns(
-            [
-                pl.col("val").rank().alias("rank"),
-                pl.col("val").arg_sort().alias("arg_sort"),
-            ]
+            pl.col("val").rank().alias("rank"),
+            pl.col("val").arg_sort().alias("arg_sort"),
         )
         .select(["rank", "arg_sort"])
     ).to_dict(as_series=False) == {"rank": [1.0, 2.0], "arg_sort": [0, 1]}
@@ -443,10 +435,8 @@ def test_sort_by_in_over_5499() -> None:
         }
     )
     assert df.select(
-        [
-            pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
-            pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
-        ]
+        pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
+        pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
     ).to_dict(as_series=False) == {
         "sorted_1": [0, 2, 1, 4, 5, 3],
         "sorted_2": [None, 1, 0, 3, 4, None],

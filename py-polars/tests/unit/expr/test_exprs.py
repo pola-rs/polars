@@ -278,11 +278,9 @@ def test_power_by_expression() -> None:
     out = pl.DataFrame(
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
     ).select(
-        [
-            pl.col("a").pow(pl.col("b")).alias("pow_expr"),
-            (pl.col("a") ** pl.col("b")).alias("pow_op"),
-            (2 ** pl.col("b")).alias("pow_op_left"),
-        ]
+        pl.col("a").pow(pl.col("b")).alias("pow_expr"),
+        (pl.col("a") ** pl.col("b")).alias("pow_op"),
+        (2 ** pl.col("b")).alias("pow_op_left"),
     )
 
     for pow_col in ("pow_expr", "pow_op"):

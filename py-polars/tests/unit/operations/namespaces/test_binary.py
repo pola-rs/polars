@@ -58,11 +58,9 @@ def test_contains_with_expr() -> None:
     )
 
     assert df.select(
-        [
-            pl.col("bin").bin.contains(pl.col("lit1")).alias("contains_1"),
-            pl.col("bin").bin.contains(pl.col("lit2")).alias("contains_2"),
-            pl.col("bin").bin.contains(pl.lit(None)).alias("contains_3"),
-        ]
+        pl.col("bin").bin.contains(pl.col("lit1")).alias("contains_1"),
+        pl.col("bin").bin.contains(pl.col("lit2")).alias("contains_2"),
+        pl.col("bin").bin.contains(pl.lit(None)).alias("contains_3"),
     ).to_dict(as_series=False) == {
         "contains_1": [True, True, False, None],
         "contains_2": [None, True, False, None],
@@ -78,14 +76,12 @@ def test_starts_ends_with() -> None:
             "start": [b"ha", b"nga", None, b"anything"],
         }
     ).select(
-        [
-            pl.col("a").bin.ends_with(b"pop").alias("end_lit"),
-            pl.col("a").bin.ends_with(pl.lit(None)).alias("end_none"),
-            pl.col("a").bin.ends_with(pl.col("end")).alias("end_expr"),
-            pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
-            pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
-            pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-        ]
+        pl.col("a").bin.ends_with(b"pop").alias("end_lit"),
+        pl.col("a").bin.ends_with(pl.lit(None)).alias("end_none"),
+        pl.col("a").bin.ends_with(pl.col("end")).alias("end_expr"),
+        pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
+        pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
+        pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
     ).to_dict(as_series=False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],

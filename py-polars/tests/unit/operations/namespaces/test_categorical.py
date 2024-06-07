@@ -6,9 +6,7 @@ def test_categorical_lexical_sort() -> None:
     df = pl.DataFrame(
         {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
     ).with_columns(
-        [
-            pl.col("cats").cast(pl.Categorical("lexical")),
-        ]
+        pl.col("cats").cast(pl.Categorical("lexical")),
     )
 
     out = df.sort(["cats"])
