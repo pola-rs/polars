@@ -635,22 +635,24 @@ class DataFrame:
 
         Emphasize the site_id as row names:
 
-        >>> df.style.tab_stub(rowname_col="site_id")    # doctest: +SKIP
+        >>> df.style.tab_stub(rowname_col="site_id")  # doctest: +SKIP
 
         Fill the background for the highest measure_a value row:
 
         >>> df.style.tab_style(
         ...     style.fill("yellow"),
         ...     loc.body(rows=pl.col("measure_a") == pl.col("measure_a").max())
-        ... )    # doctest: +SKIP
+        ... )  # doctest: +SKIP
 
         Put a spanner (high-level label) over measure columns:
 
-        >>> df.style.tab_spanner("Measures", cs.starts_with("measure")) # doctest: +SKIP
+        >>> df.style.tab_spanner(
+        ...     "Measures", cs.starts_with("measure")
+        ... )  # doctest: +SKIP
 
         Format measure_b values to two decimal places:
 
-        >>> df.style.fmt_number("measure_b", decimals=2)    # doctest: +SKIP
+        >>> df.style.fmt_number("measure_b", decimals=2)  # doctest: +SKIP
 
         """
         if not _GREAT_TABLES_AVAILABLE:
