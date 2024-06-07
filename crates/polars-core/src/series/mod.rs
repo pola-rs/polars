@@ -26,6 +26,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
@@ -361,8 +362,12 @@ impl Series {
         self._get_inner_mut().as_single_ptr()
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
+
+    /// Cast `[Series]` to another `[DataType]`.
+    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
         let do_clone = match dtype {
@@ -428,12 +433,30 @@ impl Series {
             Some(ref dtype) => dtype,
         };
 
-        let ret = self.0.cast(dtype);
+        // Always allow casting all nulls to other all nulls.
         let len = self.len();
         if self.null_count() == len {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
-        ret
+
+        let new_options = match options {
+            // Strictness is handled on this level to improve error messages.
+            CastOptions::Strict => CastOptions::NonStrict,
+            opt => opt,
+        };
+
+        let ret = self.0.cast(dtype, new_options);
+
+        match options {
+            CastOptions::NonStrict | CastOptions::Overflowing => ret,
+            CastOptions::Strict => {
+                let ret = ret?;
+                if self.null_count() != ret.null_count() {
+                    handle_casting_failures(self, &ret)?;
+                }
+                Ok(ret)
+            },
+        }
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.
@@ -452,7 +475,7 @@ impl Series {
                 })
             },
             DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
-            _ => self.cast(dtype),
+            _ => self.cast_with_options(dtype, CastOptions::Overflowing),
         }
     }
 
@@ -460,7 +483,7 @@ impl Series {
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => Ok(self.clone()),
-            _ => self.cast(&DataType::Float64),
+            _ => self.cast_with_options(&DataType::Float64, CastOptions::Overflowing),
         }
     }
 
@@ -753,11 +776,7 @@ impl Series {
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let s = self.cast(dtype)?;
-        if self.null_count() != s.null_count() {
-            handle_casting_failures(self, &s)?;
-        }
-        Ok(s)
+        self.cast_with_options(dtype, CastOptions::Strict)
     }
 
     #[cfg(feature = "dtype-time")]

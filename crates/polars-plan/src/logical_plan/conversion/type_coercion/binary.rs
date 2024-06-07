@@ -97,7 +97,7 @@ fn process_list_arithmetic(
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
                     data_type: *inner.clone(),
-                    strict: false,
+                    options: CastOptions::NonStrict,
                 });
 
                 Ok(Some(AExpr::BinaryExpr {
@@ -114,7 +114,7 @@ fn process_list_arithmetic(
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
                     data_type: *inner.clone(),
-                    strict: false,
+                    options: CastOptions::NonStrict,
                 });
 
                 Ok(Some(AExpr::BinaryExpr {
@@ -147,7 +147,7 @@ fn process_struct_numeric_arithmetic(
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
                     data_type: DataType::Struct(vec![first.clone()]),
-                    strict: false,
+                    options: CastOptions::NonStrict,
                 });
                 Ok(Some(AExpr::BinaryExpr {
                     left: node_left,
@@ -163,7 +163,7 @@ fn process_struct_numeric_arithmetic(
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
                     data_type: DataType::Struct(vec![first.clone()]),
-                    strict: false,
+                    options: CastOptions::NonStrict,
                 });
 
                 Ok(Some(AExpr::BinaryExpr {
@@ -337,7 +337,7 @@ pub(super) fn process_binary(
         expr_arena.add(AExpr::Cast {
             expr: node_left,
             data_type: st.clone(),
-            strict: false,
+            options: CastOptions::NonStrict,
         })
     } else {
         node_left
@@ -346,7 +346,7 @@ pub(super) fn process_binary(
         expr_arena.add(AExpr::Cast {
             expr: node_right,
             data_type: st,
-            strict: false,
+            options: CastOptions::NonStrict,
         })
     } else {
         node_right

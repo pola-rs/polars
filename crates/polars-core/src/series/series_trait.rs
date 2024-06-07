@@ -4,6 +4,7 @@ use std::borrow::Cow;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -321,7 +322,7 @@ pub trait SeriesTrait:
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
-    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series>;
+    fn cast(&self, _data_type: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.

@@ -206,7 +206,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         match data_type {
             DataType::String => Ok(self
                 .0
@@ -216,7 +216,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .unwrap()
                 .to_string("%T")
                 .into_series()),
-            _ => self.0.cast(data_type),
+            _ => self.0.cast_with_options(data_type, cast_options),
         }
     }
 

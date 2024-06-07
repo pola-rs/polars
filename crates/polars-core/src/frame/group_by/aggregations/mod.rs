@@ -23,6 +23,7 @@ use polars_utils::idx_vec::IdxVec;
 use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use rayon::prelude::*;
 
+use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
 use crate::frame::group_by::GroupsIdx;
@@ -376,7 +377,9 @@ where
         GroupsProxy::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
-                let s = ca.cast(&K::get_dtype()).unwrap();
+                let s = ca
+                    .cast_with_options(&K::get_dtype(), CastOptions::Overflowing)
+                    .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
@@ -987,7 +990,9 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self
+                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+                        .unwrap();
                     ca.agg_mean(groups)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
@@ -1029,7 +1034,9 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self
+                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+                        .unwrap();
                     ca.agg_var(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
@@ -1077,7 +1084,9 @@ where
                 ..
             } => {
                 if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
+                    let ca = self
+                        .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+                        .unwrap();
                     ca.agg_std(groups, ddof)
                 } else {
                     _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {

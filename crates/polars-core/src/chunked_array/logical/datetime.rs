@@ -28,7 +28,11 @@ impl LogicalType for DatetimeChunked {
             .as_datetime(self.time_unit(), self.time_zone())
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
         use DataType::*;
         use TimeUnit::*;
         let out = match dtype {
@@ -43,7 +47,7 @@ impl LogicalType for DatetimeChunked {
                     (Nanoseconds, Milliseconds) => (None, Some(1_000_000i64)),
                     (Nanoseconds, Microseconds) => (None, Some(1_000i64)),
                     (Microseconds, Milliseconds) => (None, Some(1_000i64)),
-                    _ => return self.0.cast(dtype),
+                    _ => return self.0.cast_with_options(dtype, cast_options),
                 };
                 let result = match multiplier {
                     // scale to higher precision (eg: ms → us, ms → ns, us → ns)
@@ -68,7 +72,7 @@ impl LogicalType for DatetimeChunked {
                     let mut dt = self
                         .0
                         .apply_values(|v| v.div_euclid(tu_in_day))
-                        .cast(&Int32)
+                        .cast_with_options(&Int32, cast_options)
                         .unwrap()
                         .into_date()
                         .into_series();
@@ -97,7 +101,7 @@ impl LogicalType for DatetimeChunked {
                     .into_time()
                     .into_series());
             },
-            dt if dt.is_numeric() => return self.0.cast(dtype),
+            dt if dt.is_numeric() => return self.0.cast_with_options(dtype, cast_options),
             dt => {
                 polars_bail!(
                     InvalidOperation:

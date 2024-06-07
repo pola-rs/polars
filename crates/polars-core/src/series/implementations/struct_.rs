@@ -218,8 +218,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .into_series()
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        self.0.cast(dtype)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

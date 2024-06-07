@@ -312,7 +312,12 @@ impl StructChunked {
         ))
     }
 
-    unsafe fn cast_impl(&self, dtype: &DataType, unchecked: bool) -> PolarsResult<Series> {
+    unsafe fn cast_impl(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+        unchecked: bool,
+    ) -> PolarsResult<Series> {
         match dtype {
             DataType::Struct(dtype_fields) => {
                 let map = BTreeMap::from_iter(self.fields().iter().map(|s| (s.name(), s)));
@@ -324,7 +329,7 @@ impl StructChunked {
                             if unchecked {
                                 s.cast_unchecked(&new_field.dtype)
                             } else {
-                                s.cast(&new_field.dtype)
+                                s.cast_with_options(&new_field.dtype, cast_options)
                             }
                         },
                         None => Ok(Series::full_null(
@@ -398,7 +403,7 @@ impl StructChunked {
                         if unchecked {
                             s.cast_unchecked(dtype)
                         } else {
-                            s.cast(dtype)
+                            s.cast_with_options(dtype, cast_options)
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
@@ -411,7 +416,7 @@ impl StructChunked {
         if dtype == self.dtype() {
             return Ok(self.clone().into_series());
         }
-        self.cast_impl(dtype, true)
+        self.cast_impl(dtype, CastOptions::Overflowing, true)
     }
 
     pub fn rows_encode(&self) -> PolarsResult<BinaryOffsetChunked> {
@@ -450,8 +455,12 @@ impl LogicalType for StructChunked {
     }
 
     // in case of a struct, a cast will coerce the inner types
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        unsafe { self.cast_impl(dtype, false) }
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
+        unsafe { self.cast_impl(dtype, cast_options, false) }
     }
 }
 

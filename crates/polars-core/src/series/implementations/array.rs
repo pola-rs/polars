@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use super::{private, MetadataFlags};
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
@@ -140,8 +141,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

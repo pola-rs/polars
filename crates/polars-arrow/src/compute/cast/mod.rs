@@ -33,7 +33,7 @@ use crate::temporal_conversions::utf8view_to_timestamp;
 
 /// options defining how Cast kernels behave
 #[derive(Clone, Copy, Debug, Default)]
-pub struct CastOptions {
+pub struct CastOptionsImpl {
     /// default to false
     /// whether an overflowing cast should be converted to `None` (default), or be wrapped (i.e. `256i16 as u8 = 0` vectorized).
     /// Settings this to `true` is 5-6x faster for numeric types.
@@ -43,7 +43,7 @@ pub struct CastOptions {
     pub partial: bool,
 }
 
-impl CastOptions {
+impl CastOptionsImpl {
     pub fn unchecked() -> Self {
         Self {
             wrapped: true,
@@ -52,7 +52,7 @@ impl CastOptions {
     }
 }
 
-impl CastOptions {
+impl CastOptionsImpl {
     fn with_wrapped(&self, v: bool) -> Self {
         let mut option = *self;
         option.wrapped = v;
@@ -82,7 +82,7 @@ macro_rules! primitive_dyn {
 fn cast_struct(
     array: &StructArray,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<StructArray> {
     let values = array.values();
     let fields = StructArray::get_fields(to_type);
@@ -102,7 +102,7 @@ fn cast_struct(
 fn cast_list<O: Offset>(
     array: &ListArray<O>,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<ListArray<O>> {
     let values = array.values();
     let new_values = cast(
@@ -144,7 +144,7 @@ fn cast_large_to_list(array: &ListArray<i64>, to_type: &ArrowDataType) -> ListAr
 fn cast_fixed_size_list_to_list<O: Offset>(
     fixed: &FixedSizeListArray,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<ListArray<O>> {
     let new_values = cast(
         fixed.values().as_ref(),
@@ -170,7 +170,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     list: &ListArray<O>,
     inner: &Field,
     size: usize,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<FixedSizeListArray> {
     let null_cnt = list.null_count();
     let new_values = if null_cnt == 0 {
@@ -245,7 +245,7 @@ pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<
 }
 
 pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
-    cast(array, to_type, CastOptions::unchecked())
+    cast(array, to_type, CastOptionsImpl::unchecked())
 }
 
 /// Cast `array` to the provided data type and return a new [`Array`] with
@@ -276,7 +276,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 pub fn cast(
     array: &dyn Array,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     use ArrowDataType::*;
     let from_type = array.data_type();
@@ -760,7 +760,7 @@ pub fn cast(
 fn cast_to_dictionary<K: DictionaryKey>(
     array: &dyn Array,
     dict_value_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();

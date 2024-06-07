@@ -145,11 +145,11 @@ fn to_aexpr_impl(expr: Expr, arena: &mut Arena<AExpr>, state: &mut ConversionSta
         Expr::Cast {
             expr,
             data_type,
-            strict,
+            options,
         } => AExpr::Cast {
             expr: to_aexpr_impl(owned(expr), arena, state),
             data_type,
-            strict,
+            options,
         },
         Expr::Gather {
             expr,

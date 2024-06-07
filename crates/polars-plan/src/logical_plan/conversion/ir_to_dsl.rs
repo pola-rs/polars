@@ -25,13 +25,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::Cast {
             expr,
             data_type,
-            strict,
+            options: strict,
         } => {
             let exp = node_to_expr(expr, expr_arena);
             Expr::Cast {
                 expr: Arc::new(exp),
                 data_type,
-                strict,
+                options: strict,
             }
         },
         AExpr::Sort { expr, options } => {

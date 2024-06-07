@@ -7,6 +7,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
@@ -136,7 +137,7 @@ pub enum AExpr {
     Cast {
         expr: Node,
         data_type: DataType,
-        strict: bool,
+        options: CastOptions,
     },
     Sort {
         expr: Node,

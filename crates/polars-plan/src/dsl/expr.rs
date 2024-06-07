@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -81,7 +82,7 @@ pub enum Expr {
     Cast {
         expr: Arc<Expr>,
         data_type: DataType,
-        strict: bool,
+        options: CastOptions,
     },
     Sort {
         expr: Arc<Expr>,
@@ -192,7 +193,7 @@ impl Hash for Expr {
             Expr::Cast {
                 expr,
                 data_type,
-                strict,
+                options: strict,
             } => {
                 expr.hash(state);
                 data_type.hash(state);

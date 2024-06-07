@@ -84,12 +84,15 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         match rhs.dtype() {
             DataType::Date => {
                 let dt = DataType::Datetime(TimeUnit::Milliseconds, None);
-                let lhs = self.cast(&dt)?;
+                let lhs = self.cast(&dt, CastOptions::NonStrict)?;
                 let rhs = rhs.cast(&dt)?;
                 lhs.subtract(&rhs)
             },
             DataType::Duration(_) => ((&self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .cast(
+                    &DataType::Datetime(TimeUnit::Milliseconds, None),
+                    CastOptions::NonStrict,
+                )
                 .unwrap())
                 - rhs)
                 .cast(&DataType::Date),
@@ -100,7 +103,10 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         match rhs.dtype() {
             DataType::Duration(_) => ((&self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .cast(
+                    &DataType::Datetime(TimeUnit::Milliseconds, None),
+                    CastOptions::NonStrict,
+                )
                 .unwrap())
                 + rhs)
                 .cast(&DataType::Date),
@@ -224,7 +230,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         match data_type {
             DataType::String => Ok(self
                 .0
@@ -236,11 +242,13 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self.0.cast(data_type)?;
+                let mut out = self
+                    .0
+                    .cast_with_options(data_type, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },
-            _ => self.0.cast(data_type),
+            _ => self.0.cast_with_options(data_type, cast_options),
         }
     }
 
