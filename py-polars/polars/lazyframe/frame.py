@@ -81,7 +81,7 @@ from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, col
+    from polars.polars import PyLazyFrame
 
 if TYPE_CHECKING:
     import sys
@@ -5932,7 +5932,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not isinstance(column, str):
             msg = "expected a 'str' for argument 'column' in 'set_sorted'"
             raise TypeError(msg)
-        return self.with_columns(col(column).set_sorted(descending=descending))
+        return self.with_columns(F.col(column).set_sorted(descending=descending))
 
     @unstable()
     def update(
