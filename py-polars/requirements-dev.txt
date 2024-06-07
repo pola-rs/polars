@@ -48,7 +48,7 @@ zstandard
 hvplot>=0.9.1
 matplotlib
 # Styling
-great-tables>=0.8.0
+great-tables>=0.8.0; python_version >= '3.9'
 # Other
 gevent
 nest_asyncio
