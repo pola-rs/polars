@@ -1371,18 +1371,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k(
         self,
         k: int,
         *,
         by: IntoExpr | Iterable[IntoExpr],
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         """
         Return the `k` largest rows.
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -1393,7 +1394,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Column(s) used to determine the top rows.
             Accepts expression input. Strings are parsed as column names.
-        descending
+        reverse
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
@@ -1442,21 +1443,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         by = parse_as_list_of_expressions(by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyldf(self._ldf.top_k(k, by=by, descending=descending))
+        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        return self._from_pyldf(self._ldf.top_k(k, by=by, reverse=reverse))
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def bottom_k(
         self,
         k: int,
         *,
         by: IntoExpr | Iterable[IntoExpr],
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         """
         Return the `k` smallest rows.
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -1467,7 +1469,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Column(s) used to determine the bottom rows.
             Accepts expression input. Strings are parsed as column names.
-        descending
+        reverse
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
@@ -1516,8 +1518,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         by = parse_as_list_of_expressions(by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyldf(self._ldf.bottom_k(k, by=by, descending=descending))
+        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
     def profile(
         self,

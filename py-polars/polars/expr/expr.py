@@ -26,7 +26,11 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
-from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -1876,18 +1880,19 @@ class Expr:
         k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.top_k(k))
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         k: int | IntoExprColumn = 5,
         *,
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         r"""
         Return the elements corresponding to the `k` largest elements of the `by` column(s).
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -1902,7 +1907,7 @@ class Expr:
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
-        descending
+        reverse
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
@@ -1995,8 +2000,8 @@ class Expr:
         """  # noqa: W505
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, descending=descending))
+        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, reverse=reverse))
 
     def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
@@ -2048,18 +2053,19 @@ class Expr:
         k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def bottom_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         k: int | IntoExprColumn = 5,
         *,
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         r"""
         Return the elements corresponding to the `k` smallest elements of the `by` column(s).
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -2074,7 +2080,7 @@ class Expr:
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
-        descending
+        reverse
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
@@ -2167,10 +2173,8 @@ class Expr:
         """  # noqa: W505
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyexpr(
-            self._pyexpr.bottom_k_by(by, k=k, descending=descending)
-        )
+        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        return self._from_pyexpr(self._pyexpr.bottom_k_by(by, k=k, reverse=reverse))
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
