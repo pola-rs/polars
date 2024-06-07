@@ -237,7 +237,7 @@ def test_is_nan_on_non_boolean() -> None:
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
-            [pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")]
+            pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")
         )
     except pl.ComputeError as exc:
         msg = str(exc)

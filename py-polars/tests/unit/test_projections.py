@@ -74,11 +74,9 @@ def test_unnest_projection_pushdown() -> None:
         .unnest("variable")
     )
     mlf = mlf.select(
-        [
-            pl.col("field_1").cast(pl.Categorical).alias("row"),
-            pl.col("field_2").cast(pl.Categorical).alias("col"),
-            pl.col("value"),
-        ]
+        pl.col("field_1").cast(pl.Categorical).alias("row"),
+        pl.col("field_2").cast(pl.Categorical).alias("col"),
+        pl.col("value"),
     )
     out = mlf.collect().to_dict(as_series=False)
     assert out == {

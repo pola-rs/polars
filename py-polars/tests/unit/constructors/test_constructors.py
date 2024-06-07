@@ -1063,11 +1063,9 @@ def test_init_only_columns() -> None:
             ],
         )
         expected = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
-            [
-                pl.col("a").cast(pl.Date),
-                pl.col("b").cast(pl.UInt64),
-                pl.col("c").cast(pl.Int8),
-            ]
+            pl.col("a").cast(pl.Date),
+            pl.col("b").cast(pl.UInt64),
+            pl.col("c").cast(pl.Int8),
         )
         expected.insert_column(3, pl.Series("d", [], pl.List(pl.UInt8)))
 

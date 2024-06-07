@@ -47,22 +47,20 @@ def test_rolling_kernels_and_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
     out1 = example_df.set_sorted("dt").select(
-        [
-            pl.col("dt"),
-            # this differs from group_by aggregation because the empty window is
-            # null here
-            # where the sum aggregation of an empty set is 0
-            pl.col("values")
-            .rolling_sum_by("dt", period, closed=closed)
-            .fill_null(0)
-            .alias("sum"),
-            pl.col("values").rolling_var_by("dt", period, closed=closed).alias("var"),
-            pl.col("values").rolling_mean_by("dt", period, closed=closed).alias("mean"),
-            pl.col("values").rolling_std_by("dt", period, closed=closed).alias("std"),
-            pl.col("values")
-            .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
-            .alias("quantile"),
-        ]
+        pl.col("dt"),
+        # this differs from group_by aggregation because the empty window is
+        # null here
+        # where the sum aggregation of an empty set is 0
+        pl.col("values")
+        .rolling_sum_by("dt", period, closed=closed)
+        .fill_null(0)
+        .alias("sum"),
+        pl.col("values").rolling_var_by("dt", period, closed=closed).alias("var"),
+        pl.col("values").rolling_mean_by("dt", period, closed=closed).alias("mean"),
+        pl.col("values").rolling_std_by("dt", period, closed=closed).alias("std"),
+        pl.col("values")
+        .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
+        .alias("quantile"),
     )
     out2 = (
         example_df.set_sorted("dt")
@@ -267,12 +265,10 @@ def test_rolling_extrema() -> None:
             }
         )
     ).with_columns(
-        [
-            pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
-            .then(None)
-            .otherwise(pl.all())
-            .name.suffix("_nulls")
-        ]
+        pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
+        .then(None)
+        .otherwise(pl.all())
+        .name.suffix("_nulls")
     )
 
     assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
@@ -584,10 +580,8 @@ def test_rolling_cov_corr() -> None:
     df = pl.DataFrame({"x": [3, 3, 3, 5, 8], "y": [3, 4, 4, 4, 8]})
 
     res = df.select(
-        [
-            pl.rolling_cov("x", "y", window_size=3).alias("cov"),
-            pl.rolling_corr("x", "y", window_size=3).alias("corr"),
-        ]
+        pl.rolling_cov("x", "y", window_size=3).alias("cov"),
+        pl.rolling_corr("x", "y", window_size=3).alias("corr"),
     ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
     assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
@@ -610,19 +604,15 @@ def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
     assert_frame_equal(
         pl.DataFrame([datecol, rmax]),
         df.select(
-            [
-                pl.col("d"),
-                pl.col("x").rolling_max_by("d", window_size="3d", closed="left"),
-            ]
+            pl.col("d"),
+            pl.col("x").rolling_max_by("d", window_size="3d", closed="left"),
         ),
     )
     assert_frame_equal(
         pl.DataFrame([datecol, rmin]),
         df.select(
-            [
-                pl.col("d"),
-                pl.col("x").rolling_min_by("d", window_size="3d", closed="left"),
-            ]
+            pl.col("d"),
+            pl.col("x").rolling_min_by("d", window_size="3d", closed="left"),
         ),
     )
 

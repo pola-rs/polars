@@ -308,11 +308,9 @@ def test_window_function() -> None:
     assert ldf.width == 4
 
     q = ldf.with_columns(
-        [
-            pl.sum("A").over("fruits").alias("fruit_sum_A"),
-            pl.first("B").over("fruits").alias("fruit_first_B"),
-            pl.max("B").over("cars").alias("cars_max_B"),
-        ]
+        pl.sum("A").over("fruits").alias("fruit_sum_A"),
+        pl.first("B").over("fruits").alias("fruit_first_B"),
+        pl.max("B").over("cars").alias("cars_max_B"),
     )
     assert q.width == 7
 
@@ -674,19 +672,17 @@ def test_backward_fill() -> None:
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     out = ldf.select(
-        [
-            pl.col("A").rolling_min(3, min_periods=1).alias("1"),
-            pl.col("A").rolling_min(3).alias("1b"),
-            pl.col("A").rolling_mean(3, min_periods=1).alias("2"),
-            pl.col("A").rolling_mean(3).alias("2b"),
-            pl.col("A").rolling_max(3, min_periods=1).alias("3"),
-            pl.col("A").rolling_max(3).alias("3b"),
-            pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
-            pl.col("A").rolling_sum(3).alias("4b"),
-            # below we use .round purely for the ability to do assert frame equality
-            pl.col("A").rolling_std(3).round(1).alias("std"),
-            pl.col("A").rolling_var(3).round(1).alias("var"),
-        ]
+        pl.col("A").rolling_min(3, min_periods=1).alias("1"),
+        pl.col("A").rolling_min(3).alias("1b"),
+        pl.col("A").rolling_mean(3, min_periods=1).alias("2"),
+        pl.col("A").rolling_mean(3).alias("2b"),
+        pl.col("A").rolling_max(3, min_periods=1).alias("3"),
+        pl.col("A").rolling_max(3).alias("3b"),
+        pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
+        pl.col("A").rolling_sum(3).alias("4b"),
+        # below we use .round purely for the ability to do assert frame equality
+        pl.col("A").rolling_std(3).round(1).alias("std"),
+        pl.col("A").rolling_var(3).round(1).alias("var"),
     )
 
     assert_frame_equal(
@@ -708,10 +704,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
     )
 
     out_single_val_variance = ldf.select(
-        [
-            pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
-            pl.col("A").rolling_var(3, min_periods=1).round(decimals=1).alias("var"),
-        ]
+        pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
+        pl.col("A").rolling_var(3, min_periods=1).round(decimals=1).alias("var"),
     ).collect()
 
     assert cast(float, out_single_val_variance[0, "std"]) is None
@@ -721,41 +715,39 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     out = ldf.select(
-        [
-            "fruits",
-            pl.col("B")
-            .over("fruits", mapping_strategy="join")
-            .list.min()
-            .alias("B_by_fruits_min1"),
-            pl.col("B")
-            .min()
-            .over("fruits", mapping_strategy="join")
-            .alias("B_by_fruits_min2"),
-            pl.col("B")
-            .over("fruits", mapping_strategy="join")
-            .list.max()
-            .alias("B_by_fruits_max1"),
-            pl.col("B")
-            .max()
-            .over("fruits", mapping_strategy="join")
-            .alias("B_by_fruits_max2"),
-            pl.col("B")
-            .over("fruits", mapping_strategy="join")
-            .list.sum()
-            .alias("B_by_fruits_sum1"),
-            pl.col("B")
-            .sum()
-            .over("fruits", mapping_strategy="join")
-            .alias("B_by_fruits_sum2"),
-            pl.col("B")
-            .over("fruits", mapping_strategy="join")
-            .list.mean()
-            .alias("B_by_fruits_mean1"),
-            pl.col("B")
-            .mean()
-            .over("fruits", mapping_strategy="join")
-            .alias("B_by_fruits_mean2"),
-        ]
+        "fruits",
+        pl.col("B")
+        .over("fruits", mapping_strategy="join")
+        .list.min()
+        .alias("B_by_fruits_min1"),
+        pl.col("B")
+        .min()
+        .over("fruits", mapping_strategy="join")
+        .alias("B_by_fruits_min2"),
+        pl.col("B")
+        .over("fruits", mapping_strategy="join")
+        .list.max()
+        .alias("B_by_fruits_max1"),
+        pl.col("B")
+        .max()
+        .over("fruits", mapping_strategy="join")
+        .alias("B_by_fruits_max2"),
+        pl.col("B")
+        .over("fruits", mapping_strategy="join")
+        .list.sum()
+        .alias("B_by_fruits_sum1"),
+        pl.col("B")
+        .sum()
+        .over("fruits", mapping_strategy="join")
+        .alias("B_by_fruits_sum2"),
+        pl.col("B")
+        .over("fruits", mapping_strategy="join")
+        .list.mean()
+        .alias("B_by_fruits_mean1"),
+        pl.col("B")
+        .mean()
+        .over("fruits", mapping_strategy="join")
+        .alias("B_by_fruits_mean2"),
     )
     expected = pl.DataFrame(
         {
@@ -789,19 +781,17 @@ def test_arithmetic() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3]})
 
     out = ldf.select(
-        [
-            (pl.col("a") % 2).alias("1"),
-            (2 % pl.col("a")).alias("2"),
-            (1 // pl.col("a")).alias("3"),
-            (1 * pl.col("a")).alias("4"),
-            (1 + pl.col("a")).alias("5"),
-            (1 - pl.col("a")).alias("6"),
-            (pl.col("a") // 2).alias("7"),
-            (pl.col("a") * 2).alias("8"),
-            (pl.col("a") + 2).alias("9"),
-            (pl.col("a") - 2).alias("10"),
-            (-pl.col("a")).alias("11"),
-        ]
+        (pl.col("a") % 2).alias("1"),
+        (2 % pl.col("a")).alias("2"),
+        (1 // pl.col("a")).alias("3"),
+        (1 * pl.col("a")).alias("4"),
+        (1 + pl.col("a")).alias("5"),
+        (1 - pl.col("a")).alias("6"),
+        (pl.col("a") // 2).alias("7"),
+        (pl.col("a") * 2).alias("8"),
+        (pl.col("a") + 2).alias("9"),
+        (pl.col("a") - 2).alias("10"),
+        (-pl.col("a")).alias("11"),
     )
     expected = pl.DataFrame(
         {
@@ -832,10 +822,8 @@ def test_float_floor_divide() -> None:
 def test_argminmax() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 1, 2, 2, 2]})
     out = ldf.select(
-        [
-            pl.col("a").arg_min().alias("min"),
-            pl.col("a").arg_max().alias("max"),
-        ]
+        pl.col("a").arg_min().alias("min"),
+        pl.col("a").arg_max().alias("max"),
     ).collect()
     assert out["max"][0] == 4
     assert out["min"][0] == 0
@@ -1009,11 +997,9 @@ def test_self_join() -> None:
     out = (
         ldf.join(other=ldf, left_on="manager_id", right_on="employee_id", how="left")
         .select(
-            [
-                pl.col("employee_id"),
-                pl.col("employee_name"),
-                pl.col("employee_name_right").alias("manager_name"),
-            ]
+            pl.col("employee_id"),
+            pl.col("employee_name"),
+            pl.col("employee_name_right").alias("manager_name"),
         )
         .collect()
     )
@@ -1111,7 +1097,7 @@ def test_update_schema_after_projection_pd_t4157() -> None:
 def test_type_coercion_unknown_4190() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).with_columns(
-            [pl.col("a") & pl.col("a").fill_null(True)]
+            pl.col("a") & pl.col("a").fill_null(True)
         )
     ).collect()
     assert df.shape == (3, 2)
@@ -1123,12 +1109,10 @@ def test_lazy_cache_same_key() -> None:
 
     # these have the same schema, but should not be used by cache as they are different
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
-    mult_node = ldf.select(
-        [(pl.col("a") * pl.col("b")).alias("a"), pl.col("c")]
-    ).cache()
+    mult_node = ldf.select((pl.col("a") * pl.col("b")).alias("a"), pl.col("c")).cache()
 
     result = mult_node.join(add_node, on="c", suffix="_mult").select(
-        [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
+        (pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")
     )
     expected = pl.LazyFrame({"a": [-1, 2, 7], "c": ["x", "y", "z"]})
     assert_frame_equal(result, expected)
@@ -1141,7 +1125,7 @@ def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
 
     result = add_node.join(add_node, on="c", suffix="_mult").select(
-        [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
+        (pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")
     )
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
     assert_frame_equal(result, expected)
@@ -1238,13 +1222,11 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     )
 
     ldf_result = ldf.select(
-        [
-            pl.from_epoch(pl.col("timestamp_d"), time_unit="d"),
-            pl.from_epoch(pl.col("timestamp_s"), time_unit="s"),
-            pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
-            pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
-            pl.from_epoch(pl.col("timestamp_ns"), time_unit="ns"),
-        ]
+        pl.from_epoch(pl.col("timestamp_d"), time_unit="d"),
+        pl.from_epoch(pl.col("timestamp_s"), time_unit="s"),
+        pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
+        pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
+        pl.from_epoch(pl.col("timestamp_ns"), time_unit="ns"),
     ).collect()
 
     assert_frame_equal(ldf_result, expected)
@@ -1264,10 +1246,8 @@ def test_from_epoch_str() -> None:
 
     with pytest.raises(ComputeError):
         ldf.select(
-            [
-                pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
-                pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
-            ]
+            pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
+            pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
         ).collect()
 
 

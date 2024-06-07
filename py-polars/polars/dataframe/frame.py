@@ -7808,10 +7808,8 @@ class DataFrame:
                 fill_values = [fill_values for _ in range(df.width)]
 
             df = df.select(
-                [
-                    s.extend_constant(next_fill, n_fill)
-                    for s, next_fill in zip(df, fill_values)
-                ]
+                s.extend_constant(next_fill, n_fill)
+                for s, next_fill in zip(df, fill_values)
             )
 
         if how == "horizontal":
@@ -8403,14 +8401,12 @@ class DataFrame:
         │ 4.0 ┆ 13.0 ┆ true  │
         └─────┴──────┴───────┘
 
-        Multiple columns can be added by passing a list of expressions.
+        Multiple columns can be added using positional arguments.
 
         >>> df.with_columns(
-        ...     [
-        ...         (pl.col("a") ** 2).alias("a^2"),
-        ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").not_()).alias("not c"),
-        ...     ]
+        ...     (pl.col("a") ** 2).alias("a^2"),
+        ...     (pl.col("b") / 2).alias("b/2"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... )
         shape: (4, 6)
         ┌─────┬──────┬───────┬─────┬──────┬───────┐
@@ -8424,12 +8420,14 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴─────┴──────┴───────┘
 
-        Multiple columns also can be added using positional arguments instead of a list.
+        Multiple columns can also be added by passing a list of expressions.
 
         >>> df.with_columns(
-        ...     (pl.col("a") ** 2).alias("a^2"),
-        ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").not_()).alias("not c"),
+        ...     [
+        ...         (pl.col("a") ** 2).alias("a^2"),
+        ...         (pl.col("b") / 2).alias("b/2"),
+        ...         (pl.col("c").not_()).alias("not c"),
+        ...     ]
         ... )
         shape: (4, 6)
         ┌─────┬──────┬───────┬─────┬──────┬───────┐

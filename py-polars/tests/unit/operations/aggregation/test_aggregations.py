@@ -295,7 +295,7 @@ def test_sum_empty_and_null_set() -> None:
 
 def test_horizontal_sum_null_to_identity() -> None:
     assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
-        [pl.sum_horizontal(["a", "b"])]
+        pl.sum_horizontal(["a", "b"])
     ).to_series().to_list() == [11, 5]
 
 
@@ -566,7 +566,7 @@ def test_min_max_2850() -> None:
     for _ in range(10):
         permuted = df.sample(fraction=1.0, seed=0)
         computed = permuted.select(
-            [pl.col("id").min().alias("min"), pl.col("id").max().alias("max")]
+            pl.col("id").min().alias("min"), pl.col("id").max().alias("max")
         )
         assert cast(int, computed[0, "min"]) == minimum
         assert cast(float, computed[0, "max"]) == maximum

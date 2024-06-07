@@ -397,7 +397,7 @@ def test_pivot_negative_duration() -> None:
     df2 = pl.DataFrame({"delta": [timedelta(days=i) for i in (-2, -1, 0, 1)]})
 
     df = df1.join(df2, how="cross").with_columns(
-        [pl.Series(name="value", values=range(len(df1) * len(df2)))]
+        pl.Series(name="value", values=range(len(df1) * len(df2)))
     )
     assert df.pivot(
         index="delta", columns="root", values="value", aggregate_function=None

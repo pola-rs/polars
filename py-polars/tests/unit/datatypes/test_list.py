@@ -115,18 +115,14 @@ def test_cast_inner() -> None:
 def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(
-        [
-            pl.lit(1).alias("group_by_column"),
-            pl.lit(None).cast(pl.Int32).alias("join_column"),
-        ]
+        pl.lit(1).alias("group_by_column"),
+        pl.lit(None).cast(pl.Int32).alias("join_column"),
     )
 
     # Create a right relation where there is a column to count distinct on
     right = pl.DataFrame().with_columns(
-        [
-            pl.lit(1).alias("join_column"),
-            pl.lit(1).alias("n_unique_column"),
-        ]
+        pl.lit(1).alias("join_column"),
+        pl.lit(1).alias("n_unique_column"),
     )
 
     # Calculate n_unique after dropping nulls
@@ -143,23 +139,19 @@ def test_list_empty_group_by_result_3521() -> None:
 def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
-        [
-            pl.when(pl.col("C").list.len() == 0)
-            .then(None)
-            .otherwise(pl.col("C"))
-            .alias("C")
-        ]
+        pl.when(pl.col("C").list.len() == 0)
+        .then(None)
+        .otherwise(pl.col("C"))
+        .alias("C")
     ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]
 
 
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
-        [
-            pl.when(pl.col("a").list.len() == 0)
-            .then([5])
-            .otherwise(pl.col("a"))
-            .alias("filled")
-        ]
+        pl.when(pl.col("a").list.len() == 0)
+        .then([5])
+        .otherwise(pl.col("a"))
+        .alias("filled")
     ).to_dict(as_series=False) == {"filled": [[1, 2, 3], [5]]}
 
 

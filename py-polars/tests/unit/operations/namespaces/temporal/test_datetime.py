@@ -677,11 +677,9 @@ def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> No
 
     # Combine datetime/date with time
     df = df.select(
-        [
-            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # datetime & time
-            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # date & time
-            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # date & specified time
-        ]
+        pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # datetime & time
+        pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # date & time
+        pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # date & specified time
     )
 
     # Assert that the new columns have the expected values and datatypes
@@ -782,10 +780,8 @@ def test_date_offset() -> None:
 
     # Add two new columns to the DataFrame using the offset_by() method
     df = df.with_columns(
-        [
-            df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
-            df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
-        ]
+        df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
+        df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
     )
 
     # Assert that the day of the month for all the dates in new columns is 1

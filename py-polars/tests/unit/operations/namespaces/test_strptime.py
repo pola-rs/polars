@@ -349,9 +349,7 @@ def test_datetime_strptime_patterns_consistent() -> None:
         ],
     ).to_frame()
     s = df.with_columns(
-        [
-            pl.col("date").str.to_datetime(strict=False).alias("parsed"),
-        ]
+        pl.col("date").str.to_datetime(strict=False).alias("parsed"),
     )["parsed"]
     assert s.null_count() == 1
     assert s[5] is None

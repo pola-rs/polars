@@ -853,9 +853,7 @@ def _read_spreadsheet_calamine(
                 type_checks.append(check_cast)
 
     if type_checks:
-        apply_cast = df.select(
-            [d[0].all(ignore_nulls=True) for d in type_checks],
-        ).row(0)
+        apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
         if downcast := [
             cast for apply, (_, cast) in zip(apply_cast, type_checks) if apply
         ]:

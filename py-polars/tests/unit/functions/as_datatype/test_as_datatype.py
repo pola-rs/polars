@@ -201,10 +201,8 @@ def test_list_concat_rolling_window() -> None:
         }
     )
     out = df.with_columns(
-        [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
-    ).select(
-        [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
-    )
+        pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)
+    ).select(pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling"))
     assert out.shape == (5, 1)
 
     s = out.to_series()
@@ -221,18 +219,12 @@ def test_list_concat_rolling_window() -> None:
     out = (
         df.with_columns(pl.col("A").reshape((-1, 1)))  # first turn into a list
         .with_columns(
-            [
-                pl.col("A").shift(i).alias(f"A_lag_{i}")
-                for i in range(3)  # slice the lists to a lag
-            ]
+            pl.col("A").shift(i).alias(f"A_lag_{i}")
+            for i in range(3)  # slice the lists to a lag
         )
         .select(
-            [
-                pl.all(),
-                pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
-                    "A_rolling"
-                ),
-            ]
+            pl.all(),
+            pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling"),
         )
     )
     assert out.shape == (5, 5)
@@ -249,11 +241,9 @@ def test_list_concat_rolling_window() -> None:
 
 def test_concat_list_reverse_struct_fields() -> None:
     df = pl.DataFrame({"nums": [1, 2, 3, 4], "letters": ["a", "b", "c", "d"]}).select(
-        [
-            pl.col("nums"),
-            pl.struct(["letters", "nums"]).alias("combo"),
-            pl.struct(["nums", "letters"]).alias("reverse_combo"),
-        ]
+        pl.col("nums"),
+        pl.struct(["letters", "nums"]).alias("combo"),
+        pl.struct(["nums", "letters"]).alias("reverse_combo"),
     )
     result1 = df.select(pl.concat_list(["combo", "reverse_combo"]))
     result2 = df.select(pl.concat_list(["combo", "combo"]))

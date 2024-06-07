@@ -764,9 +764,7 @@ def test_cse_series_collision_16138() -> None:
     ]
 
     factor_holdings = holdings.lazy().with_columns(
-        [
-            pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
-        ]
+        pl.coalesce(currency_factor_query_dict).alias("currency_factor"),
     )
 
     assert factor_holdings.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {

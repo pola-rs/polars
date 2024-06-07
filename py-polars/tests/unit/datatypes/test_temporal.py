@@ -214,12 +214,10 @@ def test_from_pydatetime() -> None:
 
 def test_int_to_python_datetime() -> None:
     df = pl.DataFrame({"a": [100_000_000, 200_000_000]}).with_columns(
-        [
-            pl.col("a").cast(pl.Datetime).alias("b"),
-            pl.col("a").cast(pl.Datetime("ms")).alias("c"),
-            pl.col("a").cast(pl.Datetime("us")).alias("d"),
-            pl.col("a").cast(pl.Datetime("ns")).alias("e"),
-        ]
+        pl.col("a").cast(pl.Datetime).alias("b"),
+        pl.col("a").cast(pl.Datetime("ms")).alias("c"),
+        pl.col("a").cast(pl.Datetime("us")).alias("d"),
+        pl.col("a").cast(pl.Datetime("ns")).alias("e"),
     )
     assert df.rows() == [
         (
@@ -244,12 +242,8 @@ def test_int_to_python_datetime() -> None:
     ]
 
     assert df.select(
-        [
-            getattr(pl.col("a").cast(pl.Duration).dt, f"total_{unit}")().alias(
-                f"u[{unit}]"
-            )
-            for unit in ("milliseconds", "microseconds", "nanoseconds")
-        ]
+        getattr(pl.col("a").cast(pl.Duration).dt, f"total_{unit}")().alias(f"u[{unit}]")
+        for unit in ("milliseconds", "microseconds", "nanoseconds")
     ).rows() == [
         (100000, 100000000, 100000000000),
         (200000, 200000000, 200000000000),
@@ -258,12 +252,10 @@ def test_int_to_python_datetime() -> None:
 
 def test_int_to_python_timedelta() -> None:
     df = pl.DataFrame({"a": [100_001, 200_002]}).with_columns(
-        [
-            pl.col("a").cast(pl.Duration).alias("b"),
-            pl.col("a").cast(pl.Duration("ms")).alias("c"),
-            pl.col("a").cast(pl.Duration("us")).alias("d"),
-            pl.col("a").cast(pl.Duration("ns")).alias("e"),
-        ]
+        pl.col("a").cast(pl.Duration).alias("b"),
+        pl.col("a").cast(pl.Duration("ms")).alias("c"),
+        pl.col("a").cast(pl.Duration("us")).alias("d"),
+        pl.col("a").cast(pl.Duration("ns")).alias("e"),
     )
     assert df.rows() == [
         (
@@ -282,9 +274,10 @@ def test_int_to_python_timedelta() -> None:
         ),
     ]
 
-    assert df.select(
-        [pl.col(col).cast(pl.Int64) for col in ("c", "d", "e")]
-    ).rows() == [(100001, 100001, 100001), (200002, 200002, 200002)]
+    assert df.select(pl.col(col).cast(pl.Int64) for col in ("c", "d", "e")).rows() == [
+        (100001, 100001, 100001),
+        (200002, 200002, 200002),
+    ]
 
 
 def test_datetime_consistency() -> None:
@@ -302,13 +295,11 @@ def test_datetime_consistency() -> None:
         assert df.filter(pl.col("date") == date_literal).rows() == [(dt,)]
 
     ddf = df.select(
-        [
-            pl.col("date"),
-            pl.lit(dt).alias("dt"),
-            pl.lit(dt).cast(pl.Datetime("ms")).alias("dt_ms"),
-            pl.lit(dt).cast(pl.Datetime("us")).alias("dt_us"),
-            pl.lit(dt).cast(pl.Datetime("ns")).alias("dt_ns"),
-        ]
+        pl.col("date"),
+        pl.lit(dt).alias("dt"),
+        pl.lit(dt).cast(pl.Datetime("ms")).alias("dt_ms"),
+        pl.lit(dt).cast(pl.Datetime("us")).alias("dt_us"),
+        pl.lit(dt).cast(pl.Datetime("ns")).alias("dt_ns"),
     )
     assert ddf.schema == {
         "date": pl.Datetime("us"),
@@ -776,31 +767,29 @@ def test_temporal_dtypes_map_elements(
     ):
         assert_frame_equal(
             df.with_columns(
-                [
-                    # don't actually do this; native expressions are MUCH faster ;)
-                    pl.col("timestamp")
-                    .map_elements(
-                        lambda x: const_dtm,
-                        skip_nulls=skip_nulls,
-                        return_dtype=pl.Datetime,
-                    )
-                    .alias("const_dtm"),
-                    # note: the below now trigger a PolarsInefficientMapWarning
-                    pl.col("timestamp")
-                    .map_elements(
-                        lambda x: x and x.date(),
-                        skip_nulls=skip_nulls,
-                        return_dtype=pl.Date,
-                    )
-                    .alias("date"),
-                    pl.col("timestamp")
-                    .map_elements(
-                        lambda x: x and x.time(),
-                        skip_nulls=skip_nulls,
-                        return_dtype=pl.Time,
-                    )
-                    .alias("time"),
-                ]
+                # don't actually do this; native expressions are MUCH faster ;)
+                pl.col("timestamp")
+                .map_elements(
+                    lambda x: const_dtm,
+                    skip_nulls=skip_nulls,
+                    return_dtype=pl.Datetime,
+                )
+                .alias("const_dtm"),
+                # note: the below now trigger a PolarsInefficientMapWarning
+                pl.col("timestamp")
+                .map_elements(
+                    lambda x: x and x.date(),
+                    skip_nulls=skip_nulls,
+                    return_dtype=pl.Date,
+                )
+                .alias("date"),
+                pl.col("timestamp")
+                .map_elements(
+                    lambda x: x and x.time(),
+                    skip_nulls=skip_nulls,
+                    return_dtype=pl.Time,
+                )
+                .alias("time"),
             ),
             pl.DataFrame(
                 [
@@ -1024,10 +1013,8 @@ def test_sum_duration() -> None:
             {"name": "Jen", "duration": timedelta(seconds=60)},
         ]
     ).select(
-        [
-            pl.col("duration").sum(),
-            pl.col("duration").dt.total_seconds().alias("sec").sum(),
-        ]
+        pl.col("duration").sum(),
+        pl.col("duration").dt.total_seconds().alias("sec").sum(),
     ).to_dict(as_series=False) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
@@ -1082,10 +1069,8 @@ def test_date_timedelta() -> None:
         {"date": pl.date_range(date(2001, 1, 1), date(2001, 1, 3), "1d", eager=True)}
     )
     assert df.with_columns(
-        [
-            (pl.col("date") + timedelta(days=1)).alias("date_plus_one"),
-            (pl.col("date") - timedelta(days=1)).alias("date_min_one"),
-        ]
+        (pl.col("date") + timedelta(days=1)).alias("date_plus_one"),
+        (pl.col("date") - timedelta(days=1)).alias("date_min_one"),
     ).to_dict(as_series=False) == {
         "date": [date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)],
         "date_plus_one": [date(2001, 1, 2), date(2001, 1, 3), date(2001, 1, 4)],
@@ -1963,13 +1948,11 @@ def test_truncate_by_multiple_weeks() -> None:
 
     assert (
         df.select(
-            [
-                pl.col("date").dt.truncate("2w").alias("2w"),
-                pl.col("date").dt.truncate("3w").alias("3w"),
-                pl.col("date").dt.truncate("4w").alias("4w"),
-                pl.col("date").dt.truncate("5w").alias("5w"),
-                pl.col("date").dt.truncate("17w").alias("17w"),
-            ]
+            pl.col("date").dt.truncate("2w").alias("2w"),
+            pl.col("date").dt.truncate("3w").alias("3w"),
+            pl.col("date").dt.truncate("4w").alias("4w"),
+            pl.col("date").dt.truncate("5w").alias("5w"),
+            pl.col("date").dt.truncate("17w").alias("17w"),
         )
     ).to_dict(as_series=False) == {
         "2w": [date(2022, 4, 18), date(2022, 11, 28)],
@@ -2140,10 +2123,8 @@ def test_round_by_week() -> None:
 
     assert (
         df.select(
-            [
-                pl.col("date").dt.round("7d").alias("7d"),
-                pl.col("date").dt.round("1w").alias("1w"),
-            ]
+            pl.col("date").dt.round("7d").alias("7d"),
+            pl.col("date").dt.round("1w").alias("1w"),
         )
     ).to_dict(as_series=False) == {
         "7d": [date(1998, 4, 9), date(2022, 12, 1)],
@@ -2177,21 +2158,17 @@ def test_tz_aware_day_weekday() -> None:
     )
 
     df = df.with_columns(
-        [
-            pl.col("date").dt.convert_time_zone("Asia/Tokyo").alias("tk_date"),
-            pl.col("date").dt.convert_time_zone("America/New_York").alias("ny_date"),
-        ]
+        pl.col("date").dt.convert_time_zone("Asia/Tokyo").alias("tk_date"),
+        pl.col("date").dt.convert_time_zone("America/New_York").alias("ny_date"),
     )
 
     assert df.select(
-        [
-            pl.col("date").dt.day().alias("day"),
-            pl.col("tk_date").dt.day().alias("tk_day"),
-            pl.col("ny_date").dt.day().alias("ny_day"),
-            pl.col("date").dt.weekday().alias("weekday"),
-            pl.col("tk_date").dt.weekday().alias("tk_weekday"),
-            pl.col("ny_date").dt.weekday().alias("ny_weekday"),
-        ]
+        pl.col("date").dt.day().alias("day"),
+        pl.col("tk_date").dt.day().alias("tk_day"),
+        pl.col("ny_date").dt.day().alias("ny_day"),
+        pl.col("date").dt.weekday().alias("weekday"),
+        pl.col("tk_date").dt.weekday().alias("tk_weekday"),
+        pl.col("ny_date").dt.weekday().alias("ny_weekday"),
     ).to_dict(as_series=False) == {
         "day": [1, 4, 7],
         "tk_day": [1, 4, 7],

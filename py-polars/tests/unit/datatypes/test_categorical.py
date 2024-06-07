@@ -401,7 +401,7 @@ def test_categorical_error_on_local_cmp() -> None:
 
 def test_cast_null_to_categorical() -> None:
     assert pl.DataFrame().with_columns(
-        [pl.lit(None).cast(pl.Categorical).alias("nullable_enum")]
+        pl.lit(None).cast(pl.Categorical).alias("nullable_enum")
     ).dtypes == [pl.Categorical]
 
 
@@ -485,7 +485,7 @@ def test_stringcache() -> None:
     with pl.StringCache():
         # create a large enough column that the categorical map is reallocated
         df = pl.DataFrame({"cats": pl.arange(0, N, eager=True)}).select(
-            [pl.col("cats").cast(pl.String).cast(pl.Categorical)]
+            pl.col("cats").cast(pl.String).cast(pl.Categorical)
         )
         assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(as_series=False) == {
             "cats": ["1", "2"]
