@@ -1373,6 +1373,9 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
     Compute two argument arctan in degrees.
 
+    .. deprecated:: 1.0.0
+        Use `arctan2` followed by :meth:`Expr.degrees` instead.
+
     Returns the angle (in degrees) in the plane between the positive x-axis
     and the ray from the origin to (x,y).
 
