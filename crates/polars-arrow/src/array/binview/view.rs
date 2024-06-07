@@ -58,6 +58,10 @@ impl View {
         }
     }
 
+    /// Constructs a byteslice from this view.
+    ///
+    /// # Safety
+    /// Assumes that this view is valid for the given buffers.
     pub unsafe fn get_slice_unchecked<'a>(&'a self, buffers: &'a [Buffer<u8>]) -> &'a [u8] {
         unsafe {
             if self.length <= 12 {
