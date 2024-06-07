@@ -104,6 +104,14 @@ where
         unsafe { Self::from_chunks(name, vec![Box::new(arr)]) }
     }
 
+    pub fn with_chunk_like<A>(ca: &Self, arr: A) -> Self
+    where
+        A: Array,
+        T: PolarsDataType<Array = A>,
+    {
+        Self::from_chunk_iter_like(ca, std::iter::once(arr))
+    }
+
     pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
     where
         I: IntoIterator,
@@ -165,12 +173,14 @@ where
             })
             .collect();
 
-        ChunkedArray::new_with_dims(
-            field,
-            chunks,
-            length.try_into().expect(LENGTH_LIMIT_MSG),
-            null_count as IdxSize,
-        )
+        unsafe {
+            ChunkedArray::new_with_dims(
+                field,
+                chunks,
+                length.try_into().expect(LENGTH_LIMIT_MSG),
+                null_count as IdxSize,
+            )
+        }
     }
 
     /// Create a new [`ChunkedArray`] from existing chunks.

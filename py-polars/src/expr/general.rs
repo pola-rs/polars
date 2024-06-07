@@ -294,7 +294,7 @@ impl PyExpr {
 
     #[cfg(feature = "top_k")]
     fn top_k(&self, k: Self) -> Self {
-        self.inner.clone().top_k(k.inner, SortOptions::new()).into()
+        self.inner.clone().top_k(k.inner).into()
     }
 
     #[cfg(feature = "top_k")]
@@ -305,7 +305,7 @@ impl PyExpr {
             .top_k_by(
                 k.inner,
                 by,
-                SortMultipleOptions::new().with_order_descending_multi(descending),
+                descending,
             )
             .into()
     }
@@ -314,7 +314,7 @@ impl PyExpr {
     fn bottom_k(&self, k: Self) -> Self {
         self.inner
             .clone()
-            .bottom_k(k.inner, SortOptions::new())
+            .bottom_k(k.inner)
             .into()
     }
 
@@ -326,7 +326,7 @@ impl PyExpr {
             .bottom_k_by(
                 k.inner,
                 by,
-                SortMultipleOptions::new().with_order_descending_multi(descending),
+                descending,
             )
             .into()
     }

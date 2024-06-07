@@ -450,8 +450,8 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: Expr, sort_options: SortOptions) -> Self {
-        self.apply_many_private(FunctionExpr::TopK { sort_options }, &[k], false, false)
+    pub fn top_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK { descending: false }, &[k], false, false)
     }
 
     /// Returns the `k` largest rows by given column.
@@ -462,22 +462,20 @@ impl Expr {
         self,
         k: K,
         by: E,
-        sort_options: SortMultipleOptions,
+        descending: Vec<bool>
     ) -> Self {
         let mut args = vec![k.into()];
         args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
-        self.apply_many_private(FunctionExpr::TopKBy { sort_options }, &args, false, false)
+        self.apply_many_private(FunctionExpr::TopKBy { descending }, &args, false, false)
     }
 
     /// Returns the `k` smallest elements.
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(self, k: Expr, sort_options: SortOptions) -> Self {
+    pub fn bottom_k(self, k: Expr) -> Self {
         self.apply_many_private(
-            FunctionExpr::TopK {
-                sort_options: sort_options.with_order_reversed(),
-            },
+            FunctionExpr::TopK { descending: true },
             &[k],
             false,
             false,
@@ -493,14 +491,13 @@ impl Expr {
         self,
         k: K,
         by: E,
-        sort_options: SortMultipleOptions,
+        descending: Vec<bool>,
     ) -> Self {
         let mut args = vec![k.into()];
         args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
+        let descending = descending.into_iter().map(|x| !x).collect();
         self.apply_many_private(
-            FunctionExpr::TopKBy {
-                sort_options: sort_options.with_order_reversed(),
-            },
+            FunctionExpr::TopKBy { descending },
             &args,
             false,
             false,
