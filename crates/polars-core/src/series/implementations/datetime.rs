@@ -257,7 +257,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             (DataType::String, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
             },
-            _ => self.0.cast(data_type, cast_options),
+            _ => self.0.cast_with_options(data_type, cast_options),
         }
     }
 

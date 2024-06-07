@@ -318,7 +318,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast(data_type, cast_options)
+        self.0.cast_with_options(data_type, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

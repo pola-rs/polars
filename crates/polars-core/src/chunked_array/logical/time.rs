@@ -28,7 +28,7 @@ impl LogicalType for TimeChunked {
         self.0.get_any_value_unchecked(i).as_time()
     }
 
-    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
         match dtype {
             Time => Ok(self.clone().into_series()),

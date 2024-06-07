@@ -450,7 +450,7 @@ impl LogicalType for StructChunked {
     }
 
     // in case of a struct, a cast will coerce the inner types
-    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         unsafe { self.cast_impl(dtype, cast_options, false) }
     }
 }

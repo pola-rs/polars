@@ -28,7 +28,7 @@ impl LogicalType for DatetimeChunked {
             .as_datetime(self.time_unit(), self.time_zone())
     }
 
-    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
         use TimeUnit::*;
         let out = match dtype {

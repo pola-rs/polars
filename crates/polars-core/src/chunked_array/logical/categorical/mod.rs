@@ -332,7 +332,7 @@ impl LogicalType for CategoricalChunked {
         }
     }
 
-    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             DataType::String => {
                 let mapping = &**self.get_rev_map();

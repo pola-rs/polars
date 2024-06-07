@@ -85,7 +85,11 @@ pub trait LogicalType {
         unimplemented!()
     }
 
-    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
+
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>

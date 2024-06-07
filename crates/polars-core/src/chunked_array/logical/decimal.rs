@@ -80,7 +80,7 @@ impl LogicalType for DecimalChunked {
         }
     }
 
-    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         let (precision_src, scale_src) = (self.precision(), self.scale());
         if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
             let scale_dst = scale_dst.unwrap_or(scale_src);

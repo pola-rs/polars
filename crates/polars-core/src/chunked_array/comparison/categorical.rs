@@ -179,7 +179,7 @@ where
             },
         }
     } else {
-        let lhs_string = lhs.cast(&DataType::String, CastOptions::NonStrict)?;
+        let lhs_string = lhs.cast_with_options(&DataType::String, CastOptions::NonStrict)?;
         Ok(str_compare_function(lhs_string.str().unwrap(), rhs))
     }
 }
@@ -212,7 +212,7 @@ where
             ),
         }
     } else {
-        let lhs_string = lhs.cast(&DataType::String, CastOptions::NonStrict)?;
+        let lhs_string = lhs.cast_with_options(&DataType::String, CastOptions::NonStrict)?;
         Ok(str_compare_function(lhs_string.str().unwrap(), rhs))
     }
 }

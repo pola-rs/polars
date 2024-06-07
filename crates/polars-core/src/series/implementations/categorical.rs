@@ -218,7 +218,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast(data_type, options)
+        self.0.cast_with_options(data_type, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
