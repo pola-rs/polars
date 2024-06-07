@@ -143,9 +143,7 @@ where
             len,
         });
 
-        unsafe {
-            ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0)
-        }
+        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0) }
     }
 
     pub fn new_from_vec_and_validity(name: &str, v: Vec<T>, validity: Bitmap) -> Self {

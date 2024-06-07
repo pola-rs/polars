@@ -43,19 +43,15 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
         }),
         Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            let (values, validity) = boolean::filter_bitmap_and_validity(
-                array.values(),
-                array.validity(),
-                mask,
-            );
+            let (values, validity) =
+                boolean::filter_bitmap_and_validity(array.values(), array.validity(), mask);
             BooleanArray::new(array.data_type().clone(), values, validity).boxed()
         },
         BinaryView => {
             let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
             let views = array.views();
             let validity = array.validity();
-            let (views, validity) =
-                primitive::filter_values_and_validity(views, validity, mask);
+            let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
             unsafe {
                 BinaryViewArray::new_unchecked_unknown_md(
                     array.data_type().clone(),

@@ -1,9 +1,8 @@
 import pytest
-
-import polars as pl
 from hypothesis import given
 from hypothesis.strategies import booleans
 
+import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -27,7 +26,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df.select(pl.col("test").top_k(10)),
         pl.DataFrame({"test": [4, 3, 2, 1]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -36,7 +35,7 @@ def test_top_k() -> None:
             bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
         ),
         pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -45,7 +44,7 @@ def test_top_k() -> None:
             pl.col("bool_val").bottom_k(2).alias("bottom_k"),
         ),
         pl.DataFrame({"top_k": [True, True], "bottom_k": [False, False]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -54,7 +53,7 @@ def test_top_k() -> None:
             pl.col("str_value").bottom_k(2).alias("bottom_k"),
         ),
         pl.DataFrame({"top_k": ["d", "c"], "bottom_k": ["a", "b"]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
     with pytest.raises(pl.ComputeError, match="`k` must be set for `top_k`"):
@@ -78,18 +77,18 @@ def test_top_k() -> None:
     assert_frame_equal(
         df.top_k(3, by=["a", "b"]),
         pl.DataFrame({"a": [4, 3, 2], "b": [4, 1, 3]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
         df.top_k(3, by=["a", "b"], descending=True),
         pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
-        check_row_order=False
+        check_row_order=False,
     )
     assert_frame_equal(
         df.bottom_k(4, by=["a", "b"], descending=True),
         pl.DataFrame({"a": [4, 3, 2, 2], "b": [4, 1, 3, 2]}),
-        check_row_order=False
+        check_row_order=False,
     )
 
     df2 = pl.DataFrame(
@@ -113,7 +112,7 @@ def test_top_k() -> None:
                 "b_top_by_b": [12, 11],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -129,7 +128,7 @@ def test_top_k() -> None:
                 "b_top_by_b": [7, 8],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -145,7 +144,7 @@ def test_top_k() -> None:
                 "b_bottom_by_b": [7, 8],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -165,7 +164,7 @@ def test_top_k() -> None:
                 "b_bottom_by_b": [12, 11],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -179,7 +178,7 @@ def test_top_k() -> None:
                 "b": [9, 10, 11, 7, 8],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -193,7 +192,7 @@ def test_top_k() -> None:
                 "b": [12, 10, 11, 8, 7],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -211,7 +210,7 @@ def test_top_k() -> None:
                 "c_top_by_cb": ["Orange", "Banana"],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -233,7 +232,7 @@ def test_top_k() -> None:
                 "c_bottom_by_cb": ["Apple", "Apple"],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -255,7 +254,7 @@ def test_top_k() -> None:
                 "c_top_by_cb": ["Apple", "Apple"],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -277,7 +276,7 @@ def test_top_k() -> None:
                 "c_bottom_by_cb": ["Orange", "Banana"],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -299,7 +298,7 @@ def test_top_k() -> None:
                 "c_top_by_cb": ["Orange", "Banana"],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -321,7 +320,7 @@ def test_top_k() -> None:
                 "c_bottom_by_cb": ["Orange", "Banana"],
             }
         ),
-        check_row_order=False
+        check_row_order=False,
     )
 
     with pytest.raises(

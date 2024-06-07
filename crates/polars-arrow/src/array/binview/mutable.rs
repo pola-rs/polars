@@ -345,9 +345,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
         self.value_from_view_unchecked(self.views.get_unchecked(i))
     }
-    
+
     /// Returns the element indicated by the given view.
-    /// 
+    ///
     /// # Safety
     /// Assumes the View belongs to this MutableBinaryViewArray.
     pub unsafe fn value_from_view_unchecked<'a>(&'a self, view: &'a View) -> &'a T {

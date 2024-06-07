@@ -57,7 +57,7 @@ impl View {
             }
         }
     }
-    
+
     pub unsafe fn get_slice_unchecked<'a>(&'a self, buffers: &'a [Buffer<u8>]) -> &'a [u8] {
         unsafe {
             if self.length <= 12 {

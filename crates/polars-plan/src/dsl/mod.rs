@@ -462,7 +462,7 @@ impl Expr {
         self,
         k: K,
         by: E,
-        descending: Vec<bool>
+        descending: Vec<bool>,
     ) -> Self {
         let mut args = vec![k.into()];
         args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
@@ -474,12 +474,7 @@ impl Expr {
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
     pub fn bottom_k(self, k: Expr) -> Self {
-        self.apply_many_private(
-            FunctionExpr::TopK { descending: true },
-            &[k],
-            false,
-            false,
-        )
+        self.apply_many_private(FunctionExpr::TopK { descending: true }, &[k], false, false)
     }
 
     /// Returns the `k` smallest rows by given column.
@@ -496,12 +491,7 @@ impl Expr {
         let mut args = vec![k.into()];
         args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
         let descending = descending.into_iter().map(|x| !x).collect();
-        self.apply_many_private(
-            FunctionExpr::TopKBy { descending },
-            &args,
-            false,
-            false,
-        )
+        self.apply_many_private(FunctionExpr::TopKBy { descending }, &args, false, false)
     }
 
     /// Reverse column
