@@ -31,7 +31,7 @@ impl Default for Node {
 
 static ARENA_VERSION: AtomicU32 = AtomicU32::new(0);
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Arena<T> {
     version: u32,
     items: Vec<T>,
