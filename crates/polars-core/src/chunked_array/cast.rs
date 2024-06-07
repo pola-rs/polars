@@ -48,12 +48,24 @@ pub(crate) fn cast_chunks(
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Vec<ArrayRef>> {
+    let check_nulls = matches!(options, CastOptions::Strict);
     let options = options.into();
 
     let arrow_dtype = dtype.to_arrow(true);
     chunks
         .iter()
-        .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options))
+        .map(|arr| {
+            let out = arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
+            if check_nulls {
+                out.and_then(|new| {
+                    polars_ensure!(arr.null_count() == new.null_count(), ComputeError: "strict cast failed");
+                    Ok(new)
+                })
+
+            } else {
+                out
+            }
+        })
         .collect::<PolarsResult<Vec<_>>>()
 }
 

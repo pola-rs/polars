@@ -439,7 +439,13 @@ impl Series {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
 
-        let ret = self.0.cast(dtype, options);
+        let new_options = match options {
+            // Strictness is handled on this level to improve error messages.
+            CastOptions::Strict => CastOptions::NonStrict,
+            opt => opt,
+        };
+
+        let ret = self.0.cast(dtype, new_options);
 
         match options {
             CastOptions::NonStrict | CastOptions::Overflowing => ret,
