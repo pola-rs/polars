@@ -3880,7 +3880,7 @@ class Series:
         strict: bool = True,
         wrap_numerical: bool = False,
     ) -> Self:
-        """
+        r"""
         Cast between data types.
 
         Parameters
@@ -3888,7 +3888,7 @@ class Series:
         dtype
             DataType to cast to.
         strict
-            If True invalid casts generate exceptions instead of `null`s.
+            If True invalid casts generate exceptions instead of `null`\s.
         wrap_numerical
             If True numeric casts wrap overflowing values instead of
             marking the cast as invalid.
