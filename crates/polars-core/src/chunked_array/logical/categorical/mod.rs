@@ -396,11 +396,11 @@ impl LogicalType for CategoricalChunked {
                     self.physical.name(),
                     self.get_rev_map().get_categories().clone(),
                 );
-                let casted_series = categories.cast(dtype, options)?;
+                let casted_series = categories.cast_with_options(dtype, options)?;
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self.physical.cast(&DataType::UInt64, options)?;
+                    let s = self.physical.cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
@@ -409,7 +409,7 @@ impl LogicalType for CategoricalChunked {
                     Ok(unsafe { casted_series.take_unchecked(&self.physical) })
                 }
             },
-            _ => self.physical.cast(dtype, options),
+            _ => self.physical.cast_with_options(dtype, options),
         }
     }
 }
@@ -459,7 +459,7 @@ mod test {
             Some("bar"),
         ];
         let ca = StringChunked::new("a", slice);
-        let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
+        let ca = ca.cast_with_options(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
         let arr = ca.to_arrow(true, false);

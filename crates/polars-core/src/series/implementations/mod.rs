@@ -322,7 +322,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-                self.0.cast(data_type, options)
+                self.0.cast_with_options(data_type, options)
             }
 
             fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -464,7 +464,7 @@ impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     }
     fn bit_repr_small(&self) -> UInt32Chunked {
         self.0
-            .cast(&DataType::UInt32, CastOptions::NonStrict)
+            .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
             .unwrap()
             .u32()
             .unwrap()

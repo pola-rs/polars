@@ -34,7 +34,7 @@ impl LogicalType for TimeChunked {
             Time => Ok(self.clone().into_series()),
             #[cfg(feature = "dtype-duration")]
             Duration(tu) => {
-                let out = self.0.cast(&DataType::Duration(TimeUnit::Nanoseconds), cast_options);
+                let out = self.0.cast_with_options(&DataType::Duration(TimeUnit::Nanoseconds), cast_options);
                 if !matches!(tu, TimeUnit::Nanoseconds) {
                     out?.cast_with_options(dtype, cast_options)
                 } else {
@@ -49,7 +49,7 @@ impl LogicalType for TimeChunked {
                     self.dtype(), dtype
                 )
             },
-            dt if dt.is_numeric() => self.0.cast(dtype, cast_options),
+            dt if dt.is_numeric() => self.0.cast_with_options(dtype, cast_options),
             _ => {
                 polars_bail!(
                     InvalidOperation:

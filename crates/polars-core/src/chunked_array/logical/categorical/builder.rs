@@ -404,18 +404,18 @@ mod test {
             Some("bar"),
         ];
         let ca = StringChunked::new("a", slice);
-        let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
+        let out = ca.cast_with_options(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
         enable_string_cache();
         // empty global cache
-        let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
+        let out = ca.cast_with_options(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
         // full global cache
-        let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
+        let out = ca.cast_with_options(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
 
@@ -423,10 +423,10 @@ mod test {
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
         let ca1 = StringChunked::new("a", slice)
-            .cast(&DataType::Categorical(None, Default::default()))?;
+            .cast_with_options(&DataType::Categorical(None, Default::default()))?;
         let mut ca1 = ca1.categorical().unwrap().clone();
         let ca2 = StringChunked::new("a", slice)
-            .cast(&DataType::Categorical(None, Default::default()))?;
+            .cast_with_options(&DataType::Categorical(None, Default::default()))?;
         let ca2 = ca2.categorical().unwrap();
         ca1.append(ca2).unwrap();
 

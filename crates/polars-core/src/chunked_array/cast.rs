@@ -137,7 +137,7 @@ where
                             .clone()
                     },
                     dt if dt.is_integer() => self
-                        .cast(self.dtype(), options)?
+                        .cast_with_options(self.dtype(), options)?
                         .strict_cast(&DataType::UInt32)?
                         .u32()?
                         .clone(),
@@ -198,7 +198,7 @@ impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.cast_impl(data_type, options)
     }
 
@@ -230,7 +230,7 @@ where
 }
 
 impl ChunkCast for StringChunked {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, ordering) => match rev_map {
@@ -312,7 +312,7 @@ impl ChunkCast for StringChunked {
     }
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast(data_type, CastOptions::Overflowing)
+        self.cast_with_options(data_type, CastOptions::Overflowing)
     }
 }
 
@@ -353,7 +353,7 @@ impl StringChunked {
 }
 
 impl ChunkCast for BinaryChunked {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields, options),
@@ -364,13 +364,13 @@ impl ChunkCast for BinaryChunked {
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             DataType::String => unsafe { Ok(self.to_string_unchecked().into_series()) },
-            _ => self.cast(data_type, CastOptions::Overflowing),
+            _ => self.cast_with_options(data_type, CastOptions::Overflowing),
         }
     }
 }
 
 impl ChunkCast for BinaryOffsetChunked {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields, options),
@@ -379,12 +379,12 @@ impl ChunkCast for BinaryOffsetChunked {
     }
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast(data_type, CastOptions::Overflowing)
+        self.cast_with_options(data_type, CastOptions::Overflowing)
     }
 }
 
 impl ChunkCast for BooleanChunked {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields, options),
@@ -393,14 +393,14 @@ impl ChunkCast for BooleanChunked {
     }
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast(data_type, CastOptions::Overflowing)
+        self.cast_with_options(data_type, CastOptions::Overflowing)
     }
 }
 
 /// We cannot cast anything to or from List/LargeList
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
         match data_type {
             List(child_type) => {
@@ -461,7 +461,7 @@ impl ChunkCast for ListChunked {
         use DataType::*;
         match data_type {
             List(child_type) => cast_list_unchecked(self, child_type),
-            _ => self.cast(data_type, CastOptions::Overflowing),
+            _ => self.cast_with_options(data_type, CastOptions::Overflowing),
         }
     }
 }
@@ -470,7 +470,7 @@ impl ChunkCast for ListChunked {
 /// So this implementation casts the inner type
 #[cfg(feature = "dtype-array")]
 impl ChunkCast for ArrayChunked {
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
         match data_type {
             Array(child_type, width) => {
@@ -525,7 +525,7 @@ impl ChunkCast for ArrayChunked {
     }
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.cast(data_type, CastOptions::Overflowing)
+        self.cast_with_options(data_type, CastOptions::Overflowing)
     }
 }
 
@@ -623,7 +623,7 @@ mod test {
         builder.append_opt_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();
 
-        let new = ca.cast(&DataType::List(DataType::Float64.into()), CastOptions::Strict)?;
+        let new = ca.cast_with_options(&DataType::List(DataType::Float64.into()), CastOptions::Strict)?;
 
         assert_eq!(new.dtype(), &DataType::List(DataType::Float64.into()));
         Ok(())
@@ -635,7 +635,7 @@ mod test {
         // check if we can cast categorical twice without panic
         let ca = StringChunked::new("foo", &["bar", "ham"]);
         let out = ca
-            .cast(&DataType::Categorical(None, Default::default()), CastOptions::Strict)
+            .cast_with_options(&DataType::Categorical(None, Default::default()), CastOptions::Strict)
             .unwrap();
         let out = out
             .cast(&DataType::Categorical(None, Default::default()), CastOptions::Strict)

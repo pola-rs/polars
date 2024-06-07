@@ -33,7 +33,7 @@ impl LogicalType for DateChunked {
             Date => Ok(self.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
             Datetime(tu, tz) => {
-                let casted = self.0.cast(dtype, cast_options)?;
+                let casted = self.0.cast_with_options(dtype, cast_options)?;
                 let casted = casted.datetime().unwrap();
                 let conversion = match tu {
                     TimeUnit::Nanoseconds => NS_IN_DAY,
@@ -44,7 +44,7 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             },
-            dt if dt.is_numeric() => self.0.cast(dtype, cast_options),
+            dt if dt.is_numeric() => self.0.cast_with_options(dtype, cast_options),
             dt => {
                 polars_bail!(
                     InvalidOperation:

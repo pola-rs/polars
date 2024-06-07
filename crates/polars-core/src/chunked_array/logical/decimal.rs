@@ -94,7 +94,7 @@ impl LogicalType for DecimalChunked {
             };
             if scale_src == scale_dst && is_widen {
                 let dtype = &DataType::Decimal(precision_dst, Some(scale_dst));
-                return self.0.cast(dtype, cast_options); // no conversion or checks needed
+                return self.0.cast_with_options(dtype, cast_options); // no conversion or checks needed
             }
         }
         let chunks = cast_chunks(&self.chunks, dtype, cast_options)?;

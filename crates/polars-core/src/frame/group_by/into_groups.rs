@@ -236,7 +236,7 @@ impl IntoGroupsProxy for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]
         {
-            let ca = self.cast(&DataType::UInt8, CastOptions::Overflowing).unwrap();
+            let ca = self.cast_with_options(&DataType::UInt8, CastOptions::Overflowing).unwrap();
             let ca = ca.u8().unwrap();
             ca.group_tuples(multithreaded, sorted)
         }

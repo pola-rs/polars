@@ -22,7 +22,7 @@ impl StringChunked {
             }
         }
 
-        self.cast(&DataType::Decimal(None, Some(scale as usize)), CastOptions::NonStrict)
+        self.cast_with_options(&DataType::Decimal(None, Some(scale as usize)), CastOptions::NonStrict)
     }
 }
 

@@ -972,7 +972,7 @@ pub(crate) mod test {
     #[test]
     fn cast() {
         let a = get_chunked_array();
-        let b = a.cast(&DataType::Int64).unwrap();
+        let b = a.cast_with_options(&DataType::Int64).unwrap();
         assert_eq!(b.dtype(), &ArrowDataType::Int64)
     }
 
@@ -1055,7 +1055,7 @@ pub(crate) mod test {
         disable_string_cache();
         let ca = StringChunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast_with_options(&DataType::Categorical(None, Default::default()))
             .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
