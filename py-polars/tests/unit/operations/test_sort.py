@@ -1000,3 +1000,15 @@ def test_sort_nan_1942() -> None:
     end = time.time()
 
     assert (end - start) < 1.0
+
+
+def test_sort_chunked_no_nulls() -> None:
+    df = pl.DataFrame({"values": [3.0, 2.0]})
+    df = pl.concat([df, df], rechunk=False)
+
+    assert df.with_columns(pl.col("values").arg_sort())["values"].to_list() == [
+        1,
+        3,
+        0,
+        2,
+    ]
