@@ -103,7 +103,10 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: site
+          # docs/ and py-polars/ included for backwards compatibility
           clean-exclude: |
+            api/python/
+            api/rust/
             docs/
             py-polars/
           single-commit: true
