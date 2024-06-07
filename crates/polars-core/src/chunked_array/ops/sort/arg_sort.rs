@@ -1,5 +1,3 @@
-use polars_utils::iter::EnumerateIdxTrait;
-
 use super::*;
 
 // Reduce monomorphisation.
@@ -83,8 +81,13 @@ where
 {
     let mut vals = Vec::with_capacity(len);
 
+    let mut count: IdxSize = 0;
     for arr_iter in iters {
-        vals.extend(arr_iter.into_iter().enumerate_idx());
+        vals.extend(arr_iter.into_iter().map(|v| {
+            let idx = count;
+            count += 1;
+            (idx, v)
+        }));
     }
 
     sort_impl(vals.as_mut_slice(), options);
