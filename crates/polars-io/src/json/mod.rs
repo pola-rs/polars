@@ -25,7 +25,7 @@
 //! let file = Cursor::new(basic_json);
 //! let df = JsonReader::new(file)
 //! .with_json_format(JsonFormat::JsonLines)
-//! .infer_schema_len(Some(3))
+//! .infer_schema_len(NonZeroUsize::new(3))
 //! .with_batch_size(NonZeroUsize::new(3).unwrap())
 //! .finish()
 //! .unwrap();
