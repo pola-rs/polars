@@ -1823,10 +1823,14 @@ class Expr:
     def top_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` largest elements.
+        
+        Non-null elements are always preferred over null elements. The output
+        is not guaranteed to be in any particular order, call :func:`sort`
+        after this function if you wish the output to be sorted.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n})
+        .. math:: O(n)
 
         Parameters
         ----------
@@ -1874,9 +1878,14 @@ class Expr:
         r"""
         Return the elements corresponding to the `k` largest elements of the `by` column(s).
 
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n})
+        .. math:: O(n \log{n})
 
         Parameters
         ----------
@@ -1985,9 +1994,13 @@ class Expr:
         r"""
         Return the `k` smallest elements.
 
+        Non-null elements are always preferred over null elements. The output is
+        not guaranteed to be in any particular order, call :func:`sort` after
+        this function if you wish the output to be sorted.
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n})
+        .. math:: O(n)
 
         Parameters
         ----------
@@ -2037,9 +2050,14 @@ class Expr:
         r"""
         Return the elements corresponding to the `k` smallest elements of the `by` column(s).
 
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n})
+        .. math:: O(n \log{n})
 
         Parameters
         ----------

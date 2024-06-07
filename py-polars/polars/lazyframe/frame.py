@@ -1379,6 +1379,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Return the `k` largest rows.
 
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
         Parameters
         ----------
         k
@@ -1447,6 +1452,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> Self:
         """
         Return the `k` smallest rows.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         Parameters
         ----------
