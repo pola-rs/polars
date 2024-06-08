@@ -6591,9 +6591,7 @@ class Series:
         ]
         """
 
-    def reshape(
-        self, dimensions: tuple[int, ...], nested_type: type[Array] | type[List] = List
-    ) -> Series:
+    def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
         Reshape this Series to a flat Series or a Series of Lists.
 
@@ -6631,8 +6629,7 @@ class Series:
                 [7, 8, 9]
         ]
         """
-        is_list = nested_type == List
-        return self._from_pyseries(self._s.reshape(dimensions, is_list))
+        return self._from_pyseries(self._s.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Series:
         """

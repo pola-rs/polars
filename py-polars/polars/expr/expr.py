@@ -48,7 +48,6 @@ from polars._utils.various import (
 )
 from polars.datatypes import (
     Int64,
-    List,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -80,7 +79,6 @@ if TYPE_CHECKING:
     from polars._utils.various import (
         NoDefault,
     )
-    from polars.datatypes import Array
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -9078,11 +9076,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.radians())
 
-    def reshape(
-        self, dimensions: tuple[int, ...], nested_type: type[Array] | type[List] = List
-    ) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
-        Reshape this Expr to a flat Series or a Series of Lists.
+        Reshape this Expr to a flat Series or an Array Series.
 
         Parameters
         ----------
@@ -9121,8 +9117,7 @@ class Expr:
         --------
         Expr.list.explode : Explode a list column.
         """
-        is_list = nested_type == List
-        return self._from_pyexpr(self._pyexpr.reshape(dimensions, is_list))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
