@@ -24,12 +24,15 @@ where
         ca.rolling_map_float(window_size, |arr| {
             let arr = unsafe { arr.chunks_mut().get_mut(0).unwrap() };
 
-            us.with_array(arr, |us| {
-                us.as_ref()
-                    .skew(bias)
-                    .unwrap()
-                    .map(|flt| T::Native::from_f64(flt).unwrap())
-            })
+            // SAFETY: dtype is correct.
+            unsafe {
+                us.with_array(arr, |us| {
+                    us.as_ref()
+                        .skew(bias)
+                        .unwrap()
+                        .map(|flt| T::Native::from_f64(flt).unwrap())
+                })
+            }
         })
     })
 }

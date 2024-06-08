@@ -57,8 +57,7 @@ where
         })
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca_in
                 .iter()
                 .zip(other.list()?.amortized_iter())
@@ -97,8 +96,7 @@ where
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            // SAFETY: lifetime of iterator bound to scope of function
-            .zip(unsafe { other.array()?.amortized_iter() })
+            .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<T>().unwrap();
@@ -183,8 +181,7 @@ fn is_in_string_list_categorical(
         }
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca_in
                 .iter()
                 .zip(other.list()?.amortized_iter())
@@ -257,8 +254,7 @@ fn is_in_binary_list(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Bool
         })
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca_in
                 .iter()
                 .zip(other.list()?.amortized_iter())
@@ -293,8 +289,7 @@ fn is_in_binary_array(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Boo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            // SAFETY: lifetime of iterator bound to scope of function
-            .zip(unsafe { other.array()?.amortized_iter() })
+            .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<BinaryType>().unwrap();
@@ -322,7 +317,6 @@ fn is_in_boolean_list(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Bo
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
         let value = ca_in.get(0);
         // SAFETY: we know the iterators len
-        // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             other
                 .list()?
@@ -338,8 +332,7 @@ fn is_in_boolean_list(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Bo
         }
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca_in
                 .iter()
                 .zip(other.list()?.amortized_iter())
@@ -379,8 +372,7 @@ fn is_in_boolean_array(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<B
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            // SAFETY: lifetime of iterator bound to scope of function
-            .zip(unsafe { other.array()?.amortized_iter() })
+            .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<BooleanType>().unwrap();
@@ -436,8 +428,7 @@ fn is_in_struct_list(ca_in: &StructChunked, other: &Series) -> PolarsResult<Bool
         })
     } else {
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca_in
                 .iter()
                 .zip(other.list()?.amortized_iter())
@@ -476,7 +467,7 @@ fn is_in_struct_array(ca_in: &StructChunked, other: &Series) -> PolarsResult<Boo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            .zip(unsafe { other.array()?.amortized_iter() })
+            .zip(other.array()?.amortized_iter())
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().struct_().unwrap();
@@ -531,9 +522,6 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
             }
 
             let mut any_values = Vec::with_capacity(other.len() * other.fields().len());
-            // SAFETY:
-            // the iterator is unsafe as the lifetime is tied to the iterator
-            // so we copy to an owned buffer first
             other.iter().for_each(|vals| {
                 any_values.extend_from_slice(vals);
             });
@@ -674,8 +662,7 @@ fn is_in_cat_list(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Bo
         // Make physicals compatible of ca_in with those of the list
         let (_, ca_in) = make_categoricals_compatible(inner_cat, ca_in)?;
 
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca_in
                 .physical()
                 .iter()

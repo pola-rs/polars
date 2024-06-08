@@ -1,46 +1,35 @@
-use std::marker::PhantomData;
 use std::ptr::NonNull;
+use std::rc::Rc;
 
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
 
-/// A wrapper type that should make it a bit more clear that we should not clone Series
-#[derive(Copy, Clone)]
-pub struct UnstableSeries<'a> {
-    lifetime: PhantomData<&'a Series>,
-    // A series containing a single chunk ArrayRef
-    // the ArrayRef will be replaced by amortized_iter
-    // use with caution!
-    container: *mut Series,
+/// A `[Series]` that amortizes a few allocations during iteration.
+#[derive(Clone)]
+pub struct AmortSeries {
+    container: Rc<Series>,
     // the ptr to the inner chunk, this saves some ptr chasing
     inner: NonNull<ArrayRef>,
 }
 
 /// We don't implement Deref so that the caller is aware of converting to Series
-impl AsRef<Series> for UnstableSeries<'_> {
+impl AsRef<Series> for AmortSeries {
     fn as_ref(&self) -> &Series {
-        unsafe { &*self.container }
-    }
-}
-
-impl AsMut<Series> for UnstableSeries<'_> {
-    fn as_mut(&mut self) -> &mut Series {
-        unsafe { &mut *self.container }
+        self.container.as_ref()
     }
 }
 
 pub type ArrayBox = Box<dyn Array>;
 
-impl<'a> UnstableSeries<'a> {
-    pub fn new(series: &'a mut Series) -> Self {
+impl AmortSeries {
+    pub fn new(series: Rc<Series>) -> Self {
         debug_assert_eq!(series.chunks().len(), 1);
-        let container = series as *mut Series;
-        let inner_chunk = series.array_ref(0);
-        UnstableSeries {
-            lifetime: PhantomData,
+        let inner_chunk = series.array_ref(0) as *const ArrayRef as *mut arrow::array::ArrayRef;
+        let container = series;
+        AmortSeries {
             container,
-            inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),
+            inner: NonNull::new(inner_chunk).unwrap(),
         }
     }
 
@@ -49,9 +38,8 @@ impl<'a> UnstableSeries<'a> {
     /// # Safety
     /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.
     #[inline]
-    pub(crate) unsafe fn new_with_chunk(series: &'a mut Series, inner_chunk: &ArrayRef) -> Self {
-        UnstableSeries {
-            lifetime: PhantomData,
+    pub(crate) unsafe fn new_with_chunk(series: Rc<Series>, inner_chunk: &ArrayRef) -> Self {
+        AmortSeries {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef)
                 .unwrap_unchecked_release(),
@@ -69,22 +57,29 @@ impl<'a> UnstableSeries<'a> {
     }
 
     #[inline]
-    /// Swaps inner state with the `array`. Prefer `UnstableSeries::with_array` as this
+    /// Swaps inner state with the `array`. Prefer `AmortSeries::with_array` as this
     /// restores the state.
     /// # Safety
     /// This swaps an underlying pointer that might be hold by other cloned series.
     pub unsafe fn swap(&mut self, array: &mut ArrayRef) {
         std::mem::swap(self.inner.as_mut(), array);
+
         // ensure lengths are correct.
-        self.as_mut()._get_inner_mut().compute_len();
+        unsafe {
+            let ptr = Rc::as_ptr(&self.container) as *mut Series;
+            (*ptr)._get_inner_mut().compute_len()
+        }
     }
 
     /// Temporary swaps out the array, and restores the original state
     /// when application of the function `f` is done.
+    ///
+    /// # Safety
+    /// Array must be from `Series` physical dtype.
     #[inline]
-    pub fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
+    pub unsafe fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
     where
-        F: Fn(&UnstableSeries) -> T,
+        F: Fn(&AmortSeries) -> T,
     {
         unsafe {
             self.swap(array);
