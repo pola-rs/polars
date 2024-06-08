@@ -207,7 +207,7 @@ impl Sink for SortSink {
                 dist,
                 self.sort_idx,
                 self.sort_options.descending[0],
-                self.sort_options.nulls_last,
+                self.sort_options.nulls_last[0],
                 self.slice,
                 context.verbose,
                 self.mem_track.clone(),

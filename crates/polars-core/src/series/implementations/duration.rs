@@ -127,7 +127,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
-                let lhs = self.cast(&DataType::Int64).unwrap();
+                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             },
@@ -138,7 +138,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
-                let lhs = self.cast(&DataType::Int64).unwrap();
+                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
             },
@@ -148,7 +148,8 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     TimeUnit::Microseconds => 86_400_000_000,
                     TimeUnit::Nanoseconds => 86_400_000_000_000,
                 };
-                let lhs = self.cast(&DataType::Int64).unwrap() / one_day_in_tu;
+                let lhs =
+                    self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap() / one_day_in_tu;
                 let rhs = rhs
                     .cast(&DataType::Int32)
                     .unwrap()
@@ -162,7 +163,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             },
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
-                let lhs = self.cast(&DataType::Int64).unwrap();
+                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
                     .add_to(&rhs)?
@@ -182,7 +183,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "dtypes and units must be equal in duration arithmetic");
-        let lhs = self.cast(&DataType::Int64).unwrap();
+        let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
         let rhs = rhs.cast(&DataType::Int64).unwrap();
         Ok(lhs
             .remainder(&rhs)?
@@ -317,8 +318,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

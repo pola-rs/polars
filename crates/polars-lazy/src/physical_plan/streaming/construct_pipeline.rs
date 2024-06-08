@@ -212,7 +212,7 @@ pub(super) fn construct(
     };
     // keep the original around for formatting purposes
     let original_lp = if fmt {
-        let original_lp = node_to_lp_cloned(insertion_location, expr_arena, lp_arena);
+        let original_lp = IRPlan::new(insertion_location, lp_arena.clone(), expr_arena.clone());
         Some(original_lp)
     } else {
         None
@@ -233,7 +233,7 @@ fn get_pipeline_node(
     lp_arena: &mut Arena<IR>,
     mut pipelines: Vec<PipeLine>,
     schema: SchemaRef,
-    original_lp: Option<DslPlan>,
+    original_lp: Option<IRPlan>,
 ) -> IR {
     // create a dummy input as the map function will call the input
     // so we just create a scan that returns an empty df

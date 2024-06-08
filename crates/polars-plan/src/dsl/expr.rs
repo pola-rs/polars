@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -81,7 +82,7 @@ pub enum Expr {
     Cast {
         expr: Arc<Expr>,
         data_type: DataType,
-        strict: bool,
+        options: CastOptions,
     },
     Sort {
         expr: Arc<Expr>,
@@ -117,11 +118,12 @@ pub enum Expr {
         input: Arc<Expr>,
         by: Arc<Expr>,
     },
-    /// See postgres window functions
+    /// Polars flavored window functions.
     Window {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
+        order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
     Wildcard,
@@ -191,7 +193,7 @@ impl Hash for Expr {
             Expr::Cast {
                 expr,
                 data_type,
-                strict,
+                options: strict,
             } => {
                 expr.hash(state);
                 data_type.hash(state);
@@ -249,10 +251,12 @@ impl Hash for Expr {
             Expr::Window {
                 function,
                 partition_by,
+                order_by,
                 options,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
+                order_by.hash(state);
                 options.hash(state);
             },
             Expr::Slice {

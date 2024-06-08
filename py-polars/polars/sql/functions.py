@@ -21,11 +21,6 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
 
     .. versionadded:: 0.20.31
 
-    .. warning::
-        This functionality is considered **unstable**, although it is close to
-        being considered stable. It may be changed at any point without it being
-        considered a breaking change.
-
     Parameters
     ----------
     query
@@ -35,8 +30,10 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
 
     Notes
     -----
-    * More control over registration and execution behaviour is available by
-      using the :class:`SQLContext` object.
+    * The Polars SQL engine can operate against Polars DataFrame, LazyFrame, and Series
+      objects, as well as Pandas DataFrame and Series, PyArrow Table and RecordBatch.
+    * Additional control over registration and execution behaviour is available
+      with the :class:`SQLContext` object.
 
     See Also
     --------
@@ -79,8 +76,8 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     │ 2   ┆ 7   ┆ y   ┆ -654 │
     └─────┴─────┴─────┴──────┘
 
-    Apply SQL transforms (aliasing "self" to "frame") and subsequently
-    filter natively (you can freely mix SQL and native operations):
+    Apply SQL transforms and subsequently filter natively (you can freely mix SQL and
+    native operations):
 
     >>> pl.sql(
     ...     query='''
@@ -102,11 +99,41 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     │ 1   ┆ false     ┆ 3.0 ┆ z:z:z │
     │ 2   ┆ true      ┆ 3.5 ┆ y:y:y │
     └─────┴───────────┴─────┴───────┘
+
+    Join polars LazyFrame with a pandas DataFrame and a pyarrow Table:
+
+    >>> import pandas as pd
+    >>> import pyarrow as pa
+    >>> pl_frame = lf1
+    >>> pd_frame = pd.DataFrame({"a": [2, 3, 4], "d": [-0.5, 0.0, 0.5]})
+    >>> pa_table = pa.Table.from_arrays(
+    ...     [pa.array([1, 2, 3]), pa.array(["x", "y", "z"])],
+    ...     names=["a", "e"],
+    ... )
+    >>> pl.sql(
+    ...     query='''
+    ...         SELECT pl_frame.*, d, e
+    ...         FROM pl_frame
+    ...         JOIN pd_frame USING(a)
+    ...         JOIN pa_table USING(a)
+    ...     ''',
+    ... ).collect()
+    shape: (2, 5)
+    ┌─────┬─────┬─────┬──────┬─────┐
+    │ a   ┆ b   ┆ c   ┆ d    ┆ e   │
+    │ --- ┆ --- ┆ --- ┆ ---  ┆ --- │
+    │ i64 ┆ i64 ┆ str ┆ f64  ┆ str │
+    ╞═════╪═════╪═════╪══════╪═════╡
+    │ 2   ┆ 7   ┆ y   ┆ -0.5 ┆ y   │
+    │ 3   ┆ 8   ┆ x   ┆ 0.0  ┆ z   │
+    └─────┴─────┴─────┴──────┴─────┘
     """
     from polars.sql import SQLContext
 
-    with SQLContext(eager=eager, register_globals=True) as ctx:
-        return ctx.execute(query)
+    return SQLContext.execute_global(
+        query=query,
+        eager=eager,
+    )
 
 
 __all__ = ["sql"]

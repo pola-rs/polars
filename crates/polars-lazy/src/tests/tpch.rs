@@ -79,7 +79,7 @@ fn test_q2() -> PolarsResult<()> {
         .sort_by_exprs(
             [cols(["s_acctbal", "n_name", "s_name", "p_partkey"])],
             SortMultipleOptions::default()
-                .with_order_descendings([true, false, false, false])
+                .with_order_descending_multi([true, false, false, false])
                 .with_maintain_order(true),
         )
         .limit(100)

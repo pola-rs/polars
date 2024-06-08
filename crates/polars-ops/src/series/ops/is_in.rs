@@ -97,7 +97,8 @@ where
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            .zip(other.array()?.amortized_iter())
+            // SAFETY: lifetime of iterator bound to scope of function
+            .zip(unsafe { other.array()?.amortized_iter() })
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<T>().unwrap();
@@ -292,7 +293,8 @@ fn is_in_binary_array(ca_in: &BinaryChunked, other: &Series) -> PolarsResult<Boo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            .zip(other.array()?.amortized_iter())
+            // SAFETY: lifetime of iterator bound to scope of function
+            .zip(unsafe { other.array()?.amortized_iter() })
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<BinaryType>().unwrap();
@@ -377,7 +379,8 @@ fn is_in_boolean_array(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<B
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            .zip(other.array()?.amortized_iter())
+            // SAFETY: lifetime of iterator bound to scope of function
+            .zip(unsafe { other.array()?.amortized_iter() })
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().unpack::<BooleanType>().unwrap();
@@ -473,7 +476,7 @@ fn is_in_struct_array(ca_in: &StructChunked, other: &Series) -> PolarsResult<Boo
         polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
         ca_in
             .iter()
-            .zip(other.array()?.amortized_iter())
+            .zip(unsafe { other.array()?.amortized_iter() })
             .map(|(value, series)| match (value, series) {
                 (val, Some(series)) => {
                     let ca = series.as_ref().struct_().unwrap();

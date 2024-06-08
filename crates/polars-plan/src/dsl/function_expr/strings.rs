@@ -330,7 +330,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatVertical {
                 delimiter,
                 ignore_nulls,
-            } => map!(strings::concat, &delimiter, ignore_nulls),
+            } => map!(strings::join, &delimiter, ignore_nulls),
             #[cfg(feature = "concat_str")]
             ConcatHorizontal {
                 delimiter,
@@ -709,10 +709,10 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
+pub(super) fn join(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
     let str_s = s.cast(&DataType::String)?;
-    let concat = polars_ops::chunked_array::str_concat(str_s.str()?, delimiter, ignore_nulls);
-    Ok(concat.into_series())
+    let joined = polars_ops::chunked_array::str_join(str_s.str()?, delimiter, ignore_nulls);
+    Ok(joined.into_series())
 }
 
 #[cfg(feature = "concat_str")]

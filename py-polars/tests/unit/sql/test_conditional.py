@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -58,7 +58,6 @@ def test_control_flow(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-
     assert res.to_dict(as_series=False) == {
         "coalsc": [1, 4, 2, 3, 6, 4],
         "nullif x_y": [1, None, 2, None, None, 4],
@@ -68,9 +67,9 @@ def test_control_flow(foods_ipc_path: Path) -> None:
         "both": [1, None, 2, 3, None, 4],
         "x_eq_y": ["ne", "ne", "ne", "eq", "ne", "ne"],
     }
+
     for null_func in ("IFNULL", "NULLIF"):
-        # both functions expect only 2 arguments
-        with pytest.raises(InvalidOperationError):
+        with pytest.raises(SQLSyntaxError):  # both functions expect TWO arguments
             pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
 
 

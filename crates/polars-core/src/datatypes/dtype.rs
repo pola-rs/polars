@@ -28,6 +28,18 @@ pub enum UnknownKind {
     Any,
 }
 
+impl UnknownKind {
+    pub fn materialize(&self) -> Option<DataType> {
+        let dtype = match self {
+            UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
+            UnknownKind::Float => DataType::Float64,
+            UnknownKind::Str => DataType::String,
+            UnknownKind::Any => return None,
+        };
+        Some(dtype)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
@@ -213,6 +225,17 @@ impl DataType {
             prev = dtype
         }
         prev
+    }
+
+    /// Cast the leaf types of Lists/Arrays and keep the nesting.
+    pub fn cast_leaf(&self, to: DataType) -> DataType {
+        use DataType::*;
+        match self {
+            List(inner) => List(Box::new(inner.cast_leaf(to))),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Array(Box::new(inner.cast_leaf(to)), *size),
+            _ => to,
+        }
     }
 
     /// Convert to the physical data type

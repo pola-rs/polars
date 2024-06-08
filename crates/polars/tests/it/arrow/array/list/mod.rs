@@ -21,6 +21,25 @@ fn debug() {
 }
 
 #[test]
+fn split_at() {
+    let values = Buffer::from(vec![1, 2, 3, 4, 5]);
+    let values = PrimitiveArray::<i32>::new(ArrowDataType::Int32, values, None);
+
+    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let array = ListArray::<i32>::new(
+        data_type,
+        vec![0, 2, 2, 3, 5].try_into().unwrap(),
+        Box::new(values),
+        None,
+    );
+
+    let (lhs, rhs) = array.split_at(2);
+
+    assert_eq!(format!("{lhs:?}"), "ListArray[[1, 2], []]");
+    assert_eq!(format!("{rhs:?}"), "ListArray[[3], [4, 5]]");
+}
+
+#[test]
 #[should_panic]
 fn test_nested_panic() {
     let values = Buffer::from(vec![1, 2, 3, 4, 5]);

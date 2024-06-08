@@ -107,16 +107,6 @@ def test_string_cache_decorator_mixed_with_enable() -> None:
     sc(True)
 
 
-def test_string_cache_enable_arg_deprecated() -> None:
-    sc(False)
-    with pytest.deprecated_call():
-        pl.enable_string_cache(True)
-    sc(True)
-    with pytest.deprecated_call():
-        pl.enable_string_cache(False)
-    sc(False)
-
-
 def test_string_cache_join() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["eggs", "spam", "foo"], "c": [2, 2, 3]})
@@ -174,7 +164,9 @@ def test_string_cache_eager_lazy() -> None:
             }
         ).with_columns(pl.col("region_ids").cast(pl.Categorical))
 
-        result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
+        result = df1.join(
+            df2, left_on="region_ids", right_on="seq_name", how="left", coalesce=True
+        )
         assert_frame_equal(result, expected)
 
         # also check row-wise categorical insert.

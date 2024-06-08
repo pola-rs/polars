@@ -161,3 +161,20 @@ def test_field_and_column_expansion() -> None:
         "i": [3],
         "j": [4],
     }
+
+
+def test_struct_field_exclude_and_wildcard_expansion() -> None:
+    df = pl.DataFrame({"a": [{"x": 1, "y": 2}], "b": [{"i": 3, "j": 4}]})
+
+    assert df.select(pl.exclude("foo").struct.field("*")).to_dict(as_series=False) == {
+        "x": [1],
+        "y": [2],
+        "i": [3],
+        "j": [4],
+    }
+    assert df.select(pl.all().struct.field("*")).to_dict(as_series=False) == {
+        "x": [1],
+        "y": [2],
+        "i": [3],
+        "j": [4],
+    }

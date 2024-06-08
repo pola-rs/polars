@@ -152,8 +152,6 @@ def read_excel(
 
     .. versionadded:: 0.20.6
         Added "calamine" fastexcel engine for Excel Workbooks (.xlsx, .xlsb, .xls).
-    .. versionadded:: 0.19.4
-        Added "pyxlsb" engine for Excel Binary Workbooks (.xlsb).
     .. versionadded:: 0.19.3
         Added "openpyxl" engine, and added `schema_overrides` parameter.
 
@@ -184,10 +182,6 @@ def read_excel(
           additional automatic type inference; potentially useful if you are otherwise
           unable to parse your sheet with the (default) `xlsx2csv` engine in
           conjunction with the `schema_overrides` parameter.
-        * "pyxlsb": this engine can be used for Excel Binary Workbooks (`.xlsb` files).
-          Note that you have to use `schema_overrides` to correctly load date/datetime
-          columns (or these will be read as floats representing offset Julian values).
-          You should now prefer the "calamine" engine for this Workbook type.
     engine_options
         Additional options passed to the underlying engine's primary parsing
         constructor (given below), if supported:
@@ -195,7 +189,6 @@ def read_excel(
         * "xlsx2csv": `Xlsx2csv`
         * "calamine": n/a (can only provide `read_options`)
         * "openpyxl": `load_workbook`
-        * "pyxlsb": `open_workbook`
     read_options
         Options passed to the underlying engine method that reads the sheet data.
         Where supported, this allows for additional control over parsing. The
@@ -204,7 +197,6 @@ def read_excel(
         * "xlsx2csv": `pl.read_csv`
         * "calamine": `ExcelReader.load_sheet_by_name`
         * "openpyxl": n/a (can only provide `engine_options`)
-        * "pyxlsb":  n/a (can only provide `engine_options`)
     schema_overrides
         Support type specification or override of one or more columns.
     infer_schema_length
@@ -658,24 +650,6 @@ def _initialise_spreadsheet_parser(
         ]
         return _read_spreadsheet_calamine, parser, sheets
 
-    elif engine == "pyxlsb":
-        issue_deprecation_warning(
-            "the 'pyxlsb' engine is deprecated and should be replaced with 'calamine'",
-            version="0.20.22",
-        )
-        pyxlsb = import_optional("pyxlsb")
-        try:
-            parser = pyxlsb.open_workbook(source, **engine_options)
-        except KeyError as err:
-            if "no item named 'xl/_rels/workbook.bin.rels'" in str(err):
-                msg = f"invalid Excel Binary Workbook: {source!r}"
-                raise TypeError(msg) from None
-            raise
-        sheets = [
-            {"index": i + 1, "name": name} for i, name in enumerate(parser.sheets)
-        ]
-        return _read_spreadsheet_pyxlsb, parser, sheets
-
     msg = f"unrecognized engine: {engine!r}"
     raise NotImplementedError(msg)
 
@@ -702,13 +676,22 @@ def _csv_buffer_to_frame(
     if read_options is None:
         read_options = {}
     if schema_overrides:
-        if (csv_dtypes := read_options.get("dtypes", {})) and set(
-            csv_dtypes
-        ).intersection(schema_overrides):
+        csv_dtypes = read_options.get("dtypes", {})
+        if csv_dtypes:
+            issue_deprecation_warning(
+                "The `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
+                version="0.20.31",
+            )
+        csv_schema_overrides = read_options.get("schema_overrides", csv_dtypes)
+
+        if csv_schema_overrides and set(csv_schema_overrides).intersection(
+            schema_overrides
+        ):
             msg = "cannot specify columns in both `schema_overrides` and `read_options['dtypes']`"
             raise ParameterCollisionError(msg)
+
         read_options = read_options.copy()
-        read_options["dtypes"] = {**csv_dtypes, **schema_overrides}
+        read_options["schema_overrides"] = {**csv_schema_overrides, **schema_overrides}
 
     # otherwise rewind the buffer and parse as csv
     csv.seek(0)
@@ -870,73 +853,13 @@ def _read_spreadsheet_calamine(
                 type_checks.append(check_cast)
 
     if type_checks:
-        apply_cast = df.select(
-            [d[0].all(ignore_nulls=True) for d in type_checks],
-        ).row(0)
+        apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
         if downcast := [
             cast for apply, (_, cast) in zip(apply_cast, type_checks) if apply
         ]:
             df = df.with_columns(*downcast)
 
     return df
-
-
-def _read_spreadsheet_pyxlsb(
-    parser: Any,
-    sheet_name: str | None,
-    read_options: dict[str, Any],
-    schema_overrides: SchemaDict | None,
-    *,
-    raise_if_empty: bool,
-) -> pl.DataFrame:
-    from pyxlsb import convert_date
-
-    infer_schema_length = read_options.pop("infer_schema_length", None)
-    ws = parser.get_sheet(sheet_name)
-    try:
-        # establish header/data rows
-        header: list[str | None] = []
-        rows_iter = ws.rows()
-        for row in rows_iter:
-            row_values = [cell.v for cell in row]
-            if any(v is not None for v in row_values):
-                header.extend(row_values)
-                break
-
-        # load data rows as series
-        series_data = []
-        for name, column_data in zip(header, zip(*rows_iter)):
-            if name:
-                values = [cell.v for cell in column_data]
-                if (dtype := (schema_overrides or {}).get(name)) == String:
-                    # note: if we init series with mixed-type data (eg: str/int)
-                    # the non-strings will become null, so we handle the cast here
-                    values = [
-                        str(int(v) if isinstance(v, float) and v.is_integer() else v)
-                        if (v is not None)
-                        else v
-                        for v in values
-                    ]
-                elif dtype in (Datetime, Date):
-                    dtype = None
-
-                s = pl.Series(name, values, dtype=dtype)
-                series_data.append(s)
-    finally:
-        ws.close()
-
-    if schema_overrides:
-        for idx, s in enumerate(series_data):
-            if schema_overrides.get(s.name) in (Datetime, Date):
-                series_data[idx] = s.map_elements(convert_date, return_dtype=Datetime)
-
-    df = pl.DataFrame(
-        {s.name: s for s in series_data},
-        schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
-        strict=False,
-    )
-    return _drop_null_data(df, raise_if_empty=raise_if_empty)
 
 
 def _read_spreadsheet_xlsx2csv(

@@ -20,6 +20,7 @@ ethnum = { workspace = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-compute = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 simdutf8 = { workspace = true }

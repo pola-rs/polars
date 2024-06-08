@@ -188,7 +188,7 @@ fn read_config(
             continue;
         }
 
-        let mut config = std::fs::File::open(&resolve_homedir(path)).ok()?;
+        let mut config = std::fs::File::open(resolve_homedir(path)).ok()?;
         let mut buf = vec![];
         config.read_to_end(&mut buf).ok()?;
         let content = std::str::from_utf8(buf.as_ref()).ok()?;

@@ -28,10 +28,7 @@ from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
     deprecate_renamed_parameter,
-    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars._utils.parse_expr_input import (
@@ -42,6 +39,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
     _is_generator,
+    extend_bool,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
@@ -392,7 +390,18 @@ class LazyFrame:
     @property
     def columns(self) -> list[str]:
         """
-        Get column names.
+        Get the column names.
+
+        Returns
+        -------
+        list of str
+            A list containing the name of each column in order.
+
+        Warnings
+        --------
+        Determining the column names of a LazyFrame requires resolving its schema.
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         Examples
         --------
@@ -411,11 +420,22 @@ class LazyFrame:
     @property
     def dtypes(self) -> list[DataType]:
         """
-        Get dtypes of columns in LazyFrame.
+        Get the column data types.
+
+        Returns
+        -------
+        list of DataType
+            A list containing the data type of each column in order.
+
+        Warnings
+        --------
+        Determining the data types of a LazyFrame requires resolving its schema.
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         See Also
         --------
-        schema : Returns a {colname:dtype} mapping.
+        schema
 
         Examples
         --------
@@ -434,7 +454,17 @@ class LazyFrame:
     @property
     def schema(self) -> OrderedDict[str, DataType]:
         """
-        Get a dict[column name, DataType].
+        Get a mapping of column names to their data type.
+
+        Returns
+        -------
+        OrderedDict
+            An ordered mapping of column names to their data type.
+
+        Warnings
+        --------
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         Examples
         --------
@@ -453,7 +483,17 @@ class LazyFrame:
     @property
     def width(self) -> int:
         """
-        Get the width of the LazyFrame.
+        Get the number of columns.
+
+        Returns
+        -------
+        int
+
+        Warnings
+        --------
+        Determining the width of a LazyFrame requires resolving its schema.
+        Resolving the schema of a LazyFrame can be an expensive operation.
+        Avoid accessing this property repeatedly if possible.
 
         Examples
         --------
@@ -732,21 +772,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
-        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
-        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
-        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
-        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
-        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
-        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
-        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
-        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
-        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
-        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31 ┆ 23:15:10 │
-        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
-        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬─────────────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date                ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---                 ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str                 ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪═════════════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3                   ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0                   ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 16:00:00 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null                ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01          ┆ 10:20:30 │
+        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05          ┆ 14:45:50 │
+        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05          ┆ 14:45:50 │
+        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31          ┆ 23:15:10 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31          ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴─────────────────────┴──────────┘
 
         Customize which percentiles are displayed, applying linear interpolation:
 
@@ -756,24 +796,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         interpolation="linear",
         ...     )
         shape: (11, 7)
-        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
-        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
-        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
-        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
-        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
-        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
-        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
-        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
-        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20 ┆ 11:13:34 │
-        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26 ┆ 12:59:42 │
-        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
-        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07 ┆ 18:09:34 │
-        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13 ┆ 21:33:18 │
-        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
-        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
-        """
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬─────────────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date                ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---                 ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str                 ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪═════════════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3                   ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0                   ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 16:00:00 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null                ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01          ┆ 10:20:30 │
+        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20          ┆ 11:13:34 │
+        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26          ┆ 12:59:42 │
+        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05          ┆ 14:45:50 │
+        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07          ┆ 18:09:34 │
+        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13          ┆ 21:33:18 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31          ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴─────────────────────┴──────────┘
+        """  # noqa: W505
         from polars.convert import from_dict
 
         if not self.columns:
@@ -807,9 +847,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ]
             # mean
             mean_expr = (
-                F.col(c).to_physical().mean().cast(dtype)
-                if is_temporal
-                else (F.col(c).mean() if is_numeric or dtype == Boolean else null)
+                F.col(c).mean()
+                if is_temporal or is_numeric or dtype == Boolean
+                else null
             )
 
             # standard deviation, min, max
@@ -870,9 +910,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # cast by column type (numeric/bool -> float), (other -> string)
         for c in self.columns:
             summary[c] = [  # type: ignore[assignment]
-                None
-                if (v is None or isinstance(v, dict))
-                else (float(v) if (c in has_numeric_result) else str(v))
+                (
+                    None
+                    if (v is None or isinstance(v, dict))
+                    else (float(v) if (c in has_numeric_result) else str(v))
+                )
                 for v in summary[c]
             ]
 
@@ -1136,7 +1178,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | Sequence[bool] = False,
         maintain_order: bool = False,
         multithreaded: bool = True,
     ) -> Self:
@@ -1154,7 +1196,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Place null values last; can specify a single boolean applying to all columns
+            or a sequence of booleans for per-column control.
         maintain_order
             Whether the order should be maintained if elements are equal.
             Note that if `true` streaming is not possible and performance might be
@@ -1236,12 +1279,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
 
         by = parse_as_list_of_expressions(by, *more_by)
-
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
+        descending = extend_bool(descending, len(by), "descending", "by")
+        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyldf(
             self._ldf.sort_by_exprs(
                 by, descending, nulls_last, maintain_order, multithreaded
@@ -1327,13 +1366,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         issue_unstable_warning(
             "`sql` is considered **unstable** (although it is close to being considered stable)."
         )
-        with SQLContext(
-            register_globals=True,
-            eager=False,
-        ) as ctx:
-            frames = {table_name: self} if table_name else {}
-            frames["self"] = self
-            ctx.register_many(frames)
+        with SQLContext(register_globals=False, eager=False) as ctx:
+            name = table_name if table_name else "self"
+            ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(
@@ -1342,12 +1377,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
-        maintain_order: bool | None = None,
-        multithreaded: bool | None = None,
     ) -> Self:
         """
         Return the `k` largest rows.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         Parameters
         ----------
@@ -1360,30 +1397,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
-
-        nulls_last
-            Place null values last.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Null values will be considered lowest priority and will only be
-                included if `k` is larger than the number of non-null elements.
-
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might
-            be worse since this requires a stable search.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                There will be no guarantees about the order of the output.
-
-        multithreaded
-            Sort using multiple threads.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1428,48 +1441,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
-        if nulls_last is not None:
-            issue_deprecation_warning(
-                "The `nulls_last` parameter for `top_k` is deprecated."
-                " It will be removed in the next breaking release."
-                " Null values will be considered lowest priority and will only be"
-                " included if `k` is larger than the number of non-null elements.",
-                version="0.20.31",
-            )
-        else:
-            nulls_last = False
-
-        if maintain_order is not None:
-            issue_deprecation_warning(
-                "The `maintain_order` parameter for `top_k` is deprecated."
-                " It will be removed in the next breaking release."
-                " There will be no guarantees about the order of the output.",
-                version="0.20.31",
-            )
-        else:
-            maintain_order = False
-
-        if multithreaded is not None:
-            issue_deprecation_warning(
-                "The `multithreaded` parameter for `top_k` is deprecated."
-                " It will be removed in the next breaking release."
-                " Polars itself will determine whether to use multithreading or not.",
-                version="0.20.31",
-            )
-        else:
-            multithreaded = True
-
         by = parse_as_list_of_expressions(by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
-        return self._from_pyldf(
-            self._ldf.top_k(
-                k, by, descending, nulls_last, maintain_order, multithreaded
-            )
-        )
+        descending = extend_bool(descending, len(by), "descending", "by")
+        return self._from_pyldf(self._ldf.top_k(k, by=by, descending=descending))
 
     def bottom_k(
         self,
@@ -1477,12 +1451,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
-        maintain_order: bool | None = None,
-        multithreaded: bool | None = None,
     ) -> Self:
         """
         Return the `k` smallest rows.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         Parameters
         ----------
@@ -1495,30 +1471,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
-
-        nulls_last
-            Place null values last.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Null values will be considered lowest priority and will only be
-                included if `k` is larger than the number of non-null elements.
-
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
-            worse since this requires a stable search.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                There will be no guarantees about the order of the output.
-
-        multithreaded
-            Sort using multiple threads.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Polars itself will determine whether to use multithreading or not.
 
         See Also
         --------
@@ -1563,45 +1515,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
-        if nulls_last is not None:
-            issue_deprecation_warning(
-                "The `nulls_last` parameter for `bottom_k` is deprecated."
-                " It will be removed in the next breaking release."
-                " Null values will be considered lowest priority and will only be"
-                " included if `k` is larger than the number of non-null elements.",
-                version="0.20.31",
-            )
-        else:
-            nulls_last = False
-
-        if maintain_order is not None:
-            issue_deprecation_warning(
-                "The `maintain_order` parameter for `bottom_k` is deprecated."
-                " It will be removed in the next breaking release."
-                " There will be no guarantees about the order of the output.",
-                version="0.20.31",
-            )
-        else:
-            maintain_order = False
-
-        if multithreaded is not None:
-            issue_deprecation_warning(
-                "The `multithreaded` parameter for `bottom_k` is deprecated."
-                " It will be removed in the next breaking release."
-                " Polars itself will determine whether to use multithreading or not.",
-                version="0.20.31",
-            )
-        else:
-            multithreaded = True
-
         by = parse_as_list_of_expressions(by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        return self._from_pyldf(
-            self._ldf.bottom_k(
-                k, by, descending, nulls_last, maintain_order, multithreaded
-            )
-        )
+        descending = extend_bool(descending, len(by), "descending", "by")
+        return self._from_pyldf(self._ldf.bottom_k(k, by=by, descending=descending))
 
     def profile(
         self,
@@ -2108,7 +2024,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
-        statistics: bool = True,
+        statistics: bool | str | dict[str, bool] = True,
         row_group_size: int | None = None,
         data_pagesize_limit: int | None = None,
         maintain_order: bool = True,
@@ -2146,6 +2062,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - "zstd" : min-level: 1, max-level: 22.
         statistics
             Write statistics to the parquet headers. This is the default behavior.
+
+            Possible values:
+
+            - `True`: enable default set of statistics (default)
+            - `False`: disable all statistics
+            - "full": calculate and write all available statistics. Cannot be
+              combined with `use_pyarrow`.
+            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
+              `use_pyarrow`. Available keys:
+              - "min": column minimum value (default: `True`)
+              - "max": column maximum value (default: `True`)
+              - "distinct_count": number of unique column values (default: `False`)
+              - "null_count": number of null values in column (default: `True`)
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
@@ -2187,6 +2116,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown=slice_pushdown,
             no_optimization=no_optimization,
         )
+
+        if isinstance(statistics, bool) and statistics:
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": False,
+                "null_count": True,
+            }
+        elif isinstance(statistics, bool) and not statistics:
+            statistics = {}
+        elif statistics == "full":
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": True,
+                "null_count": True,
+            }
 
         return lf.sink_parquet(
             path=normalize_filepath(path),
@@ -2268,8 +2214,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
-    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     @unstable()
     def sink_csv(
         self,
@@ -2828,6 +2772,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The original order of the remaining rows is preserved.
 
+        Rows where the filter does not evaluate to True are discarded, including nulls.
+
         Parameters
         ----------
         predicates
@@ -2948,24 +2894,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 all_predicates.extend(
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
                 )
-
-        # identify deprecated usage of 'predicate' parameter
-        if "predicate" in constraints:
-            is_mask = False
-            if isinstance(p := constraints["predicate"], pl.Expr) or (
-                is_mask := is_bool_sequence(p)
-            ):
-                p = constraints.pop("predicate")
-                issue_deprecation_warning(
-                    "`filter` no longer takes a 'predicate' parameter.\n"
-                    "To silence this warning you should omit the keyword and pass "
-                    "as a positional argument instead.",
-                    version="0.19.9",
-                )
-                if is_mask:
-                    boolean_masks.append(pl.Series(p, dtype=Boolean))
-                else:
-                    all_predicates.append(p)  # type: ignore[arg-type]
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
@@ -3135,7 +3063,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
-    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
@@ -3243,7 +3170,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3309,18 +3235,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Define which sides of the temporal interval are closed (inclusive).
         group_by
             Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -3370,8 +3284,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         index_column = parse_as_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
@@ -3393,13 +3305,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool | None = None,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -3437,12 +3347,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             length of the window, if None it will equal 'every'
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
-            Defaults to negative `every`.
-        truncate
-            truncate the time value to the window lower bound
-
-            .. deprecated:: 0.19.4
-                Use `label` instead.
+            Defaults to zero.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_boundary" and
             "_upper_boundary" columns. This will impact performance because it's harder to
@@ -3475,18 +3380,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
               The resulting window is then shifted back until the earliest datapoint
               is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -3634,13 +3527,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.group_by_dynamic("time", every="1h", closed="both").agg(
         ...     pl.col("n")
         ... ).collect()
-        shape: (5, 2)
+        shape: (4, 2)
         ┌─────────────────────┬───────────┐
         │ time                ┆ n         │
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-15 23:00:00 ┆ [0]       │
         │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
         │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
@@ -3672,13 +3564,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n")).collect()
-        shape: (7, 5)
+        shape: (6, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬───────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n         │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
         │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
-        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ [0]       │
         │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
         │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
@@ -3714,23 +3605,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        every = deprecate_saturating(every)
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
-        if truncate is not None:
-            if truncate:
-                label = "left"
-            else:
-                label = "datapoint"
-            issue_deprecation_warning(
-                f"`truncate` is deprecated and will be removed in a future version."
-                f" Please replace `truncate={truncate}` with `label='{label}'` to silence this warning.",
-                version="0.19.4",
-            )
-
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = negate_duration_string(parse_as_duration_string(every))
+            offset = "0ns"
 
         if period is None:
             period = every
@@ -3886,7 +3763,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
         """
-        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
@@ -4102,18 +3978,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "Use of `how='outer'` should be replaced with `how='full'`.",
                 version="0.20.29",
             )
-        elif how == "outer_coalesce":
+        elif how == "outer_coalesce":  # type: ignore[comparison-overlap]
             coalesce = True
             how = "full"
             issue_deprecation_warning(
                 "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
-            )
-        elif how == "left" and coalesce is None:
-            issue_deprecation_warning(
-                "The default coalesce behavior of left join will change to `False` in the next breaking release."
-                " Pass `coalesce=True` to keep the current behavior and silence this warning.",
-                version="0.20.30",
             )
 
         elif how == "cross":
@@ -4226,14 +4096,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4.0 ┆ 13.0 ┆ true  │
         └─────┴──────┴───────┘
 
-        Multiple columns can be added by passing a list of expressions.
+        Multiple columns can be added using positional arguments.
 
         >>> lf.with_columns(
-        ...     [
-        ...         (pl.col("a") ** 2).alias("a^2"),
-        ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").not_()).alias("not c"),
-        ...     ]
+        ...     (pl.col("a") ** 2).alias("a^2"),
+        ...     (pl.col("b") / 2).alias("b/2"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... ).collect()
         shape: (4, 6)
         ┌─────┬──────┬───────┬─────┬──────┬───────┐
@@ -4247,12 +4115,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴─────┴──────┴───────┘
 
-        Multiple columns also can be added using positional arguments instead of a list.
+        Multiple columns can also be added by passing a list of expressions.
 
         >>> lf.with_columns(
-        ...     (pl.col("a") ** 2).alias("a^2"),
-        ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").not_()).alias("not c"),
+        ...     [
+        ...         (pl.col("a") ** 2).alias("a^2"),
+        ...         (pl.col("b") / 2).alias("b/2"),
+        ...         (pl.col("c").not_()).alias("not c"),
+        ...     ]
         ... ).collect()
         shape: (4, 6)
         ┌─────┬──────┬───────┬─────┬──────┬───────┐
@@ -4284,8 +4154,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
 
-        Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the setting `Config.set_auto_structify(True)`:
+        Expressions with multiple outputs can automatically be instantiated as Structs
+        by enabling the experimental setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.drop("c").with_columns(
@@ -4408,7 +4278,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    @deprecate_parameter_as_positional("columns", version="0.20.4")
     def drop(
         self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
     ) -> Self:
@@ -4556,7 +4425,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.reverse())
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
     ) -> Self:
@@ -6039,27 +5907,34 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def set_sorted(
         self,
-        column: str | Iterable[str],
-        *more_columns: str,
+        column: str,
+        *,
         descending: bool = False,
     ) -> Self:
         """
         Indicate that one or multiple columns are sorted.
 
+        This can speed up future operations.
+
         Parameters
         ----------
         column
             Columns that are sorted
-        more_columns
-            Additional columns that are sorted, specified as positional arguments.
         descending
             Whether the columns are sorted in descending order.
-        """
-        columns = parse_as_list_of_expressions(column, *more_columns)
 
-        return self.with_columns(
-            [wrap_expr(e).set_sorted(descending=descending) for e in columns]
-        )
+        Warnings
+        --------
+        This can lead to incorrect results if the data is NOT sorted!!
+        Use with care!
+
+        """
+        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
+        # the combined multicolumn values.
+        if not isinstance(column, str):
+            msg = "expected a 'str' for argument 'column' in 'set_sorted'"
+            raise TypeError(msg)
+        return self.with_columns(F.col(column).set_sorted(descending=descending))
 
     @unstable()
     def update(
@@ -6073,7 +5948,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_nulls: bool = False,
     ) -> Self:
         """
-        Update the values in this `LazyFrame` with the non-null values in `other`.
+        Update the values in this `LazyFrame` with the values in `other`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -6097,8 +5972,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         right_on
            Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right DataFrame will be used to update the
-            left DataFrame.
+            Overwrite values in the left frame with null values from the right frame.
+            If set to `False` (default), null values in the right frame are ignored.
 
         Notes
         -----
@@ -6314,343 +6189,3 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         return self._from_pyldf(self._ldf.count())
-
-    @deprecate_renamed_function("group_by", version="0.19.0")
-    def groupby(
-        self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
-        maintain_order: bool = False,
-    ) -> LazyGroupBy:
-        """
-        Start a group by operation.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`LazyFrame.group_by`.
-
-        Parameters
-        ----------
-        by
-            Column(s) to group by. Accepts expression input. Strings are parsed as
-            column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
-        maintain_order
-            Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default group by.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
-        """
-        return self.group_by(by, *more_by, maintain_order=maintain_order)
-
-    @deprecate_renamed_function("rolling", version="0.19.0")
-    def groupby_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
-    ) -> LazyGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`LazyFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-        Returns
-        -------
-        LazyGroupBy
-            Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
-        """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            group_by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("rolling", version="0.19.9")
-    def group_by_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
-    ) -> LazyGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.9
-            This method has been renamed to :func:`LazyFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-        Returns
-        -------
-        LazyGroupBy
-            Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
-        """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            group_by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
-    def groupby_dynamic(
-        self,
-        index_column: IntoExpr,
-        *,
-        every: str | timedelta,
-        period: str | timedelta | None = None,
-        offset: str | timedelta | None = None,
-        truncate: bool = True,
-        include_boundaries: bool = False,
-        closed: ClosedInterval = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        start_by: StartBy = "window",
-        check_sorted: bool | None = None,
-    ) -> LazyGroupBy:
-        """
-        Group based on a time value (or index value of type Int32, Int64).
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`LazyFrame.group_by_dynamic`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a dynamic group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        every
-            interval of the window
-        period
-            length of the window, if None it will equal 'every'
-        offset
-            offset of the window, does not take effect if `start_by` is 'datapoint'.
-            Defaults to negative `every`.
-        truncate
-            truncate the time value to the window lower bound
-        include_boundaries
-            Add the lower and upper bound of the window to the "_lower_bound" and
-            "_upper_bound" columns. This will impact performance because it's harder to
-            parallelize
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
-            The strategy to determine the start of the first window by.
-
-            * 'window': Start by taking the earliest timestamp, truncating it with
-              `every`, and then adding `offset`.
-              Note that weekly windows start on Monday.
-            * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains `'w'`):
-
-              * 'monday': Start the window on the Monday before the first data point.
-              * 'tuesday': Start the window on the Tuesday before the first data point.
-              * ...
-              * 'sunday': Start the window on the Sunday before the first data point.
-
-              The resulting window is then shifted back until the earliest datapoint
-              is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-        Returns
-        -------
-        LazyGroupBy
-            Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
-        """  # noqa: W505
-        return self.group_by_dynamic(
-            index_column,
-            every=every,
-            period=period,
-            offset=offset,
-            truncate=truncate,
-            include_boundaries=include_boundaries,
-            closed=closed,
-            group_by=by,
-            start_by=start_by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("map_batches", version="0.19.0")
-    def map(
-        self,
-        function: Callable[[DataFrame], DataFrame],
-        *,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        slice_pushdown: bool = True,
-        no_optimizations: bool = False,
-        schema: None | SchemaDict = None,
-        validate_output_schema: bool = True,
-        streamable: bool = False,
-    ) -> Self:
-        """
-        Apply a custom function.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`LazyFrame.map_batches`.
-
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        predicate_pushdown
-            Allow predicate pushdown optimization to pass this node.
-        projection_pushdown
-            Allow projection pushdown optimization to pass this node.
-        slice_pushdown
-            Allow slice pushdown optimization to pass this node.
-        no_optimizations
-            Turn off all optimizations past this point.
-        schema
-            Output schema of the function, if set to `None` we assume that the schema
-            will remain unchanged by the applied function.
-        validate_output_schema
-            It is paramount that polars' schema is correct. This flag will ensure that
-            the output schema of this function will be checked with the expected schema.
-            Setting this to `False` will not do this check, but may lead to hard to
-            debug bugs.
-        streamable
-            Whether the function that is given is eligible to be running with the
-            streaming engine. That means that the function must produce the same result
-            when it is executed in batches or when it is be executed on the full
-            dataset.
-        """
-        return self.map_batches(
-            function,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            slice_pushdown=slice_pushdown,
-            no_optimizations=no_optimizations,
-            schema=schema,
-            validate_output_schema=validate_output_schema,
-            streamable=streamable,
-        )
-
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: Expr | int | str | float,
-        *,
-        n: int = 1,
-    ) -> Self:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
-        """
-        return self.shift(n, fill_value=fill_value)
-
-    @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int, offset: int = 0) -> Self:
-        """
-        Take every nth row in the LazyFrame and return as a new LazyFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :meth:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)

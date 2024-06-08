@@ -191,25 +191,9 @@ def test_str_len_bytes() -> None:
     assert_series_equal(result, expected)
 
 
-def test_str_lengths_deprecated() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    with pytest.deprecated_call():
-        result = s.str.lengths()
-    expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
 def test_str_len_chars() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     result = s.str.len_chars()
-    expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-
-def test_str_n_chars_deprecated() -> None:
-    s = pl.Series(["Café", None, "345", "東京"])
-    with pytest.deprecated_call():
-        result = s.str.n_chars()
     expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
     assert_series_equal(result, expected)
 
@@ -464,19 +448,9 @@ def test_str_to_integer_base_literal() -> None:
 
     with pytest.raises(pl.ComputeError):
         df.with_columns(
-            [
-                pl.col("bin").str.to_integer(base=2),
-                pl.col("hex").str.to_integer(base=16),
-            ]
+            pl.col("bin").str.to_integer(base=2),
+            pl.col("hex").str.to_integer(base=16),
         )
-
-
-def test_str_parse_int_deprecated() -> None:
-    s = pl.Series(["110", "101", "010"])
-    with pytest.deprecated_call(match="It has been renamed to `to_integer`"):
-        result = s.str.parse_int()
-    expected = pl.Series([6, 5, 2], dtype=pl.Int32)
-    assert_series_equal(result, expected)
 
 
 def test_str_strip_chars_expr() -> None:
@@ -488,11 +462,9 @@ def test_str_strip_chars_expr() -> None:
     )
 
     all_expr = df.select(
-        [
-            pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
-            pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
-            pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
-        ]
+        pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
+        pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
+        pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
     )
 
     expected = pl.DataFrame(
@@ -569,22 +541,6 @@ def test_str_strip_whitespace() -> None:
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
     assert_series_equal(s.str.strip_chars(), expected)
-
-
-def test_str_strip_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").str.strip()
-    with pytest.deprecated_call():
-        pl.col("a").str.lstrip()
-    with pytest.deprecated_call():
-        pl.col("a").str.rstrip()
-
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.strip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.lstrip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.rstrip()
 
 
 def test_str_strip_prefix_literal() -> None:
@@ -708,14 +664,6 @@ def test_json_decode_nested_struct() -> None:
     assert_series_equal(key_1_values.get_column("key_1_values"), expected_values)
 
 
-def test_json_extract_deprecated() -> None:
-    s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
-    expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
-    with pytest.deprecated_call():
-        result = s.str.json_extract()
-    assert_series_equal(result, expected)
-
-
 def test_json_decode_primitive_to_list_11053() -> None:
     df = pl.DataFrame(
         {
@@ -814,13 +762,13 @@ def test_extract_binary() -> None:
     assert out[0] == "aron"
 
 
-def test_str_concat_returns_scalar() -> None:
+def test_str_join_returns_scalar() -> None:
     df = pl.DataFrame(
         [pl.Series("val", ["A", "B", "C", "D"]), pl.Series("id", [1, 1, 2, 2])]
     )
     grouped = (
         df.group_by("id")
-        .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
+        .agg(pl.col("val").str.join(delimiter=",").alias("grouped"))
         .get_column("grouped")
     )
     assert grouped.dtype == pl.String
@@ -889,14 +837,12 @@ def test_contains_expr() -> None:
     )
 
     assert df.select(
-        [
-            pl.col("text")
-            .str.contains(pl.col("pattern"), literal=False, strict=False)
-            .alias("contains"),
-            pl.col("text")
-            .str.contains(pl.col("pattern"), literal=True)
-            .alias("contains_lit"),
-        ]
+        pl.col("text")
+        .str.contains(pl.col("pattern"), literal=False, strict=False)
+        .alias("contains"),
+        pl.col("text")
+        .str.contains(pl.col("pattern"), literal=True)
+        .alias("contains_lit"),
     ).to_dict(as_series=False) == {
         "contains": [True, True, False, None, None, None],
         "contains_lit": [False, True, False, None, None, False],
@@ -1035,18 +981,6 @@ def test_extract_all_count() -> None:
     assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
 
 
-def test_count_matches_deprecated_count() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
-
-    with pytest.deprecated_call():
-        expr = pl.col("foo").str.count_match(r"a")
-
-    result = df.select(expr)
-
-    expected = pl.Series("foo", [2, 1, 0, None], dtype=pl.UInt32).to_frame()
-    assert_frame_equal(result, expected)
-
-
 def test_count_matches_many() -> None:
     df = pl.DataFrame(
         {
@@ -1167,14 +1101,12 @@ def test_starts_ends_with() -> None:
     )
 
     assert df.select(
-        [
-            pl.col("a").str.ends_with("pop").alias("ends_pop"),
-            pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
-            pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
-            pl.col("a").str.starts_with("ham").alias("starts_ham"),
-            pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
-            pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
-        ]
+        pl.col("a").str.ends_with("pop").alias("ends_pop"),
+        pl.col("a").str.ends_with(pl.lit(None)).alias("ends_None"),
+        pl.col("a").str.ends_with(pl.col("sub")).alias("ends_sub"),
+        pl.col("a").str.starts_with("ham").alias("starts_ham"),
+        pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
+        pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
     ).to_dict(as_series=False) == {
         "ends_pop": [False, False, True, None],
         "ends_None": [None, None, None, None],

@@ -46,9 +46,10 @@ where
                     }
                 },
             }
-            match non_null_cnt < min_periods {
-                true => None,
-                false => weighted_avg,
+            match (non_null_cnt < min_periods, opt_x.is_some()) {
+                (_, false) => None,
+                (true, true) => None,
+                (false, true) => weighted_avg,
             }
         })
         .collect_trusted()
@@ -111,7 +112,7 @@ mod test {
                 None,
                 Some(5.0),
                 Some(6.333_333_333_333_333),
-                Some(6.333_333_333_333_333),
+                None,
                 Some(3.857_142_857_142_857),
                 Some(2.333_333_333_333_333_5),
                 Some(3.193_548_387_096_774),
@@ -125,7 +126,7 @@ mod test {
                 None,
                 Some(5.0),
                 Some(6.333_333_333_333_333),
-                Some(6.333_333_333_333_333),
+                None,
                 Some(3.181_818_181_818_181_7),
                 Some(1.888_888_888_888_888_8),
                 Some(3.033_898_305_084_745_7),
@@ -139,7 +140,7 @@ mod test {
                 None,
                 Some(5.0),
                 Some(6.0),
-                Some(6.0),
+                None,
                 Some(4.0),
                 Some(2.5),
                 Some(3.25),
@@ -153,7 +154,7 @@ mod test {
                 None,
                 Some(5.0),
                 Some(6.0),
-                Some(6.0),
+                None,
                 Some(3.333_333_333_333_333_5),
                 Some(2.166_666_666_666_667),
                 Some(3.083_333_333_333_333_5),

@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
 use binary::process_binary;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
@@ -120,11 +121,18 @@ impl OptimizationRule for TypeCoercionRule {
             AExpr::Cast {
                 expr,
                 ref data_type,
-                ref strict,
+                options,
             } => {
                 let input = expr_arena.get(expr);
 
-                inline_or_prune_cast(input, data_type, *strict, lp_node, lp_arena, expr_arena)?
+                inline_or_prune_cast(
+                    input,
+                    data_type,
+                    options.strict(),
+                    lp_node,
+                    lp_arena,
+                    expr_arena,
+                )?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -151,7 +159,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: truthy_node,
                         data_type: st.clone(),
-                        strict: true,
+                        options: CastOptions::Strict,
                     })
                 } else {
                     truthy_node
@@ -161,7 +169,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: falsy_node,
                         data_type: st,
-                        strict: true,
+                        options: CastOptions::Strict,
                     })
                 } else {
                     falsy_node
@@ -206,7 +214,7 @@ impl OptimizationRule for TypeCoercionRule {
                     (_, DataType::Null) => AExpr::Cast {
                         expr: other_e.node(),
                         data_type: type_left,
-                        strict: false,
+                        options: CastOptions::NonStrict,
                     },
                     #[cfg(feature = "dtype-categorical")]
                     (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => {
@@ -308,7 +316,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: left_node,
                         data_type: super_type.clone(),
-                        strict: false,
+                        options: CastOptions::NonStrict,
                     })
                 } else {
                     left_node
@@ -318,7 +326,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: fill_value_node,
                         data_type: super_type.clone(),
-                        strict: false,
+                        options: CastOptions::NonStrict,
                     })
                 } else {
                     fill_value_node
@@ -414,7 +422,7 @@ impl OptimizationRule for TypeCoercionRule {
                                     let n = expr_arena.add(AExpr::Cast {
                                         expr: e.node(),
                                         data_type: super_type.clone(),
-                                        strict: false,
+                                        options: CastOptions::NonStrict,
                                     });
                                     e.set_node(n);
                                 }

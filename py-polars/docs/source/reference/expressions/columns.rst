@@ -8,10 +8,6 @@ Columns / names
 
     Expr.alias
     Expr.exclude
-    Expr.keep_name
-    Expr.map_alias
-    Expr.prefix
-    Expr.suffix
 
 .. toctree::
    :maxdepth: 2

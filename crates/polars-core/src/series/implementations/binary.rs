@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
@@ -164,8 +165,8 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

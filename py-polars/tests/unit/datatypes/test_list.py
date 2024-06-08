@@ -115,18 +115,14 @@ def test_cast_inner() -> None:
 def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(
-        [
-            pl.lit(1).alias("group_by_column"),
-            pl.lit(None).cast(pl.Int32).alias("join_column"),
-        ]
+        pl.lit(1).alias("group_by_column"),
+        pl.lit(None).cast(pl.Int32).alias("join_column"),
     )
 
     # Create a right relation where there is a column to count distinct on
     right = pl.DataFrame().with_columns(
-        [
-            pl.lit(1).alias("join_column"),
-            pl.lit(1).alias("n_unique_column"),
-        ]
+        pl.lit(1).alias("join_column"),
+        pl.lit(1).alias("n_unique_column"),
     )
 
     # Calculate n_unique after dropping nulls
@@ -143,23 +139,19 @@ def test_list_empty_group_by_result_3521() -> None:
 def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
-        [
-            pl.when(pl.col("C").list.len() == 0)
-            .then(None)
-            .otherwise(pl.col("C"))
-            .alias("C")
-        ]
+        pl.when(pl.col("C").list.len() == 0)
+        .then(None)
+        .otherwise(pl.col("C"))
+        .alias("C")
     ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]
 
 
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
-        [
-            pl.when(pl.col("a").list.len() == 0)
-            .then([5])
-            .otherwise(pl.col("a"))
-            .alias("filled")
-        ]
+        pl.when(pl.col("a").list.len() == 0)
+        .then([5])
+        .otherwise(pl.col("a"))
+        .alias("filled")
     ).to_dict(as_series=False) == {"filled": [[1, 2, 3], [5]]}
 
 
@@ -308,17 +300,6 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     assert df.group_by("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
     ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
-
-
-def test_list_count_matches_deprecated() -> None:
-    df = pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-    with pytest.deprecated_call():
-        result = df.select(
-            pl.col("listcol").list.count_match(2).alias("number_of_twos")
-        )
-
-    expected = {"number_of_twos": [0, 0, 2, 1, 0]}
-    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_count_matches() -> None:
@@ -843,3 +824,22 @@ def test_list_str_sum_exception_12935() -> None:
 def test_list_list_sum_exception_12935() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([[1], [2]]).sum()
+
+
+def test_null_list_categorical_16405() -> None:
+    df = pl.DataFrame(
+        [(None, "foo")],
+        schema={
+            "match": pl.List(pl.Categorical),
+            "what": pl.Categorical,
+        },
+    )
+
+    df = df.select(
+        pl.col("match")
+        .list.set_intersection(pl.concat_list(pl.col("what")))
+        .alias("result")
+    )
+
+    expected = pl.DataFrame([None], schema={"result": pl.List(pl.Categorical)})
+    assert_frame_equal(df, expected)

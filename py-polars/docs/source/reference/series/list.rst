@@ -16,7 +16,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.arg_min
     Series.list.concat
     Series.list.contains
-    Series.list.count_match
     Series.list.count_matches
     Series.list.diff
     Series.list.eval
@@ -28,7 +27,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.join
     Series.list.last
     Series.list.len
-    Series.list.lengths
     Series.list.max
     Series.list.mean
     Series.list.median
@@ -45,7 +43,6 @@ The following methods are available under the `Series.list` attribute.
     Series.list.std
     Series.list.sum
     Series.list.tail
-    Series.list.take
     Series.list.to_array
     Series.list.to_struct
     Series.list.unique

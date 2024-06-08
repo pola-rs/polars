@@ -3,7 +3,7 @@ use std::hash::Hash;
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 use polars_error::PolarsResult;
 
-use super::CastOptions;
+use super::CastOptionsImpl;
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::compute::arity::unary;
@@ -142,7 +142,7 @@ where
 pub(super) fn primitive_to_primitive_dyn<I, O>(
     from: &dyn Array,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>>
 where
     I: NativeType + num_traits::NumCast + num_traits::AsPrimitive<O>,

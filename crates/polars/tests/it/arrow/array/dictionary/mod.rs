@@ -26,6 +26,24 @@ fn try_new_ok() {
 }
 
 #[test]
+fn split_at() {
+    let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
+    let data_type =
+        ArrowDataType::Dictionary(i32::KEY_TYPE, Box::new(values.data_type().clone()), false);
+    let array = DictionaryArray::try_new(
+        data_type,
+        PrimitiveArray::from_vec(vec![1, 0]),
+        values.boxed(),
+    )
+    .unwrap();
+
+    let (lhs, rhs) = array.split_at(1);
+
+    assert_eq!(format!("{lhs:?}"), "DictionaryArray[aa]");
+    assert_eq!(format!("{rhs:?}"), "DictionaryArray[a]");
+}
+
+#[test]
 fn try_new_incorrect_key() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
     let data_type =

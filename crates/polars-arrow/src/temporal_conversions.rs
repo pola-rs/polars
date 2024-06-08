@@ -359,12 +359,17 @@ fn chrono_tz_utf_to_timestamp(
 }
 
 /// Parses a [`Utf8Array`] to a timeozone-aware timestamp, i.e. [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, Some(timezone))`.
+///
 /// # Implementation
+///
 /// * parsed values with timezone other than `timezone` are converted to `timezone`.
 /// * parsed values without timezone are null. Use [`utf8_to_naive_timestamp`] to parse naive timezones.
 /// * Null elements remain null; non-parsable elements are null.
+///
 /// The feature `"chrono-tz"` enables IANA and zoneinfo formats for `timezone`.
+///
 /// # Error
+///
 /// This function errors iff `timezone` is not parsable to an offset.
 pub(crate) fn utf8view_to_timestamp(
     array: &Utf8ViewArray,

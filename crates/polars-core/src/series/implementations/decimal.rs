@@ -263,8 +263,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

@@ -72,14 +72,14 @@ def polars_dtype_to_dtype(dtype: PolarsDataType) -> Dtype:
 
 
 def _datetime_to_dtype(dtype: Datetime) -> Dtype:
-    tu = dtype.time_unit[0] if dtype.time_unit is not None else "u"
+    tu = dtype.time_unit[0]
     tz = dtype.time_zone if dtype.time_zone is not None else ""
     arrow_c_type = f"ts{tu}:{tz}"
     return DtypeKind.DATETIME, 64, arrow_c_type, NE
 
 
 def _duration_to_dtype(dtype: Duration) -> Dtype:
-    tu = dtype.time_unit[0] if dtype.time_unit is not None else "u"
+    tu = dtype.time_unit[0]
     arrow_c_type = f"tD{tu}"
     return DtypeKind.DATETIME, 64, arrow_c_type, NE
 

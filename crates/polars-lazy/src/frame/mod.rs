@@ -232,18 +232,30 @@ impl LazyFrame {
         Ok(self.clone().to_alp()?.describe_tree_format())
     }
 
+    // @NOTE: this is used because we want to set the `enable_fmt` flag of `optimize_with_scratch`
+    // to `true` for describe.
+    fn _describe_to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
+        let (mut lp_arena, mut expr_arena) = self.get_arenas();
+        let node = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![], true)?;
+
+        Ok(IRPlan::new(node, lp_arena, expr_arena))
+    }
+
     /// Return a String describing the optimized logical plan.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
-        Ok(self.clone().to_alp_optimized()?.describe())
+        Ok(self.clone()._describe_to_alp_optimized()?.describe())
     }
 
     /// Return a String describing the optimized logical plan in tree format.
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
-        Ok(self.clone().to_alp_optimized()?.describe_tree_format())
+        Ok(self
+            .clone()
+            ._describe_to_alp_optimized()?
+            .describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -292,7 +304,7 @@ impl LazyFrame {
     ///     df.lazy().sort(
     ///         &["sepal_width", "sepal_length"],
     ///         SortMultipleOptions::new()
-    ///             .with_order_descendings([false, true])
+    ///             .with_order_descending_multi([false, true])
     ///     )
     /// }
     /// ```
@@ -551,7 +563,7 @@ impl LazyFrame {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
-        _fmt: bool,
+        enable_fmt: bool,
     ) -> PolarsResult<Node> {
         #[allow(unused_mut)]
         let mut opt_state = self.opt_state;
@@ -591,16 +603,18 @@ impl LazyFrame {
                     lp_arena,
                     expr_arena,
                     scratch,
-                    _fmt,
+                    enable_fmt,
                     true,
                     opt_state.row_estimate,
                 )?;
             }
             #[cfg(not(feature = "streaming"))]
             {
+                _ = enable_fmt;
                 panic!("activate feature 'streaming'")
             }
         }
+
         Ok(lp_top)
     }
 
@@ -870,6 +884,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: true,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -881,6 +896,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: false,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1281,6 +1297,7 @@ impl LazyFrame {
                 ProjectionOptions {
                     run_parallel: false,
                     duplicate_check: true,
+                    should_broadcast: true,
                 },
             )
             .build();
@@ -1308,6 +1325,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: true,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1320,6 +1338,7 @@ impl LazyFrame {
             ProjectionOptions {
                 run_parallel: false,
                 duplicate_check: true,
+                should_broadcast: true,
             },
         )
     }
@@ -1360,9 +1379,9 @@ impl LazyFrame {
     /// Aggregated columns will have the same names as the original columns.
     ///
     /// - Boolean columns will sum to a `u32` containing the number of `true`s.
-    /// - For integer columns, the ordinary checks for overflow are performed: if running
-    /// in `debug` mode, overflows will panic, whereas in `release` mode overflows will
-    /// silently wrap.
+    /// - For integer columns, the ordinary checks for overflow are performed:
+    ///   if running in `debug` mode, overflows will panic, whereas in `release` mode overflows will
+    ///   silently wrap.
     /// - String columns will sum to None.
     pub fn sum(self) -> Self {
         self.map_private(DslFunction::Stats(StatsFunction::Sum))

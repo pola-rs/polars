@@ -41,7 +41,9 @@ def test_scan_csv_overwrite_small_dtypes(
     io_files_path: Path, dtype: pl.DataType
 ) -> None:
     file_path = io_files_path / "foods1.csv"
-    df = pl.scan_csv(file_path, dtypes={"sugars_g": dtype}).collect(streaming=True)
+    df = pl.scan_csv(file_path, schema_overrides={"sugars_g": dtype}).collect(
+        streaming=True
+    )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
 
@@ -268,3 +270,13 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> 
             "parquet file can be skipped, the statistics were sufficient"
             " to apply the predicate." in captured
         )
+
+
+@pytest.mark.write_disk()
+def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.parquet"
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Int32})
+    df.write_parquet(file_path)
+    q = pl.scan_parquet(file_path)
+    q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
+    assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)

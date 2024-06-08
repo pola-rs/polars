@@ -35,7 +35,7 @@ class BatchedCsvReader:
         comment_prefix: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
-        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
+        schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -61,15 +61,15 @@ class BatchedCsvReader:
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
-        if dtypes is not None:
-            if isinstance(dtypes, dict):
+        if schema_overrides is not None:
+            if isinstance(schema_overrides, dict):
                 dtype_list = []
-                for k, v in dtypes.items():
+                for k, v in schema_overrides.items():
                     dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtypes, Sequence):
-                dtype_slice = dtypes
+            elif isinstance(schema_overrides, Sequence):
+                dtype_slice = schema_overrides
             else:
-                msg = "`dtypes` arg should be list or dict"
+                msg = "`schema_overrides` arg should be list or dict"
                 raise TypeError(msg)
 
         processed_null_values = _process_null_values(null_values)

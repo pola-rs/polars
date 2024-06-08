@@ -55,6 +55,8 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 },
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
                 PolarsError::OutOfBounds(err) => OutOfBoundsError::new_err(err.to_string()),
+                PolarsError::SQLInterface(name) => SQLInterfaceError::new_err(name.to_string()),
+                PolarsError::SQLSyntax(name) => SQLSyntaxError::new_err(name.to_string()),
                 PolarsError::SchemaFieldNotFound(name) => {
                     SchemaFieldNotFoundError::new_err(name.to_string())
                 },
@@ -93,6 +95,8 @@ create_exception!(polars.exceptions, DuplicateError, PolarsBaseError);
 create_exception!(polars.exceptions, InvalidOperationError, PolarsBaseError);
 create_exception!(polars.exceptions, NoDataError, PolarsBaseError);
 create_exception!(polars.exceptions, OutOfBoundsError, PolarsBaseError);
+create_exception!(polars.exceptions, SQLInterfaceError, PolarsBaseError);
+create_exception!(polars.exceptions, SQLSyntaxError, PolarsBaseError);
 create_exception!(polars.exceptions, SchemaError, PolarsBaseError);
 create_exception!(polars.exceptions, SchemaFieldNotFoundError, PolarsBaseError);
 create_exception!(polars.exceptions, ShapeError, PolarsBaseError);

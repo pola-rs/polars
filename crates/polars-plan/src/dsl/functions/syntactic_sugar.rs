@@ -1,3 +1,5 @@
+use polars_core::chunked_array::cast::CastOptions;
+
 use super::*;
 
 /// Sum all the values in the column named `name`. Shorthand for `col(name).sum()`.
@@ -59,6 +61,6 @@ pub fn cast(expr: Expr, data_type: DataType) -> Expr {
     Expr::Cast {
         expr: Arc::new(expr),
         data_type,
-        strict: false,
+        options: CastOptions::NonStrict,
     }
 }

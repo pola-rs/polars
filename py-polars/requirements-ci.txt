@@ -4,6 +4,5 @@
 # -------------------------------------------------------
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
-jax
-jaxlib
+jax[cpu]
 pyiceberg>=0.5.0

@@ -61,7 +61,7 @@ pub fn rolling_cov(
 pub fn arg_sort_by(
     by: Vec<PyExpr>,
     descending: Vec<bool>,
-    nulls_last: bool,
+    nulls_last: Vec<bool>,
     multithreaded: bool,
     maintain_order: bool,
 ) -> PyExpr {
@@ -218,12 +218,6 @@ pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
 #[cfg(feature = "trigonometry")]
 pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).into()
-}
-
-#[pyfunction]
-#[cfg(feature = "trigonometry")]
-pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
-    y.inner.arctan2(x.inner).degrees().into()
 }
 
 #[pyfunction]

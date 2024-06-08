@@ -50,7 +50,6 @@ mod rank;
 mod reinterpret;
 #[cfg(feature = "replace")]
 mod replace;
-mod reshape;
 #[cfg(feature = "rle")]
 mod rle;
 #[cfg(feature = "rolling_window")]
@@ -138,7 +137,6 @@ pub use unique::*;
 pub use various::*;
 mod not;
 pub use not::*;
-pub use reshape::*;
 
 pub trait SeriesSealed {
     fn as_series(&self) -> &Series;

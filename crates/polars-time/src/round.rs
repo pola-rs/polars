@@ -7,19 +7,15 @@ use polars_utils::cache::FastFixedCache;
 use crate::prelude::*;
 
 pub trait PolarsRound {
-    fn round(&self, every: &StringChunked, offset: Duration, tz: Option<&Tz>) -> PolarsResult<Self>
+    fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsRound for DatetimeChunked {
-    fn round(
-        &self,
-        every: &StringChunked,
-        offset: Duration,
-        tz: Option<&Tz>,
-    ) -> PolarsResult<Self> {
+    fn round(&self, every: &StringChunked, tz: Option<&Tz>) -> PolarsResult<Self> {
         let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        let offset = Duration::new(0);
         let out = broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {
             match (opt_t, opt_every) {
                 (Some(timestamp), Some(every)) => {
@@ -47,13 +43,9 @@ impl PolarsRound for DatetimeChunked {
 }
 
 impl PolarsRound for DateChunked {
-    fn round(
-        &self,
-        every: &StringChunked,
-        offset: Duration,
-        _tz: Option<&Tz>,
-    ) -> PolarsResult<Self> {
+    fn round(&self, every: &StringChunked, _tz: Option<&Tz>) -> PolarsResult<Self> {
         let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        let offset = Duration::new(0);
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         let out = broadcast_try_binary_elementwise(&self.0, every, |opt_t, opt_every| {
             match (opt_t, opt_every) {

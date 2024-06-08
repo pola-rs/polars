@@ -133,7 +133,8 @@ def test_in_subquery() -> None:
     )
 
     with pytest.raises(
-        pl.InvalidOperationError, match="SQL subquery will return more than one column"
+        pl.SQLSyntaxError,
+        match="SQL subquery returns more than one column",
     ):
         sql.execute(
             """

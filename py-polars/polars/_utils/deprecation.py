@@ -6,14 +6,12 @@ from functools import wraps
 from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
 from polars._utils.various import find_stacklevel
-from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
-    from polars import Expr
-    from polars.type_aliases import Ambiguous, ClosedInterval
+    from polars.type_aliases import Ambiguous
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -55,7 +53,7 @@ def deprecate_function(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             issue_deprecation_warning(
-                f"`{function.__name__}` is deprecated. {message}",
+                f"`{function.__qualname__}` is deprecated. {message}",
                 version=version,
             )
             return function(*args, **kwargs)
@@ -67,51 +65,10 @@ def deprecate_function(
 
 
 def deprecate_renamed_function(
-    new_name: str, *, version: str, moved: bool = False
+    new_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to mark a function as deprecated due to being renamed (or moved)."""
-    moved_or_renamed = "moved" if moved else "renamed"
-    return deprecate_function(
-        f"It has been {moved_or_renamed} to `{new_name}`.",
-        version=version,
-    )
-
-
-def deprecate_parameter_as_positional(
-    old_name: str, *, version: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Decorator to mark a function argument as deprecated due to being made positional.
-
-    Use as follows::
-
-        @deprecate_parameter_as_positional("column", version="0.20.4")
-        def myfunc(new_name): ...
-    """
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            try:
-                param_args = kwargs.pop(old_name)
-            except KeyError:
-                return function(*args, **kwargs)
-
-            issue_deprecation_warning(
-                f"named `{old_name}` param is deprecated; use positional `*args` instead.",
-                version=version,
-            )
-            if not isinstance(param_args, Sequence) or isinstance(param_args, str):
-                param_args = (param_args,)
-            elif not isinstance(param_args, tuple):
-                param_args = tuple(param_args)
-            args = args + param_args  # type: ignore[assignment]
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
+    return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
 
 
 def deprecate_renamed_parameter(
@@ -130,7 +87,7 @@ def deprecate_renamed_parameter(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             _rename_keyword_argument(
-                old_name, new_name, kwargs, function.__name__, version
+                old_name, new_name, kwargs, function.__qualname__, version
             )
             return function(*args, **kwargs)
 
@@ -156,7 +113,7 @@ def _rename_keyword_argument(
             )
             raise TypeError(msg)
         issue_deprecation_warning(
-            f"`the argument {old_name}` for `{func_name}` is deprecated."
+            f"The argument `{old_name}` for `{func_name}` is deprecated."
             f" It has been renamed to `{new_name}`.",
             version=version,
         )
@@ -233,10 +190,7 @@ def deprecate_nonkeyword_arguments(
 
 
 def _format_argument_list(allowed_args: list[str]) -> str:
-    """
-    Format allowed arguments list for use in the warning message of
-    `deprecate_nonkeyword_arguments`.
-    """  # noqa: D205
+    """Format allowed arguments list for use in the warning message of `deprecate_nonkeyword_arguments`."""  # noqa: W505
     if "self" in allowed_args:
         allowed_args.remove("self")
     if not allowed_args:
@@ -249,63 +203,41 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         return f" except for {args} and {last!r}"
 
 
-def rename_use_earliest_to_ambiguous(
-    use_earliest: bool | None, ambiguous: Ambiguous | Expr
-) -> Ambiguous | Expr:
-    """Issue deprecation warning if deprecated `use_earliest` argument is used."""
-    if isinstance(use_earliest, bool):
-        ambiguous = USE_EARLIEST_TO_AMBIGUOUS[use_earliest]
-        warnings.warn(
-            "The argument 'use_earliest' in 'replace_time_zone' is deprecated. "
-            f"Please replace `use_earliest={use_earliest}` with "
-            f"`ambiguous='{ambiguous}'`. Note that this new argument can also "
-            "accept expressions.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-        return ambiguous
-    return ambiguous
+def deprecate_parameter_as_multi_positional(
+    old_name: str, *, version: str
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """
+    Decorator to mark a function argument as deprecated due to being made multi-positional.
 
+    Use as follows::
 
-def deprecate_saturating(duration: T) -> T:
-    """Deprecate `_saturating` suffix in duration strings, apply it by default."""
-    if isinstance(duration, str) and duration.endswith("_saturating"):
-        issue_deprecation_warning(
-            "The '_saturating' suffix is deprecated and is now done by default, you can safely remove it.",
-            version="0.19.3",
-        )
-        return duration[:-11]  # type: ignore[return-value]
-    return duration
+        @deprecate_parameter_as_positional("columns", version="0.20.4")
+        def myfunc(*columns): ...
+    """  # noqa: W505
 
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            try:
+                arg_value = kwargs.pop(old_name)
+            except KeyError:
+                return function(*args, **kwargs)
 
-def validate_rolling_by_aggs_arguments(
-    weights: list[float] | None, *, center: bool
-) -> None:
-    if weights is not None:
-        msg = "`weights` is not supported in `rolling_*(..., by=...)` expression"
-        raise InvalidOperationError(msg)
-    if center:
-        msg = "`center=True` is not supported in `rolling_*(..., by=...)` expression"
-        raise InvalidOperationError(msg)
+            issue_deprecation_warning(
+                f"Passing `{old_name}` as a keyword argument is deprecated."
+                " Pass it as a positional argument instead.",
+                version=version,
+            )
 
+            if not isinstance(arg_value, Sequence) or isinstance(arg_value, str):
+                arg_value = (arg_value,)
+            elif not isinstance(arg_value, tuple):
+                arg_value = tuple(arg_value)
 
-def validate_rolling_aggs_arguments(
-    window_size: int | str, closed: ClosedInterval | None
-) -> int:
-    if isinstance(window_size, str):
-        issue_deprecation_warning(
-            "Passing a str to `rolling_*` is deprecated.\n\n"
-            "Please, either:\n"
-            "- pass an integer if you want a fixed window size (e.g. `rolling_mean(3)`)\n"
-            "- pass a string if you are computing the rolling operation based on another column (e.g. `rolling_mean_by('date', '3d'))\n",
-            version="0.20.26",
-        )
-        try:
-            window_size = int(window_size.rstrip("i"))
-        except ValueError:
-            msg = f"Expected a string of the form 'ni', where `n` is a positive integer, got: {window_size}"
-            raise InvalidOperationError(msg) from None
-    if closed is not None:
-        msg = "`closed` is not supported in `rolling_*(...)` expression"
-        raise InvalidOperationError(msg)
-    return window_size
+            args = args + arg_value  # type: ignore[assignment]
+            return function(*args, **kwargs)
+
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate

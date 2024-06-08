@@ -2,10 +2,10 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
-use crate::series::unstable::{ArrayBox, UnstableSeries};
+use crate::series::unstable::{unstable_series_container_and_ptr, ArrayBox, UnstableSeries};
 
 impl ArrayChunked {
-    /// This is an iterator over a [`ListChunked`] that save allocations.
+    /// This is an iterator over a [`ArrayChunked`] that save allocations.
     /// A Series is:
     ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:
@@ -21,11 +21,37 @@ impl ArrayChunked {
     /// this function still needs precautions. The returned should never be cloned or taken longer
     /// than a single iteration, as every call on `next` of the iterator will change the contents of
     /// that Series.
-    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    ///
+    /// # Safety
+    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
+    /// longer than the iterator is UB.
+    pub unsafe fn amortized_iter(
+        &self,
+    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
     }
 
-    pub fn amortized_iter_with_name(
+    /// This is an iterator over a [`ArrayChunked`] that save allocations.
+    /// A Series is:
+    ///     1. [`Arc<ChunkedArray>`]
+    ///     ChunkedArray is:
+    ///         2. Vec< 3. ArrayRef>
+    ///
+    /// The [`ArrayRef`] we indicated with 3. will be updated during iteration.
+    /// The Series will be pinned in memory, saving an allocation for
+    /// 1. Arc<..>
+    /// 2. Vec<...>
+    ///
+    /// # Warning
+    /// Though memory safe in the sense that it will not read unowned memory, UB, or memory leaks
+    /// this function still needs precautions. The returned should never be cloned or taken longer
+    /// than a single iteration, as every call on `next` of the iterator will change the contents of
+    /// that Series.
+    ///
+    /// # Safety
+    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
+    /// longer than the iterator is UB.
+    pub unsafe fn amortized_iter_with_name(
         &self,
         name: &str,
     ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
@@ -46,22 +72,15 @@ impl ArrayChunked {
 
         // SAFETY:
         // inner type passed as physical type
-        let series_container = unsafe {
-            Box::pin(Series::from_chunks_and_dtype_unchecked(
-                name,
-                vec![inner_values.clone()],
-                &iter_dtype,
-            ))
-        };
-
-        let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+        let (s, ptr) =
+            unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
         AmortizedListIter::new(
             self.len(),
-            series_container,
+            s,
             NonNull::new(ptr).unwrap(),
             self.downcast_iter().flat_map(|arr| arr.iter()),
-            inner_dtype,
+            inner_dtype.clone(),
         )
     }
 
@@ -72,29 +91,31 @@ impl ArrayChunked {
         if self.is_empty() {
             return Ok(Series::new_empty(
                 self.name(),
-                &DataType::List(Box::new(self.inner_dtype())),
+                &DataType::List(Box::new(self.inner_dtype().clone())),
             )
             .list()
             .unwrap()
             .clone());
         }
         let mut fast_explode = self.null_count() == 0;
-        let mut ca: ListChunked = self
-            .amortized_iter()
-            .map(|opt_v| {
-                opt_v
-                    .map(|v| {
-                        let out = f(v);
-                        if let Ok(out) = &out {
-                            if out.is_empty() {
-                                fast_explode = false
-                            }
-                        };
-                        out
-                    })
-                    .transpose()
-            })
-            .collect::<PolarsResult<_>>()?;
+        // SAFETY: lifetime of iterator is bound to this functions scope
+        let mut ca: ListChunked = unsafe {
+            self.amortized_iter()
+                .map(|opt_v| {
+                    opt_v
+                        .map(|v| {
+                            let out = f(v);
+                            if let Ok(out) = &out {
+                                if out.is_empty() {
+                                    fast_explode = false
+                                }
+                            };
+                            out
+                        })
+                        .transpose()
+                })
+                .collect::<PolarsResult<_>>()?
+        };
         ca.rename(self.name());
         if fast_explode {
             ca.set_fast_explode();
@@ -181,7 +202,8 @@ impl ArrayChunked {
         F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        self.amortized_iter().map(f).collect_ca(self.name())
+        // SAFETY: lifetime of iterator is bound to this functions scope
+        unsafe { self.amortized_iter().map(f).collect_ca(self.name()) }
     }
 
     /// Try apply a closure `F` elementwise.
@@ -191,14 +213,16 @@ impl ArrayChunked {
         F: FnMut(Option<UnstableSeries<'a>>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        self.amortized_iter().map(f).try_collect_ca(self.name())
+        // SAFETY: lifetime of iterator is bound to this functions scope
+        unsafe { self.amortized_iter().map(f).try_collect_ca(self.name()) }
     }
 
     pub fn for_each_amortized<'a, F>(&'a self, f: F)
     where
         F: FnMut(Option<UnstableSeries<'a>>),
     {
-        self.amortized_iter().for_each(f)
+        // SAFETY: lifetime of iterator is bound to this functions scope
+        unsafe { self.amortized_iter().for_each(f) }
     }
 }
 

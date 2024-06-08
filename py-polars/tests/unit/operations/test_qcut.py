@@ -55,7 +55,7 @@ def test_qcut_include_breaks() -> None:
 
     expected = pl.DataFrame(
         {
-            "break_point": [-2.0, -1.0, 1.0, 1.0, inf],
+            "breakpoint": [-2.0, -1.0, 1.0, 1.0, inf],
             "category": ["a", "b", "c", "c", "d"],
         },
         schema_overrides={"category": pl.Categorical},
@@ -73,10 +73,10 @@ def test_qcut_include_breaks_lazy_schema() -> None:
 
     expected = pl.LazyFrame(
         {
-            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
-            "a_bin": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
+            "breakpoint": [-1.0, -1.0, 1.0, 1.0, inf],
+            "category": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
         },
-        schema_overrides={"a_bin": pl.Categorical},
+        schema_overrides={"category": pl.Categorical},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 
@@ -131,11 +131,3 @@ def test_qcut_over() -> None:
         dtype=pl.Categorical,
     )
     assert_series_equal(out, expected, categorical_as_str=True)
-
-
-def test_qcut_deprecated_label_name() -> None:
-    s = pl.Series([1.0, 2.0])
-    with pytest.deprecated_call():
-        s.qcut([0.1], category_label="x")
-    with pytest.deprecated_call():
-        s.qcut([0.1], break_point_label="x")

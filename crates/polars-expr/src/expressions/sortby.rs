@@ -33,14 +33,14 @@ impl SortByExpr {
     }
 }
 
-fn prepare_descending(descending: &[bool], by_len: usize) -> Vec<bool> {
-    match (descending.len(), by_len) {
+fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
+    match (values.len(), by_len) {
         // Equal length.
-        (n_rdescending, n) if n_rdescending == n => descending.to_vec(),
+        (n_rvalues, n) if n_rvalues == n => values.to_vec(),
         // None given all false.
         (0, n) => vec![false; n],
         // Broadcast first.
-        (_, n) => vec![descending[0]; n],
+        (_, n) => vec![values[0]; n],
     }
 }
 
@@ -53,32 +53,42 @@ fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
     Ok(())
 }
 
+pub(super) fn update_groups_sort_by(
+    groups: &GroupsProxy,
+    sort_by_s: &Series,
+    options: &SortOptions,
+) -> PolarsResult<GroupsProxy> {
+    let groups = groups
+        .par_iter()
+        .map(|indicator| sort_by_groups_single_by(indicator, sort_by_s, options))
+        .collect::<PolarsResult<_>>()?;
+
+    Ok(GroupsProxy::Idx(groups))
+}
+
 fn sort_by_groups_single_by(
     indicator: GroupsIndicator,
     sort_by_s: &Series,
-    descending: &[bool],
+    options: &SortOptions,
 ) -> PolarsResult<(IdxSize, IdxVec)> {
+    let options = SortOptions {
+        descending: options.descending,
+        nulls_last: options.nulls_last,
+        // We are already in par iter.
+        multithreaded: false,
+        ..Default::default()
+    };
     let new_idx = match indicator {
         GroupsIndicator::Idx((_, idx)) => {
             // SAFETY: group tuples are always in bounds.
             let group = unsafe { sort_by_s.take_slice_unchecked(idx) };
 
-            let sorted_idx = group.arg_sort(SortOptions {
-                descending: descending[0],
-                // We are already in par iter.
-                multithreaded: false,
-                ..Default::default()
-            });
+            let sorted_idx = group.arg_sort(options);
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
             let group = sort_by_s.slice(first as i64, len as usize);
-            let sorted_idx = group.arg_sort(SortOptions {
-                descending: descending[0],
-                // We are already in par iter.
-                multithreaded: false,
-                ..Default::default()
-            });
+            let sorted_idx = group.arg_sort(options);
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -141,7 +151,7 @@ fn sort_by_groups_multiple_by(
 
             let options = SortMultipleOptions {
                 descending: descending.to_owned(),
-                nulls_last: false,
+                nulls_last: vec![false; descending.len()],
                 multithreaded,
                 maintain_order,
             };
@@ -157,7 +167,7 @@ fn sort_by_groups_multiple_by(
 
             let options = SortMultipleOptions {
                 descending: descending.to_owned(),
-                nulls_last: false,
+                nulls_last: vec![false; descending.len()],
                 multithreaded,
                 maintain_order,
             };
@@ -178,8 +188,6 @@ impl PhysicalExpr for SortByExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let series_f = || self.input.evaluate(df, state);
-        let descending = prepare_descending(&self.sort_options.descending, self.by.len());
-
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
@@ -187,6 +195,9 @@ impl PhysicalExpr for SortByExpr {
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
+            let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
+            let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
+
             let sorted_idx_f = || {
                 let s_sort_by = self
                     .by
@@ -200,7 +211,12 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let options = self.sort_options.clone().with_order_descendings(descending);
+                let options = self
+                    .sort_options
+                    .clone()
+                    .with_order_descending_multi(descending)
+                    .with_nulls_last_multi(nulls_last);
+
                 s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
@@ -225,7 +241,7 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let descending = prepare_descending(&self.sort_options.descending, self.by.len());
+        let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
 
         let mut ac_sort_by = self
             .by
@@ -277,17 +293,19 @@ impl PhysicalExpr for SortByExpr {
             let (check, groups) = POOL.join(
                 || check_groups(groups, ac_in.groups()),
                 || {
-                    groups
-                        .par_iter()
-                        .map(|indicator| {
-                            sort_by_groups_single_by(indicator, &sort_by_s, &descending)
-                        })
-                        .collect::<PolarsResult<_>>()
+                    update_groups_sort_by(
+                        groups,
+                        &sort_by_s,
+                        &SortOptions {
+                            descending: descending[0],
+                            ..Default::default()
+                        },
+                    )
                 },
             );
             check?;
 
-            GroupsProxy::Idx(groups?)
+            groups?
         } else {
             let groups = ac_sort_by[0].groups();
 

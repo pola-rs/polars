@@ -7,7 +7,7 @@ use super::*;
 /// Returns a [`PolarsError::ComputeError`] if no such data type exists.
 pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     get_supertype(l, r).ok_or_else(
-        || polars_err!(ComputeError: "failed to determine supertype of {} and {}", l, r),
+        || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
     )
 }
 
@@ -288,7 +288,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                         }
                         // dyn int vs number
                         else {
-                            let smallest_fitting_dtype = if dt.is_unsigned_integer() && v.is_positive() {
+                            let smallest_fitting_dtype = if dt.is_unsigned_integer() && !v.is_negative() {
                                 materialize_dyn_int_pos(*v).dtype()
                             } else {
                                 materialize_smallest_dyn_int(*v).dtype()

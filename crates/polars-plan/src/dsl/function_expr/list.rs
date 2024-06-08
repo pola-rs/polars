@@ -428,7 +428,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                 Ok(Some(Series::full_null(
                     ca.name(),
                     ca.len(),
-                    &ca.inner_dtype(),
+                    ca.inner_dtype(),
                 )))
             }
         },
@@ -460,7 +460,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                 .collect::<Result<IdxCa, _>>()?;
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }
-                .cast(&ca.inner_dtype())
+                .cast(ca.inner_dtype())
                 .map(Some)
         },
         len => polars_bail!(

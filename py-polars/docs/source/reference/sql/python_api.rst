@@ -1,10 +1,13 @@
-=============
-SQL Interface
-=============
+==========
+Python API
+==========
+
+SQLContext
+----------
 .. currentmodule:: polars
 
-Polars provides a SQL interface to query frame data; this is available
-through the :class:`SQLContext` object, detailed below, and the DataFrame
+Polars provides a SQL interface to query frame data; this is available through
+the :class:`SQLContext` object, detailed below, as well as the DataFrame
 :meth:`~polars.DataFrame.sql` and LazyFrame :meth:`~polars.LazyFrame.sql`
 methods (which make use of SQLContext internally).
 
@@ -21,7 +24,7 @@ methods (which make use of SQLContext internally).
     .. automethod:: __exit__
 
 Methods
--------
+~~~~~~~
 
 .. autosummary::
    :toctree: api/

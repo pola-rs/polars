@@ -5,6 +5,7 @@ use std::ops::Deref;
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
 use polars_utils::slice::GetSaferUnchecked;
 
+use crate::array::Splitable;
 use crate::buffer::Buffer;
 pub use crate::types::Offset;
 
@@ -555,5 +556,21 @@ impl<O: Offset> std::ops::Deref for OffsetsBuffer<O> {
     #[inline]
     fn deref(&self) -> &[O] {
         self.0.as_slice()
+    }
+}
+
+impl<O: Offset> Splitable for OffsetsBuffer<O> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len_proxy()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let mut lhs = self.0.clone();
+        let mut rhs = self.0.clone();
+
+        lhs.slice(0, offset + 1);
+        rhs.slice(offset, self.0.len() - offset);
+
+        (Self(lhs), Self(rhs))
     }
 }

@@ -4,7 +4,6 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable
 
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_function
 from polars._utils.parse_expr_input import parse_as_list_of_expressions
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import UInt32
@@ -285,20 +284,3 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     return F.cum_fold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
         "cum_sum"
     )
-
-
-@deprecate_renamed_function("cum_sum_horizontal", version="0.19.14")
-def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
-    """
-    Cumulatively sum all values horizontally across columns.
-
-    .. deprecated:: 0.19.14
-        This function has been renamed to :func:`cum_sum_horizontal`.
-
-    Parameters
-    ----------
-    *exprs
-        Column(s) to use in the aggregation. Accepts expression input. Strings are
-        parsed as column names, other non-expression inputs are parsed as literals.
-    """
-    return cum_sum_horizontal(*exprs).alias("cumsum")

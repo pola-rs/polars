@@ -177,23 +177,27 @@ def test_predicate_pushdown_join_fill_null_10058() -> None:
 
 
 def test_is_in_join_blocked() -> None:
-    df1 = pl.DataFrame(
+    lf1 = pl.LazyFrame(
         {"Groups": ["A", "B", "C", "D", "E", "F"], "values0": [1, 2, 3, 4, 5, 6]}
-    ).lazy()
+    )
 
-    df2 = pl.DataFrame(
+    lf2 = pl.LazyFrame(
         {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
-    ).lazy()
+    )
 
-    df_all = df2.join(df1, left_on="values20", right_on="values0", how="left")
+    lf_all = lf2.join(
+        lf1, left_on="values20", right_on="values0", how="left", coalesce=True
+    )
 
-    result = df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect()
-    expected = {
-        "values22": [None, 4, 5],
-        "values20": [3, 4, 5],
-        "Groups": ["C", "D", "E"],
-    }
-    assert result.to_dict(as_series=False) == expected
+    result = lf_all.filter(~pl.col("Groups").is_in(["A", "B", "F"]))
+    expected = pl.LazyFrame(
+        {
+            "values22": [None, 4, 5],
+            "values20": [3, 4, 5],
+            "Groups": ["C", "D", "E"],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_predicate_pushdown_group_by_keys() -> None:
@@ -462,10 +466,14 @@ def test_hconcat_predicate() -> None:
 
 
 def test_predicate_pd_join_13300() -> None:
+    # https://github.com/pola-rs/polars/issues/13300
+
     lf = pl.LazyFrame({"col3": range(10, 14), "new_col": range(11, 15)})
     lf_other = pl.LazyFrame({"col4": [0, 11, 2, 13]})
 
-    lf = lf.join(lf_other, left_on="new_col", right_on="col4", how="left")
+    lf = lf.join(
+        lf_other, left_on="new_col", right_on="col4", how="left", coalesce=True
+    )
     lf = lf.filter(pl.col("new_col") < 12)
     assert lf.collect().to_dict(as_series=False) == {"col3": [10], "new_col": [11]}
 

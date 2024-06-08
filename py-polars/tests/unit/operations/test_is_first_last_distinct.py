@@ -152,10 +152,3 @@ def test_is_first_last_distinct_all_null(dtypes: pl.PolarsDataType) -> None:
     s = pl.Series([None, None, None], dtype=dtypes)
     assert s.is_first_distinct().to_list() == [True, False, False]
     assert s.is_last_distinct().to_list() == [False, False, True]
-
-
-def test_is_first_last_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").is_first()
-    with pytest.deprecated_call():
-        pl.col("a").is_last()

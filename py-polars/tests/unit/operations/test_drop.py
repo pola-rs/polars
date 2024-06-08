@@ -125,15 +125,3 @@ def test_drop_without_parameters() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     assert_frame_equal(df.drop(), df)
     assert_frame_equal(df.lazy().drop(*[]), df.lazy())
-
-
-def test_drop_keyword_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    expected = df.select("b")
-    with pytest.deprecated_call():
-        result_df = df.drop(columns="a")
-    assert_frame_equal(result_df, expected)
-
-    with pytest.deprecated_call():
-        result_lf = df.lazy().drop(columns="a")
-    assert_frame_equal(result_lf, expected.lazy())

@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use super::*;
 
 impl AnonymousScan for LazyJsonLineReader {
@@ -17,6 +19,7 @@ impl AnonymousScan for LazyJsonLineReader {
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
+        polars_ensure!(infer_schema_length != Some(0), InvalidOperation: "JSON requires positive 'infer_schema_length'");
         // Short-circuit schema inference if the schema has been explicitly provided,
         // or already inferred
         if let Some(schema) = &(*self.schema.read().unwrap()) {
@@ -28,7 +31,7 @@ impl AnonymousScan for LazyJsonLineReader {
 
         let schema = Arc::new(polars_io::ndjson::infer_schema(
             &mut reader,
-            infer_schema_length,
+            infer_schema_length.and_then(NonZeroUsize::new),
         )?);
         let mut guard = self.schema.write().unwrap();
         *guard = Some(schema.clone());

@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -30,7 +30,7 @@ def test_drop_table(test_frame: pl.LazyFrame) -> None:
         res = ctx.execute("DROP TABLE frame")
         assert_frame_equal(res, expected)
 
-        with pytest.raises(ComputeError, match="'frame' was not found"):
+        with pytest.raises(SQLInterfaceError, match="'frame' was not found"):
             ctx.execute("SELECT * FROM frame")
 
 
@@ -39,7 +39,7 @@ def test_explain_query(test_frame: pl.LazyFrame) -> None:
     with pl.SQLContext(frame=test_frame) as ctx:
         plan = (
             ctx.execute("EXPLAIN SELECT * FROM frame")
-            .select(pl.col("Logical Plan").str.concat(""))
+            .select(pl.col("Logical Plan").str.join())
             .collect()
             .item()
         )

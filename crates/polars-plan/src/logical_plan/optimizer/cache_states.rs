@@ -55,11 +55,10 @@ fn get_upper_predicates(
 type TwoParents = [Option<Node>; 2];
 
 /// 1. This will ensure that all equal caches communicate the amount of columns
-/// they need to project.
-/// 2.
-/// - This will ensure we apply predicate in the subtrees below the caches.
-/// - If the predicate above the cache is the same for all matching caches that filter will be applied
-///  as well.
+///    they need to project.
+/// 2. This will ensure we apply predicate in the subtrees below the caches.
+///    If the predicate above the cache is the same for all matching caches, that filter will be
+///    applied as well.
 ///
 /// # Example
 /// Consider this tree, where `SUB-TREE` is duplicate and can be cached.
@@ -73,7 +72,7 @@ type TwoParents = [Option<Node>; 2];
 ///    SUB-TREE                                 SUB-TREE
 ///
 /// STEPS:
-/// - 1 CSE will run and will insert cache nodes
+/// - 1. CSE will run and will insert cache nodes
 ///
 ///                         Tree
 ///                         |
@@ -84,7 +83,7 @@ type TwoParents = [Option<Node>; 2];
 ///    |                                        |
 ///    SUB-TREE                                 SUB-TREE
 ///
-/// - 2 predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
+/// - 2. predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
 ///
 ///                         Tree
 ///                         |

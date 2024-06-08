@@ -61,7 +61,8 @@ impl PySeries {
                     DataType::Array(_, _) => {
                         let v = PyList::empty_bound(py);
                         let ca = series.array().unwrap();
-                        for opt_s in ca.amortized_iter() {
+                        // SAFETY: lifetime of iterator bound to this scope
+                        for opt_s in unsafe { ca.amortized_iter() } {
                             match opt_s {
                                 None => {
                                     v.append(py.None()).unwrap();

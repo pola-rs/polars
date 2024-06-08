@@ -33,10 +33,8 @@ def test_to_pandas() -> None:
         },
         schema_overrides={"a": pl.UInt8},
     ).with_columns(
-        [
-            pl.col("e").cast(pl.Categorical).alias("h"),
-            pl.col("f").cast(pl.Categorical).alias("i"),
-        ]
+        pl.col("e").cast(pl.Categorical).alias("h"),
+        pl.col("f").cast(pl.Categorical).alias("i"),
     )
 
     pd_out = df.to_pandas()

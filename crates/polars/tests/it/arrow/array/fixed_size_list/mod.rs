@@ -34,6 +34,14 @@ fn basics() {
 }
 
 #[test]
+fn split_at() {
+    let (lhs, rhs) = data().split_at(1);
+
+    assert_eq!(lhs.value(0).as_ref(), Int32Array::from_slice([10, 20]));
+    assert_eq!(rhs.value(0).as_ref(), Int32Array::from_slice([0, 0]));
+}
+
+#[test]
 fn with_validity() {
     let array = data();
 

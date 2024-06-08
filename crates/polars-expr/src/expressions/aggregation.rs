@@ -5,11 +5,12 @@ use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
-#[cfg(feature = "dtype-struct")]
+use polars_core::series::IsSorted;
+use polars_core::utils::{NoNull, _split_offsets};
 use polars_core::POOL;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
+use rayon::prelude::*;
 
 use super::*;
 use crate::expressions::AggState::{AggregatedList, AggregatedScalar};
@@ -17,14 +18,24 @@ use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct AggregationType {
+    pub(crate) groupby: GroupByMethod,
+    pub(crate) allow_threading: bool,
+}
+
 pub(crate) struct AggregationExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
-    pub(crate) agg_type: GroupByMethod,
+    pub(crate) agg_type: AggregationType,
     field: Option<Field>,
 }
 
 impl AggregationExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod, field: Option<Field>) -> Self {
+    pub fn new(
+        expr: Arc<dyn PhysicalExpr>,
+        agg_type: AggregationType,
+        field: Option<Field>,
+    ) -> Self {
         Self {
             input: expr,
             agg_type,
@@ -38,8 +49,103 @@ impl PhysicalExpr for AggregationExpr {
         None
     }
 
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
-        unimplemented!()
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+        let s = self.input.evaluate(df, state)?;
+
+        let AggregationType {
+            groupby,
+            allow_threading,
+        } = self.agg_type;
+
+        let is_float = s.dtype().is_float();
+        let group_by = match groupby {
+            GroupByMethod::NanMin if !is_float => GroupByMethod::Min,
+            GroupByMethod::NanMax if !is_float => GroupByMethod::Max,
+            gb => gb,
+        };
+
+        match group_by {
+            GroupByMethod::Min => match s.is_sorted_flag() {
+                IsSorted::Ascending | IsSorted::Descending => {
+                    s.min_reduce().map(|sc| sc.into_series(s.name()))
+                },
+                IsSorted::Not => parallel_op_series(
+                    |s| s.min_reduce().map(|sc| sc.into_series(s.name())),
+                    s,
+                    allow_threading,
+                ),
+            },
+            #[cfg(feature = "propagate_nans")]
+            GroupByMethod::NanMin => parallel_op_series(
+                |s| {
+                    Ok(polars_ops::prelude::nan_propagating_aggregate::nan_min_s(
+                        &s,
+                        s.name(),
+                    ))
+                },
+                s,
+                allow_threading,
+            ),
+            #[cfg(not(feature = "propagate_nans"))]
+            GroupByMethod::NanMin => {
+                panic!("activate 'propagate_nans' feature")
+            },
+            GroupByMethod::Max => match s.is_sorted_flag() {
+                IsSorted::Ascending | IsSorted::Descending => {
+                    s.max_reduce().map(|sc| sc.into_series(s.name()))
+                },
+                IsSorted::Not => parallel_op_series(
+                    |s| s.max_reduce().map(|sc| sc.into_series(s.name())),
+                    s,
+                    allow_threading,
+                ),
+            },
+            #[cfg(feature = "propagate_nans")]
+            GroupByMethod::NanMax => parallel_op_series(
+                |s| {
+                    Ok(polars_ops::prelude::nan_propagating_aggregate::nan_max_s(
+                        &s,
+                        s.name(),
+                    ))
+                },
+                s,
+                allow_threading,
+            ),
+            #[cfg(not(feature = "propagate_nans"))]
+            GroupByMethod::NanMax => {
+                panic!("activate 'propagate_nans' feature")
+            },
+            GroupByMethod::Median => s.median_reduce().map(|sc| sc.into_series(s.name())),
+            GroupByMethod::Mean => Ok(s.mean_reduce().into_series(s.name())),
+            GroupByMethod::First => Ok(if s.is_empty() {
+                Series::full_null(s.name(), 1, s.dtype())
+            } else {
+                s.head(Some(1))
+            }),
+            GroupByMethod::Last => Ok(if s.is_empty() {
+                Series::full_null(s.name(), 1, s.dtype())
+            } else {
+                s.tail(Some(1))
+            }),
+            GroupByMethod::Sum => parallel_op_series(
+                |s| s.sum_reduce().map(|sc| sc.into_series(s.name())),
+                s,
+                allow_threading,
+            ),
+            GroupByMethod::Groups => unreachable!(),
+            GroupByMethod::NUnique => s
+                .n_unique()
+                .map(|count| UInt32Chunked::from_slice(s.name(), &[count as u32]).into_series()),
+            GroupByMethod::Count { include_nulls } => {
+                let count = s.len() - s.null_count() * !include_nulls as usize;
+
+                Ok(IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series())
+            },
+            GroupByMethod::Implode => s.implode().map(|ca| ca.into_series()),
+            GroupByMethod::Std(ddof) => s.std_reduce(ddof).map(|sc| sc.into_series(s.name())),
+            GroupByMethod::Var(ddof) => s.var_reduce(ddof).map(|sc| sc.into_series(s.name())),
+            GroupByMethod::Quantile(_, _) => unimplemented!(),
+        }
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
@@ -54,10 +160,10 @@ impl PhysicalExpr for AggregationExpr {
         polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
 
         if let AggregatedScalar(_) = ac.agg_state() {
-            match self.agg_type {
+            match self.agg_type.groupby {
                 GroupByMethod::Implode => {},
                 _ => {
-                    polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
+                    polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type.groupby);
                 },
             }
         }
@@ -65,7 +171,7 @@ impl PhysicalExpr for AggregationExpr {
         // SAFETY:
         // groups must always be in bounds.
         let out = unsafe {
-            match self.agg_type {
+            match self.agg_type.groupby {
                 GroupByMethod::Min => {
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
@@ -342,7 +448,7 @@ impl PartitionedAggregation for AggregationExpr {
         // SAFETY:
         // groups are in bounds
         unsafe {
-            match self.agg_type {
+            match self.agg_type.groupby {
                 #[cfg(feature = "dtype-struct")]
                 GroupByMethod::Mean => {
                     let new_name = series.name().to_string();
@@ -422,7 +528,7 @@ impl PartitionedAggregation for AggregationExpr {
         groups: &GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
-        match self.agg_type {
+        match self.agg_type.groupby {
             GroupByMethod::Count {
                 include_nulls: true,
             }
@@ -609,4 +715,49 @@ impl PhysicalExpr for AggQuantileExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
+}
+
+/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
+/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
+fn parallel_op_series<F>(f: F, s: Series, allow_threading: bool) -> PolarsResult<Series>
+where
+    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
+{
+    // set during debug low so
+    // we mimic production size data behavior
+    #[cfg(debug_assertions)]
+    let thread_boundary = 0;
+
+    #[cfg(not(debug_assertions))]
+    let thread_boundary = 100_000;
+
+    // threading overhead/ splitting work stealing is costly..
+    if allow_threading
+        || s.len() < thread_boundary
+        || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+    {
+        return f(s);
+    }
+    let n_threads = POOL.current_num_threads();
+    let splits = _split_offsets(s.len(), n_threads);
+
+    let chunks = POOL.install(|| {
+        splits
+            .into_par_iter()
+            .map(|(offset, len)| {
+                let s = s.slice(offset as i64, len);
+                f(s)
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
+
+    let mut iter = chunks.into_iter();
+    let first = iter.next().unwrap();
+    let dtype = first.dtype();
+    let out = iter.fold(first.to_physical_repr().into_owned(), |mut acc, s| {
+        acc.append(&s.to_physical_repr()).unwrap();
+        acc
+    });
+
+    unsafe { f(out.cast_unchecked(dtype).unwrap()) }
 }

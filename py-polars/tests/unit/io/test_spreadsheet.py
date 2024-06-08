@@ -88,7 +88,6 @@ def path_ods_mixed(io_files_path: Path) -> Path:
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -126,7 +125,6 @@ def test_read_spreadsheet(
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -171,7 +169,6 @@ def test_read_excel_multi_sheets(
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -278,7 +275,6 @@ def test_read_excel_basic_datatypes(
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
-        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
         # open document
         (pl.read_ods, "path_ods", {}),
     ],
@@ -308,7 +304,6 @@ def test_read_invalid_worksheet(
     ("read_spreadsheet", "source", "additional_params"),
     [
         (pl.read_excel, "path_xlsx_mixed", {"engine": "openpyxl"}),
-        (pl.read_excel, "path_xlsb_mixed", {"engine": "pyxlsb"}),
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
@@ -386,7 +381,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
-        read_options={"dtypes": {"cardinality": pl.UInt16}},
+        read_options={"schema_overrides": {"cardinality": pl.UInt16}},
     ).drop_nulls()
 
     assert df2.schema["cardinality"] == pl.UInt16
@@ -398,7 +393,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         sheet_name="test4",
         schema_overrides={"cardinality": pl.UInt16},
         read_options={
-            "dtypes": {
+            "schema_overrides": {
                 "rows_by_key": pl.Float32,
                 "iter_groups": pl.Float32,
             },
@@ -439,7 +434,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             path_xlsx,
             sheet_name="test4",
             schema_overrides={"cardinality": pl.UInt16},
-            read_options={"dtypes": {"cardinality": pl.Int32}},
+            read_options={"schema_overrides": {"cardinality": pl.Int32}},
         )
 
     # read multiple sheets in conjunction with 'schema_overrides'
@@ -488,10 +483,7 @@ def test_unsupported_engine() -> None:
         pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
 
 
-def test_unsupported_binary_workbook(path_xlsx: Path, path_xlsb: Path) -> None:
-    with pytest.raises(Exception, match="invalid Excel Binary Workbook"):
-        pl.read_excel(path_xlsx, engine="pyxlsb")
-
+def test_unsupported_binary_workbook(path_xlsb: Path) -> None:
     with pytest.raises(Exception, match="does not support binary format"):
         pl.read_excel(path_xlsb, engine="openpyxl")
 

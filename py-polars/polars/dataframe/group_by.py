@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable, Iterator
+from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_renamed_function,
-    issue_deprecation_warning,
-)
+from polars._utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import sys
@@ -105,30 +102,13 @@ class GroupBy:
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(F.all().exclude(temp_col))
-
-        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        key_as_single_value = (
-            len(self.by) == 1 and isinstance(self.by[0], str) and not self.named_by
-        )
-        if key_as_single_value:
-            issue_deprecation_warning(
-                "`group_by` iteration will change to always return group identifiers as tuples."
-                f" Pass `by` as a list to silence this warning, e.g. `group_by([{self.by[0]!r}])`.",
-                version="0.20.4",
-            )
-            self._group_names = iter(group_names.to_series())
-        else:
-            self._group_names = group_names.iter_rows()
-
+        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -773,21 +753,6 @@ class GroupBy:
         """
         return self.agg(F.all().sum())
 
-    @deprecate_renamed_function("map_groups", version="0.19.0")
-    def apply(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
-        """
-        Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`GroupBy.map_groups`.
-
-        Parameters
-        ----------
-        function
-            Custom function.
-        """
-        return self.map_groups(function)
-
 
 class RollingGroupBy:
     """
@@ -806,13 +771,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
-        check_sorted: bool | None = None,
     ):
-        if check_sorted is not None:
-            issue_deprecation_warning(
-                "`check_sorted` is now deprecated in `rolling`, you can safely remove this argument.",
-                version="0.20.31",
-            )
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
 
@@ -838,24 +797,13 @@ class RollingGroupBy:
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(F.all().exclude(temp_col))
-
-        # When grouping by a single column, group name is a single value
-        # When grouping by multiple columns, group name is a tuple of values
-        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if self.group_by is None:
-            self._group_names = iter(group_names.to_series())
-        else:
-            self._group_names = group_names.iter_rows()
-
+        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -937,29 +885,6 @@ class RollingGroupBy:
             .map_groups(function, schema)
             .collect(no_optimization=True)
         )
-
-    @deprecate_renamed_function("map_groups", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[DataFrame], DataFrame],
-        schema: SchemaDict | None,
-    ) -> DataFrame:
-        """
-        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`RollingGroupBy.map_groups`.
-
-        Parameters
-        ----------
-        function
-            Function to apply over each group of the `LazyFrame`.
-        schema
-            Schema of the output function. This has to be known statically. If the
-            given schema is incorrect, this is a bug in the caller's query and may
-            lead to errors. If set to None, polars assumes the schema is unchanged.
-        """
-        return self.map_groups(function, schema)
 
 
 class DynamicGroupBy:
@@ -978,19 +903,12 @@ class DynamicGroupBy:
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,
-        truncate: bool | None,
         include_boundaries: bool,
         closed: ClosedInterval,
         label: Label,
         group_by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
-        check_sorted: bool | None = None,
     ):
-        if check_sorted is not None:
-            issue_deprecation_warning(
-                "`check_sorted` is now deprecated in `rolling`, you can safely remove this argument.",
-                version="0.20.31",
-            )
         every = parse_as_duration_string(every)
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
@@ -1000,7 +918,6 @@ class DynamicGroupBy:
         self.every = every
         self.period = period
         self.offset = offset
-        self.truncate = truncate
         self.label = label
         self.include_boundaries = include_boundaries
         self.closed = closed
@@ -1016,7 +933,6 @@ class DynamicGroupBy:
                 every=self.every,
                 period=self.period,
                 offset=self.offset,
-                truncate=self.truncate,
                 label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
@@ -1027,24 +943,13 @@ class DynamicGroupBy:
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(F.all().exclude(temp_col))
-
-        # When grouping by a single column, group name is a single value
-        # When grouping by multiple columns, group name is a tuple of values
-        self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
-        if self.group_by is None:
-            self._group_names = iter(group_names.to_series())
-        else:
-            self._group_names = group_names.iter_rows()
-
+        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
         self._group_indices = groups_df.select(temp_col).to_series()
         self._current_index = 0
 
         return self
 
-    def __next__(
-        self,
-    ) -> tuple[object, DataFrame] | tuple[tuple[object, ...], DataFrame]:
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -1079,7 +984,6 @@ class DynamicGroupBy:
                 every=self.every,
                 period=self.period,
                 offset=self.offset,
-                truncate=self.truncate,
                 label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
@@ -1126,7 +1030,6 @@ class DynamicGroupBy:
                 every=self.every,
                 period=self.period,
                 offset=self.offset,
-                truncate=self.truncate,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
                 group_by=self.group_by,
@@ -1135,26 +1038,3 @@ class DynamicGroupBy:
             .map_groups(function, schema)
             .collect(no_optimization=True)
         )
-
-    @deprecate_renamed_function("map_groups", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[DataFrame], DataFrame],
-        schema: SchemaDict | None,
-    ) -> DataFrame:
-        """
-        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DynamicGroupBy.map_groups`.
-
-        Parameters
-        ----------
-        function
-            Function to apply over each group of the `LazyFrame`.
-        schema
-            Schema of the output function. This has to be known statically. If the
-            given schema is incorrect, this is a bug in the caller's query and may
-            lead to errors. If set to None, polars assumes the schema is unchanged.
-        """
-        return self.map_groups(function, schema)

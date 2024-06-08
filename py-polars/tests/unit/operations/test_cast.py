@@ -607,15 +607,15 @@ def test_cast_categorical_name_retention(
 
 def test_cast_date_to_time() -> None:
     s = pl.Series([date(1970, 1, 1), date(2000, 12, 31)])
-    msg = "cannot cast `Date` to `Time`"
-    with pytest.raises(pl.ComputeError, match=msg):
+    msg = "casting from Date to Time not supported"
+    with pytest.raises(pl.InvalidOperationError, match=msg):
         s.cast(pl.Time)
 
 
 def test_cast_time_to_date() -> None:
     s = pl.Series([time(0, 0), time(20, 00)])
-    msg = "cannot cast `Time` to `Date`"
-    with pytest.raises(pl.ComputeError, match=msg):
+    msg = "casting from Time to Date not supported"
+    with pytest.raises(pl.InvalidOperationError, match=msg):
         s.cast(pl.Date)
 
 
@@ -648,3 +648,27 @@ def test_cast_decimal_to_decimal_high_precision() -> None:
 
     assert result.dtype == target_dtype
     assert result.to_list() == values
+
+
+def test_err_on_time_datetime_cast() -> None:
+    s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+    ):
+        s.cast(pl.Datetime)
+
+
+def test_err_on_invalid_time_zone_cast() -> None:
+    s = pl.Series([datetime(2021, 1, 1)])
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+        s.cast(pl.Datetime("us", "qwerty"))
+
+
+def test_invalid_inner_type_cast_list() -> None:
+    s = pl.Series([[-1, 1]])
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"cannot cast List inner type: 'Int64' to Categorical",
+    ):
+        s.cast(pl.List(pl.Categorical))

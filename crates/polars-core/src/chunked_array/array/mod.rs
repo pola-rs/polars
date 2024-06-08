@@ -6,9 +6,9 @@ use crate::prelude::*;
 
 impl ArrayChunked {
     /// Get the inner data type of the fixed size list.
-    pub fn inner_dtype(&self) -> DataType {
+    pub fn inner_dtype(&self) -> &DataType {
         match self.dtype() {
-            DataType::Array(dt, _size) => *dt.clone(),
+            DataType::Array(dt, _size) => dt.as_ref(),
             _ => unreachable!(),
         }
     }
@@ -23,7 +23,7 @@ impl ArrayChunked {
     /// # Safety
     /// The caller must ensure that the logical type given fits the physical type of the array.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
+        debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
         let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::Array(Box::new(inner_dtype), width))
@@ -34,7 +34,7 @@ impl ArrayChunked {
         let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
 
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
-        unsafe { Series::from_chunks_and_dtype_unchecked(self.name(), chunks, &self.inner_dtype()) }
+        unsafe { Series::from_chunks_and_dtype_unchecked(self.name(), chunks, self.inner_dtype()) }
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
