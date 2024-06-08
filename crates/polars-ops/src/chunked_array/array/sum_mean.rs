@@ -59,8 +59,7 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
     // TODO: add fast path for smaller ints?
-    // SAFETY: lifetime of iterator is bound to this functions scope
-    let mut out = unsafe {
+    let mut out = {
         match inner_dtype {
             Boolean => {
                 let out: IdxCa = ca

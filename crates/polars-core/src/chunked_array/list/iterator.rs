@@ -17,7 +17,7 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
 }
 
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
-    pub(crate) fn new(
+    pub(crate) unsafe fn new(
         len: usize,
         series_container: Series,
         inner: NonNull<ArrayRef>,
@@ -131,16 +131,14 @@ impl ListChunked {
     /// # Safety
     /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
-    pub unsafe fn amortized_iter(
-        &self,
-    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
     }
 
     /// # Safety
     /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
-    pub unsafe fn amortized_iter_with_name(
+    pub fn amortized_iter_with_name(
         &self,
         name: &str,
     ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
@@ -164,45 +162,45 @@ impl ListChunked {
         let (s, ptr) =
             unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
-        AmortizedListIter::new(
-            self.len(),
-            s,
-            NonNull::new(ptr).unwrap(),
-            self.downcast_iter().flat_map(|arr| arr.iter()),
-            inner_dtype.clone(),
-        )
+        // SAFETY: ptr belongs the the Series..
+        unsafe {
+            AmortizedListIter::new(
+                self.len(),
+                s,
+                NonNull::new(ptr).unwrap(),
+                self.downcast_iter().flat_map(|arr| arr.iter()),
+                inner_dtype.clone(),
+            )
+        }
     }
 
     /// Apply a closure `F` elementwise.
     #[must_use]
-    pub fn apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> ChunkedArray<V>
+    pub fn apply_amortized_generic<F, K, V>(&self, f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
         F: FnMut(Option<UnstableSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe { self.amortized_iter().map(f).collect_ca(self.name()) }
+        self.amortized_iter().map(f).collect_ca(self.name())
     }
 
-    pub fn try_apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> PolarsResult<ChunkedArray<V>>
+    pub fn try_apply_amortized_generic<F, K, V>(&self, f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
         F: FnMut(Option<UnstableSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe { self.amortized_iter().map(f).try_collect_ca(self.name()) }
+        self.amortized_iter().map(f).try_collect_ca(self.name())
     }
 
-    pub fn for_each_amortized<'a, F>(&'a self, f: F)
+    pub fn for_each_amortized<F>(&self, f: F)
     where
         F: FnMut(Option<UnstableSeries>),
     {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe { self.amortized_iter().for_each(f) }
+        self.amortized_iter().for_each(f)
     }
 
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
@@ -218,8 +216,7 @@ impl ListChunked {
             return self.clone();
         }
         let mut fast_explode = self.null_count() == 0;
-        // SAFETY: unstable series never lives longer than the iterator.
-        let mut out: ListChunked = unsafe {
+        let mut out: ListChunked = {
             self.amortized_iter()
                 .zip(ca)
                 .map(|(opt_s, opt_v)| {
@@ -265,8 +262,7 @@ impl ListChunked {
             return self.clone();
         }
         let mut fast_explode = self.null_count() == 0;
-        // SAFETY: unstable series never lives longer than the iterator.
-        let mut out: ListChunked = unsafe {
+        let mut out: ListChunked = {
             self.amortized_iter()
                 .zip(ca1.iter())
                 .zip(ca2.iter())
@@ -308,8 +304,7 @@ impl ListChunked {
             return Ok(self.clone());
         }
         let mut fast_explode = self.null_count() == 0;
-        // SAFETY: unstable series never lives longer than the iterator.
-        let mut out: ListChunked = unsafe {
+        let mut out: ListChunked = {
             self.amortized_iter()
                 .zip(ca)
                 .map(|(opt_s, opt_v)| {
@@ -337,7 +332,7 @@ impl ListChunked {
 
     /// Apply a closure `F` elementwise.
     #[must_use]
-    pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
+    pub fn apply_amortized<F>(&self, mut f: F) -> Self
     where
         F: FnMut(UnstableSeries) -> Series,
     {
@@ -345,8 +340,7 @@ impl ListChunked {
             return self.clone();
         }
         let mut fast_explode = self.null_count() == 0;
-        // SAFETY: unstable series never lives longer than the iterator.
-        let mut ca: ListChunked = unsafe {
+        let mut ca: ListChunked = {
             self.amortized_iter()
                 .map(|opt_v| {
                     opt_v.map(|v| {
@@ -367,7 +361,7 @@ impl ListChunked {
         ca
     }
 
-    pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> PolarsResult<Self>
+    pub fn try_apply_amortized<F>(&self, mut f: F) -> PolarsResult<Self>
     where
         F: FnMut(UnstableSeries) -> PolarsResult<Series>,
     {
@@ -375,8 +369,7 @@ impl ListChunked {
             return Ok(self.clone());
         }
         let mut fast_explode = self.null_count() == 0;
-        // SAFETY: unstable series never lives longer than the iterator.
-        let mut ca: ListChunked = unsafe {
+        let mut ca: ListChunked = {
             self.amortized_iter()
                 .map(|opt_v| {
                     opt_v
@@ -414,11 +407,8 @@ mod test {
         builder.append_series(&Series::new("", &[1, 1])).unwrap();
         let ca = builder.finish();
 
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
-                assert!(s1.unwrap().as_ref().equals(&s2.unwrap()));
-            })
-        };
+        ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
+            assert!(s1.unwrap().as_ref().equals(&s2.unwrap()));
+        })
     }
 }

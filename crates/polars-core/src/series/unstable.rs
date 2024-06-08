@@ -5,7 +5,6 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
 
-/// A wrapper type that should make it a bit more clear that we should not clone Series
 #[derive(Clone)]
 pub struct UnstableSeries {
     container: Rc<Series>,
@@ -66,7 +65,7 @@ impl UnstableSeries {
 
         // ensure lengths are correct.
         unsafe {
-            let ptr = Rc::as_ptr(&mut self.container) as *mut Series;
+            let ptr = Rc::as_ptr(&self.container) as *mut Series;
             (*ptr)._get_inner_mut().compute_len()
         }
     }

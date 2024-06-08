@@ -47,8 +47,7 @@ fn join_many(
     let mut buf = String::new();
     let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
 
-    // SAFETY: lifetime of iterator bound to scope of function
-    unsafe { ca.amortized_iter() }
+    { ca.amortized_iter() }
         .zip(separator)
         .for_each(|(opt_s, opt_sep)| match opt_sep {
             Some(separator) => {

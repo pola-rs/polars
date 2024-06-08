@@ -1,4 +1,3 @@
-use std::pin::Pin;
 use std::rc::Rc;
 
 use polars_core::series::unstable::UnstableSeries;
@@ -127,7 +126,7 @@ impl FlatIter {
             stack.push(chunk.clone())
         }
         let current_array = stack.pop().unwrap();
-        let mut series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
+        let series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
             name,
             vec![current_array.clone()],
             logical,
