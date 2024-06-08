@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::rc::Rc;
 
 use polars_core::series::unstable::UnstableSeries;
 
@@ -11,7 +12,7 @@ impl<'a> AggregationContext<'a> {
     pub(super) unsafe fn iter_groups(
         &mut self,
         keep_names: bool,
-    ) -> Box<dyn Iterator<Item = Option<UnstableSeries<'_>>> + '_> {
+    ) -> Box<dyn Iterator<Item = Option<UnstableSeries>> + '_> {
         match self.agg_state() {
             AggState::Literal(_) => {
                 self.groups();
@@ -59,45 +60,44 @@ impl<'a> AggregationContext<'a> {
     }
 }
 
-struct LitIter<'a> {
+struct LitIter {
     len: usize,
     offset: usize,
     // UnstableSeries referenced that series
     #[allow(dead_code)]
-    series_container: Pin<Box<Series>>,
-    item: UnstableSeries<'a>,
+    series_container: Rc<Series>,
+    item: UnstableSeries,
 }
 
-impl<'a> LitIter<'a> {
+impl LitIter {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
     unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: &str) -> Self {
-        let mut series_container = Box::pin(Series::from_chunks_and_dtype_unchecked(
+        let series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
             name,
             vec![array],
             logical,
         ));
 
-        let ref_s = &mut *series_container as *mut Series;
         Self {
             offset: 0,
             len,
-            series_container,
+            series_container: series_container.clone(),
             // SAFETY: we pinned the series so the location is still valid
-            item: UnstableSeries::new(unsafe { &mut *ref_s }),
+            item: UnstableSeries::new(series_container),
         }
     }
 }
 
-impl<'a> Iterator for LitIter<'a> {
-    type Item = Option<UnstableSeries<'a>>;
+impl Iterator for LitIter {
+    type Item = Option<UnstableSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len == self.offset {
             None
         } else {
             self.offset += 1;
-            Some(Some(self.item))
+            Some(Some(self.item.clone()))
         }
     }
 
@@ -106,7 +106,7 @@ impl<'a> Iterator for LitIter<'a> {
     }
 }
 
-struct FlatIter<'a> {
+struct FlatIter {
     current_array: ArrayRef,
     chunks: Vec<ArrayRef>,
     offset: usize,
@@ -114,11 +114,11 @@ struct FlatIter<'a> {
     len: usize,
     // UnstableSeries referenced that series
     #[allow(dead_code)]
-    series_container: Pin<Box<Series>>,
-    item: UnstableSeries<'a>,
+    series_container: Rc<Series>,
+    item: UnstableSeries,
 }
 
-impl<'a> FlatIter<'a> {
+impl FlatIter {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
     unsafe fn new(chunks: &[ArrayRef], len: usize, logical: &DataType, name: &str) -> Self {
@@ -127,27 +127,25 @@ impl<'a> FlatIter<'a> {
             stack.push(chunk.clone())
         }
         let current_array = stack.pop().unwrap();
-        let mut series_container = Box::pin(Series::from_chunks_and_dtype_unchecked(
+        let mut series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
             name,
             vec![current_array.clone()],
             logical,
         ));
-        let ref_s = &mut *series_container as *mut Series;
         Self {
             current_array,
             chunks: stack,
             offset: 0,
             chunk_offset: 0,
             len,
-            series_container,
-            // SAFETY: we pinned the series so the location is still valid
-            item: UnstableSeries::new(unsafe { &mut *ref_s }),
+            series_container: series_container.clone(),
+            item: UnstableSeries::new(series_container),
         }
     }
 }
 
-impl<'a> Iterator for FlatIter<'a> {
-    type Item = Option<UnstableSeries<'a>>;
+impl Iterator for FlatIter {
+    type Item = Option<UnstableSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len == self.offset {
@@ -168,7 +166,7 @@ impl<'a> Iterator for FlatIter<'a> {
             }
             self.offset += 1;
             self.chunk_offset += 1;
-            Some(Some(self.item))
+            Some(Some(self.item.clone()))
         }
     }
     fn size_hint(&self) -> (usize, Option<usize>) {

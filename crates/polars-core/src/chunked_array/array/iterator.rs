@@ -86,7 +86,7 @@ impl ArrayChunked {
 
     pub fn try_apply_amortized_to_list<'a, F>(&'a self, mut f: F) -> PolarsResult<ListChunked>
     where
-        F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
+        F: FnMut(UnstableSeries) -> PolarsResult<Series>,
     {
         if self.is_empty() {
             return Ok(Series::new_empty(
@@ -130,7 +130,7 @@ impl ArrayChunked {
     #[must_use]
     pub unsafe fn apply_amortized_same_type<'a, F>(&'a self, mut f: F) -> Self
     where
-        F: FnMut(UnstableSeries<'a>) -> Series,
+        F: FnMut(UnstableSeries) -> Series,
     {
         if self.is_empty() {
             return self.clone();
@@ -151,7 +151,7 @@ impl ArrayChunked {
     /// Return series of `F` must has the same dtype and number of elements as input if it is Ok.
     pub unsafe fn try_apply_amortized_same_type<'a, F>(&'a self, mut f: F) -> PolarsResult<Self>
     where
-        F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
+        F: FnMut(UnstableSeries) -> PolarsResult<Series>,
     {
         if self.is_empty() {
             return Ok(self.clone());
@@ -180,7 +180,7 @@ impl ArrayChunked {
     ) -> Self
     where
         T: PolarsDataType,
-        F: FnMut(Option<UnstableSeries<'a>>, Option<T::Physical<'a>>) -> Option<Series>,
+        F: FnMut(Option<UnstableSeries>, Option<T::Physical<'a>>) -> Option<Series>,
     {
         if self.is_empty() {
             return self.clone();
@@ -199,7 +199,7 @@ impl ArrayChunked {
     pub fn apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
-        F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
+        F: FnMut(Option<UnstableSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         // SAFETY: lifetime of iterator is bound to this functions scope
@@ -210,7 +210,7 @@ impl ArrayChunked {
     pub fn try_apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
-        F: FnMut(Option<UnstableSeries<'a>>) -> PolarsResult<Option<K>> + Copy,
+        F: FnMut(Option<UnstableSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         // SAFETY: lifetime of iterator is bound to this functions scope
@@ -219,7 +219,7 @@ impl ArrayChunked {
 
     pub fn for_each_amortized<'a, F>(&'a self, f: F)
     where
-        F: FnMut(Option<UnstableSeries<'a>>),
+        F: FnMut(Option<UnstableSeries>),
     {
         // SAFETY: lifetime of iterator is bound to this functions scope
         unsafe { self.amortized_iter().for_each(f) }

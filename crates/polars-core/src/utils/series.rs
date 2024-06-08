@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::prelude::*;
 use crate::series::unstable::UnstableSeries;
 
@@ -7,8 +8,8 @@ pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
 where
     F: Fn(&mut UnstableSeries) -> T,
 {
-    let mut container = Series::full_null("", 0, dtype);
-    let mut us = UnstableSeries::new(&mut container);
+    let container = Series::full_null("", 0, dtype);
+    let mut us = UnstableSeries::new(Rc::new(container));
 
     f(&mut us)
 }

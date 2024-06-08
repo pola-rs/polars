@@ -1,12 +1,13 @@
 use std::marker::PhantomData;
 use std::ptr::NonNull;
+use std::rc::Rc;
 
 use crate::prelude::*;
 use crate::series::unstable::{unstable_series_container_and_ptr, ArrayBox, UnstableSeries};
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
-    series_container: Box<Series>,
+    series_container: Rc<Series>,
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
@@ -25,7 +26,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
     ) -> Self {
         Self {
             len,
-            series_container: Box::new(series_container),
+            series_container: Rc::new(series_container),
             inner,
             lifetime: PhantomData,
             iter,
@@ -35,7 +36,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
 }
 
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
-    type Item = Option<UnstableSeries<'a>>;
+    type Item = Option<UnstableSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|opt_val| {
@@ -47,24 +48,25 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                     // SAFETY:
                     // dtype is known
                     unsafe {
-                        let mut s = Series::from_chunks_and_dtype_unchecked(
+                        let s = Series::from_chunks_and_dtype_unchecked(
                             "",
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
                         .cast_unchecked(&self.inner_dtype)
                         .unwrap();
-                        // swap the new series with the container
-                        std::mem::swap(&mut *self.series_container, &mut s);
+                        let inner = Rc::make_mut(&mut self.series_container);
+                        *inner = s;
+
                         // return a reference to the container
                         // this lifetime is now bound to 'a
                         return UnstableSeries::new(
-                            &mut *(&mut *self.series_container as *mut Series),
+                            self.series_container.clone()
                         );
                     }
                 }
                 // The series is cloned, we make a new container.
-                if Arc::strong_count(&self.series_container.0) > 1 {
+                if Arc::strong_count(&self.series_container.0) > 1 || Rc::strong_count(&self.series_container) > 1  {
                     let (s, ptr) = unsafe {
                         unstable_series_container_and_ptr(
                             self.series_container.name(),
@@ -72,25 +74,24 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                             self.series_container.dtype(),
                         )
                     };
-                    *self.series_container.as_mut() = s;
+                    self.series_container = Rc::new(s);
                     self.inner = NonNull::new(ptr).unwrap();
                 } else {
+                    // SAFETY: we checked the RC above;
+                    let series_mut = unsafe { Rc::get_mut(&mut self.series_container).unwrap_unchecked() };
                     // update the inner state
                     unsafe { *self.inner.as_mut() = array_ref };
 
                     // last iteration could have set the sorted flag (e.g. in compute_len)
-                    self.series_container.clear_flags();
+                    series_mut.clear_flags();
                     // make sure that the length is correct
-                    self.series_container._get_inner_mut().compute_len();
+                    series_mut._get_inner_mut().compute_len();
                 }
 
                 // SAFETY:
-                // we cannot control the lifetime of an iterators `next` method.
-                // but as long as self is alive the reference to the series container is valid
-                let refer = &mut *self.series_container;
+                // inner belongs to Series.
                 unsafe {
-                    let s = std::mem::transmute::<&mut Series, &'a mut Series>(refer);
-                    UnstableSeries::new_with_chunk(s, self.inner.as_ref())
+                    UnstableSeries::new_with_chunk(self.series_container.clone(), self.inner.as_ref())
                 }
             })
         })
@@ -173,7 +174,7 @@ impl ListChunked {
     pub fn apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
-        F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
+        F: FnMut(Option<UnstableSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
@@ -184,7 +185,7 @@ impl ListChunked {
     pub fn try_apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
-        F: FnMut(Option<UnstableSeries<'a>>) -> PolarsResult<Option<K>> + Copy,
+        F: FnMut(Option<UnstableSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
@@ -194,7 +195,7 @@ impl ListChunked {
 
     pub fn for_each_amortized<'a, F>(&'a self, f: F)
     where
-        F: FnMut(Option<UnstableSeries<'a>>),
+        F: FnMut(Option<UnstableSeries>),
     {
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe { self.amortized_iter().for_each(f) }
@@ -207,7 +208,7 @@ impl ListChunked {
         T: PolarsDataType,
         &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
         I: TrustedLen<Item = Option<T::Physical<'a>>>,
-        F: FnMut(Option<UnstableSeries<'a>>, Option<T::Physical<'a>>) -> Option<Series>,
+        F: FnMut(Option<UnstableSeries>, Option<T::Physical<'a>>) -> Option<Series>,
     {
         if self.is_empty() {
             return self.clone();
@@ -251,7 +252,7 @@ impl ListChunked {
         T: PolarsDataType,
         U: PolarsDataType,
         F: FnMut(
-            Option<UnstableSeries<'a>>,
+            Option<UnstableSeries>,
             Option<T::Physical<'a>>,
             Option<U::Physical<'a>>,
         ) -> Option<Series>,
@@ -298,7 +299,7 @@ impl ListChunked {
         &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
         I: TrustedLen<Item = Option<T::Physical<'a>>>,
         F: FnMut(
-            Option<UnstableSeries<'a>>,
+            Option<UnstableSeries>,
             Option<T::Physical<'a>>,
         ) -> PolarsResult<Option<Series>>,
     {
@@ -337,7 +338,7 @@ impl ListChunked {
     #[must_use]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
     where
-        F: FnMut(UnstableSeries<'a>) -> Series,
+        F: FnMut(UnstableSeries) -> Series,
     {
         if self.is_empty() {
             return self.clone();
@@ -367,7 +368,7 @@ impl ListChunked {
 
     pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> PolarsResult<Self>
     where
-        F: FnMut(UnstableSeries<'a>) -> PolarsResult<Series>,
+        F: FnMut(UnstableSeries) -> PolarsResult<Series>,
     {
         if self.is_empty() {
             return Ok(self.clone());
