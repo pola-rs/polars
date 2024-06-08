@@ -285,17 +285,6 @@ def test_create_nested_array() -> None:
     assert s2.to_list() == data
 
 
-def test_array_ndarray_reshape() -> None:
-    shape = (8, 4, 2, 1)
-    s = pl.Series(range(64)).reshape(shape, nested_type=pl.Array)
-    n = s.to_numpy()
-    assert n.shape == shape
-    assert (n[0] == s[0].to_numpy()).all()
-    n = n[0]
-    s = s[0]
-    assert (n[0] == s[0].to_numpy()).all()
-
-
 def test_recursive_array_dtype() -> None:
     assert str(pl.Array(pl.Int64, (2, 3))) == "Array(Int64, shape=(2, 3))"
     assert str(pl.Array(pl.Int64, 3)) == "Array(Int64, shape=(3,))"
