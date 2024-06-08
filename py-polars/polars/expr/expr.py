@@ -1962,10 +1962,10 @@ class Expr:
 
         >>> df.select(
         ...     pl.all()
-        ...     .top_k_by(["c", "a"], 2, descending=[False, True])
+        ...     .top_k_by(["c", "a"], 2, reverse=[False, True])
         ...     .name.suffix("_by_ca"),
         ...     pl.all()
-        ...     .top_k_by(["c", "b"], 2, descending=[False, True])
+        ...     .top_k_by(["c", "b"], 2, reverse=[False, True])
         ...     .name.suffix("_by_cb"),
         ... )
         shape: (2, 6)
@@ -2135,10 +2135,10 @@ class Expr:
 
         >>> df.select(
         ...     pl.all()
-        ...     .bottom_k_by(["c", "a"], 2, descending=[False, True])
+        ...     .bottom_k_by(["c", "a"], 2, reverse=[False, True])
         ...     .name.suffix("_by_ca"),
         ...     pl.all()
-        ...     .bottom_k_by(["c", "b"], 2, descending=[False, True])
+        ...     .bottom_k_by(["c", "b"], 2, reverse=[False, True])
         ...     .name.suffix("_by_cb"),
         ... )
         shape: (2, 6)
