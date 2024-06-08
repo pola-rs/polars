@@ -5,15 +5,16 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
 
+/// A `[Series]` that amortizes a few allocations during iteration.
 #[derive(Clone)]
-pub struct UnstableSeries {
+pub struct AmortSeries {
     container: Rc<Series>,
     // the ptr to the inner chunk, this saves some ptr chasing
     inner: NonNull<ArrayRef>,
 }
 
 /// We don't implement Deref so that the caller is aware of converting to Series
-impl AsRef<Series> for UnstableSeries {
+impl AsRef<Series> for AmortSeries {
     fn as_ref(&self) -> &Series {
         self.container.as_ref()
     }
@@ -21,12 +22,12 @@ impl AsRef<Series> for UnstableSeries {
 
 pub type ArrayBox = Box<dyn Array>;
 
-impl UnstableSeries {
+impl AmortSeries {
     pub fn new(series: Rc<Series>) -> Self {
         debug_assert_eq!(series.chunks().len(), 1);
         let inner_chunk = series.array_ref(0) as *const ArrayRef as *mut arrow::array::ArrayRef;
         let container = series;
-        UnstableSeries {
+        AmortSeries {
             container,
             inner: NonNull::new(inner_chunk).unwrap(),
         }
@@ -38,7 +39,7 @@ impl UnstableSeries {
     /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.
     #[inline]
     pub(crate) unsafe fn new_with_chunk(series: Rc<Series>, inner_chunk: &ArrayRef) -> Self {
-        UnstableSeries {
+        AmortSeries {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef)
                 .unwrap_unchecked_release(),
@@ -56,7 +57,7 @@ impl UnstableSeries {
     }
 
     #[inline]
-    /// Swaps inner state with the `array`. Prefer `UnstableSeries::with_array` as this
+    /// Swaps inner state with the `array`. Prefer `AmortSeries::with_array` as this
     /// restores the state.
     /// # Safety
     /// This swaps an underlying pointer that might be hold by other cloned series.
@@ -78,7 +79,7 @@ impl UnstableSeries {
     #[inline]
     pub unsafe fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
     where
-        F: Fn(&UnstableSeries) -> T,
+        F: Fn(&AmortSeries) -> T,
     {
         unsafe {
             self.swap(array);

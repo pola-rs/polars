@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
-use crate::series::unstable::{unstable_series_container_and_ptr, ArrayBox, UnstableSeries};
+use crate::series::unstable::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
 
 impl ArrayChunked {
     /// This is an iterator over a [`ArrayChunked`] that save allocations.
@@ -23,7 +23,7 @@ impl ArrayChunked {
     /// that Series.
     ///
     /// # Safety
-    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
+    /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
@@ -35,20 +35,13 @@ impl ArrayChunked {
     ///     ChunkedArray is:
     ///         2. Vec< 3. ArrayRef>
     ///
-    /// The [`ArrayRef`] we indicated with 3. will be updated during iteration.
+    /// The ArrayRef we indicated with 3. will be updated during iteration.
     /// The Series will be pinned in memory, saving an allocation for
     /// 1. Arc<..>
     /// 2. Vec<...>
     ///
-    /// # Warning
-    /// Though memory safe in the sense that it will not read unowned memory, UB, or memory leaks
-    /// this function still needs precautions. The returned should never be cloned or taken longer
-    /// than a single iteration, as every call on `next` of the iterator will change the contents of
-    /// that Series.
-    ///
-    /// # Safety
-    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
-    /// longer than the iterator is UB.
+    /// If the returned `AmortSeries` is cloned, the local copy will be replaced and a new container
+    /// will be set.
     pub fn amortized_iter_with_name(
         &self,
         name: &str,
@@ -87,7 +80,7 @@ impl ArrayChunked {
 
     pub fn try_apply_amortized_to_list<F>(&self, mut f: F) -> PolarsResult<ListChunked>
     where
-        F: FnMut(UnstableSeries) -> PolarsResult<Series>,
+        F: FnMut(AmortSeries) -> PolarsResult<Series>,
     {
         if self.is_empty() {
             return Ok(Series::new_empty(
@@ -130,7 +123,7 @@ impl ArrayChunked {
     #[must_use]
     pub unsafe fn apply_amortized_same_type<F>(&self, mut f: F) -> Self
     where
-        F: FnMut(UnstableSeries) -> Series,
+        F: FnMut(AmortSeries) -> Series,
     {
         if self.is_empty() {
             return self.clone();
@@ -151,7 +144,7 @@ impl ArrayChunked {
     /// Return series of `F` must has the same dtype and number of elements as input if it is Ok.
     pub unsafe fn try_apply_amortized_same_type<F>(&self, mut f: F) -> PolarsResult<Self>
     where
-        F: FnMut(UnstableSeries) -> PolarsResult<Series>,
+        F: FnMut(AmortSeries) -> PolarsResult<Series>,
     {
         if self.is_empty() {
             return Ok(self.clone());
@@ -180,7 +173,7 @@ impl ArrayChunked {
     ) -> Self
     where
         T: PolarsDataType,
-        F: FnMut(Option<UnstableSeries>, Option<T::Physical<'a>>) -> Option<Series>,
+        F: FnMut(Option<AmortSeries>, Option<T::Physical<'a>>) -> Option<Series>,
     {
         if self.is_empty() {
             return self.clone();
@@ -199,7 +192,7 @@ impl ArrayChunked {
     pub fn apply_amortized_generic<F, K, V>(&self, f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
-        F: FnMut(Option<UnstableSeries>) -> Option<K> + Copy,
+        F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         {
@@ -211,7 +204,7 @@ impl ArrayChunked {
     pub fn try_apply_amortized_generic<F, K, V>(&self, f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
-        F: FnMut(Option<UnstableSeries>) -> PolarsResult<Option<K>> + Copy,
+        F: FnMut(Option<AmortSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
         {
@@ -221,7 +214,7 @@ impl ArrayChunked {
 
     pub fn for_each_amortized<F>(&self, f: F)
     where
-        F: FnMut(Option<UnstableSeries>),
+        F: FnMut(Option<AmortSeries>),
     {
         {
             self.amortized_iter().for_each(f)

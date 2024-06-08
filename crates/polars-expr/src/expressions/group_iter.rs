@@ -1,17 +1,17 @@
 use std::rc::Rc;
 
-use polars_core::series::unstable::UnstableSeries;
+use polars_core::series::unstable::AmortSeries;
 
 use super::*;
 
 impl<'a> AggregationContext<'a> {
     /// # Safety
-    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
+    /// The lifetime of [AmortSeries] is bound to the iterator. Keeping it alive
     /// longer than the iterator is UB.
     pub(super) unsafe fn iter_groups(
         &mut self,
         keep_names: bool,
-    ) -> Box<dyn Iterator<Item = Option<UnstableSeries>> + '_> {
+    ) -> Box<dyn Iterator<Item = Option<AmortSeries>> + '_> {
         match self.agg_state() {
             AggState::Literal(_) => {
                 self.groups();
@@ -62,10 +62,10 @@ impl<'a> AggregationContext<'a> {
 struct LitIter {
     len: usize,
     offset: usize,
-    // UnstableSeries referenced that series
+    // AmortSeries referenced that series
     #[allow(dead_code)]
     series_container: Rc<Series>,
-    item: UnstableSeries,
+    item: AmortSeries,
 }
 
 impl LitIter {
@@ -83,13 +83,13 @@ impl LitIter {
             len,
             series_container: series_container.clone(),
             // SAFETY: we pinned the series so the location is still valid
-            item: UnstableSeries::new(series_container),
+            item: AmortSeries::new(series_container),
         }
     }
 }
 
 impl Iterator for LitIter {
-    type Item = Option<UnstableSeries>;
+    type Item = Option<AmortSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len == self.offset {
@@ -111,10 +111,10 @@ struct FlatIter {
     offset: usize,
     chunk_offset: usize,
     len: usize,
-    // UnstableSeries referenced that series
+    // AmortSeries referenced that series
     #[allow(dead_code)]
     series_container: Rc<Series>,
-    item: UnstableSeries,
+    item: AmortSeries,
 }
 
 impl FlatIter {
@@ -138,13 +138,13 @@ impl FlatIter {
             chunk_offset: 0,
             len,
             series_container: series_container.clone(),
-            item: UnstableSeries::new(series_container),
+            item: AmortSeries::new(series_container),
         }
     }
 }
 
 impl Iterator for FlatIter {
-    type Item = Option<UnstableSeries>;
+    type Item = Option<AmortSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len == self.offset {
