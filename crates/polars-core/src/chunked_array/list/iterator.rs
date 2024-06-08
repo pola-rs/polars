@@ -60,13 +60,13 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 
                         // return a reference to the container
                         // this lifetime is now bound to 'a
-                        return UnstableSeries::new(
-                            self.series_container.clone()
-                        );
+                        return UnstableSeries::new(self.series_container.clone());
                     }
                 }
                 // The series is cloned, we make a new container.
-                if Arc::strong_count(&self.series_container.0) > 1 || Rc::strong_count(&self.series_container) > 1  {
+                if Arc::strong_count(&self.series_container.0) > 1
+                    || Rc::strong_count(&self.series_container) > 1
+                {
                     let (s, ptr) = unsafe {
                         unstable_series_container_and_ptr(
                             self.series_container.name(),
@@ -78,7 +78,8 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                     self.inner = NonNull::new(ptr).unwrap();
                 } else {
                     // SAFETY: we checked the RC above;
-                    let series_mut = unsafe { Rc::get_mut(&mut self.series_container).unwrap_unchecked() };
+                    let series_mut =
+                        unsafe { Rc::get_mut(&mut self.series_container).unwrap_unchecked() };
                     // update the inner state
                     unsafe { *self.inner.as_mut() = array_ref };
 
@@ -91,7 +92,10 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // SAFETY:
                 // inner belongs to Series.
                 unsafe {
-                    UnstableSeries::new_with_chunk(self.series_container.clone(), self.inner.as_ref())
+                    UnstableSeries::new_with_chunk(
+                        self.series_container.clone(),
+                        self.inner.as_ref(),
+                    )
                 }
             })
         })
@@ -298,10 +302,7 @@ impl ListChunked {
         T: PolarsDataType,
         &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
         I: TrustedLen<Item = Option<T::Physical<'a>>>,
-        F: FnMut(
-            Option<UnstableSeries>,
-            Option<T::Physical<'a>>,
-        ) -> PolarsResult<Option<Series>>,
+        F: FnMut(Option<UnstableSeries>, Option<T::Physical<'a>>) -> PolarsResult<Option<Series>>,
     {
         if self.is_empty() {
             return Ok(self.clone());

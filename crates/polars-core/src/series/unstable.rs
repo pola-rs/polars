@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
@@ -74,8 +73,11 @@ impl UnstableSeries {
 
     /// Temporary swaps out the array, and restores the original state
     /// when application of the function `f` is done.
+    ///
+    /// # Safety
+    /// Array must be from `Series` physical dtype.
     #[inline]
-    pub fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
+    pub unsafe fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
     where
         F: Fn(&UnstableSeries) -> T,
     {
