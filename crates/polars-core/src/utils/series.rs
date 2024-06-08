@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::prelude::*;
-use crate::series::unstable::AmortSeries;
+use crate::series::amortized_iter::AmortSeries;
 
 /// A utility that allocates an [`AmortSeries`]. The applied function can then use that
 /// series container to save heap allocations and swap arrow arrays.

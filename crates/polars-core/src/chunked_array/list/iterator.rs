@@ -5,7 +5,7 @@ use std::rc::Rc;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::prelude::*;
-use crate::series::unstable::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
+use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,

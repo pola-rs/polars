@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
-use crate::series::unstable::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
+use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
 
 impl ArrayChunked {
     /// This is an iterator over a [`ArrayChunked`] that save allocations.

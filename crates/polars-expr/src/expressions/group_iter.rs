@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use polars_core::series::unstable::AmortSeries;
+use polars_core::series::amortized_iter::AmortSeries;
 
 use super::*;
 

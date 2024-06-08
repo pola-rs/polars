@@ -2,6 +2,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 
+pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
 mod comparison;
@@ -11,7 +12,6 @@ mod into;
 pub(crate) mod iterator;
 pub mod ops;
 mod series_trait;
-pub mod unstable;
 
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
