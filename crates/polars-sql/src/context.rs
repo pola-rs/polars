@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 
 use polars_core::prelude::*;
-use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::prelude::*;
@@ -15,7 +14,9 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::sql_expr::{parse_sql_array, parse_sql_expr, process_join_constraint};
+use crate::sql_expr::{
+    parse_sql_array, parse_sql_expr, process_join_constraint, to_sql_interface_err,
+};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -115,9 +116,9 @@ impl SQLContext {
 
         let ast = parser
             .try_with_sql(query)
-            .map_err(to_compute_err)?
+            .map_err(to_sql_interface_err)?
             .parse_statements()
-            .map_err(to_compute_err)?;
+            .map_err(to_sql_interface_err)?;
 
         polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
         let res = self.execute_statement(ast.first().unwrap())?;
@@ -913,7 +914,7 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         polars_ensure!(
             !contains_wildcard,
-            SQLSyntax: "GROUP BY error: can't process wildcard in group_by"
+            SQLSyntax: "GROUP BY error: cannot process wildcard in group_by"
         );
         let schema_before = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
         let group_by_keys_schema =

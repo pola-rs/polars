@@ -1343,10 +1343,10 @@ impl FromSQLExpr for f64 {
             SQLExpr::Value(v) => match v {
                 SQLValue::Number(s, _) => s
                     .parse()
-                    .map_err(|_| polars_err!(SQLInterface: "can't parse literal {:?}", s)),
-                _ => polars_bail!(SQLInterface: "can't parse literal {:?}", v),
+                    .map_err(|_| polars_err!(SQLInterface: "cannot parse literal {:?}", s)),
+                _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse literal {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),
         }
     }
 }
@@ -1359,9 +1359,9 @@ impl FromSQLExpr for bool {
         match expr {
             SQLExpr::Value(v) => match v {
                 SQLValue::Boolean(v) => Ok(*v),
-                _ => polars_bail!(SQLInterface: "can't parse boolean {:?}", v),
+                _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse boolean {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", expr),
         }
     }
 }
@@ -1374,9 +1374,9 @@ impl FromSQLExpr for String {
         match expr {
             SQLExpr::Value(v) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(s.clone()),
-                _ => polars_bail!(SQLInterface: "can't parse literal {:?}", v),
+                _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse literal {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),
         }
     }
 }
@@ -1392,9 +1392,9 @@ impl FromSQLExpr for StrptimeOptions {
                     format: Some(s.clone()),
                     ..StrptimeOptions::default()
                 }),
-                _ => polars_bail!(SQLInterface: "can't parse literal {:?}", v),
+                _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse literal {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),
         }
     }
 }
