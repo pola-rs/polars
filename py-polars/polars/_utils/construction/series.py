@@ -523,7 +523,7 @@ def numpy_to_pyseries(
             strict=strict,
             nan_to_null=nan_to_null,
         )
-        return wrap_s(py_s).reshape(original_shape, Array)._s
+        return wrap_s(py_s).reshape(original_shape)._s
 
 
 def series_to_pyseries(

@@ -89,6 +89,10 @@ impl Series {
 
     #[cfg(feature = "dtype-array")]
     pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+        if dimensions.is_empty() {
+            polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
+        }
+
         let mut dims = dimensions.iter().copied().collect::<VecDeque<_>>();
 
         let leaf_array = self.get_leaf_array();

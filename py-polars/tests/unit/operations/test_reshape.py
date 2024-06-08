@@ -11,7 +11,7 @@ from polars.testing import assert_series_equal
 def test_reshape() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
     out = s.reshape((-1, 2))
-    expected = pl.Series("a", [[1, 2], [3, 4]])
+    expected = pl.Series("a", [[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2))
     assert_series_equal(out, expected)
     out = s.reshape((2, 2))
     assert_series_equal(out, expected)
@@ -19,11 +19,9 @@ def test_reshape() -> None:
     assert_series_equal(out, expected)
 
     out = s.reshape((-1, 1))
-    expected = pl.Series("a", [[1], [2], [3], [4]])
+    expected = pl.Series("a", [[1], [2], [3], [4]], dtype=pl.Array(pl.Int64, 1))
     assert_series_equal(out, expected)
     out = s.reshape((4, -1))
-    assert_series_equal(out, expected)
-    out = s.reshape((-1, -1))
     assert_series_equal(out, expected)
     out = s.reshape((4, 1))
     assert_series_equal(out, expected)
@@ -41,6 +39,14 @@ def test_reshape() -> None:
     # invalid (empty) dimensions
     with pytest.raises(pl.ComputeError, match="reshape `dimensions` cannot be empty"):
         s.reshape(())
+
+
+def test_reshape_invalid_dims() -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    with pytest.raises(
+        pl.InvalidOperationError, match="can only infer single dimension"
+    ):
+        s.reshape((-1, -1))
 
 
 @pytest.mark.parametrize(
@@ -93,7 +99,7 @@ def test_reshape_empty_invalid_1d(shape: tuple[int]) -> None:
 
 def test_array_ndarray_reshape() -> None:
     shape = (8, 4, 2, 1)
-    s = pl.Series(range(64)).reshape(shape, nested_type=pl.Array)
+    s = pl.Series(range(64)).reshape(shape)
     n = s.to_numpy()
     assert n.shape == shape
     assert (n[0] == s[0].to_numpy()).all()
