@@ -3,21 +3,21 @@ use std::borrow::Cow;
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
-#[cfg(feature = "regex")]
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+use polars_core::utils::handle_casting_failures;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::format_smartstring;
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::*;
+use crate::{map, map_as_slice};
+
 #[cfg(feature = "timezones")]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
-
-use polars_core::utils::handle_casting_failures;
-#[cfg(feature = "dtype-struct")]
-use polars_utils::format_smartstring;
-
-use super::*;
-use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -652,16 +652,10 @@ fn to_datetime(
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };
-    if let (Some(tz), true) = (time_zone, tz_aware) {
-        if tz != "UTC" {
-            polars_bail!(
-                ComputeError:
-                "if using strftime/to_datetime with a time-zone-aware format, the output will be in UTC. Please either drop the time zone from the function call, or set it to UTC. \
-                If you are trying to convert the output to a different time zone, please use `convert_time_zone`."
-            )
-        }
-    };
-
+    #[cfg(feature = "timezones")]
+    if let Some(time_zone) = time_zone {
+        validate_time_zone(time_zone)?;
+    }
     let out = if options.exact {
         datetime_strings
             .as_datetime(

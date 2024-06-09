@@ -18,7 +18,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -2502,10 +2502,12 @@ def test_init_vs_strptime_consistency_raises() -> None:
             [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
             dtype=pl.Datetime("us", "US/Pacific"),
         )
-    with pytest.raises(ComputeError, match=msg):
-        pl.Series(["2020-01-01 00:00-08:00"]).str.strptime(
-            pl.Datetime("us", "US/Pacific")
-        )
+    result = (
+        pl.Series(["2020-01-01 00:00-08:00"])
+        .str.strptime(pl.Datetime("us", "US/Pacific"))
+        .item()
+    )
+    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
 
 
 def test_init_physical_with_timezone() -> None:
