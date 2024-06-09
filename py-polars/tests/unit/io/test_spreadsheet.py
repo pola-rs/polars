@@ -358,13 +358,18 @@ def test_read_mixed_dtype_columns(
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
 def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
-    df = pl.DataFrame({"A": [1.5, -2, 0, 3.0, -4.5, 5.0]})
+    df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
 
     excel_bytes = BytesIO()
     df.write_excel(excel_bytes)
 
     df_read = pl.read_excel(excel_bytes, engine=engine)
     assert_frame_equal(df, df_read)
+
+    # also confirm consistent behaviour when 'infer_schema_length=0'
+    df_read = pl.read_excel(excel_bytes, engine=engine, infer_schema_length=0)
+    expected = pl.DataFrame({"colx": ["1.5", "-2", "0"], "coly": ["a", None, "c"]})
+    assert_frame_equal(expected, df_read)
 
 
 def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> None:

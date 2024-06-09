@@ -746,6 +746,7 @@ def _read_spreadsheet_openpyxl(
 ) -> pl.DataFrame:
     """Use the 'openpyxl' library to read data from the given worksheet."""
     infer_schema_length = read_options.pop("infer_schema_length", None)
+    no_inference = infer_schema_length == 0
     ws = parser[sheet_name]
 
     # prefer detection of actual table objects; otherwise read
@@ -766,11 +767,12 @@ def _read_spreadsheet_openpyxl(
                 header.extend(row_values)
                 break
 
+    dtype = String if no_inference else None
     series_data = []
     for name, column_data in zip(header, zip(*rows_iter)):
         if name:
             values = [cell.value for cell in column_data]
-            if (dtype := (schema_overrides or {}).get(name)) == String:
+            if no_inference or (dtype := (schema_overrides or {}).get(name)) == String:  # type: ignore[assignment]
                 # note: if we init series with mixed-type data (eg: str/int)
                 # the non-strings will become null, so we handle the cast here
                 values = [str(v) if (v is not None) else v for v in values]
@@ -803,7 +805,11 @@ def _read_spreadsheet_calamine(
         msg = f"a more recent version of `fastexcel` is required (>= 0.9; found {fastexcel.__version__})"
         raise ModuleUpgradeRequired(msg)
 
-    if (schema_overrides := (schema_overrides or {})) and fastexcel_version >= (0, 10):
+    schema_overrides = schema_overrides or {}
+    if read_options.get("schema_sample_rows") == 0:
+        # ref: https://github.com/ToucanToco/fastexcel/issues/236
+        read_options["dtypes"] = {idx: "string" for idx in range(16384)}
+    elif schema_overrides and fastexcel_version >= (0, 10):
         parser_dtypes = read_options.get("dtypes", {})
         for name, dtype in schema_overrides.items():
             if name not in parser_dtypes:
@@ -821,6 +827,7 @@ def _read_spreadsheet_calamine(
                     parser_dtypes[name] = "duration"
                 elif base_dtype == Boolean:
                     parser_dtypes[name] = "bool"
+
         read_options["dtypes"] = parser_dtypes
 
     ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
