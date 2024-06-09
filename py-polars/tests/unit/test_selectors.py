@@ -665,15 +665,19 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     }
 
     # exclusive or
-    assert df.select((cs.matches("e|g")) ^ cs.numeric()).schema == OrderedDict(
-        {
-            "abc": pl.UInt16,
-            "bbb": pl.UInt32,
-            "eee": pl.Boolean,
-            "fgg": pl.Boolean,
-            "ghi": pl.Time,
-        }
-    )
+    for selected in (
+        df.select((cs.matches("e|g")) ^ cs.numeric()),
+        df.select((cs.contains("b", "g")) ^ pl.col("eee")),
+    ):
+        assert selected.schema == OrderedDict(
+            {
+                "abc": pl.UInt16,
+                "bbb": pl.UInt32,
+                "eee": pl.Boolean,
+                "fgg": pl.Boolean,
+                "ghi": pl.Time,
+            }
+        )
 
 
 def test_selector_dispatch_default_operator() -> None:

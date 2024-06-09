@@ -316,7 +316,7 @@ class _selector_proxy_(Expr):
             else:
                 str_params = ", ".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
-                    for k, v in (params or {}).items()
+                    for k, v in params.items()
                 ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
