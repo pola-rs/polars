@@ -555,24 +555,24 @@ impl PyLazyFrame {
         .into()
     }
 
-    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>) -> Self {
+    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
         ldf.top_k(
             k,
             exprs,
-            SortMultipleOptions::new().with_order_descending_multi(descending),
+            SortMultipleOptions::new().with_order_descending_multi(reverse),
         )
         .into()
     }
 
-    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>) -> Self {
+    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, reverse: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
         ldf.bottom_k(
             k,
             exprs,
-            SortMultipleOptions::new().with_order_descending_multi(descending),
+            SortMultipleOptions::new().with_order_descending_multi(reverse),
         )
         .into()
     }

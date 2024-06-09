@@ -4720,18 +4720,19 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k(
         self,
         k: int,
         *,
         by: IntoExpr | Iterable[IntoExpr],
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> DataFrame:
         """
         Return the `k` largest rows.
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -4742,7 +4743,7 @@ class DataFrame:
         by
             Column(s) used to determine the top rows.
             Accepts expression input. Strings are parsed as column names.
-        descending
+        reverse
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
@@ -4792,7 +4793,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(k, by=by, descending=descending)
+            .top_k(k, by=by, reverse=reverse)
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4801,18 +4802,19 @@ class DataFrame:
             )
         )
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def bottom_k(
         self,
         k: int,
         *,
         by: IntoExpr | Iterable[IntoExpr],
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> DataFrame:
         """
         Return the `k` smallest rows.
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -4823,7 +4825,7 @@ class DataFrame:
         by
             Column(s) used to determine the bottom rows.
             Accepts expression input. Strings are parsed as column names.
-        descending
+        reverse
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
@@ -4873,7 +4875,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(k, by=by, descending=descending)
+            .bottom_k(k, by=by, reverse=reverse)
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
