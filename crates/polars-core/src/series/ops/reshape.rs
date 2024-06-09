@@ -98,11 +98,22 @@ impl Series {
         let leaf_array = self.get_leaf_array();
         let size = leaf_array.len();
 
-        let mut infer_dim_index: Option<usize> = None;
         let mut total_dim_size = 1;
+        let mut infer_dim_index: Option<usize> = None;
         for (index, &dim) in dims.iter().enumerate() {
-            if dim >= 0 {
+            if dim > 0 {
                 total_dim_size *= dim as usize;
+            } else if dim == 0 {
+                if index != 0 {
+                    polars_bail!(
+                        InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
+                        format_tuple!(dims)
+                    );
+                }
+                total_dim_size = 0;
+                // We can early exit here, as empty arrays will error with multiple dimensions,
+                // and non-empty arrays will error when the first dimension is zero.
+                break;
             } else if infer_dim_index.is_none() {
                 infer_dim_index = Some(index);
             } else {
@@ -110,15 +121,18 @@ impl Series {
             }
         }
 
-        // OR fail if size is zero and any valid dim is not zero
-        polars_ensure!(
-            !(total_dim_size == 0 && size != 0),
-            InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dims)
-        );
-        polars_ensure!(
-            size % total_dim_size == 0,
-            InvalidOperation: "cannot reshape array of size {} into shape: {}", size, format_tuple!(dims)
-        );
+        if size == 0 {
+            if dims.len() > 1 || (infer_dim_index.is_none() && total_dim_size != 0) {
+                polars_bail!(InvalidOperation: "cannot reshape empty array into shape {}", format_tuple!(dims))
+            }
+        } else if total_dim_size == 0 {
+            polars_bail!(InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dims))
+        } else {
+            polars_ensure!(
+                size % total_dim_size == 0,
+                InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dims)
+            );
+        }
 
         // Infer dimension
         if let Some(index) = infer_dim_index {
