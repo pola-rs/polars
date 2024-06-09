@@ -836,14 +836,28 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
             let mut members = PlIndexSet::new();
             replace_selector_inner(swapped, &mut members, &mut vec![], schema, keys)?;
 
-            // Ensure that columns returned from combined/nested selectors remain in schema order
-            let selected = schema
-                .iter_fields()
-                .map(|field| ColumnName::from(field.name().as_ref()))
-                .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
-                .collect();
+            if members.len() <= 1 {
+                return Ok(Expr::Columns(
+                    members
+                        .into_iter()
+                        .map(|e| {
+                            let Expr::Column(name) = e else {
+                                unreachable!()
+                            };
+                            name
+                        })
+                        .collect(),
+                ));
+            } else {
+                // Ensure that multiple columns returned from combined/nested selectors remain in schema order
+                let selected = schema
+                    .iter_fields()
+                    .map(|field| ColumnName::from(field.name().as_ref()))
+                    .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
+                    .collect();
 
-            Ok(Expr::Columns(selected))
+                Ok(Expr::Columns(selected))
+            }
         },
         e => Ok(e),
     })
