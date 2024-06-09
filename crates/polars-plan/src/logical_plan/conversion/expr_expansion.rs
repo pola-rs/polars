@@ -837,7 +837,7 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
             replace_selector_inner(swapped, &mut members, &mut vec![], schema, keys)?;
 
             if members.len() <= 1 {
-                return Ok(Expr::Columns(
+                Ok(Expr::Columns(
                     members
                         .into_iter()
                         .map(|e| {
@@ -847,7 +847,7 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
                             name
                         })
                         .collect(),
-                ));
+                ))
             } else {
                 // Ensure that multiple columns returned from combined/nested selectors remain in schema order
                 let selected = schema

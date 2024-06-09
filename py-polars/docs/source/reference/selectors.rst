@@ -92,7 +92,7 @@ Examples
     }
 
     # Select the EXCLUSIVE OR of numeric columns and columns that contain an "e"
-    assert df.select(cs.numeric() & cs.contains("e")).schema == {
+    assert df.select(cs.contains("e") ^ cs.numeric()).schema == {
         "abc": UInt16,
         "bbb": UInt32,
         "eee": Boolean,
