@@ -1185,6 +1185,7 @@ class ExprStringNameSpace:
     def json_decode(
         self,
         dtype: PolarsDataType | None = None,
+        *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Expr:
         """
