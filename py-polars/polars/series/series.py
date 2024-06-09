@@ -6622,7 +6622,7 @@ class Series:
         >>> s = pl.Series("foo", [1, 2, 3, 4, 5, 6, 7, 8, 9])
         >>> s.reshape((3, 3))
         shape: (3,)
-        Series: 'foo' [list[i64]]
+        Series: 'foo' [array[i64, 3]]
         [
                 [1, 2, 3]
                 [4, 5, 6]
