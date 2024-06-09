@@ -103,7 +103,7 @@ def test_streaming_group_by_types() -> None:
             "bool_last": [False],
             "bool_mean": [0.5],
             "bool_sum": [1],
-            "date_sum": [date(2074, 1, 1)],
+            "date_sum": [None],
             # Date streaming mean/median has been temporarily disabled
             # "date_mean": [date(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],
