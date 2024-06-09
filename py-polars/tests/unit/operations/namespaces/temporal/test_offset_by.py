@@ -107,8 +107,12 @@ def test_datetime_offset_by(
     time_unit: TimeUnit,
     time_zone: str | None,
 ) -> None:
-    result = pl.Series(inputs, dtype=pl.Datetime(time_unit, time_zone)).dt.offset_by(
-        offset
+    result = (
+        pl.Series(inputs, dtype=pl.Datetime(time_unit))
+        .dt.replace_time_zone(time_zone)
+        .dt.offset_by(offset)
     )
-    expected = pl.Series(outputs, dtype=pl.Datetime(time_unit, time_zone))
+    expected = pl.Series(outputs, dtype=pl.Datetime(time_unit)).dt.replace_time_zone(
+        time_zone
+    )
     assert_series_equal(result, expected)

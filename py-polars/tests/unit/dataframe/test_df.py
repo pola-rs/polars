@@ -2427,7 +2427,10 @@ def test_init_datetimes_with_timezone() -> None:
             },
         ):
             result = pl.DataFrame(  # type: ignore[arg-type]
-                data={"d1": [dtm], "d2": [dtm]},
+                data={
+                    "d1": [dtm.replace(tzinfo=ZoneInfo(tz_us))],
+                    "d2": [dtm.replace(tzinfo=ZoneInfo(tz_europe))],
+                },
                 **type_overrides,
             )
             expected = pl.DataFrame(
@@ -2476,7 +2479,7 @@ def test_init_vs_strptime_consistency(
     expected_item: datetime,
     warn: bool,
 ) -> None:
-    msg = r"UTC time zone"
+    msg = r"converted to UTC"
     context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
     if warn:
         context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
@@ -2497,11 +2500,11 @@ def test_init_vs_strptime_consistency(
 
 def test_init_vs_strptime_consistency_raises() -> None:
     msg = "-aware datetimes are converted to UTC"
-    with pytest.raises(ValueError, match=msg):
-        pl.Series(
-            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
-            dtype=pl.Datetime("us", "US/Pacific"),
-        )
+    result = pl.Series(
+        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
+        dtype=pl.Datetime("us", "US/Pacific"),
+    ).item()
+    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
     with pytest.raises(ComputeError, match=msg):
         pl.Series(["2020-01-01 00:00-08:00"]).str.strptime(
             pl.Datetime("us", "US/Pacific")

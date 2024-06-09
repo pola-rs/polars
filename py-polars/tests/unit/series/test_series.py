@@ -131,7 +131,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     # conversion of Date to Datetime with specified timezone and units
     tu: TimeUnit = "ms"
     tz = "America/Argentina/Rio_Gallegos"
-    s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu, tz))
+    s = pl.Series(
+        [date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu)
+    ).dt.replace_time_zone(tz)
     d1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo(tz))
     d2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo(tz))
     assert s.to_list() == [d1, d2]

@@ -107,7 +107,7 @@ def test_datetime_range_invalid_time_unit() -> None:
 def test_datetime_range_lazy_time_zones_warning() -> None:
     start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
     stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
-    with pytest.warns(TimeZoneAwareConstructorWarning, match="Series with UTC"):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
         (
             pl.DataFrame({"start": [start], "stop": [stop]})
             .with_columns(

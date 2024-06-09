@@ -918,7 +918,13 @@ def test_offset_by_expressions() -> None:
         {
             "c": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
             "d": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
-            "e": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "e": [
+                None,
+                None,
+                datetime(2020, 10, 26, tzinfo=ZoneInfo("Europe/London")),
+                datetime(2021, 1, 12, tzinfo=ZoneInfo("Europe/London")),
+                None,
+            ],
             "f": [None, None, date(2020, 10, 26), date(2021, 1, 12), None],
         },
         schema_overrides={

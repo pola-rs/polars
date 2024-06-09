@@ -897,17 +897,13 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
         df = pl.DataFrame(
             [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
             schema={"ts": pl.Datetime("ms")},
         )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
         df = pl.DataFrame(
             [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
             schema={"ts": pl.Datetime("ms")},

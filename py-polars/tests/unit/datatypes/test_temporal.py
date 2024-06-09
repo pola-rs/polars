@@ -340,9 +340,7 @@ def test_datetime_consistency() -> None:
         datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
         ddf = pl.DataFrame({"dtm": test_data}).with_columns(
             pl.col("dtm").dt.nanosecond().alias("ns")
         )
@@ -359,9 +357,7 @@ def test_datetime_consistency() -> None:
         datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
     ]
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
         ddf = pl.DataFrame({"dtm": test_data}).select(
             pl.col("dtm").dt.convert_time_zone("US/Central")
         )
@@ -1135,8 +1131,8 @@ def test_replace_time_zone_non_existent_null() -> None:
         .str.to_datetime()
         .dt.replace_time_zone("Europe/Warsaw", non_existent="null")
     )
-    expected = pl.Series(
-        [None, datetime(2021, 3, 28, 3, 30)], dtype=pl.Datetime("us", "Europe/Warsaw")
+    expected = pl.Series([None, datetime(2021, 3, 28, 3, 30)]).dt.replace_time_zone(
+        "Europe/Warsaw"
     )
     assert_series_equal(result, expected)
 
@@ -1281,9 +1277,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
 
 def test_auto_infer_time_zone() -> None:
     dt = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
         s = pl.Series([dt])
     assert s.dtype == pl.Datetime("us", "UTC")
     assert s[0] == dt
@@ -2350,7 +2344,7 @@ def test_series_is_temporal() -> None:
 )
 def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None:
     context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
-    msg = r"UTC time zone"
+    msg = r"converted to UTC"
     if warn:
         context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
     else:

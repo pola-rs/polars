@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -10,10 +11,18 @@ import pytest
 from hypothesis import assume, given
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import Roll, TimeUnit
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_add_business_days() -> None:
@@ -173,8 +182,14 @@ def test_add_business_days_w_roll() -> None:
 @pytest.mark.parametrize("time_zone", [None, "Europe/London", "Asia/Kathmandu"])
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_add_business_days_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
+    tzinfo = ZoneInfo(time_zone) if time_zone is not None else None
     df = pl.DataFrame(
-        {"start": [datetime(2020, 3, 28, 1), datetime(2020, 1, 10, 4)]},
+        {
+            "start": [
+                datetime(2020, 3, 28, 1, tzinfo=tzinfo),
+                datetime(2020, 1, 10, 4, tzinfo=tzinfo),
+            ]
+        },
         schema={"start": pl.Datetime(time_unit, time_zone)},
     )
     result = df.select(
@@ -183,8 +198,8 @@ def test_add_business_days_datetime(time_zone: str | None, time_unit: TimeUnit) 
     expected = pl.Series(
         "result",
         [datetime(2020, 3, 30, 1), datetime(2020, 1, 12, 4)],
-        pl.Datetime(time_unit, time_zone),
-    )
+        pl.Datetime(time_unit),
+    ).dt.replace_time_zone(time_zone)
     assert_series_equal(result, expected)
 
     with pytest.raises(pl.ComputeError, match="is not a business date"):

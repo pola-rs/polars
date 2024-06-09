@@ -269,10 +269,8 @@ def test_write_delta_overwrite_schema_deprecated(
             dtype=pl.List(pl.List(pl.List(pl.List(pl.UInt16)))),
         ),
         pl.Series(
-            "date_ns",
-            [datetime(2010, 1, 1, 0, 0)],
-            dtype=pl.Datetime(time_unit="ns", time_zone="Australia/Lord_Howe"),
-        ),
+            "date_ns", [datetime(2010, 1, 1, 0, 0)], dtype=pl.Datetime(time_unit="ns")
+        ).dt.replace_time_zone("Australia/Lord_Howe"),
         pl.Series(
             "date_us",
             [datetime(2010, 1, 1, 0, 0)],

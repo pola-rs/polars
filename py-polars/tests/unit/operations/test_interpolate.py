@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PolarsTemporalType
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 @pytest.mark.parametrize(
@@ -53,9 +62,17 @@ def test_interpolate_linear(
             [datetime(2020, 1, 1), datetime(2020, 1, 1, 12), datetime(2020, 1, 2)],
         ),
         (
-            [datetime(2020, 1, 1), None, datetime(2020, 1, 2)],
+            [
+                datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu")),
+                None,
+                datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            ],
             pl.Datetime("us", "Asia/Kathmandu"),
-            [datetime(2020, 1, 1), datetime(2020, 1, 1, 12), datetime(2020, 1, 2)],
+            [
+                datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu")),
+                datetime(2020, 1, 1, 12, tzinfo=ZoneInfo("Asia/Kathmandu")),
+                datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            ],
         ),
         ([time(1), None, time(2)], pl.Time, [time(1), time(1, 30), time(2)]),
         (
@@ -112,9 +129,17 @@ def test_interpolate_nearest(input_dtype: PolarsDataType) -> None:
             [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 2)],
         ),
         (
-            [datetime(2020, 1, 1), None, datetime(2020, 1, 2)],
+            [
+                datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu")),
+                None,
+                datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            ],
             pl.Datetime("us", "Asia/Kathmandu"),
-            [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 2)],
+            [
+                datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu")),
+                datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu")),
+                datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            ],
         ),
         ([time(1), None, time(2)], pl.Time, [time(1), time(2), time(2)]),
         (

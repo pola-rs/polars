@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsIntegerType, TimeUnit
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 @pytest.mark.parametrize("sort", [True, False])
@@ -110,15 +119,16 @@ def test_ewma_by_datetime(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_ewma_by_datetime_tz_aware(time_unit: TimeUnit) -> None:
+    tzinfo = ZoneInfo("Asia/Kathmandu")
     df = pl.DataFrame(
         {
             "values": [3.0, 1.0, 2.0, None, 4.0],
             "times": [
                 None,
-                datetime(2020, 1, 4),
-                datetime(2020, 1, 11),
-                datetime(2020, 1, 16),
-                datetime(2020, 1, 18),
+                datetime(2020, 1, 4, tzinfo=tzinfo),
+                datetime(2020, 1, 11, tzinfo=tzinfo),
+                datetime(2020, 1, 16, tzinfo=tzinfo),
+                datetime(2020, 1, 18, tzinfo=tzinfo),
             ],
         },
         schema_overrides={"times": pl.Datetime(time_unit, "Asia/Kathmandu")},

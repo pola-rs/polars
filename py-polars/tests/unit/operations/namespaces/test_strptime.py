@@ -176,7 +176,7 @@ def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
 def test_to_datetime_non_exact_strptime(
     offset: str, time_zone: str | None, tzinfo: timezone | None, format: str
 ) -> None:
-    msg = "Series with UTC time zone"
+    msg = "converted to UTC"
     context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
     if offset:
         context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
@@ -692,9 +692,7 @@ def test_to_datetime_naive_format_and_time_zone() -> None:
     result = pl.Series(["2020-01-01"]).str.to_datetime(
         format="%Y-%m-%d", time_zone="Asia/Kathmandu"
     )
-    expected = pl.Series(
-        [datetime(2020, 1, 1)], dtype=pl.Datetime("us", "Asia/Kathmandu")
-    )
+    expected = pl.Series([datetime(2020, 1, 1)]).dt.replace_time_zone("Asia/Kathmandu")
     assert_series_equal(result, expected)
     # format-inferred path
     result = pl.Series(["2020-01-01"]).str.to_datetime(time_zone="Asia/Kathmandu")

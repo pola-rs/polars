@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
 
@@ -9,6 +10,7 @@ from hypothesis.errors import InvalidArgument
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
 from polars.datatypes import DataType, DataTypeClass, Null
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
@@ -203,7 +205,13 @@ def series(  # noqa: D417
             )
         )
 
-    s = Series(name=name, values=values, dtype=dtype)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            "Constructing a Series with time-zone-naive",
+            category=TimeZoneAwareConstructorWarning,
+        )
+        s = Series(name=name, values=values, dtype=dtype)
 
     # Apply chunking
     if allow_chunks and size > 1 and draw(st.booleans()):
