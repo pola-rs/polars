@@ -88,7 +88,6 @@ dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
-date_offset = ["polars-time", "chrono"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
@@ -175,6 +174,9 @@ cov = ["polars-ops/cov"]
 hist = ["polars-ops/hist"]
 replace = ["polars-ops/replace"]
 find_many = ["polars-ops/find_many"]
+month_start = ["polars-time/month_start"]
+month_end = ["polars-time/month_end"]
+offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx"]
 
@@ -199,7 +201,9 @@ features = [
   "is_last_distinct",
   "dtype-time",
   "array_any_all",
-  "date_offset",
+  "month_start",
+  "month_end",
+  "offset_by",
   "parquet",
   "strings",
   "row_hash",

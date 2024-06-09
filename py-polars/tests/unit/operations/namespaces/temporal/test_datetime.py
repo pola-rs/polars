@@ -769,7 +769,7 @@ def test_quarter() -> None:
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
 
 
-def test_date_offset() -> None:
+def test_offset_by() -> None:
     df = pl.DataFrame(
         {
             "dates": pl.datetime_range(
