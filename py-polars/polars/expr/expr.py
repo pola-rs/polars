@@ -9078,16 +9078,13 @@ class Expr:
 
     def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
-        Reshape this Expr to a flat Series or an Array Series.
+        Reshape this Expr to a flat column or an Array column.
 
         Parameters
         ----------
         dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
-        nested_type
-            The nested data type to create. List only supports 2 dimension,
-            whereas Array supports an arbitrary number of dimensions.
 
         Returns
         -------
@@ -9095,13 +9092,13 @@ class Expr:
             If a single dimension is given, results in an expression of the original
             data type.
             If a multiple dimensions are given, results in an expression of data type
-            :class:`List` with shape (rows, cols)
-            or :class:`Array` with shape `dimensions`.
+            :class:`Array` with shape `dimensions`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
-        >>> df.select(pl.col("foo").reshape((3, 3)))
+        >>> square = df.select(pl.col("foo").reshape((3, 3)))
+        >>> square
         shape: (3, 1)
         ┌───────────────┐
         │ foo           │
@@ -9112,6 +9109,23 @@ class Expr:
         │ [4, 5, 6]     │
         │ [7, 8, 9]     │
         └───────────────┘
+        >>> square.select(pl.col("foo").reshape((9,)))
+        shape: (9, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        │ 7   │
+        │ 8   │
+        │ 9   │
+        └─────┘
 
         See Also
         --------
