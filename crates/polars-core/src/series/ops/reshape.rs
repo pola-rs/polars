@@ -90,34 +90,43 @@ impl Series {
     #[cfg(feature = "dtype-array")]
     pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
         if dimensions.is_empty() {
-            polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
+            polars_bail!(InvalidOperation: "at least one dimension must be specified")
         }
 
         let mut dims = dimensions.iter().copied().collect::<VecDeque<_>>();
 
         let leaf_array = self.get_leaf_array();
-        let size = leaf_array.len() as i64;
+        let size = leaf_array.len();
 
-        // Infer dimension
-        if dims.contains(&-1) {
-            let infer_dims = dims.iter().filter(|d| **d == -1).count();
-            polars_ensure!(infer_dims == 1, InvalidOperation: "can only infer single dimension, found {}", infer_dims);
-
-            let mut prod = 1;
-            for &dim in &dims {
-                if dim != -1 {
-                    prod *= dim;
-                }
-            }
-            polars_ensure!(size % prod == 0, InvalidOperation: "cannot reshape array of size {} into shape: {}", size, format_tuple!(dims));
-            let inferred_value = size / prod;
-            for dim in &mut dims {
-                if *dim == -1 {
-                    *dim = inferred_value;
-                    break;
-                }
+        let mut infer_dim_index: Option<usize> = None;
+        let mut total_dim_size = 1;
+        for (index, &dim) in dims.iter().enumerate() {
+            if dim >= 0 {
+                total_dim_size *= dim as usize;
+            } else if infer_dim_index.is_none() {
+                infer_dim_index = Some(index);
+            } else {
+                polars_bail!(InvalidOperation: "can only specify one unknown dimension");
             }
         }
+
+        // OR fail if size is zero and any valid dim is not zero
+        polars_ensure!(
+            !(total_dim_size == 0 && size != 0),
+            InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dims)
+        );
+        polars_ensure!(
+            size % total_dim_size == 0,
+            InvalidOperation: "cannot reshape array of size {} into shape: {}", size, format_tuple!(dims)
+        );
+
+        // Infer dimension
+        if let Some(index) = infer_dim_index {
+            let inferred_dim = if size == 0 { 0 } else { size / total_dim_size };
+            let item = dims.get_mut(index).unwrap();
+            *item = i64::try_from(inferred_dim).unwrap();
+        }
+
         let leaf_array = leaf_array.rechunk();
         let mut prev_dtype = leaf_array.dtype().clone();
         let mut prev_array = leaf_array.chunks()[0].clone();
