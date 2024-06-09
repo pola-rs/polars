@@ -537,7 +537,9 @@ def test_power_series() -> None:
         a ** "hi"  # type: ignore[operator]
 
     # Raising to UInt64: raises if can't be downcast safely to UInt32...
-    with pytest.raises(pl.ComputeError, match="conversion from `u64` to `u32` failed"):
+    with pytest.raises(
+        pl.InvalidOperationError, match="conversion from `u64` to `u32` failed"
+    ):
         a**m
     # ... but succeeds otherwise.
     assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
