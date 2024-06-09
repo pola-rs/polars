@@ -665,3 +665,17 @@ def test_raise_on_sorted_multi_args() -> None:
         pl.DataFrame({"a": [1], "b": [1]}).set_sorted(
             ["a", "b"]  # type: ignore[arg-type]
         )
+
+
+def test_err_invalid_comparison() -> None:
+    with pytest.raises(
+        pl.SchemaError,
+        match="could not evalulate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
+    ):
+        _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="could apply comparison on series of dtype 'object; operand names: 'a', 'b'",
+    ):
+        _ = pl.Series("a", [object()]) == pl.Series("b", [object])
