@@ -168,17 +168,19 @@ def test_sql_on_compatible_frame_types() -> None:
         (df["a"] * 2).rename("c"),  # polars series
         (dfp["a"] * 2).rename("c"),  # pandas series
     ):
-        res = pl.sql("""
-            SELECT a, b, SUM(c) AS cc FROM (
-              SELECT * FROM df               -- polars frame
-                UNION ALL SELECT * FROM dfp  -- pandas frame
-                UNION ALL SELECT * FROM dfa  -- pyarrow table
-                UNION ALL SELECT * FROM dfb  -- pyarrow record batch
-            ) tbl
-            INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
-            GROUP BY "a", "b"
-            ORDER BY "a", "b"
-        """).collect()
+        res = pl.sql(
+            """
+                        SELECT a, b, SUM(c) AS cc FROM (
+                          SELECT * FROM df               -- polars frame
+                            UNION ALL SELECT * FROM dfp  -- pandas frame
+                            UNION ALL SELECT * FROM dfa  -- pyarrow table
+                            UNION ALL SELECT * FROM dfb  -- pyarrow record batch
+                        ) tbl
+                        INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
+                        GROUP BY "a", "b"
+                        ORDER BY "a", "b"
+                    """
+        ).collect()
 
         expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [16, 24]})
         assert_frame_equal(left=expected, right=res)
@@ -191,7 +193,4 @@ def test_sql_on_compatible_frame_types() -> None:
 
     # don't register all compatible objects
     with pytest.raises(SQLInterfaceError, match="relation 'dfp' was not found"):
-        pl.SQLContext(
-            register_globals=True,
-            all_compatible=False,
-        ).execute("SELECT * FROM dfp")
+        pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp")
