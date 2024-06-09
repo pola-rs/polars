@@ -287,12 +287,6 @@ fn top_k_by_impl(
 
     let idx = _arg_bottom_k(k, by, &mut sort_options)?;
 
-    let result = unsafe {
-        if multithreaded {
-            src.take_unchecked_threaded(&idx.into_inner(), false)
-        } else {
-            src.take_unchecked(&idx.into_inner())
-        }
-    };
+    let result = unsafe { src.take_unchecked(&idx.into_inner()) };
     Ok(result)
 }

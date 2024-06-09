@@ -81,37 +81,6 @@ pub(crate) fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     }
 }
 
-macro_rules! split_array {
-    ($ca: expr, $n: expr, $ty : ty) => {{
-        if $n == 1 {
-            return Ok(vec![$ca.clone()]);
-        }
-        let total_len = $ca.len();
-        let chunk_size = total_len / $n;
-
-        let v = (0..$n)
-            .map(|i| {
-                let offset = i * chunk_size;
-                let len = if i == ($n - 1) {
-                    total_len - offset
-                } else {
-                    chunk_size
-                };
-                $ca.slice((i * chunk_size) as $ty, len)
-            })
-            .collect();
-        Ok(v)
-    }};
-}
-
-// This one splits, but doesn't flatten chunks;
-pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
-where
-    T: PolarsDataType,
-{
-    split_array!(ca, n, i64)
-}
-
 // prefer this one over split_ca, as this can push the null_count into the thread pool
 // returns an `(offset, length)` tuple
 #[doc(hidden)]
@@ -133,11 +102,6 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
             })
             .collect_trusted()
     }
-}
-
-#[doc(hidden)]
-pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
-    split_array!(s, n, i64)
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -237,6 +201,7 @@ fn split_impl<C: Container>(container: &C, target: usize, chunk_size: usize) -> 
     out
 }
 
+/// Splits, but doesn't flatten chunks. E.g. a container can still have multiple chunks.
 pub fn split<C: Container>(container: &C, target: usize) -> Vec<C> {
     let total_len = container.len();
     if total_len == 0 {

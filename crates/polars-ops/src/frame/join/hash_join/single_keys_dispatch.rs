@@ -1,4 +1,5 @@
 use arrow::array::PrimitiveArray;
+use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
@@ -261,8 +262,8 @@ where
 {
     let n_threads = POOL.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
-    let splitted_a = split_ca(a, n_threads).unwrap();
-    let splitted_b = split_ca(b, n_threads).unwrap();
+    let splitted_a = split(a, n_threads);
+    let splitted_b = split(b, n_threads);
     let splitted_a = get_arrays(&splitted_a);
     let splitted_b = get_arrays(&splitted_b);
 
@@ -346,8 +347,8 @@ where
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
-    let splitted_a = split_ca(left, n_threads).unwrap();
-    let splitted_b = split_ca(right, n_threads).unwrap();
+    let splitted_a = split(left, n_threads);
+    let splitted_b = split(right, n_threads);
     match (
         left.null_count(),
         right.null_count(),
@@ -405,8 +406,8 @@ where
     let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
 
     let n_partitions = _set_partition_size();
-    let splitted_a = split_ca(a, n_partitions).unwrap();
-    let splitted_b = split_ca(b, n_partitions).unwrap();
+    let splitted_a = split(a, n_partitions);
+    let splitted_b = split(b, n_partitions);
 
     match (a.null_count(), b.null_count()) {
         (0, 0) => {
@@ -496,8 +497,8 @@ where
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
     let n_threads = POOL.current_num_threads();
-    let splitted_a = split_ca(left, n_threads).unwrap();
-    let splitted_b = split_ca(right, n_threads).unwrap();
+    let splitted_a = split(left, n_threads);
+    let splitted_b = split(right, n_threads);
     match (
         left.null_count(),
         right.null_count(),
