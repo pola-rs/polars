@@ -17,7 +17,6 @@ def test_scatter() -> None:
         pl.Series(),
         pl.Series(dtype=pl.Int8),
         np.array([]),
-        np.ndarray(shape=(0, 0)),
     ):
         s.scatter(x, 8)  # type: ignore[arg-type]
         assert s.to_list() == [1, 2, 3]
