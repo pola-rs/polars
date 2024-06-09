@@ -23,16 +23,13 @@ use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
-use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{
-    _split_offsets, handle_casting_failures, materialize_dyn_int, split_ca, split_series, Wrap,
-};
+use crate::utils::{handle_casting_failures, materialize_dyn_int, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -618,81 +615,12 @@ impl Series {
         }
     }
 
-    fn finish_take_threaded(&self, s: Vec<Series>, rechunk: bool) -> Series {
-        let s = s
-            .into_iter()
-            .reduce(|mut s, s1| {
-                s.append(&s1).unwrap();
-                s
-            })
-            .unwrap();
-        if rechunk {
-            s.rechunk()
-        } else {
-            s
-        }
-    }
-
-    // Take a function pointer to reduce bloat.
-    fn threaded_op(
-        &self,
-        rechunk: bool,
-        len: usize,
-        func: &(dyn Fn(usize, usize) -> PolarsResult<Series> + Send + Sync),
-    ) -> PolarsResult<Series> {
-        let n_threads = POOL.current_num_threads();
-        let offsets = _split_offsets(len, n_threads);
-
-        let series: PolarsResult<Vec<_>> = POOL.install(|| {
-            offsets
-                .into_par_iter()
-                .map(|(offset, len)| func(offset, len))
-                .collect()
-        });
-
-        Ok(self.finish_take_threaded(series?, rechunk))
-    }
-
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
     pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
         self.take_slice_unchecked(idx)
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
-        self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            let idx = idx.slice(offset as i64, len);
-            Ok(self.take_unchecked(&idx))
-        })
-        .unwrap()
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
-        self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
-        })
-        .unwrap()
-    }
-
-    /// Take by index. This operation is clone.
-    ///
-    /// # Notes
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> PolarsResult<Series> {
-        self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            let idx = idx.slice(offset as i64, len);
-            self.take(&idx)
-        })
     }
 
     /// Traverse and collect every nth element in a new array.
@@ -702,29 +630,6 @@ impl Series {
             .collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
-    }
-
-    /// Filter by boolean mask. This operation clones data.
-    pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> PolarsResult<Series> {
-        // This would fail if there is a broadcasting filter, because we cannot
-        // split that filter over threads besides they are a no-op, so we do the
-        // standard filter.
-        if filter.len() == 1 {
-            return self.filter(filter);
-        }
-        let n_threads = POOL.current_num_threads();
-        let filters = split_ca(filter, n_threads).unwrap();
-        let series = split_series(self, n_threads).unwrap();
-
-        let series: PolarsResult<Vec<_>> = POOL.install(|| {
-            filters
-                .par_iter()
-                .zip(series)
-                .map(|(filter, s)| s.filter(filter))
-                .collect()
-        });
-
-        Ok(self.finish_take_threaded(series?, rechunk))
     }
 
     #[cfg(feature = "dot_product")]
