@@ -104,6 +104,7 @@ macro_rules! split_array {
     }};
 }
 
+// This one splits, but doesn't flatten chunks;
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
 where
     T: PolarsDataType,
@@ -139,46 +140,147 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
-/// Split a [`DataFrame`] in `target` elements. The target doesn't have to be respected if not
-/// strict. Deviation of the target might be done to create more equal size chunks.
-///
-/// # Panics
-/// if chunks are not aligned
-pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataFrame> {
-    let total_len = df.height();
+#[allow(clippy::len_without_is_empty)]
+pub trait Container: Clone {
+    fn slice(&self, offset: i64, len: usize) -> Self;
+
+    fn len(&self) -> usize;
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self>;
+
+    fn n_chunks(&self) -> usize;
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize>;
+}
+
+impl Container for DataFrame {
+    fn slice(&self, offset: i64, len: usize) -> Self {
+        DataFrame::slice(self, offset, len)
+    }
+
+    fn len(&self) -> usize {
+        self.height()
+    }
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        flatten_df_iter(self)
+    }
+
+    fn n_chunks(&self) -> usize {
+        DataFrame::n_chunks(self)
+    }
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
+        self.get_columns()[0].chunk_lengths()
+    }
+}
+
+impl<T: PolarsDataType> Container for ChunkedArray<T> {
+    fn slice(&self, offset: i64, len: usize) -> Self {
+        ChunkedArray::slice(self, offset, len)
+    }
+
+    fn len(&self) -> usize {
+        ChunkedArray::len(self)
+    }
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        self.downcast_iter()
+            .map(|arr| Self::with_chunk(self.name(), arr.clone()))
+    }
+
+    fn n_chunks(&self) -> usize {
+        self.chunks().len()
+    }
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
+        ChunkedArray::chunk_lengths(self)
+    }
+}
+
+impl Container for Series {
+    fn slice(&self, offset: i64, len: usize) -> Self {
+        self.0.slice(offset, len)
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        (0..self.0.n_chunks()).map(|i| self.select_chunk(i))
+    }
+
+    fn n_chunks(&self) -> usize {
+        self.chunks().len()
+    }
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
+        self.0.chunk_lengths()
+    }
+}
+
+fn split_impl<C: Container>(container: &C, target: usize, chunk_size: usize) -> Vec<C> {
+    let total_len = container.len();
+    let mut out = Vec::with_capacity(target);
+
+    for i in 0..target {
+        let offset = i * chunk_size;
+        let len = if i == (target - 1) {
+            total_len.saturating_sub(offset)
+        } else {
+            chunk_size
+        };
+        let container = container.slice((i * chunk_size) as i64, len);
+        out.push(container);
+    }
+    out
+}
+
+pub fn split<C: Container>(container: &C, target: usize) -> Vec<C> {
+    let total_len = container.len();
     if total_len == 0 {
-        return vec![df.clone()];
+        return vec![container.clone()];
+    }
+
+    let chunk_size = std::cmp::max(total_len / target, 1);
+    if container.n_chunks() == target
+        && container
+            .chunk_lengths()
+            .all(|len| len.abs_diff(chunk_size) < 100)
+    {
+        return container.iter_chunks().collect();
+    }
+    split_impl(container, target, chunk_size)
+}
+
+/// Split a [`Container`] in `target` elements. The target doesn't have to be respected if not
+/// Deviation of the target might be done to create more equal size chunks.
+pub fn split_and_flatten<C: Container>(container: &C, target: usize) -> Vec<C> {
+    let total_len = container.len();
+    if total_len == 0 {
+        return vec![container.clone()];
     }
 
     let chunk_size = std::cmp::max(total_len / target, 1);
 
-    if df.n_chunks() == target
-        && df.get_columns()[0]
+    if container.n_chunks() == target
+        && container
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return flatten_df_iter(df).collect();
+        return container.iter_chunks().collect();
     }
 
-    let mut out = Vec::with_capacity(target);
-
-    if df.n_chunks() == 1 || strict {
-        for i in 0..target {
-            let offset = i * chunk_size;
-            let len = if i == (target - 1) {
-                total_len.saturating_sub(offset)
-            } else {
-                chunk_size
-            };
-            let df = df.slice((i * chunk_size) as i64, len);
-            out.push(df);
-        }
+    if container.n_chunks() == 1 {
+        split_impl(container, target, chunk_size)
     } else {
-        let chunks = flatten_df_iter(df);
+        let mut out = Vec::with_capacity(target);
+        let chunks = container.iter_chunks();
 
         'new_chunk: for mut chunk in chunks {
             loop {
-                let h = chunk.height();
+                let h = chunk.len();
                 if h < chunk_size {
                     // TODO if the chunk is much smaller than chunk size, we should try to merge it with the next one.
                     out.push(chunk);
@@ -191,14 +293,26 @@ pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataF
                     continue 'new_chunk;
                 }
 
-                // This would be faster if we had a `split` operation.
+                // TODO! use `split` operation here. That saves a null count.
                 out.push(chunk.slice(0, chunk_size));
                 chunk = chunk.slice(chunk_size as i64, h - chunk_size);
             }
         }
+        out
     }
+}
 
-    out
+/// Split a [`DataFrame`] in `target` elements. The target doesn't have to be respected if not
+/// strict. Deviation of the target might be done to create more equal size chunks.
+///
+/// # Panics
+/// if chunks are not aligned
+pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataFrame> {
+    if strict {
+        split(df, target)
+    } else {
+        split_and_flatten(df, target)
+    }
 }
 
 #[doc(hidden)]
