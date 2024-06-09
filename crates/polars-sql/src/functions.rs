@@ -10,11 +10,11 @@ use polars_plan::prelude::col;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
 use sqlparser::ast::{
-    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SQLValue,
-    WindowSpec, WindowType,
+    DateTimeField, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Ident,
+    Value as SQLValue, WindowSpec, WindowType,
 };
 
-use crate::sql_expr::{parse_date_part, parse_sql_expr};
+use crate::sql_expr::{parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
@@ -889,7 +889,14 @@ impl SQLFunctionVisitor<'_> {
             },
             DatePart => self.try_visit_binary(|part, e| {
                 match part {
-                    Expr::Literal(LiteralValue::String(p)) => parse_date_part(e, &p),
+                    Expr::Literal(LiteralValue::String(p)) => {
+                        // note: 'DATE_PART' and 'EXTRACT' are minor syntactic
+                        // variations on otherwise identical functionality
+                        parse_extract_date_part(e, &DateTimeField::Custom(Ident {
+                            value: p,
+                            quote_style: None,
+                        }))
+                    },
                     _ => {
                         polars_bail!(SQLSyntax: "invalid 'part' for EXTRACT/DATE_PART: {}", function.args[1]);
                     }

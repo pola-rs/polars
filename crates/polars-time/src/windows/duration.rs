@@ -257,13 +257,9 @@ impl Duration {
                     },
                     _ if as_interval => match &*unit {
                         // interval-only (verbose/sql) matches
-                        "nanosec" | "nanosecs" | "nanosecond" | "nanoseconds" => nsecs += n,
-                        "microsec" | "microsecs" | "microsecond" | "microseconds" => {
-                            nsecs += n * NS_MICROSECOND
-                        },
-                        "millisec" | "millisecs" | "millisecond" | "milliseconds" => {
-                            nsecs += n * NS_MILLISECOND
-                        },
+                        "nanosecond" | "nanoseconds" => nsecs += n,
+                        "microsecond" | "microseconds" => nsecs += n * NS_MICROSECOND,
+                        "millisecond" | "milliseconds" => nsecs += n * NS_MILLISECOND,
                         "sec" | "secs" | "second" | "seconds" => nsecs += n * NS_SECOND,
                         "min" | "mins" | "minute" | "minutes" => nsecs += n * NS_MINUTE,
                         "hour" | "hours" => nsecs += n * NS_HOUR,
