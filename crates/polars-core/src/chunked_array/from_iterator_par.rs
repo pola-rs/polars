@@ -82,21 +82,21 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 
@@ -106,7 +106,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 
@@ -116,7 +116,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 
@@ -126,7 +126,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 
@@ -136,7 +136,7 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter("", chunks)
+        Self::from_chunk_iter("", chunks).optional_rechunk()
     }
 }
 

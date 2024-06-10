@@ -144,9 +144,13 @@ pub struct ChunkedArray<T: PolarsDataType> {
 }
 
 impl<T: PolarsDataType> ChunkedArray<T> {
-    fn check_rechunk(self) -> Self {
+    fn should_rechunk(&self) -> bool {
+        self.chunks.len() > 1 && self.chunks.len() > self.len() / 3
+    }
+
+    fn optional_rechunk(self) -> Self {
         // Rechunk if we have many small chunks.
-        if self.chunks.len() > 1 && self.chunks.len() > self.len() / 3 {
+        if self.should_rechunk() {
             self.rechunk()
         } else {
             self
@@ -161,7 +165,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         unsafe {
             let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
             chunked_arr.compute_len();
-            chunked_arr.check_rechunk()
+            chunked_arr
         }
     }
 
@@ -186,7 +190,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             length,
             null_count,
         }
-        .check_rechunk()
     }
 
     /// Get a reference to the used [`Metadata`]
