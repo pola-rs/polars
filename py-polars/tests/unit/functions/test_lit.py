@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -97,6 +98,42 @@ def test_lit_unsupported_type() -> None:
         match="cannot create expression literal for value of type LazyFrame: ",
     ):
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
+
+
+def test_lit_enum_input_16668() -> None:
+    # https://github.com/pola-rs/polars/issues/16668
+
+    class State(str, enum.Enum):
+        VIC = "victoria"
+        NSW = "new south wales"
+
+    value = State.VIC
+
+    result = pl.lit(value)
+    assert pl.select(result).dtypes[0] == pl.Enum(["victoria", "new south wales"])
+    assert pl.select(result).item() == "victoria"
+
+    result = pl.lit(value, dtype=pl.String)
+    assert pl.select(result).dtypes[0] == pl.String
+    assert pl.select(result).item() == "victoria"
+
+
+def test_lit_enum_input_non_string() -> None:
+    # https://github.com/pola-rs/polars/issues/16668
+
+    class State(int, enum.Enum):
+        ONE = 1
+        TWO = 2
+
+    value = State.ONE
+
+    result = pl.lit(value)
+    assert pl.select(result).dtypes[0] == pl.Int32
+    assert pl.select(result).item() == 1
+
+    result = pl.lit(value, dtype=pl.Int8)
+    assert pl.select(result).dtypes[0] == pl.Int8
+    assert pl.select(result).item() == 1
 
 
 @given(value=datetimes("ns"))
