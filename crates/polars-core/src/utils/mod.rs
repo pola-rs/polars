@@ -783,7 +783,18 @@ where
         )
     };
     match (left.chunks.len(), right.chunks.len()) {
+        // All chunks are equal length
         (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (Cow::Borrowed(left), Cow::Borrowed(right))
+        },
         (_, 1) => {
             assert();
             (
@@ -901,6 +912,16 @@ where
                 Cow::Owned(b.match_chunks(a.chunk_lengths())),
                 Cow::Owned(c.match_chunks(a.chunk_lengths())),
             )
+        },
+        (len_a, len_b, len_c)
+            if len_a == len_b
+                && len_b == len_c
+                && a.chunk_lengths()
+                    .zip(b.chunk_lengths())
+                    .zip(c.chunk_lengths())
+                    .all(|((a, b), c)| a == b && b == c) =>
+        {
+            (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c))
         },
         _ => {
             // could optimize to choose to rechunk a primitive and not a string or list type
