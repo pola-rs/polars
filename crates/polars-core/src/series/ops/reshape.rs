@@ -89,9 +89,10 @@ impl Series {
 
     #[cfg(feature = "dtype-array")]
     pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
-        if dimensions.is_empty() {
-            polars_bail!(InvalidOperation: "at least one dimension must be specified")
-        }
+        polars_ensure!(
+            !dimensions.is_empty(),
+            InvalidOperation: "at least one dimension must be specified"
+        );
 
         let mut dims = dimensions.iter().copied().collect::<VecDeque<_>>();
 
@@ -104,20 +105,21 @@ impl Series {
             if dim > 0 {
                 total_dim_size *= dim as usize;
             } else if dim == 0 {
-                if index != 0 {
-                    polars_bail!(
-                        InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
-                        format_tuple!(dims)
-                    );
-                }
+                polars_ensure!(
+                    index == 0,
+                    InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
+                    format_tuple!(dims)
+                );
                 total_dim_size = 0;
                 // We can early exit here, as empty arrays will error with multiple dimensions,
                 // and non-empty arrays will error when the first dimension is zero.
                 break;
-            } else if infer_dim_index.is_none() {
-                infer_dim_index = Some(index);
             } else {
-                polars_bail!(InvalidOperation: "can only specify one unknown dimension");
+                polars_ensure!(
+                    infer_dim_index.is_none(),
+                    InvalidOperation: "can only specify one unknown dimension"
+                );
+                infer_dim_index = Some(index);
             }
         }
 
@@ -136,7 +138,7 @@ impl Series {
 
         // Infer dimension
         if let Some(index) = infer_dim_index {
-            let inferred_dim = if size == 0 { 0 } else { size / total_dim_size };
+            let inferred_dim = size / total_dim_size;
             let item = dims.get_mut(index).unwrap();
             *item = i64::try_from(inferred_dim).unwrap();
         }
@@ -163,11 +165,12 @@ impl Series {
     }
 
     pub fn reshape_list(&self, dimensions: &[i64]) -> PolarsResult<Series> {
-        let s = self;
+        polars_ensure!(
+            !dimensions.is_empty(),
+            InvalidOperation: "at least one dimension must be specified"
+        );
 
-        if dimensions.is_empty() {
-            polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
-        }
+        let s = self;
         let s = if let DataType::List(_) = s.dtype() {
             Cow::Owned(s.explode()?)
         } else {
