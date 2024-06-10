@@ -14,14 +14,20 @@ if TYPE_CHECKING:
 
 
 def test_div() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [20.5, None, 10.0, 5.0, 2.5],
-            "b": [6, 12, 24, None, 5],
-        },
-    )
-    res = df.sql("SELECT DIV(a, b) AS a_div_b, DIV(b, a) AS b_div_a FROM self")
+    res = pl.sql("""
+        SELECT label, DIV(a, b) AS a_div_b, DIV(tbl.b, tbl.a) AS b_div_a
+        FROM (
+          VALUES
+            ('a', 20.5, 6),
+            ('b', NULL, 12),
+            ('c', 10.0, 24),
+            ('d', 5.0, NULL),
+            ('e', 2.5, 5)
+        ) AS tbl(label, a, b)
+    """).collect()
+
     assert res.to_dict(as_series=False) == {
+        "label": ["a", "b", "c", "d", "e"],
         "a_div_b": [3, None, 0, None, 0],
         "b_div_a": [0, None, 2, None, 2],
     }

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -194,3 +194,48 @@ def test_sql_on_compatible_frame_types() -> None:
     # don't register all compatible objects
     with pytest.raises(SQLInterfaceError, match="relation 'dfp' was not found"):
         pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp")
+
+
+def test_nested_cte_column_aliasing() -> None:
+    # trace through nested CTEs with multiple levels of column & table aliasing
+    df = pl.sql(
+        """
+        WITH
+          x AS (SELECT w.* FROM (VALUES(1,2), (3,4)) AS w(a, b)),
+          y (m, n) AS (
+            WITH z(c, d) AS (SELECT a, b FROM x)
+              SELECT d*2 AS d2, c*3 AS c3 FROM z
+        )
+        SELECT n, m FROM y
+        """,
+        eager=True,
+    )
+    assert df.to_dict(as_series=False) == {
+        "n": [3, 9],
+        "m": [4, 8],
+    }
+
+
+def test_invalid_derived_table_column_aliases() -> None:
+    values_query = "SELECT * FROM (VALUES (1,2), (3,4))"
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"columns \(5\) in alias 'tbl' does not match .* the table/query \(2\)",
+    ):
+        pl.sql(f"{values_query} AS tbl(a, b, c, d, e)")
+
+    assert pl.sql(f"{values_query} tbl", eager=True).rows() == [(1, 2), (3, 4)]
+
+
+def test_values_clause_table_registration() -> None:
+    with pl.SQLContext(frames=None, eager=True) as ctx:
+        # initially no tables are registered
+        assert ctx.tables() == []
+
+        # confirm that VALUES clause derived table is registered, post-query
+        res = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
+        assert ctx.tables() == ["tbl"]
+
+        # and confirm the data returned from the VALUES clause
+        assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}

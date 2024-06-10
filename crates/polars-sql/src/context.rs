@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
@@ -8,7 +9,7 @@ use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinConstraint,
     JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr,
     SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
-    Value as SQLValue, WildcardAdditionalOptions,
+    Value as SQLValue, Values, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -275,6 +276,10 @@ impl SQLContext {
             SetExpr::SetOperation { op, .. } => {
                 polars_bail!(SQLInterface: "'{}' operation not yet supported", op)
             },
+            SetExpr::Values(Values {
+                explicit_row: _,
+                rows,
+            }) => self.process_values(rows),
             op => polars_bail!(SQLInterface: "'{}' operation not yet supported", op),
         }
     }
@@ -313,6 +318,25 @@ impl SQLContext {
             #[allow(unreachable_patterns)]
             _ => polars_bail!(SQLInterface: "'UNION {}' is not yet supported", quantifier),
         }
+    }
+
+    fn process_values(&mut self, values: &[Vec<SQLExpr>]) -> PolarsResult<LazyFrame> {
+        let frame_rows: Vec<Row> = values.iter().map(|row| {
+            let row_data: Result<Vec<_>, _> = row.iter().map(|expr| {
+                let expr = parse_sql_expr(expr, self, None)?;
+                match expr {
+                    Expr::Literal(value) => {
+                        value.to_any_value()
+                            .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))
+                            .map(|av| av.into_static().unwrap())
+                    },
+                    _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
+                }
+            }).collect();
+            row_data.map(Row::new)
+        }).collect::<Result<_, _>>()?;
+
+        Ok(DataFrame::from_rows(frame_rows.as_ref())?.lazy())
     }
 
     // EXPLAIN SELECT * FROM DF
@@ -393,8 +417,9 @@ impl SQLContext {
             }
             for cte in &with.cte_tables {
                 let cte_name = cte.alias.name.value.clone();
-                let cte_lf = self.execute_query(&cte.query)?;
-                self.register_cte(&cte_name, cte_lf);
+                let mut lf = self.execute_query(&cte.query)?;
+                lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
+                self.register_cte(&cte_name, lf);
             }
         }
         Ok(())
@@ -764,7 +789,7 @@ impl SQLContext {
                 name, alias, args, ..
             } => {
                 if let Some(args) = args {
-                    return self.execute_tbl_function(name, alias, args);
+                    return self.execute_table_function(name, alias, args);
                 }
                 let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
@@ -788,7 +813,8 @@ impl SQLContext {
             } => {
                 polars_ensure!(!(*lateral), SQLInterface: "LATERAL not supported");
                 if let Some(alias) = alias {
-                    let lf = self.execute_query_no_ctes(subquery)?;
+                    let mut lf = self.execute_query_no_ctes(subquery)?;
+                    lf = self.rename_columns_from_table_alias(lf, alias)?;
                     self.table_map.insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
@@ -861,7 +887,7 @@ impl SQLContext {
         }
     }
 
-    fn execute_tbl_function(
+    fn execute_table_function(
         &mut self,
         name: &ObjectName,
         alias: &Option<TableAlias>,
@@ -1083,6 +1109,28 @@ impl SQLContext {
             },
             _ => expr,
         })
+    }
+
+    fn rename_columns_from_table_alias(
+        &mut self,
+        mut frame: LazyFrame,
+        alias: &TableAlias,
+    ) -> PolarsResult<LazyFrame> {
+        if alias.columns.is_empty() {
+            Ok(frame)
+        } else {
+            let schema = frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+            if alias.columns.len() != schema.len() {
+                polars_bail!(
+                    SQLSyntax: "number of columns ({}) in alias '{}' does not match the number of columns in the table/query ({})",
+                    alias.columns.len(), alias.name.value, schema.len()
+                )
+            } else {
+                let existing_columns: Vec<_> = schema.iter_names().collect();
+                let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
+                Ok(frame.rename(existing_columns, new_columns))
+            }
+        }
     }
 }
 
