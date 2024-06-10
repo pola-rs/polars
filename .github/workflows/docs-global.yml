@@ -107,6 +107,7 @@ jobs:
           clean-exclude: |
             api/python/
             api/rust/
-            docs/
-            py-polars/
+            docs/python
+            docs/rust
+            py-polars/html
           single-commit: true
