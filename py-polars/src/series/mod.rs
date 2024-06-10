@@ -710,8 +710,8 @@ impl PySeries {
         Ok(out)
     }
 
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool, allow_overflow: bool) -> PyResult<Self> {
-        let options = if allow_overflow {
+    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> PyResult<Self> {
+        let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
             CastOptions::Strict
