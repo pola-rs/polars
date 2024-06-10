@@ -878,7 +878,7 @@ def test_list_get_with_null() -> None:
     # 2. null element are not stored in `value` array.
     out = df.select(
         # For performance reasons, when-then-otherwise produces the list with layout-1.
-        layout1=pl.when(pl.col("b")).then([1, 2]).list.get(0, null_on_oob=False),
+        layout1=pl.when(pl.col("b")).then([1, 2]).list.get(0, null_on_oob=True),
         layout2=pl.col("a").list.get(0, null_on_oob=True),
     )
 

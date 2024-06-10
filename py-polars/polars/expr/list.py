@@ -526,7 +526,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[3, 2, 1], [], [1, 2]]})
-        >>> df.with_columns(get=pl.col("a").list.get(0))
+        >>> df.with_columns(get=pl.col("a").list.get(0, null_on_oob=True))
         shape: (3, 2)
         ┌───────────┬──────┐
         │ a         ┆ get  │
