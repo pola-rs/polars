@@ -33,7 +33,7 @@ We know it takes time and energy for our users to keep up with new releases but,
 
 **A breaking change occurs when an existing component of the public API is changed or removed.**
 
-A feature is part of the public API if it is documented in the [API reference](https://docs.pola.rs/py-polars/html/reference/index.html).
+A feature is part of the public API if it is documented in the [API reference](https://docs.pola.rs/api/python/stable/reference/index.html).
 
 Examples of breaking changes:
 

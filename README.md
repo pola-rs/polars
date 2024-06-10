@@ -23,7 +23,7 @@
 
 <p align="center">
   <b>Documentation</b>:
-  <a href="https://docs.pola.rs/py-polars/html/reference/index.html">Python</a>
+  <a href="https://docs.pola.rs/api/python/stable/reference/index.html">Python</a>
   -
   <a href="https://docs.rs/polars/latest/polars/">Rust</a>
   -
