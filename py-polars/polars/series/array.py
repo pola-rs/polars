@@ -338,7 +338,7 @@ class ArrayNameSpace:
 
         """
 
-    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = True) -> Series:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = False) -> Series:
         """
         Get the value by index in the sub-arrays.
 
