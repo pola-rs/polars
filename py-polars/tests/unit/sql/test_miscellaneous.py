@@ -234,8 +234,10 @@ def test_values_clause_table_registration() -> None:
         assert ctx.tables() == []
 
         # confirm that VALUES clause derived table is registered, post-query
-        res = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
+        res1 = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
         assert ctx.tables() == ["tbl"]
 
-        # and confirm the data returned from the VALUES clause
-        assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+        # and confirm that we can select from it by the registered name
+        res2 = ctx.execute("SELECT x, y FROM tbl")
+        for res in (res1, res2):
+            assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
