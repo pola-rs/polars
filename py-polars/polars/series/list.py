@@ -394,7 +394,7 @@ class ListNameSpace:
         self,
         index: int | Series | list[int],
         *,
-        null_on_oob: bool = True,
+        null_on_oob: bool = False,
     ) -> Series:
         """
         Get the value by index in the sublists.
