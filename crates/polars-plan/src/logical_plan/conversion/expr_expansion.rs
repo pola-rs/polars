@@ -1,4 +1,6 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
+use std::ops::BitXor;
+
 use super::*;
 
 pub(crate) fn prepare_projection(
@@ -787,11 +789,27 @@ fn replace_selector_inner(
             replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
             members.extend(rhs_members)
         },
-        Selector::Sub(lhs, rhs) => {
-            // fill lhs
+        Selector::ExclusiveOr(lhs, rhs) => {
+            let mut lhs_members = Default::default();
+            replace_selector_inner(*lhs, &mut lhs_members, scratch, schema, keys)?;
+
+            let mut rhs_members = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+
+            let xor_members = lhs_members.bitxor(&rhs_members);
+            *members = xor_members;
+        },
+        Selector::InterSect(lhs, rhs) => {
             replace_selector_inner(*lhs, members, scratch, schema, keys)?;
 
-            // subtract rhs
+            let mut rhs_members = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+
+            *members = members.intersection(&rhs_members).cloned().collect()
+        },
+        Selector::Sub(lhs, rhs) => {
+            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
+
             let mut rhs_members = Default::default();
             replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
 
@@ -801,18 +819,7 @@ fn replace_selector_inner(
                     new_members.insert(e);
                 }
             }
-
             *members = new_members;
-        },
-        Selector::InterSect(lhs, rhs) => {
-            // fill lhs
-            replace_selector_inner(*lhs, members, scratch, schema, keys)?;
-
-            // fill rhs
-            let mut rhs_members = Default::default();
-            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
-
-            *members = members.intersection(&rhs_members).cloned().collect()
         },
     }
     Ok(())
@@ -829,17 +836,28 @@ fn replace_selector(expr: Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<
             let mut members = PlIndexSet::new();
             replace_selector_inner(swapped, &mut members, &mut vec![], schema, keys)?;
 
-            Ok(Expr::Columns(
-                members
-                    .into_iter()
-                    .map(|e| {
-                        let Expr::Column(name) = e else {
-                            unreachable!()
-                        };
-                        name
-                    })
-                    .collect(),
-            ))
+            if members.len() <= 1 {
+                Ok(Expr::Columns(
+                    members
+                        .into_iter()
+                        .map(|e| {
+                            let Expr::Column(name) = e else {
+                                unreachable!()
+                            };
+                            name
+                        })
+                        .collect(),
+                ))
+            } else {
+                // Ensure that multiple columns returned from combined/nested selectors remain in schema order
+                let selected = schema
+                    .iter_fields()
+                    .map(|field| ColumnName::from(field.name().as_ref()))
+                    .filter(|field_name| members.contains(&Expr::Column(field_name.clone())))
+                    .collect();
+
+                Ok(Expr::Columns(selected))
+            }
         },
         e => Ok(e),
     })

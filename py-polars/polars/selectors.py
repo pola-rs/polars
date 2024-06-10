@@ -308,15 +308,15 @@ class _selector_proxy_(Expr):
         elif hasattr(self, "_repr_override"):
             return self._repr_override
         else:
-            selector_name, params = self._attrs["name"], self._attrs["params"]
-            set_ops = {"and": "&", "or": "|", "sub": "-"}
+            selector_name, params = self._attrs["name"], self._attrs["params"] or {}
+            set_ops = {"and": "&", "or": "|", "sub": "-", "xor": "^"}
             if selector_name in set_ops:
                 op = set_ops[selector_name]
                 return "({})".format(f" {op} ".join(repr(p) for p in params.values()))
             else:
                 str_params = ", ".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
-                    for k, v in (params or {}).items()
+                    for k, v in params.items()
                 ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
@@ -381,6 +381,24 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
+    @overload  # type: ignore[override]
+    def __xor__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __xor__(self, other: Any) -> Expr: ...
+
+    def __xor__(self, other: Any) -> SelectorType | Expr:
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        if is_selector(other):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_xor(other),
+                parameters={"self": self, "other": other},
+                name="xor",
+            )
+        else:
+            return self.as_expr().__or__(other)
+
     def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
         if is_column(other):
             colname = other.meta.output_name()
@@ -395,6 +413,11 @@ class _selector_proxy_(Expr):
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
+
+    def __rxor__(self, other: Any) -> Expr:  # type: ignore[override]
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        return self.as_expr().__rxor__(other)
 
     def as_expr(self) -> Expr:
         """
@@ -1149,7 +1172,7 @@ def categorical() -> SelectorType:
     return _selector_proxy_(F.col(Categorical), name="categorical")
 
 
-def contains(substring: str | Collection[str]) -> SelectorType:
+def contains(*substring: str) -> SelectorType:
     """
     Select columns whose names contain the given literal substring(s).
 
@@ -1191,7 +1214,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
 
     Select columns that contain the substring 'ba' or the letter 'z':
 
-    >>> df.select(cs.contains(("ba", "z")))
+    >>> df.select(cs.contains("ba", "z"))
     shape: (2, 3)
     ┌─────┬─────┬───────┐
     │ bar ┆ baz ┆ zap   │
@@ -1221,7 +1244,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     return _selector_proxy_(
         F.col(raw_params),
         name="contains",
-        parameters={"substring": escaped_substring},
+        parameters={"*substring": escaped_substring},
     )
 
 

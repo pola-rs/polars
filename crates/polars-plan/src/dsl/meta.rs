@@ -109,6 +109,19 @@ impl MetaNameSpace {
         }
     }
 
+    pub fn _selector_and(self, other: Expr) -> PolarsResult<Expr> {
+        if let Expr::Selector(mut s) = self.0 {
+            if let Expr::Selector(s_other) = other {
+                s = s.bitand(s_other);
+            } else {
+                s = s.bitand(Selector::Root(Box::new(other)))
+            }
+            Ok(Expr::Selector(s))
+        } else {
+            polars_bail!(ComputeError: "expected selector, got {:?}", self.0)
+        }
+    }
+
     pub fn _selector_sub(self, other: Expr) -> PolarsResult<Expr> {
         if let Expr::Selector(mut s) = self.0 {
             if let Expr::Selector(s_other) = other {
@@ -122,12 +135,12 @@ impl MetaNameSpace {
         }
     }
 
-    pub fn _selector_and(self, other: Expr) -> PolarsResult<Expr> {
+    pub fn _selector_xor(self, other: Expr) -> PolarsResult<Expr> {
         if let Expr::Selector(mut s) = self.0 {
             if let Expr::Selector(s_other) = other {
-                s = s.bitand(s_other);
+                s = s ^ s_other;
             } else {
-                s = s.bitand(Selector::Root(Box::new(other)))
+                s = s ^ Selector::Root(Box::new(other))
             }
             Ok(Expr::Selector(s))
         } else {
