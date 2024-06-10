@@ -155,7 +155,7 @@ html_theme_options = {
         "image_dark": f"{static_assets_root}/logos/polars-logo-dimmed-medium.png",
     },
     "switcher": {
-        "json_url": f"{web_root}/docs/python/dev/_static/version_switcher.json",
+        "json_url": f"{web_root}/api/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
     "show_version_warning_banner": False,
