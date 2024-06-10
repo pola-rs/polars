@@ -185,7 +185,7 @@ impl Series {
             1 => {
                 polars_ensure!(
                     dimensions[0] as usize == s_ref.len() || dimensions[0] == -1_i64,
-                    ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
+                    InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
                 Ok(s_ref.clone())
             },
@@ -198,7 +198,7 @@ impl Series {
                         let s = reshape_fast_path(s.name(), s_ref);
                         return Ok(s);
                     } else {
-                        polars_bail!(ComputeError: "cannot reshape len 0 into shape {:?}", dimensions,)
+                        polars_bail!(InvalidOperation: "cannot reshape len 0 into shape {:?}", dimensions,)
                     }
                 }
 
@@ -220,7 +220,7 @@ impl Series {
 
                 polars_ensure!(
                     (rows*cols) as usize == s_ref.len() && rows >= 1 && cols >= 1,
-                    ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
+                    InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
 
                 let mut builder =
