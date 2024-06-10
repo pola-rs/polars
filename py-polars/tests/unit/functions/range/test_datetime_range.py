@@ -7,7 +7,6 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -107,20 +106,19 @@ def test_datetime_range_invalid_time_unit() -> None:
 def test_datetime_range_lazy_time_zones_warning() -> None:
     start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
     stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
-    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
-        (
-            pl.DataFrame({"start": [start], "stop": [stop]})
-            .with_columns(
-                pl.datetime_range(
-                    start,
-                    stop,
-                    interval="678d",
-                    eager=False,
-                    time_zone="Pacific/Tarawa",
-                )
+    (
+        pl.DataFrame({"start": [start], "stop": [stop]})
+        .with_columns(
+            pl.datetime_range(
+                start,
+                stop,
+                interval="678d",
+                eager=False,
+                time_zone="Pacific/Tarawa",
             )
-            .lazy()
         )
+        .lazy()
+    )
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])

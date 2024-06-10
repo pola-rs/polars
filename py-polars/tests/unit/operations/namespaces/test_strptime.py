@@ -6,14 +6,13 @@ This method gets its own module due to its complexity.
 
 from __future__ import annotations
 
-import contextlib
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -176,13 +175,6 @@ def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
 def test_to_datetime_non_exact_strptime(
     offset: str, time_zone: str | None, tzinfo: timezone | None, format: str
 ) -> None:
-    msg = "converted to UTC"
-    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
-    if offset:
-        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
-    else:
-        context_manager = contextlib.nullcontext()
-
     s = pl.Series(
         "a",
         [
@@ -194,30 +186,28 @@ def test_to_datetime_non_exact_strptime(
     )
 
     result = s.str.to_datetime(format, strict=False, exact=True)
-    with context_manager:
-        expected = pl.Series(
-            "a",
-            [
-                datetime(2022, 1, 16, tzinfo=tzinfo),
-                datetime(2022, 1, 17, tzinfo=tzinfo),
-                None,
-                None,
-            ],
-        )
+    expected = pl.Series(
+        "a",
+        [
+            datetime(2022, 1, 16, tzinfo=tzinfo),
+            datetime(2022, 1, 17, tzinfo=tzinfo),
+            None,
+            None,
+        ],
+    )
     assert_series_equal(result, expected)
     assert result.dtype == pl.Datetime("us", time_zone)
 
     result = s.str.to_datetime(format, strict=False, exact=False)
-    with context_manager:
-        expected = pl.Series(
-            "a",
-            [
-                datetime(2022, 1, 16, tzinfo=tzinfo),
-                datetime(2022, 1, 17, tzinfo=tzinfo),
-                datetime(2022, 1, 18, tzinfo=tzinfo),
-                datetime(2022, 1, 19, tzinfo=tzinfo),
-            ],
-        )
+    expected = pl.Series(
+        "a",
+        [
+            datetime(2022, 1, 16, tzinfo=tzinfo),
+            datetime(2022, 1, 17, tzinfo=tzinfo),
+            datetime(2022, 1, 18, tzinfo=tzinfo),
+            datetime(2022, 1, 19, tzinfo=tzinfo),
+        ],
+    )
     assert_series_equal(result, expected)
     assert result.dtype == pl.Datetime("us", time_zone)
 

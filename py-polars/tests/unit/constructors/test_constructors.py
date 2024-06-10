@@ -16,7 +16,6 @@ import polars as pl
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
-from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -897,17 +896,15 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
-        df = pl.DataFrame(
-            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
-            schema={"ts": pl.Datetime("ms")},
-        )
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
+        schema={"ts": pl.Datetime("ms")},
+    )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(TimeZoneAwareConstructorWarning, match="converted to UTC"):
-        df = pl.DataFrame(
-            [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
-            schema={"ts": pl.Datetime("ms")},
-        )
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        schema={"ts": pl.Datetime("ms")},
+    )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
 
 

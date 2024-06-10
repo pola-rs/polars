@@ -105,15 +105,13 @@ def test_series_init_ambiguous_datetime() -> None:
     value = datetime(2001, 10, 28, 2)
     dtype = pl.Datetime(time_zone="Europe/Belgrade")
 
-    with pytest.warns(pl.TimeZoneAwareConstructorWarning, match="converted to"):
-        result = pl.Series([value], dtype=dtype, strict=True)
+    result = pl.Series([value], dtype=dtype, strict=True)
     expected = pl.Series([datetime(2001, 10, 28, 3)]).dt.replace_time_zone(
         "Europe/Belgrade"
     )
     assert_series_equal(result, expected)
 
-    with pytest.warns(pl.TimeZoneAwareConstructorWarning, match="converted to"):
-        result = pl.Series([value], dtype=dtype, strict=False)
+    result = pl.Series([value], dtype=dtype, strict=False)
     assert_series_equal(result, expected)
 
 
@@ -121,18 +119,13 @@ def test_series_init_nonexistent_datetime() -> None:
     value = datetime(2024, 3, 31, 2, 30)
     dtype = pl.Datetime(time_zone="Europe/Amsterdam")
 
-    with pytest.warns(
-        pl.TimeZoneAwareConstructorWarning, match="converted to the given time zone"
-    ):
-        pl.Series([value], dtype=dtype, strict=True)
-
-    with pytest.warns(
-        pl.TimeZoneAwareConstructorWarning, match="converted to the given time zone"
-    ):
-        result = pl.Series([value], dtype=dtype, strict=False)
+    result = pl.Series([value], dtype=dtype, strict=True)
     expected = pl.Series([datetime(2024, 3, 31, 4, 30)]).dt.replace_time_zone(
         "Europe/Amsterdam"
     )
+    assert_series_equal(result, expected)
+
+    result = pl.Series([value], dtype=dtype, strict=False)
     assert_series_equal(result, expected)
 
 

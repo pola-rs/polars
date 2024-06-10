@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import sys
 import typing
 from collections import OrderedDict
@@ -18,7 +17,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import ComputeError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -2449,17 +2448,15 @@ def test_init_datetimes_with_timezone() -> None:
         "dtype_time_zone",
         "expected_time_zone",
         "expected_item",
-        "warn",
     ),
     [
-        (None, "", None, None, datetime(2020, 1, 1), False),
+        (None, "", None, None, datetime(2020, 1, 1)),
         (
             timezone(timedelta(hours=-8)),
             "-08:00",
             "UTC",
             "UTC",
             datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
-            False,
         ),
         (
             timezone(timedelta(hours=-8)),
@@ -2467,7 +2464,6 @@ def test_init_datetimes_with_timezone() -> None:
             None,
             "UTC",
             datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
-            True,
         ),
     ],
 )
@@ -2477,19 +2473,11 @@ def test_init_vs_strptime_consistency(
     dtype_time_zone: str | None,
     expected_time_zone: str,
     expected_item: datetime,
-    warn: bool,
 ) -> None:
-    msg = r"converted to UTC"
-    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
-    if warn:
-        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
-    else:
-        context_manager = contextlib.nullcontext()
-    with context_manager:
-        result_init = pl.Series(
-            [datetime(2020, 1, 1, tzinfo=tzinfo)],
-            dtype=pl.Datetime("us", dtype_time_zone),
-        )
+    result_init = pl.Series(
+        [datetime(2020, 1, 1, tzinfo=tzinfo)],
+        dtype=pl.Datetime("us", dtype_time_zone),
+    )
     result_strptime = pl.Series([f"2020-01-01 00:00{offset}"]).str.strptime(
         pl.Datetime("us", dtype_time_zone)
     )

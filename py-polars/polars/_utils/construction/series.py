@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from itertools import islice
@@ -24,7 +23,6 @@ from polars._utils.construction.utils import (
     is_simple_numpy_backed_pandas_series,
 )
 from polars._utils.various import (
-    find_stacklevel,
     range_to_series,
 )
 from polars._utils.wrap import wrap_s
@@ -64,7 +62,6 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import TimeZoneAwareConstructorWarning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySeries
@@ -73,30 +70,6 @@ if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars.dependencies import pandas as pd
     from polars.type_aliases import PolarsDataType
-
-TZ_NAIVE_VALUES_WITH_TZ_AWARE_DTYPE_MSG = (
-    "Constructing a Series with time-zone-naive "
-    "datetimes and a time-zone-aware dtype results in a Series where "
-    "the datetimes are converted to the given time zone as if starting "
-    "from UTC.\n\n"
-    "Note: this is a breaking change since pre-1.0.0 behaviour.\n\n"
-    "Hint: to silence this warning, you can filter out "
-    "warnings of class pl.TimeZoneAwareConstructorWarning.\n"
-    "Alternatively, you can replace "
-    "`pl.Series(values, dtype=pl.Datetime({}, {}))` with one of:\n"
-    "- `pl.Series(values, dtype=pl.Datetime(time_unit)).dt.replace_time_zone(time_zone)`\n"
-    "- `pl.Series(values, dtype=pl.Datetime(time_unit)).dt.convert_time_zone(time_zone)`\n"
-    "depending on whether you want to replace or convert the time zone."
-)
-TZ_AWARE_VALUES_WITH_TZ_NAIVE_DTYPE_MSG = (
-    "Constructing a Series with time-zone-aware "
-    "datetimes and a time-zone-naive dtype results in a Series where "
-    "the datetimes are converted to UTC.\n\n"
-    "Hint: to silence this warning, you can filter out "
-    "warnings of class pl.TimeZoneAwareConstructorWarning.\n"
-    "Alternatively, you can set the time zone in the `dtype`, e.g.:\n"
-    "    pl.Series(values, dtype=pl.Datetime({}, 'UTC'))`"
-)
 
 
 def sequence_to_pyseries(
@@ -229,34 +202,11 @@ def sequence_to_pyseries(
         if (values_dtype == Date) & (dtype == Datetime):
             result = s.cast(Datetime(time_unit or "us"))
             if time_zone is not None:
-                if time_zone != "UTC":
-                    warnings.warn(
-                        TZ_NAIVE_VALUES_WITH_TZ_AWARE_DTYPE_MSG.format(
-                            time_unit or "us", time_zone
-                        ),
-                        TimeZoneAwareConstructorWarning,
-                        stacklevel=find_stacklevel(),
-                    )
                 result = result.dt.convert_time_zone(time_zone)
             return result._s
 
         if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
-            values_tz = str(value.tzinfo) if value.tzinfo is not None else None
             dtype_tz = time_zone
-            if values_tz is not None and dtype_tz is None and values_tz != "UTC":
-                warnings.warn(
-                    TZ_AWARE_VALUES_WITH_TZ_NAIVE_DTYPE_MSG.format(time_unit or "us"),
-                    TimeZoneAwareConstructorWarning,
-                    stacklevel=find_stacklevel(),
-                )
-            if values_tz is None and dtype_tz is not None and dtype_tz != "UTC":
-                warnings.warn(
-                    TZ_NAIVE_VALUES_WITH_TZ_AWARE_DTYPE_MSG.format(
-                        time_unit or "us", time_zone
-                    ),
-                    TimeZoneAwareConstructorWarning,
-                    stacklevel=find_stacklevel(),
-                )
             return s.dt.convert_time_zone(dtype_tz or "UTC")._s
         return s._s
 

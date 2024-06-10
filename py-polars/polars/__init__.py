@@ -91,7 +91,6 @@ from polars.exceptions import (
     SQLInterfaceError,
     SQLSyntaxError,
     StructFieldNotFoundError,
-    TimeZoneAwareConstructorWarning,
     UnstableWarning,
 )
 from polars.expr import Expr
@@ -247,7 +246,6 @@ __all__ = [
     "ChronoFormatWarning",
     "MapWithoutReturnDtypeWarning",
     "PolarsWarning",
-    "TimeZoneAwareConstructorWarning",
     "UnstableWarning",
     # core classes
     "DataFrame",

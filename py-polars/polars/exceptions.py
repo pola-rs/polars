@@ -145,10 +145,6 @@ class PolarsInefficientMapWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
-class TimeZoneAwareConstructorWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning issued when constructing Series from non-UTC time-zone-aware inputs."""
-
-
 class UnstableWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when unstable functionality is used."""
 
