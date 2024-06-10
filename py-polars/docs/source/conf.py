@@ -130,7 +130,7 @@ html_theme_options = {
     "external_links": [
         {
             "name": "User guide",
-            "url": f"{web_root}/user-guide/",
+            "url": f"{web_root}/",
         },
     ],
     "icon_links": [
