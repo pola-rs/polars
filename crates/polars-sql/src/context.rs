@@ -474,23 +474,20 @@ impl SQLContext {
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframes.
-        // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
-        let sql_tbl: &TableWithJoins = select_stmt
-            .from
-            .first()
-            .ok_or_else(|| polars_err!(SQLSyntax: "no table name provided in query"))?;
+        // Note: implicit joins require more work in query parsing,
+        // explicit joins are preferred for now (ref: #16662)
 
-        let mut lf = self.execute_from_statement(sql_tbl)?;
+        let mut lf = if select_stmt.from.is_empty() {
+            DataFrame::empty().lazy()
+        } else {
+            self.execute_from_statement(select_stmt.from.first().unwrap())?
+        };
         let mut contains_wildcard = false;
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
         let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
-        if let Some(expr) = select_stmt.selection.as_ref() {
-            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
-            lf = lf.filter(filter_expression);
-        }
+        lf = self.process_where(lf, &select_stmt.selection)?;
 
         // Column projections.
         let projections: Vec<_> = select_stmt
@@ -665,6 +662,20 @@ impl SQLContext {
             None => lf,
         };
 
+        Ok(lf)
+    }
+
+    fn process_where(
+        &mut self,
+        mut lf: LazyFrame,
+        expr: &Option<SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        if let Some(expr) = expr {
+            let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
+            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
+        }
         Ok(lf)
     }
 

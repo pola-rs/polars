@@ -130,3 +130,25 @@ def test_intervals() -> None:
             match="unary ops are not valid on interval strings; found -'7d'",
         ):
             ctx.execute("SELECT INTERVAL -'7d' AS one_week_ago FROM df")
+
+
+def test_select_literals_no_table() -> None:
+    res = pl.sql("SELECT 1 AS one, '2' AS two, 3.0 AS three", eager=True)
+    assert res.to_dict(as_series=False) == {
+        "one": [1],
+        "two": ["2"],
+        "three": [3.0],
+    }
+
+
+def test_select_from_table_with_reserved_names() -> None:
+    select = pl.DataFrame({"select": [1, 2, 3], "from": [4, 5, 6]})  # noqa: F841
+    out = pl.sql(
+        """
+        SELECT "from", "select"
+          FROM "select"
+          WHERE "from" >= 5 AND "select" % 2 != 1
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(5, 2)]
