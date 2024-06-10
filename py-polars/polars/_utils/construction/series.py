@@ -206,8 +206,7 @@ def sequence_to_pyseries(
             return result._s
 
         if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
-            dtype_tz = time_zone
-            return s.dt.convert_time_zone(dtype_tz or "UTC")._s
+            return s.dt.convert_time_zone(time_zone or "UTC")._s
         return s._s
 
     elif (

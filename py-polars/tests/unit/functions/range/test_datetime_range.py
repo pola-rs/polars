@@ -103,10 +103,10 @@ def test_datetime_range_invalid_time_unit() -> None:
         )
 
 
-def test_datetime_range_lazy_time_zones_warning() -> None:
+def test_datetime_range_lazy_time_zones() -> None:
     start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
     stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
-    (
+    result = (
         pl.DataFrame({"start": [start], "stop": [stop]})
         .with_columns(
             pl.datetime_range(
@@ -119,6 +119,16 @@ def test_datetime_range_lazy_time_zones_warning() -> None:
         )
         .lazy()
     )
+    expected = pl.DataFrame(
+        {
+            "start": [datetime(2019, 12, 31, 18, 15, tzinfo=ZoneInfo(key="UTC"))],
+            "stop": [datetime(2020, 1, 1, 18, 15, tzinfo=ZoneInfo(key="UTC"))],
+            "literal": [
+                datetime(2020, 1, 1, 6, 15, tzinfo=ZoneInfo(key="Pacific/Tarawa"))
+            ],
+        }
+    ).with_columns(pl.col("literal").dt.convert_time_zone("Pacific/Tarawa"))
+    assert_frame_equal(result.collect(), expected)
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])

@@ -2485,7 +2485,7 @@ def test_init_vs_strptime_consistency(
     assert_series_equal(result_init, result_strptime)
 
 
-def test_init_vs_strptime_consistency_raises() -> None:
+def test_init_vs_strptime_consistency_converts() -> None:
     result = pl.Series(
         [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
         dtype=pl.Datetime("us", "US/Pacific"),
