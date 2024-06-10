@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 #[cfg(feature = "dtype-array")]
+use std::cmp::Ordering;
+#[cfg(feature = "dtype-array")]
 use std::collections::VecDeque;
 
 use arrow::array::*;
@@ -102,24 +104,26 @@ impl Series {
         let mut total_dim_size = 1;
         let mut infer_dim_index: Option<usize> = None;
         for (index, &dim) in dims.iter().enumerate() {
-            if dim > 0 {
-                total_dim_size *= dim as usize;
-            } else if dim == 0 {
-                polars_ensure!(
-                    index == 0,
-                    InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
-                    format_tuple!(dims)
-                );
-                total_dim_size = 0;
-                // We can early exit here, as empty arrays will error with multiple dimensions,
-                // and non-empty arrays will error when the first dimension is zero.
-                break;
-            } else {
-                polars_ensure!(
-                    infer_dim_index.is_none(),
-                    InvalidOperation: "can only specify one unknown dimension"
-                );
-                infer_dim_index = Some(index);
+            match dim.cmp(&0) {
+                Ordering::Greater => total_dim_size *= dim as usize,
+                Ordering::Equal => {
+                    polars_ensure!(
+                        index == 0,
+                        InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
+                        format_tuple!(dims)
+                    );
+                    total_dim_size = 0;
+                    // We can early exit here, as empty arrays will error with multiple dimensions,
+                    // and non-empty arrays will error when the first dimension is zero.
+                    break;
+                },
+                Ordering::Less => {
+                    polars_ensure!(
+                        infer_dim_index.is_none(),
+                        InvalidOperation: "can only specify one unknown dimension"
+                    );
+                    infer_dim_index = Some(index);
+                },
             }
         }
 
