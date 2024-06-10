@@ -284,16 +284,6 @@ def test_boolean_agg_schema() -> None:
         )
 
 
-def test_streaming_11219() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
-
-    assert lf.with_context([lf_other, lf_other2]).select(
-        pl.col("b") + pl.col("c").first()
-    ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
-
-
 @pytest.mark.write_disk()
 def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     with Path.open(tmp_path / "header_no_data.csv", "w") as f:

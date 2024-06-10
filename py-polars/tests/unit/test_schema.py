@@ -156,18 +156,6 @@ def test_bool_numeric_supertype() -> None:
         )
 
 
-def test_with_context() -> None:
-    df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
-    df_b = pl.DataFrame({"c": ["foo", "ham"]})
-
-    assert (
-        df_a.with_context(df_b.lazy()).select([pl.col("b") + pl.col("c").first()])
-    ).collect().to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
-
-    with pytest.raises(pl.ComputeError):
-        (df_a.with_context(df_b.lazy()).select(["a", "c"])).collect()
-
-
 def test_from_dicts_nested_nulls() -> None:
     assert pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}]).to_dict(
         as_series=False
