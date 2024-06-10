@@ -174,7 +174,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
-        (a.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series(), b.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+        (
+            a.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+                .into_series(),
+            b.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+                .into_series(),
+        )
     }
 
     fn mean(&self) -> Option<f64> {

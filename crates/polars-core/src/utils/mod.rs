@@ -108,6 +108,8 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 pub trait Container: Clone {
     fn slice(&self, offset: i64, len: usize) -> Self;
 
+    fn split_at(&self, offset: i64) -> (Self, Self);
+
     fn len(&self) -> usize;
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self>;
@@ -120,6 +122,10 @@ pub trait Container: Clone {
 impl Container for DataFrame {
     fn slice(&self, offset: i64, len: usize) -> Self {
         DataFrame::slice(self, offset, len)
+    }
+
+    fn split_at(&self, offset: i64) -> (Self, Self) {
+        DataFrame::split_at(self, offset)
     }
 
     fn len(&self) -> usize {
@@ -144,6 +150,10 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
         ChunkedArray::slice(self, offset, len)
     }
 
+    fn split_at(&self, offset: i64) -> (Self, Self) {
+        ChunkedArray::split_at(self, offset)
+    }
+
     fn len(&self) -> usize {
         ChunkedArray::len(self)
     }
@@ -165,6 +175,10 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
 impl Container for Series {
     fn slice(&self, offset: i64, len: usize) -> Self {
         self.0.slice(offset, len)
+    }
+
+    fn split_at(&self, offset: i64) -> (Self, Self) {
+        self.0.split_at(offset)
     }
 
     fn len(&self) -> usize {
@@ -258,9 +272,9 @@ pub fn split_and_flatten<C: Container>(container: &C, target: usize) -> Vec<C> {
                     continue 'new_chunk;
                 }
 
-                // TODO! use `split` operation here. That saves a null count.
-                out.push(chunk.slice(0, chunk_size));
-                chunk = chunk.slice(chunk_size as i64, h - chunk_size);
+                let (a, b) = chunk.split_at(chunk_size as i64);
+                out.push(a);
+                chunk = b;
             }
         }
         out

@@ -17,7 +17,7 @@ pub(crate) fn split_at(
     let (raw_offset, _) = slice_offsets(offset, 0, own_length);
 
     let mut remaining_offset = raw_offset;
-    let mut iter = chunks.into_iter();
+    let mut iter = chunks.iter();
 
     for chunk in &mut iter {
         let chunk_len = chunk.len();
@@ -173,17 +173,61 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
+    /// Split the array. The chunks are reallocated the underlying data slices are zero copy.
     ///
     /// When offset is negative it will be counted from the end of the array.
     /// This method will never error,
     /// and will slice the best match when offset, or length is out of bounds
     pub fn split_at(&self, offset: i64) -> (Self, Self) {
-        // The len: 0 special cases ensure we release memory.
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
         let (l, r) = split_at(&self.chunks, offset, self.len());
-        let out_l = unsafe { self.copy_with_chunks(l) };
-        let out_r = unsafe { self.copy_with_chunks(r) };
+        let mut out_l = unsafe { self.copy_with_chunks(l) };
+        let mut out_r = unsafe { self.copy_with_chunks(r) };
+
+        use MetadataProperties as P;
+        let mut properties_l = P::SORTED | P::FAST_EXPLODE_LIST;
+        let mut properties_r = P::SORTED | P::FAST_EXPLODE_LIST;
+
+        let is_ascending = self.is_sorted_ascending_flag();
+        let is_descending = self.is_sorted_descending_flag();
+
+        if is_ascending || is_descending {
+            let has_nulls_at_start = self.null_count() != 0
+                && self
+                    .chunks()
+                    .first()
+                    .unwrap()
+                    .as_ref()
+                    .validity()
+                    .map_or(false, |bm| bm.get(0).unwrap());
+
+            if !has_nulls_at_start {
+                let can_copy_min_value = !has_nulls_at_start && is_ascending;
+                let can_copy_max_value = !has_nulls_at_start && is_descending;
+
+                properties_l.set(P::MIN_VALUE, can_copy_min_value);
+                properties_l.set(P::MAX_VALUE, can_copy_max_value);
+            }
+
+            let has_nulls_at_end = self.null_count() != 0
+                && self
+                    .chunks()
+                    .last()
+                    .unwrap()
+                    .as_ref()
+                    .validity()
+                    .map_or(false, |bm| bm.get(bm.len() - 1).unwrap());
+
+            if !has_nulls_at_end {
+                let can_copy_min_value = !has_nulls_at_end && is_descending;
+                let can_copy_max_value = !has_nulls_at_end && is_ascending;
+                properties_r.set(P::MIN_VALUE, can_copy_min_value);
+                properties_r.set(P::MAX_VALUE, can_copy_max_value);
+            }
+        }
+        out_l.copy_metadata(self, properties_l);
+        out_r.copy_metadata(self, properties_r);
+
         (out_l, out_r)
     }
 

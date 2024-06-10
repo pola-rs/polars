@@ -124,7 +124,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         (a.into_series(), b.into_series())
     }
 
-
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         // todo! add object

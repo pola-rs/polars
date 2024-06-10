@@ -162,7 +162,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     #[must_use]
     fn sliced(&self, offset: usize, length: usize) -> Box<dyn Array> {
         if length == 0 {
-            return new_empty_array(self.data_type().clone())
+            return new_empty_array(self.data_type().clone());
         }
         let mut new = self.to_boxed();
         new.slice(offset, length);
