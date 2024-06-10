@@ -244,7 +244,7 @@ def test_list_eval_expression() -> None:
             "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
         }
 
-        assert df["a"].reshape((1, -1)).list.eval(
+        assert df["a"].reshape((1, -1)).arr.to_list().list.eval(
             pl.first(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
 

@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 #[cfg(feature = "dtype-array")]
+use std::cmp::Ordering;
+#[cfg(feature = "dtype-array")]
 use std::collections::VecDeque;
 
 use arrow::array::*;
@@ -89,31 +91,62 @@ impl Series {
 
     #[cfg(feature = "dtype-array")]
     pub fn reshape_array(&self, dimensions: &[i64]) -> PolarsResult<Series> {
+        polars_ensure!(
+            !dimensions.is_empty(),
+            InvalidOperation: "at least one dimension must be specified"
+        );
+
         let mut dims = dimensions.iter().copied().collect::<VecDeque<_>>();
 
         let leaf_array = self.get_leaf_array();
-        let size = leaf_array.len() as i64;
+        let size = leaf_array.len();
 
-        // Infer dimension
-        if dims.contains(&-1) {
-            let infer_dims = dims.iter().filter(|d| **d == -1).count();
-            polars_ensure!(infer_dims == 1, InvalidOperation: "can only infer single dimension, found {}", infer_dims);
-
-            let mut prod = 1;
-            for &dim in &dims {
-                if dim != -1 {
-                    prod *= dim;
-                }
-            }
-            polars_ensure!(size % prod == 0, InvalidOperation: "cannot reshape array of size {} into shape: {}", size, format_tuple!(dims));
-            let inferred_value = size / prod;
-            for dim in &mut dims {
-                if *dim == -1 {
-                    *dim = inferred_value;
+        let mut total_dim_size = 1;
+        let mut infer_dim_index: Option<usize> = None;
+        for (index, &dim) in dims.iter().enumerate() {
+            match dim.cmp(&0) {
+                Ordering::Greater => total_dim_size *= dim as usize,
+                Ordering::Equal => {
+                    polars_ensure!(
+                        index == 0,
+                        InvalidOperation: "cannot reshape array into shape containing a zero dimension after the first: {}",
+                        format_tuple!(dims)
+                    );
+                    total_dim_size = 0;
+                    // We can early exit here, as empty arrays will error with multiple dimensions,
+                    // and non-empty arrays will error when the first dimension is zero.
                     break;
-                }
+                },
+                Ordering::Less => {
+                    polars_ensure!(
+                        infer_dim_index.is_none(),
+                        InvalidOperation: "can only specify one unknown dimension"
+                    );
+                    infer_dim_index = Some(index);
+                },
             }
         }
+
+        if size == 0 {
+            if dims.len() > 1 || (infer_dim_index.is_none() && total_dim_size != 0) {
+                polars_bail!(InvalidOperation: "cannot reshape empty array into shape {}", format_tuple!(dims))
+            }
+        } else if total_dim_size == 0 {
+            polars_bail!(InvalidOperation: "cannot reshape non-empty array into shape containing a zero dimension: {}", format_tuple!(dims))
+        } else {
+            polars_ensure!(
+                size % total_dim_size == 0,
+                InvalidOperation: "cannot reshape array of size {} into shape {}", size, format_tuple!(dims)
+            );
+        }
+
+        // Infer dimension
+        if let Some(index) = infer_dim_index {
+            let inferred_dim = size / total_dim_size;
+            let item = dims.get_mut(index).unwrap();
+            *item = i64::try_from(inferred_dim).unwrap();
+        }
+
         let leaf_array = leaf_array.rechunk();
         let mut prev_dtype = leaf_array.dtype().clone();
         let mut prev_array = leaf_array.chunks()[0].clone();
@@ -136,11 +169,12 @@ impl Series {
     }
 
     pub fn reshape_list(&self, dimensions: &[i64]) -> PolarsResult<Series> {
-        let s = self;
+        polars_ensure!(
+            !dimensions.is_empty(),
+            InvalidOperation: "at least one dimension must be specified"
+        );
 
-        if dimensions.is_empty() {
-            polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
-        }
+        let s = self;
         let s = if let DataType::List(_) = s.dtype() {
             Cow::Owned(s.explode()?)
         } else {
@@ -155,7 +189,7 @@ impl Series {
             1 => {
                 polars_ensure!(
                     dimensions[0] as usize == s_ref.len() || dimensions[0] == -1_i64,
-                    ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
+                    InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
                 Ok(s_ref.clone())
             },
@@ -168,7 +202,7 @@ impl Series {
                         let s = reshape_fast_path(s.name(), s_ref);
                         return Ok(s);
                     } else {
-                        polars_bail!(ComputeError: "cannot reshape len 0 into shape {:?}", dimensions,)
+                        polars_bail!(InvalidOperation: "cannot reshape len 0 into shape {:?}", dimensions,)
                     }
                 }
 
@@ -190,7 +224,7 @@ impl Series {
 
                 polars_ensure!(
                     (rows*cols) as usize == s_ref.len() && rows >= 1 && cols >= 1,
-                    ComputeError: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
+                    InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
 
                 let mut builder =
