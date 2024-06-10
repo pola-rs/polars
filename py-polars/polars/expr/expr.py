@@ -1712,9 +1712,9 @@ class Expr:
         dtype: PolarsDataType | type[Any],
         *,
         strict: bool = True,
-        allow_overflow: bool = False,
+        wrap_numerical: bool = False,
     ) -> Self:
-        """
+        r"""
         Cast between data types.
 
         Parameters
@@ -1722,10 +1722,10 @@ class Expr:
         dtype
             DataType to cast to.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
-        allow_overflow
-            Don't check for numeric overflow and instead do a `wrapping` numeric cast.
+            If True invalid casts generate exceptions instead of `null`\s.
+        wrap_numerical
+            If True numeric casts wrap overflowing values instead of
+            marking the cast as invalid.
 
         Examples
         --------
@@ -1751,7 +1751,7 @@ class Expr:
         └─────┴─────┘
         """
         dtype = py_type_to_dtype(dtype)
-        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, allow_overflow))
+        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
