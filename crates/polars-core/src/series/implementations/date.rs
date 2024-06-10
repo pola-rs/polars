@@ -165,6 +165,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_date().into_series()
     }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_date().into_series(), b.into_date().into_series())
+    }
 
     fn mean(&self) -> Option<f64> {
         self.0.mean()

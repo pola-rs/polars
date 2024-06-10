@@ -194,6 +194,15 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.apply_physical_to_s(|ca| ca.slice(offset, length))
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        let a = a.into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series();
+        let b = b.into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series();
+        (a, b)
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.decimal()?;

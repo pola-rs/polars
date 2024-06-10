@@ -7,7 +7,44 @@ use crate::chunked_array::metadata::MetadataProperties;
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
 
-#[inline]
+pub(crate) fn split_at(
+    chunks: &[ArrayRef],
+    offset: i64,
+    own_length: usize,
+) -> (Vec<ArrayRef>, Vec<ArrayRef>) {
+    let mut new_chunks_left = Vec::with_capacity(1);
+    let mut new_chunks_right = Vec::with_capacity(1);
+    let (raw_offset, _) = slice_offsets(offset, 0, own_length);
+
+    let mut remaining_offset = raw_offset;
+    let mut iter = chunks.into_iter();
+
+    for chunk in &mut iter {
+        let chunk_len = chunk.len();
+        if remaining_offset > 0 && remaining_offset >= chunk_len {
+            remaining_offset -= chunk_len;
+            new_chunks_left.push(chunk.clone());
+            continue;
+        }
+
+        let (l, r) = chunk.split_at_boxed(remaining_offset);
+        new_chunks_left.push(l);
+        new_chunks_right.push(r);
+        break;
+    }
+
+    for chunk in iter {
+        new_chunks_right.push(chunk.clone())
+    }
+    if new_chunks_left.is_empty() {
+        new_chunks_left.push(chunks[0].sliced(0, 0));
+    }
+    if new_chunks_right.is_empty() {
+        new_chunks_right.push(chunks[0].sliced(0, 0));
+    }
+    (new_chunks_left, new_chunks_right)
+}
+
 pub(crate) fn slice(
     chunks: &[ArrayRef],
     offset: i64,
@@ -141,7 +178,20 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// When offset is negative it will be counted from the end of the array.
     /// This method will never error,
     /// and will slice the best match when offset, or length is out of bounds
-    #[inline]
+    pub fn split_at(&self, offset: i64) -> (Self, Self) {
+        // The len: 0 special cases ensure we release memory.
+        // A normal slice, slice the buffers and thus keep the whole memory allocated.
+        let (l, r) = split_at(&self.chunks, offset, self.len());
+        let out_l = unsafe { self.copy_with_chunks(l) };
+        let out_r = unsafe { self.copy_with_chunks(r) };
+        (out_l, out_r)
+    }
+
+    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
+    ///
+    /// When offset is negative it will be counted from the end of the array.
+    /// This method will never error,
+    /// and will slice the best match when offset, or length is out of bounds
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         // The len: 0 special cases ensure we release memory.
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
