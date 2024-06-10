@@ -68,22 +68,22 @@ fn unique_counts_boolean_helper(ca: &BooleanChunked) -> IdxCa {
     }
 
     if arr.is_null(0) {
-        let first_non_null = arr.validity().unwrap().iter().position(|v| v).unwrap();
-        match arr.value(first_non_null) {
+        let first_non_null_idx = arr.validity().unwrap().iter().position(|v| v).unwrap();
+        match arr.value(first_non_null_idx) {
             true => return IdxCa::new(ca.name(), [n_null, n_true, n_false]),
             false => return IdxCa::new(ca.name(), [n_null, n_false, n_true]),
         }
     } else {
-        let first_unique = arr.value(0);
-        let second_unique = arr
+        let first_val = arr.value(0);
+        let second_val_idx = arr
             .validity()
             .unwrap()
             .iter()
             .zip(arr.values())
-            .position(|(v, val)| !v || val != first_unique)
+            .position(|(v, val)| !v || val != first_val)
             .unwrap();
 
-        match (first_unique, arr.is_null(second_unique)) {
+        match (first_val, arr.is_null(second_val_idx)) {
             (true, true) => return IdxCa::new(ca.name(), [n_true, n_null, n_false]),
             (true, false) => return IdxCa::new(ca.name(), [n_true, n_false, n_null]),
             (false, true) => return IdxCa::new(ca.name(), [n_false, n_null, n_true]),
