@@ -144,6 +144,15 @@ pub struct ChunkedArray<T: PolarsDataType> {
 }
 
 impl<T: PolarsDataType> ChunkedArray<T> {
+    fn check_rechunk(self) -> Self {
+        // Rechunk if we have many small chunks.
+        if self.chunks.len() > 1 && self.chunks.len() > self.len() / 3 {
+            self.rechunk()
+        } else {
+            self
+        }
+    }
+
     /// Create a new [`ChunkedArray`] and compute its `length` and `null_count`.
     ///
     /// If you want to explicitly the `length` and `null_count`, look at
@@ -152,7 +161,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         unsafe {
             let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
             chunked_arr.compute_len();
-            chunked_arr
+            chunked_arr.check_rechunk()
         }
     }
 
@@ -177,11 +186,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             length,
             null_count,
         }
+        .check_rechunk()
     }
 
     /// Get a reference to the used [`Metadata`]
     ///
-    /// This results a reference to an empty [`Metadata`] if its unset for this [`ChunkedArray`].
+    /// This results a reference to an empty [`Metadata`] if it's unset for this [`ChunkedArray`].
     #[inline(always)]
     pub fn effective_metadata(&self) -> &Metadata<T> {
         self.md.as_ref().map_or(&Metadata::DEFAULT, AsRef::as_ref)

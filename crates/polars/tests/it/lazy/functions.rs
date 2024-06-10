@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 fn test_format_str() {
     let a = df![
         "a" => [1, 2],
