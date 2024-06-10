@@ -299,12 +299,13 @@ def test_infer_tz_aware_with_utc(time_unit: TimeUnit) -> None:
     assert result.item() == datetime(2020, 1, 2, 2, 0, tzinfo=timezone.utc)
 
 
-def test_infer_tz_aware_raises() -> None:
-    msg = "Please either drop the time zone from the function call, or set it to UTC"
-    with pytest.raises(ComputeError, match=msg):
-        pl.Series(["2020-01-02T04:00:00+02:00"]).str.to_datetime(
-            time_unit="us", time_zone="Europe/Vienna"
-        )
+def test_str_to_datetime_infer_tz_aware() -> None:
+    result = (
+        pl.Series(["2020-01-02T04:00:00+02:00"])
+        .str.to_datetime(time_unit="us", time_zone="Europe/Vienna")
+        .item()
+    )
+    assert result == datetime(2020, 1, 2, 3, tzinfo=ZoneInfo("Europe/Vienna"))
 
 
 @pytest.mark.parametrize(
