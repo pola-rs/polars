@@ -1,8 +1,8 @@
+use std::fmt::Display;
 use std::ops::Div;
 
 use polars_core::export::regex;
 use polars_core::prelude::*;
-use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
@@ -28,6 +28,13 @@ use crate::SQLContext;
 
 static DATE_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static TIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+#[inline]
+#[cold]
+#[must_use]
+pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
+    PolarsError::SQLInterface(err.to_string().into())
+}
 
 fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
     Ok(match prec {
@@ -804,7 +811,7 @@ impl SQLExprVisitor<'_> {
                         .map(|n: i64| AnyValue::Int64(if negate { -n } else { n }))
                         .map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {s:?}"))?
+                .map_err(|_| polars_err!(SQLInterface: "cannot parse literal: {:?}", s))?
             },
             #[cfg(feature = "binary_encoding")]
             SQLValue::HexStringLiteral(x) => {
@@ -1138,8 +1145,10 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
         ..Default::default()
     });
 
-    let mut ast = parser.try_with_sql(s.as_ref()).map_err(to_compute_err)?;
-    let expr = ast.parse_select_item().map_err(to_compute_err)?;
+    let mut ast = parser
+        .try_with_sql(s.as_ref())
+        .map_err(to_sql_interface_err)?;
+    let expr = ast.parse_select_item().map_err(to_sql_interface_err)?;
 
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
@@ -1169,7 +1178,7 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
             };
             visitor.array_expr_to_series(arr.elem.as_slice())
         },
-        _ => polars_bail!(ComputeError: "Expected array expression, found {:?}", expr),
+        _ => polars_bail!(SQLSyntax: "Expected array expression, found {:?}", expr),
     }
 }
 

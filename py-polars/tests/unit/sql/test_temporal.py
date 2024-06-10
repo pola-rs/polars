@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SQLSyntaxError
+from polars.exceptions import ComputeError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -275,3 +275,9 @@ def test_timestamp_time_unit_errors() -> None:
                 match=f"invalid temporal type precision; expected 1-9, found {prec}",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")
+
+        with pytest.raises(
+            SQLInterfaceError,
+            match="sql parser error: Expected literal int, found: - ",
+        ):
+            ctx.execute("SELECT ts::timestamp(-3) FROM frame_data")

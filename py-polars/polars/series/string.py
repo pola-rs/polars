@@ -99,7 +99,17 @@ class StringNameSpace:
             `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
             found, the default is `"us"`.
         time_zone
-            Time zone for the resulting Datetime column.
+            Time zone for the resulting Datetime column. Rules are:
+
+            - If inputs are tz-naive and `time_zone` is None, the result time zone is
+              `None`.
+            - If inputs are offset-aware and `time_zone` is None, inputs are converted
+              to `'UTC'` and the result time zone is `'UTC'`.
+            - If inputs are offset-aware and `time_zone` is given, inputs are converted
+              to `time_zone` and the result time zone is `time_zone`.
+            - If inputs are tz-naive and `time_zone` is given, input time zones are
+              replaced with (not converted to!) `time_zone`, and the result time zone
+              is `time_zone`.
         strict
             Raise an error if any conversion fails.
         exact
@@ -627,6 +637,7 @@ class StringNameSpace:
     def json_decode(
         self,
         dtype: PolarsDataType | None = None,
+        *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Series:
         """

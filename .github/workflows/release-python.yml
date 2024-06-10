@@ -277,6 +277,7 @@ jobs:
           client-payload: >
             {
               "version": "${{ steps.version.outputs.version }}",
+              "is_prerelease": "${{ steps.version.outputs.is_prerelease }}",
               "tag": "${{ steps.github-release.outputs.tag_name }}",
               "sha": "${{ inputs.sha || github.sha }}"
             }

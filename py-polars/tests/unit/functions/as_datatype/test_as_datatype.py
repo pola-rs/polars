@@ -217,7 +217,9 @@ def test_list_concat_rolling_window() -> None:
 
     # this test proper null behavior of concat list
     out = (
-        df.with_columns(pl.col("A").reshape((-1, 1)))  # first turn into a list
+        df.with_columns(
+            pl.col("A").reshape((-1, 1)).arr.to_list()  # first turn into a list
+        )
         .with_columns(
             pl.col("A").shift(i).alias(f"A_lag_{i}")
             for i in range(3)  # slice the lists to a lag

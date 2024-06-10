@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 
 use polars_core::prelude::*;
-use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::prelude::*;
@@ -15,7 +14,9 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::sql_expr::{parse_sql_array, parse_sql_expr, process_join_constraint};
+use crate::sql_expr::{
+    parse_sql_array, parse_sql_expr, process_join_constraint, to_sql_interface_err,
+};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -115,9 +116,9 @@ impl SQLContext {
 
         let ast = parser
             .try_with_sql(query)
-            .map_err(to_compute_err)?
+            .map_err(to_sql_interface_err)?
             .parse_statements()
-            .map_err(to_compute_err)?;
+            .map_err(to_sql_interface_err)?;
 
         polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
         let res = self.execute_statement(ast.first().unwrap())?;
@@ -473,23 +474,20 @@ impl SQLContext {
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframes.
-        // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
-        let sql_tbl: &TableWithJoins = select_stmt
-            .from
-            .first()
-            .ok_or_else(|| polars_err!(SQLSyntax: "no table name provided in query"))?;
+        // Note: implicit joins require more work in query parsing,
+        // explicit joins are preferred for now (ref: #16662)
 
-        let mut lf = self.execute_from_statement(sql_tbl)?;
+        let mut lf = if select_stmt.from.is_empty() {
+            DataFrame::empty().lazy()
+        } else {
+            self.execute_from_statement(select_stmt.from.first().unwrap())?
+        };
         let mut contains_wildcard = false;
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
         let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
-        if let Some(expr) = select_stmt.selection.as_ref() {
-            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
-            lf = lf.filter(filter_expression);
-        }
+        lf = self.process_where(lf, &select_stmt.selection)?;
 
         // Column projections.
         let projections: Vec<_> = select_stmt
@@ -664,6 +662,20 @@ impl SQLContext {
             None => lf,
         };
 
+        Ok(lf)
+    }
+
+    fn process_where(
+        &mut self,
+        mut lf: LazyFrame,
+        expr: &Option<SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        if let Some(expr) = expr {
+            let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
+            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
+        }
         Ok(lf)
     }
 
@@ -913,7 +925,7 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         polars_ensure!(
             !contains_wildcard,
-            SQLSyntax: "GROUP BY error: can't process wildcard in group_by"
+            SQLSyntax: "GROUP BY error: cannot process wildcard in group_by"
         );
         let schema_before = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
         let group_by_keys_schema =

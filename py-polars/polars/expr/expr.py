@@ -48,7 +48,6 @@ from polars._utils.various import (
 )
 from polars.datatypes import (
     Int64,
-    List,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -80,7 +79,6 @@ if TYPE_CHECKING:
     from polars._utils.various import (
         NoDefault,
     )
-    from polars.datatypes import Array
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -1712,9 +1710,9 @@ class Expr:
         dtype: PolarsDataType | type[Any],
         *,
         strict: bool = True,
-        allow_overflow: bool = False,
+        wrap_numerical: bool = False,
     ) -> Self:
-        """
+        r"""
         Cast between data types.
 
         Parameters
@@ -1722,10 +1720,10 @@ class Expr:
         dtype
             DataType to cast to.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
-        allow_overflow
-            Don't check for numeric overflow and instead do a `wrapping` numeric cast.
+            If True invalid casts generate exceptions instead of `null`\s.
+        wrap_numerical
+            If True numeric casts wrap overflowing values instead of
+            marking the cast as invalid.
 
         Examples
         --------
@@ -1751,7 +1749,7 @@ class Expr:
         └─────┴─────┘
         """
         dtype = py_type_to_dtype(dtype)
-        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, allow_overflow))
+        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
@@ -9078,20 +9076,15 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.radians())
 
-    def reshape(
-        self, dimensions: tuple[int, ...], nested_type: type[Array] | type[List] = List
-    ) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
-        Reshape this Expr to a flat Series or a Series of Lists.
+        Reshape this Expr to a flat column or an Array column.
 
         Parameters
         ----------
         dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
-        nested_type
-            The nested data type to create. List only supports 2 dimension,
-            whereas Array supports an arbitrary number of dimensions.
 
         Returns
         -------
@@ -9099,30 +9092,46 @@ class Expr:
             If a single dimension is given, results in an expression of the original
             data type.
             If a multiple dimensions are given, results in an expression of data type
-            :class:`List` with shape (rows, cols)
-            or :class:`Array` with shape `dimensions`.
+            :class:`Array` with shape `dimensions`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
-        >>> df.select(pl.col("foo").reshape((3, 3)))
+        >>> square = df.select(pl.col("foo").reshape((3, 3)))
+        >>> square
         shape: (3, 1)
-        ┌───────────┐
-        │ foo       │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2, 3] │
-        │ [4, 5, 6] │
-        │ [7, 8, 9] │
-        └───────────┘
+        ┌───────────────┐
+        │ foo           │
+        │ ---           │
+        │ array[i64, 3] │
+        ╞═══════════════╡
+        │ [1, 2, 3]     │
+        │ [4, 5, 6]     │
+        │ [7, 8, 9]     │
+        └───────────────┘
+        >>> square.select(pl.col("foo").reshape((9,)))
+        shape: (9, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        │ 7   │
+        │ 8   │
+        │ 9   │
+        └─────┘
 
         See Also
         --------
         Expr.list.explode : Explode a list column.
         """
-        is_list = nested_type == List
-        return self._from_pyexpr(self._pyexpr.reshape(dimensions, is_list))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """

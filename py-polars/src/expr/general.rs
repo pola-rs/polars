@@ -260,10 +260,10 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, data_type: Wrap<DataType>, strict: bool, allow_overflow: bool) -> Self {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
         let dt = data_type.0;
 
-        let options = if allow_overflow {
+        let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
             CastOptions::Strict
@@ -793,13 +793,8 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
-    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> Self {
-        let nested = if is_list {
-            NestedType::List
-        } else {
-            NestedType::Array
-        };
-        self.inner.clone().reshape(&dims, nested).into()
+    fn reshape(&self, dims: Vec<i64>) -> Self {
+        self.inner.clone().reshape(&dims, NestedType::Array).into()
     }
 
     fn to_physical(&self) -> Self {

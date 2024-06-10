@@ -242,16 +242,20 @@ class ExprMetaNameSpace:
         return wrap_expr(self._pyexpr._meta_as_selector())
 
     def _selector_add(self, other: Expr) -> Expr:
-        """Add selectors."""
+        """Add ('+') selectors."""
         return wrap_expr(self._pyexpr._meta_selector_add(other._pyexpr))
 
+    def _selector_and(self, other: Expr) -> Expr:
+        """And ('&') selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
+
     def _selector_sub(self, other: Expr) -> Expr:
-        """Subtract selectors."""
+        """Subtract ('-') selectors."""
         return wrap_expr(self._pyexpr._meta_selector_sub(other._pyexpr))
 
-    def _selector_and(self, other: Expr) -> Expr:
-        """& selectors."""
-        return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
+    def _selector_xor(self, other: Expr) -> Expr:
+        """Xor ('^') selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_xor(other._pyexpr))
 
     @overload
     def serialize(self, file: None = ...) -> str: ...

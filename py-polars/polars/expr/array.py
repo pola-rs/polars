@@ -441,7 +441,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_arg_max())
 
-    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = True) -> Expr:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = False) -> Expr:
         """
         Get the value by index in the sub-arrays.
 
@@ -503,7 +503,7 @@ class ExprArrayNameSpace:
         └───────────────┴───────┘
 
         """
-        return self.get(0)
+        return self.get(0, null_on_oob=True)
 
     def last(self) -> Expr:
         """
@@ -528,7 +528,7 @@ class ExprArrayNameSpace:
         └───────────────┴──────┘
 
         """
-        return self.get(-1)
+        return self.get(-1, null_on_oob=True)
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """

@@ -206,15 +206,29 @@ impl DatetimeChunked {
     }
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
-    pub fn set_time_unit(&mut self, tu: TimeUnit) {
-        self.2 = Some(Datetime(tu, self.time_zone().clone()))
+    pub fn set_time_unit(&mut self, time_unit: TimeUnit) {
+        self.2 = Some(Datetime(time_unit, self.time_zone().clone()))
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
+    /// This does not validate the time zone - it's up to the caller to verify that it's
+    /// already been validated.
     #[cfg(feature = "timezones")]
     pub fn set_time_zone(&mut self, time_zone: TimeZone) -> PolarsResult<()> {
-        validate_time_zone(&time_zone)?;
         self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
+        Ok(())
+    }
+
+    /// Change the underlying [`TimeUnit`] and [`TimeZone`]. This does not modify the data.
+    /// This does not validate the time zone - it's up to the caller to verify that it's
+    /// already been validated.
+    #[cfg(feature = "timezones")]
+    pub fn set_time_unit_and_time_zone(
+        &mut self,
+        time_unit: TimeUnit,
+        time_zone: TimeZone,
+    ) -> PolarsResult<()> {
+        self.2 = Some(Datetime(time_unit, Some(time_zone)));
         Ok(())
     }
 }
