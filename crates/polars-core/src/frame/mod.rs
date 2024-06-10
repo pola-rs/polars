@@ -464,6 +464,13 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
+        // Fast check. It is also needed for correctness, as code below doesn't check if the number
+        // of chunks is equal.
+        if !self.get_columns().iter().map(|s| s.n_chunks()).all_equal() {
+            return true;
+        }
+
+        // From here we check chunk lengths.
         let mut chunk_lengths = self.columns.iter().map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
