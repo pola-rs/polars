@@ -257,7 +257,7 @@ Before committing, install `dprint` (see above) and run `dprint fmt` from the `d
 
 ### API reference
 
-Polars has separate API references for [Rust](https://docs.pola.rs/docs/rust/dev/polars/) and [Python](https://docs.pola.rs/docs/python/dev/reference/index.html).
+Polars has separate API references for [Rust](https://docs.pola.rs/api/rust/dev/polars/) and [Python](https://docs.pola.rs/api/python/dev/reference/index.html).
 These are generated directly from the codebase, so in order to contribute, you will have to follow the steps outlined in [this section](#contributing-to-the-codebase) above.
 
 #### Rust

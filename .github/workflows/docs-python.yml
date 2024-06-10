@@ -55,7 +55,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: docs/python/dev
+          target-folder: api/python/dev
           single-commit: true
 
       - name: Parse the tag to find the major/minor version of Polars
@@ -74,7 +74,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          target-folder: docs/python/version/${{ steps.version.outputs.version }}
+          target-folder: api/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
@@ -82,6 +82,5 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
-          # Keeping this folder for backwards compatibility
-          target-folder: py-polars/html
+          target-folder: api/python/stable
           single-commit: true
