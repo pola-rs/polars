@@ -116,7 +116,7 @@ web_root = "https://docs.pola.rs"
 
 # Specify version for version switcher dropdown menu
 git_ref = os.environ.get("POLARS_VERSION", "main")
-version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
+version_match = re.fullmatch(r"py-(\d+)\.\d+\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
 html_js_files = [
