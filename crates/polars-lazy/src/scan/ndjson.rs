@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 use polars_core::prelude::*;
+use polars_io::utils::resolve_homedir;
 use polars_io::RowIndex;
 
 use super::*;
@@ -114,11 +115,17 @@ impl LazyFileListReader for LazyJsonLineReader {
     }
 
     fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
+        self.path = resolve_homedir(&path);
         self
     }
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+        let paths = paths
+            .iter()
+            .map(|p| resolve_homedir(p))
+            .collect::<Vec<_>>()
+            .into();
+
         self.paths = paths;
         self
     }
