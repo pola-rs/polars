@@ -160,6 +160,11 @@ macro_rules! impl_dyn_series {
                 return self.0.slice(offset, length).into_series();
             }
 
+            fn split_at(&self, offset: i64) -> (Series, Series) {
+                let (a, b) = self.0.split_at(offset);
+                (a.into_series(), b.into_series())
+            }
+
             fn append(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), append);
                 self.0.append(other.as_ref().as_ref());

@@ -239,6 +239,12 @@ pub trait SeriesTrait:
     /// end of the array
     fn slice(&self, _offset: i64, _length: usize) -> Series;
 
+    /// Get a zero copy view of the data.
+    ///
+    /// When offset is negative the offset is counted from the
+    /// end of the array
+    fn split_at(&self, _offset: i64) -> (Series, Series);
+
     #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> PolarsResult<()>;
 

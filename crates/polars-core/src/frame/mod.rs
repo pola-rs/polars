@@ -2233,6 +2233,14 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(col) }
     }
 
+    /// Split [`DataFrame`] at the given `offset`.
+    pub fn split_at(&self, offset: i64) -> (Self, Self) {
+        let (a, b) = self.columns.iter().map(|s| s.split_at(offset)).unzip();
+        let a = unsafe { DataFrame::new_no_checks(a) };
+        let b = unsafe { DataFrame::new_no_checks(b) };
+        (a, b)
+    }
+
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(col) }

@@ -239,6 +239,24 @@ impl SeriesTrait for NullChunked {
         .into_series()
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (l, r) = chunkops::split_at(self.chunks(), offset, self.len());
+        (
+            NullChunked {
+                name: self.name.clone(),
+                length: l.iter().map(|arr| arr.len() as IdxSize).sum(),
+                chunks: l,
+            }
+            .into_series(),
+            NullChunked {
+                name: self.name.clone(),
+                length: r.iter().map(|arr| arr.len() as IdxSize).sum(),
+                chunks: r,
+            }
+            .into_series(),
+        )
+    }
+
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         Ok(self.clone().into_series())
     }

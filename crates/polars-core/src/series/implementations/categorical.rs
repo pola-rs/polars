@@ -154,6 +154,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.with_state(false, |cats| cats.slice(offset, length))
             .into_series()
     }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.physical().split_at(offset);
+        let a = self.finish_with_state(false, a).into_series();
+        let b = self.finish_with_state(false, b).into_series();
+        (a, b)
+    }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
