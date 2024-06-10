@@ -185,11 +185,8 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
     assert_series_equal(result, expected)
 
     # Check consistency with Series constructor
-    # TODO: remove `raises`, after https://github.com/pola-rs/polars/pull/16828.
-    with pytest.raises(ValueError, match="Please either drop"):
-        result = pl.Series(
-            [datetime(2020, 1, 1, 5, 57, 34, tzinfo=ZoneInfo("Asia/Kathmandu"))],
-            dtype=pl.Datetime("us", "Asia/Kathmandu"),
-        )
-    # TODO: uncomment, after https://github.com/pola-rs/polars/pull/16828.
-    # assert_series_equal(result, expected)
+    result = pl.Series(
+        [datetime(2020, 1, 1, 5, 57, 34, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        dtype=pl.Datetime("us", "Asia/Kathmandu"),
+    )
+    assert_series_equal(result, expected)
