@@ -440,6 +440,16 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            AExpr::Slice { offset, length, .. } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, offset_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, offset, &input_schema));
+                polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice, not {}", offset_dtype);
+                let (_, length_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
+                polars_ensure!(length_dtype.is_integer(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
+                None
+            },
             _ => None,
         };
         Ok(out)
