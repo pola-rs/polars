@@ -37,8 +37,7 @@ struct EntryData {
     inner: Mutex<Inner>,
 }
 
-#[derive(Clone)]
-pub struct FileCacheEntry(Arc<EntryData>);
+pub struct FileCacheEntry(EntryData);
 
 impl EntryMetadata {
     fn matches_remote_metadata(&self, remote_metadata: &RemoteMetadata) -> bool {
@@ -267,7 +266,7 @@ impl FileCacheEntry {
             "impl error: entry uri != file_fetcher uri"
         );
 
-        Self(Arc::new(EntryData {
+        Self(EntryData {
             uri: uri.clone(),
             inner: Mutex::new(Inner {
                 uri,
@@ -277,7 +276,7 @@ impl FileCacheEntry {
                 cached_data: None,
                 file_fetcher,
             }),
-        }))
+        })
     }
 
     pub fn uri(&self) -> Arc<str> {
