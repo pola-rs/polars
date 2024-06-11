@@ -901,3 +901,15 @@ def test_list_eval_err_raise_15653() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
+
+
+def test_list_eval_type_cast_11188() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": None},
+        ],
+        schema={"a": pl.List(pl.Int64)},
+    )
+    assert df.select(
+        pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
+    ).schema == {"a_str": pl.List(pl.String)}

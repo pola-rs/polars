@@ -344,3 +344,23 @@ def test_cabbage_strategy_14396() -> None:
         ValueError, match="strategy 'cabbage' is not supported"
     ), pytest.warns(PolarsInefficientMapWarning):
         df.select(pl.col("x").map_elements(lambda x: 2 * x, strategy="cabbage"))  # type: ignore[arg-type]
+
+
+def test_unknown_map_elements() -> None:
+    df = pl.DataFrame(
+        {
+            "Amount": [10, 1, 1, 5],
+            "Flour": ["1000g", "100g", "50g", "75g"],
+        }
+    )
+
+    q = df.lazy().select(
+        pl.col("Amount"),
+        pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
+    )
+
+    assert q.collect().to_dict(as_series=False) == {
+        "Amount": [10, 1, 1, 5],
+        "Flour": [10.0, 100.0, 100.0, 20.0],
+    }
+    assert q.dtypes == [pl.Int64, pl.Unknown]

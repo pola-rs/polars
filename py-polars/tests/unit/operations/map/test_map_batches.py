@@ -84,3 +84,35 @@ def test_ufunc_args() -> None:
     result = df.select(z=np.add(2, pl.col("a")))  # type: ignore[call-overload]
     expected = pl.DataFrame({"z": [3, 4, 5]})
     assert_frame_equal(result, expected)
+
+
+def test_lazy_map_schema() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+
+    # identity
+    assert_frame_equal(df.lazy().map_batches(lambda x: x).collect(), df)
+
+    def custom(df: pl.DataFrame) -> pl.Series:
+        return df["a"]
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+    ):
+        df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
+
+    def custom2(
+        df: pl.DataFrame,
+    ) -> pl.DataFrame:
+        # changes schema
+        return df.select(pl.all().cast(pl.String))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+    ):
+        df.lazy().map_batches(custom2).collect()
+
+    assert df.lazy().map_batches(
+        custom2, validate_output_schema=False
+    ).collect().to_dict(as_series=False) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}

@@ -440,3 +440,18 @@ def test_schema_mean_horizontal_single_column(
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
     assert lf.schema == OrderedDict([("a", pl.UInt32)])
+
+
+def test_fold_all_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+            "optional": [28, 300, None, 2, -30],
+        }
+    )
+    # divide because of overflow
+    result = df.select(pl.sum_horizontal(pl.all().hash(seed=1) // int(1e8)))
+    assert result.dtypes == [pl.UInt64]

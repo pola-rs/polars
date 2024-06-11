@@ -610,3 +610,25 @@ def test_literal_subtract_schema_13284() -> None:
         .group_by("a")
         .len()
     ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+def test_int_operator_stability() -> None:
+    for dt in pl.datatypes.INTEGER_DTYPES:
+        s = pl.Series(values=[10], dtype=dt)
+        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+
+
+def test_duration_division_schema() -> None:
+    df = pl.DataFrame({"a": [1]})
+    q = (
+        df.lazy()
+        .with_columns(pl.col("a").cast(pl.Duration))
+        .select(pl.col("a") / pl.col("a"))
+    )
+
+    assert q.schema == {"a": pl.Float64}
+    assert q.collect().to_dict(as_series=False) == {"a": [1.0]}
