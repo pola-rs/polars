@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -168,17 +169,19 @@ def test_sql_on_compatible_frame_types() -> None:
         (df["a"] * 2).rename("c"),  # polars series
         (dfp["a"] * 2).rename("c"),  # pandas series
     ):
-        res = pl.sql("""
-            SELECT a, b, SUM(c) AS cc FROM (
-              SELECT * FROM df               -- polars frame
-                UNION ALL SELECT * FROM dfp  -- pandas frame
-                UNION ALL SELECT * FROM dfa  -- pyarrow table
-                UNION ALL SELECT * FROM dfb  -- pyarrow record batch
-            ) tbl
-            INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
-            GROUP BY "a", "b"
-            ORDER BY "a", "b"
-        """).collect()
+        res = pl.sql(
+            """
+                        SELECT a, b, SUM(c) AS cc FROM (
+                          SELECT * FROM df               -- polars frame
+                            UNION ALL SELECT * FROM dfp  -- pandas frame
+                            UNION ALL SELECT * FROM dfa  -- pyarrow table
+                            UNION ALL SELECT * FROM dfb  -- pyarrow record batch
+                        ) tbl
+                        INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
+                        GROUP BY "a", "b"
+                        ORDER BY "a", "b"
+                    """
+        ).collect()
 
         expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [16, 24]})
         assert_frame_equal(left=expected, right=res)
@@ -191,7 +194,78 @@ def test_sql_on_compatible_frame_types() -> None:
 
     # don't register all compatible objects
     with pytest.raises(SQLInterfaceError, match="relation 'dfp' was not found"):
-        pl.SQLContext(
-            register_globals=True,
-            all_compatible=False,
-        ).execute("SELECT * FROM dfp")
+        pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp")
+
+
+def test_nested_cte_column_aliasing() -> None:
+    # trace through nested CTEs with multiple levels of column & table aliasing
+    df = pl.sql(
+        """
+        WITH
+          x AS (SELECT w.* FROM (VALUES(1,2), (3,4)) AS w(a, b)),
+          y (m, n) AS (
+            WITH z(c, d) AS (SELECT a, b FROM x)
+              SELECT d*2 AS d2, c*3 AS c3 FROM z
+        )
+        SELECT n, m FROM y
+        """,
+        eager=True,
+    )
+    assert df.to_dict(as_series=False) == {
+        "n": [3, 9],
+        "m": [4, 8],
+    }
+
+
+def test_invalid_derived_table_column_aliases() -> None:
+    values_query = "SELECT * FROM (VALUES (1,2), (3,4))"
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"columns \(5\) in alias 'tbl' does not match .* the table/query \(2\)",
+    ):
+        pl.sql(f"{values_query} AS tbl(a, b, c, d, e)")
+
+    assert pl.sql(f"{values_query} tbl", eager=True).rows() == [(1, 2), (3, 4)]
+
+
+def test_values_clause_table_registration() -> None:
+    with pl.SQLContext(frames=None, eager=True) as ctx:
+        # initially no tables are registered
+        assert ctx.tables() == []
+
+        # confirm that VALUES clause derived table is registered, post-query
+        res1 = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
+        assert ctx.tables() == ["tbl"]
+
+        # and confirm that we can select from it by the registered name
+        res2 = ctx.execute("SELECT x, y FROM tbl")
+        for res in (res1, res2):
+            assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+
+
+def test_read_csv(tmp_path: Path) -> None:
+    # check empty string vs null, parsing of dates, etc
+    df = pl.DataFrame(
+        {
+            "label": ["lorem", None, "", "ipsum"],
+            "num": [-1, None, 0, 1],
+            "dt": [
+                date(1969, 7, 5),
+                date(1999, 12, 31),
+                date(2077, 10, 10),
+                None,
+            ],
+        }
+    )
+    csv_target = tmp_path / "test_sql_read.csv"
+    df.write_csv(csv_target)
+
+    res = pl.sql(f"SELECT * FROM read_csv('{csv_target}')").collect()
+    assert_frame_equal(df, res)
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match="`read_csv` expects a single file path; found 3 arguments",
+    ):
+        pl.sql("SELECT * FROM read_csv('a','b','c')")

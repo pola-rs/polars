@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
+use polars_core::frame::row::Row;
 use polars_core::prelude::*;
-use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::prelude::*;
@@ -9,13 +9,15 @@ use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinConstraint,
     JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr,
     SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
-    Value as SQLValue, WildcardAdditionalOptions,
+    Value as SQLValue, Values, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::sql_expr::{parse_sql_array, parse_sql_expr, process_join_constraint};
+use crate::sql_expr::{
+    parse_sql_array, parse_sql_expr, process_join_constraint, to_sql_interface_err,
+};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -115,9 +117,9 @@ impl SQLContext {
 
         let ast = parser
             .try_with_sql(query)
-            .map_err(to_compute_err)?
+            .map_err(to_sql_interface_err)?
             .parse_statements()
-            .map_err(to_compute_err)?;
+            .map_err(to_sql_interface_err)?;
 
         polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
         let res = self.execute_statement(ast.first().unwrap())?;
@@ -274,6 +276,10 @@ impl SQLContext {
             SetExpr::SetOperation { op, .. } => {
                 polars_bail!(SQLInterface: "'{}' operation not yet supported", op)
             },
+            SetExpr::Values(Values {
+                explicit_row: _,
+                rows,
+            }) => self.process_values(rows),
             op => polars_bail!(SQLInterface: "'{}' operation not yet supported", op),
         }
     }
@@ -312,6 +318,25 @@ impl SQLContext {
             #[allow(unreachable_patterns)]
             _ => polars_bail!(SQLInterface: "'UNION {}' is not yet supported", quantifier),
         }
+    }
+
+    fn process_values(&mut self, values: &[Vec<SQLExpr>]) -> PolarsResult<LazyFrame> {
+        let frame_rows: Vec<Row> = values.iter().map(|row| {
+            let row_data: Result<Vec<_>, _> = row.iter().map(|expr| {
+                let expr = parse_sql_expr(expr, self, None)?;
+                match expr {
+                    Expr::Literal(value) => {
+                        value.to_any_value()
+                            .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))
+                            .map(|av| av.into_static().unwrap())
+                    },
+                    _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
+                }
+            }).collect();
+            row_data.map(Row::new)
+        }).collect::<Result<_, _>>()?;
+
+        Ok(DataFrame::from_rows(frame_rows.as_ref())?.lazy())
     }
 
     // EXPLAIN SELECT * FROM DF
@@ -392,8 +417,9 @@ impl SQLContext {
             }
             for cte in &with.cte_tables {
                 let cte_name = cte.alias.name.value.clone();
-                let cte_lf = self.execute_query(&cte.query)?;
-                self.register_cte(&cte_name, cte_lf);
+                let mut lf = self.execute_query(&cte.query)?;
+                lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
+                self.register_cte(&cte_name, lf);
             }
         }
         Ok(())
@@ -473,23 +499,20 @@ impl SQLContext {
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframes.
-        // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
-        let sql_tbl: &TableWithJoins = select_stmt
-            .from
-            .first()
-            .ok_or_else(|| polars_err!(SQLSyntax: "no table name provided in query"))?;
+        // Note: implicit joins require more work in query parsing,
+        // explicit joins are preferred for now (ref: #16662)
 
-        let mut lf = self.execute_from_statement(sql_tbl)?;
+        let mut lf = if select_stmt.from.is_empty() {
+            DataFrame::empty().lazy()
+        } else {
+            self.execute_from_statement(select_stmt.from.first().unwrap())?
+        };
         let mut contains_wildcard = false;
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
         let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
-        if let Some(expr) = select_stmt.selection.as_ref() {
-            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
-            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
-            lf = lf.filter(filter_expression);
-        }
+        lf = self.process_where(lf, &select_stmt.selection)?;
 
         // Column projections.
         let projections: Vec<_> = select_stmt
@@ -667,6 +690,20 @@ impl SQLContext {
         Ok(lf)
     }
 
+    fn process_where(
+        &mut self,
+        mut lf: LazyFrame,
+        expr: &Option<SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        if let Some(expr) = expr {
+            let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
+            let mut filter_expression = parse_sql_expr(expr, self, schema.as_deref())?;
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
+        }
+        Ok(lf)
+    }
+
     pub(super) fn process_join(
         &self,
         left_tbl: LazyFrame,
@@ -752,7 +789,7 @@ impl SQLContext {
                 name, alias, args, ..
             } => {
                 if let Some(args) = args {
-                    return self.execute_tbl_function(name, alias, args);
+                    return self.execute_table_function(name, alias, args);
                 }
                 let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
@@ -776,7 +813,8 @@ impl SQLContext {
             } => {
                 polars_ensure!(!(*lateral), SQLInterface: "LATERAL not supported");
                 if let Some(alias) = alias {
-                    let lf = self.execute_query_no_ctes(subquery)?;
+                    let mut lf = self.execute_query_no_ctes(subquery)?;
+                    lf = self.rename_columns_from_table_alias(lf, alias)?;
                     self.table_map.insert(alias.name.value.clone(), lf.clone());
                     Ok((alias.name.value.clone(), lf))
                 } else {
@@ -849,7 +887,7 @@ impl SQLContext {
         }
     }
 
-    fn execute_tbl_function(
+    fn execute_table_function(
         &mut self,
         name: &ObjectName,
         alias: &Option<TableAlias>,
@@ -913,7 +951,7 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         polars_ensure!(
             !contains_wildcard,
-            SQLSyntax: "GROUP BY error: can't process wildcard in group_by"
+            SQLSyntax: "GROUP BY error: cannot process wildcard in group_by"
         );
         let schema_before = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
         let group_by_keys_schema =
@@ -1071,6 +1109,28 @@ impl SQLContext {
             },
             _ => expr,
         })
+    }
+
+    fn rename_columns_from_table_alias(
+        &mut self,
+        mut frame: LazyFrame,
+        alias: &TableAlias,
+    ) -> PolarsResult<LazyFrame> {
+        if alias.columns.is_empty() {
+            Ok(frame)
+        } else {
+            let schema = frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+            if alias.columns.len() != schema.len() {
+                polars_bail!(
+                    SQLSyntax: "number of columns ({}) in alias '{}' does not match the number of columns in the table/query ({})",
+                    alias.columns.len(), alias.name.value, schema.len()
+                )
+            } else {
+                let existing_columns: Vec<_> = schema.iter_names().collect();
+                let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
+                Ok(frame.rename(existing_columns, new_columns))
+            }
+        }
     }
 }
 

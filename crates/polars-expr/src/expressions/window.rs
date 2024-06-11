@@ -688,7 +688,7 @@ fn set_by_groups(
 
         macro_rules! dispatch {
             ($ca:expr) => {{
-                set_numeric($ca, groups, len)
+                Some(set_numeric($ca, groups, len))
             }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch).map(|s| s.cast(dtype).unwrap())
@@ -697,7 +697,7 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy, len: usize) -> Option<Series>
+fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy, len: usize) -> Series
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -709,10 +709,10 @@ where
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
     if ca.null_count() == 0 {
+        let ca = ca.rechunk();
         match groups {
             GroupsProxy::Idx(groups) => {
-                // this should always succeed as we don't expect any chunks after an aggregation
-                let agg_vals = ca.cont_slice().ok()?;
+                let agg_vals = ca.cont_slice().expect("rechunked");
                 POOL.install(|| {
                     agg_vals
                         .par_iter()
@@ -727,8 +727,7 @@ where
                 })
             },
             GroupsProxy::Slice { groups, .. } => {
-                // this should always succeed as we don't expect any chunks after an aggregation
-                let agg_vals = ca.cont_slice().ok()?;
+                let agg_vals = ca.cont_slice().expect("rechunked");
                 POOL.install(|| {
                     agg_vals
                         .par_iter()
@@ -748,7 +747,7 @@ where
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        Some(ChunkedArray::new_vec(ca.name(), values).into_series())
+        ChunkedArray::new_vec(ca.name(), values).into_series()
     } else {
         // We don't use a mutable bitmap as bits will have have race conditions!
         // A single byte might alias if we write from single threads.
@@ -826,6 +825,6 @@ where
             values.into(),
             Some(validity),
         );
-        Some(Series::try_from((ca.name(), arr.boxed())).unwrap())
+        Series::try_from((ca.name(), arr.boxed())).unwrap()
     }
 }

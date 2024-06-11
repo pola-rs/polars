@@ -260,10 +260,10 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, data_type: Wrap<DataType>, strict: bool, allow_overflow: bool) -> Self {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
         let dt = data_type.0;
 
-        let options = if allow_overflow {
+        let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
             CastOptions::Strict
@@ -304,9 +304,9 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k_by(&self, by: Vec<Self>, k: Self, descending: Vec<bool>) -> Self {
+    fn top_k_by(&self, by: Vec<Self>, k: Self, reverse: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner.clone().top_k_by(k.inner, by, descending).into()
+        self.inner.clone().top_k_by(k.inner, by, reverse).into()
     }
 
     #[cfg(feature = "top_k")]
@@ -315,12 +315,9 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn bottom_k_by(&self, by: Vec<Self>, k: Self, descending: Vec<bool>) -> Self {
+    fn bottom_k_by(&self, by: Vec<Self>, k: Self, reverse: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner
-            .clone()
-            .bottom_k_by(k.inner, by, descending)
-            .into()
+        self.inner.clone().bottom_k_by(k.inner, by, reverse).into()
     }
 
     #[cfg(feature = "peaks")]
@@ -796,13 +793,8 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
-    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> Self {
-        let nested = if is_list {
-            NestedType::List
-        } else {
-            NestedType::Array
-        };
-        self.inner.clone().reshape(&dims, nested).into()
+    fn reshape(&self, dims: Vec<i64>) -> Self {
+        self.inner.clone().reshape(&dims, NestedType::Array).into()
     }
 
     fn to_physical(&self) -> Self {

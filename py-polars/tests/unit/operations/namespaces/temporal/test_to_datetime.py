@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -8,7 +9,16 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError
+from polars.testing import assert_series_equal
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
@@ -152,3 +162,31 @@ def test_cast_to_time_and_combine(d: datetime, tu: TimeUnit) -> None:
     assert [d.date() for d in datetimes] == res["dt"].to_list()
     assert [d.time() for d in datetimes] == res["tm"].to_list()
     assert datetimes == res["dtm"].to_list()
+
+
+def test_to_datetime_aware_values_aware_dtype() -> None:
+    s = pl.Series(["2020-01-01T01:12:34+01:00"])
+    expected = pl.Series([datetime(2020, 1, 1, 5, 57, 34)]).dt.replace_time_zone(
+        "Asia/Kathmandu"
+    )
+
+    # When Polars infers the format
+    result = s.str.to_datetime(time_zone="Asia/Kathmandu")
+    assert_series_equal(result, expected)
+
+    # When the format is provided
+    result = s.str.to_datetime(format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu")
+    assert_series_equal(result, expected)
+
+    # With `exact=False`
+    result = s.str.to_datetime(
+        format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu", exact=False
+    )
+    assert_series_equal(result, expected)
+
+    # Check consistency with Series constructor
+    result = pl.Series(
+        [datetime(2020, 1, 1, 5, 57, 34, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        dtype=pl.Datetime("us", "Asia/Kathmandu"),
+    )
+    assert_series_equal(result, expected)

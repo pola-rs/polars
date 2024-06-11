@@ -104,6 +104,11 @@ where
         ObjectChunked::slice(&self.0, offset, length).into_series()
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = ObjectChunked::split_at(&self.0, offset);
+        (a.into_series(), b.into_series())
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         if self.dtype() != other.dtype() {
             polars_bail!(append);

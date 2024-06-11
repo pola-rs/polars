@@ -2,9 +2,13 @@ use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS, SECON
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+#[cfg(feature = "timezones")]
 use polars_time::base_utc_offset as base_utc_offset_fn;
 #[cfg(feature = "timezones")]
 use polars_time::dst_offset as dst_offset_fn;
+#[cfg(feature = "offset_by")]
+use polars_time::impl_offset_by;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -48,9 +52,11 @@ pub enum TemporalFunction {
     ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
     Truncate,
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "offset_by")]
+    OffsetBy,
+    #[cfg(feature = "month_start")]
     MonthStart,
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_end")]
     MonthEnd,
     #[cfg(feature = "timezones")]
     BaseUtcOffset,
@@ -101,9 +107,11 @@ impl TemporalFunction {
                 dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
             }),
             Truncate => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
+            #[cfg(feature = "offset_by")]
+            OffsetBy => mapper.with_same_dtype(),
+            #[cfg(feature = "month_start")]
             MonthStart => mapper.with_same_dtype(),
-            #[cfg(feature = "date_offset")]
+            #[cfg(feature = "month_end")]
             MonthEnd => mapper.with_same_dtype(),
             #[cfg(feature = "timezones")]
             BaseUtcOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
@@ -169,9 +177,11 @@ impl Display for TemporalFunction {
             WithTimeUnit(_) => "with_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate => "truncate",
-            #[cfg(feature = "date_offset")]
+            #[cfg(feature = "offset_by")]
+            OffsetBy => "offset_by",
+            #[cfg(feature = "month_start")]
             MonthStart => "month_start",
-            #[cfg(feature = "date_offset")]
+            #[cfg(feature = "month_end")]
             MonthEnd => "month_end",
             #[cfg(feature = "timezones")]
             BaseUtcOffset => "base_utc_offset",
@@ -335,6 +345,7 @@ pub(super) fn convert_time_zone(s: &Series, time_zone: &TimeZone) -> PolarsResul
     match s.dtype() {
         DataType::Datetime(_, _) => {
             let mut ca = s.datetime()?.clone();
+            validate_time_zone(time_zone)?;
             ca.set_time_zone(time_zone.clone())?;
             Ok(ca.into_series())
         },
@@ -392,7 +403,12 @@ pub(super) fn truncate(s: &[Series]) -> PolarsResult<Series> {
     Ok(out)
 }
 
-#[cfg(feature = "date_offset")]
+#[cfg(feature = "offset_by")]
+pub(super) fn offset_by(s: &[Series]) -> PolarsResult<Series> {
+    impl_offset_by(&s[0], &s[1])
+}
+
+#[cfg(feature = "month_start")]
 pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
@@ -409,7 +425,7 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     })
 }
 
-#[cfg(feature = "date_offset")]
+#[cfg(feature = "month_end")]
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {

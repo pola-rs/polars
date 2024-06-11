@@ -769,7 +769,7 @@ def test_quarter() -> None:
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
 
 
-def test_date_offset() -> None:
+def test_offset_by() -> None:
     df = pl.DataFrame(
         {
             "dates": pl.datetime_range(
@@ -918,7 +918,13 @@ def test_offset_by_expressions() -> None:
         {
             "c": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
             "d": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
-            "e": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "e": [
+                None,
+                None,
+                datetime(2020, 10, 26, tzinfo=ZoneInfo("Europe/London")),
+                datetime(2021, 1, 12, tzinfo=ZoneInfo("Europe/London")),
+                None,
+            ],
             "f": [None, None, date(2020, 10, 26), date(2021, 1, 12), None],
         },
         schema_overrides={
@@ -997,9 +1003,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 1, 2)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 4)], datetime(2022, 1, 2)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], datetime(2022, 1, 2)),
         ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
@@ -1048,9 +1054,15 @@ def test_median(
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 10, 16)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        (
+            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 4)],
+            datetime(2022, 1, 2, 8),
+        ),
+        (
+            [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)],
+            datetime(2022, 10, 16, 16, 0),
+        ),
         ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
@@ -1177,6 +1189,10 @@ def test_duration_median_with_tu(
 def test_agg_mean_expr() -> None:
     df = pl.DataFrame(
         {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)],
+                dtype=pl.Date,
+            ),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
                 dtype=pl.Datetime("ms"),
@@ -1210,6 +1226,7 @@ def test_agg_mean_expr() -> None:
 
     expected = pl.DataFrame(
         {
+            "date": pl.Series([datetime(2023, 1, 2, 8, 0)], dtype=pl.Datetime("ms")),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ms")
             ),
@@ -1238,6 +1255,10 @@ def test_agg_mean_expr() -> None:
 def test_agg_median_expr() -> None:
     df = pl.DataFrame(
         {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)],
+                dtype=pl.Date,
+            ),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
                 dtype=pl.Datetime("ms"),
@@ -1271,6 +1292,7 @@ def test_agg_median_expr() -> None:
 
     expected = pl.DataFrame(
         {
+            "date": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
             "datetime_ms": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
             "datetime_us": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
             "datetime_ns": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ns")),

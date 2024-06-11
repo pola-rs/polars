@@ -156,3 +156,13 @@ def test_shuffle_series() -> None:
 
     out = pl.select(pl.lit(a).shuffle(2)).to_series()
     assert_series_equal(out, expected)
+
+
+def test_sample_16232() -> None:
+    k = 2
+    p = 0
+
+    df = pl.DataFrame({"a": [p] * k + [1 + p], "b": [[1] * p] * k + [range(1, p + 2)]})
+    assert df.select(pl.col("b").list.sample(n=pl.col("a"), seed=0)).to_dict(
+        as_series=False
+    ) == {"b": [[], [], [1]]}

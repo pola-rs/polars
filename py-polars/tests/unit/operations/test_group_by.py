@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -67,6 +67,12 @@ def test_group_by() -> None:
         ([1, 2, 3, 4], [2, 4], pl.Float32, pl.Float32),
         ([1, 2, 3, 4], [2, 4], pl.Float64, pl.Float64),
         ([False, True, True, True], [2 / 3, 1], pl.Boolean, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
+            [datetime(2023, 1, 2, 8, 0, 0), datetime(2023, 1, 5)],
+            pl.Date,
+            pl.Datetime("ms"),
+        ),
         (
             [
                 datetime(2023, 1, 1),
@@ -158,6 +164,12 @@ def test_group_by_mean_by_dtype(
         ([1, 2, 4, 5], [2, 5], pl.Float32, pl.Float32),
         ([1, 2, 4, 5], [2, 5], pl.Float64, pl.Float64),
         ([False, True, True, True], [1, 1], pl.Boolean, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Date,
+            pl.Datetime("ms"),
+        ),
         (
             [
                 datetime(2023, 1, 1),
@@ -990,3 +1002,128 @@ def test_partitioned_group_by_chunked(partition_limit: int) -> None:
         df.group_by(gps).sum().sort("oo"),
         df.rechunk().group_by(gps, maintain_order=True).sum(),
     )
+
+
+def test_schema_on_agg() -> None:
+    lf = pl.LazyFrame({"a": ["x", "x", "y", "n"], "b": [1, 2, 3, 4]})
+
+    result = lf.group_by("a").agg(
+        pl.col("b").min().alias("min"),
+        pl.col("b").max().alias("max"),
+        pl.col("b").sum().alias("sum"),
+        pl.col("b").first().alias("first"),
+        pl.col("b").last().alias("last"),
+    )
+    expected_schema = {
+        "a": pl.String,
+        "min": pl.Int64,
+        "max": pl.Int64,
+        "sum": pl.Int64,
+        "first": pl.Int64,
+        "last": pl.Int64,
+    }
+    assert result.schema == expected_schema
+
+
+def test_group_by_schema_err() -> None:
+    lf = pl.LazyFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]})
+    with pytest.raises(pl.ColumnNotFoundError):
+        lf.group_by("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+
+
+@pytest.mark.parametrize(
+    ("data", "expr", "expected_select", "expected_gb"),
+    [
+        (
+            {"x": ["x"], "y": ["y"]},
+            pl.coalesce(pl.col("x"), pl.col("y")),
+            {"x": pl.String},
+            {"x": pl.List(pl.String)},
+        ),
+        (
+            {"x": [True]},
+            pl.col("x").sum(),
+            {"x": pl.UInt32},
+            {"x": pl.UInt32},
+        ),
+        (
+            {"a": [[1, 2]]},
+            pl.col("a").list.sum(),
+            {"a": pl.Int64},
+            {"a": pl.List(pl.Int64)},
+        ),
+    ],
+)
+def test_schemas(
+    data: dict[str, list[Any]],
+    expr: pl.Expr,
+    expected_select: dict[str, pl.PolarsDataType],
+    expected_gb: dict[str, pl.PolarsDataType],
+) -> None:
+    df = pl.DataFrame(data)
+
+    # test selection schema
+    schema = df.select(expr).schema
+    for key, dtype in expected_select.items():
+        assert schema[key] == dtype
+
+    # test group_by schema
+    schema = df.group_by(pl.lit(1)).agg(expr).schema
+    for key, dtype in expected_gb.items():
+        assert schema[key] == dtype
+
+
+def test_lit_iter_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["A", "A", "A", "A"],
+            "dates": [
+                date(1970, 1, 1),
+                date(1970, 1, 1),
+                date(1970, 1, 2),
+                date(1970, 1, 3),
+            ],
+        }
+    )
+
+    result = df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1))
+    expected = {
+        "key": ["A"],
+        "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
+    }
+    assert result.to_dict(as_series=False) == expected
+
+
+def test_absence_off_null_prop_8224() -> None:
+    # a reminder to self to not do null propagation
+    # it is inconsistent and makes output dtype
+    # dependent of the data, big no!
+
+    def sub_col_min(column: str, min_column: str) -> pl.Expr:
+        return pl.col(column).sub(pl.col(min_column).min())
+
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2],
+            "vals_num": [10.0, 11.0, 12.0, 13.0],
+            "vals_partial": [None, None, 12.0, 13.0],
+            "vals_null": [None, None, None, None],
+        }
+    )
+
+    q = (
+        df.lazy()
+        .group_by("group")
+        .agg(
+            sub_col_min("vals_num", "vals_num").alias("sub_num"),
+            sub_col_min("vals_num", "vals_partial").alias("sub_partial"),
+            sub_col_min("vals_num", "vals_null").alias("sub_null"),
+        )
+    )
+
+    assert q.collect().dtypes == [
+        pl.Int64,
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+    ]

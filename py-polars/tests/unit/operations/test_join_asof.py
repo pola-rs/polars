@@ -1165,3 +1165,10 @@ def test_join_asof_invalid_args() -> None:
         TypeError, match="expected `right_on` to be str or Expr, got 'list'"
     ):
         df1.join_asof(df2, left_on="a", right_on=["a"])  # type: ignore[arg-type]
+
+
+def test_join_as_of_by_schema() -> None:
+    a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
+    b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
+    q = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
+    assert q.collect().columns == q.columns

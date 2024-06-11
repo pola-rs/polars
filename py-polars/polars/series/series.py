@@ -1877,6 +1877,9 @@ class Series:
         """
         Raise to the power of the given exponent.
 
+        If the exponent is float, the result follows the dtype of exponent.
+        Otherwise, it follows dtype of base.
+
         Parameters
         ----------
         exponent
@@ -1884,6 +1887,8 @@ class Series:
 
         Examples
         --------
+        Raising integers to positive integers results in integers:
+
         >>> s = pl.Series("foo", [1, 2, 3, 4])
         >>> s.pow(3)
         shape: (4,)
@@ -1893,6 +1898,19 @@ class Series:
             8
             27
             64
+        ]
+
+        In order to raise integers to negative integers, you can cast either the
+        base or the exponent to float:
+
+        >>> s.pow(-3.0)
+        shape: (4,)
+        Series: 'foo' [f64]
+        [
+                1.0
+                0.125
+                0.037037
+                0.015625
         ]
         """
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
@@ -3878,9 +3896,9 @@ class Series:
         dtype: PolarsDataType | type[int] | type[float] | type[str] | type[bool],
         *,
         strict: bool = True,
-        allow_overflow: bool = False,
+        wrap_numerical: bool = False,
     ) -> Self:
-        """
+        r"""
         Cast between data types.
 
         Parameters
@@ -3888,10 +3906,10 @@ class Series:
         dtype
             DataType to cast to.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
-        allow_overflow
-            Don't check for numeric overflow and instead do a `wrapping` numeric cast.
+            If True invalid casts generate exceptions instead of `null`\s.
+        wrap_numerical
+            If True numeric casts wrap overflowing values instead of
+            marking the cast as invalid.
 
         Examples
         --------
@@ -3916,7 +3934,7 @@ class Series:
         """
         # Do not dispatch cast as it is expensive and used in other functions.
         dtype = py_type_to_dtype(dtype)
-        return self._from_pyseries(self._s.cast(dtype, strict, allow_overflow))
+        return self._from_pyseries(self._s.cast(dtype, strict, wrap_numerical))
 
     def to_physical(self) -> Series:
         """
@@ -6573,20 +6591,15 @@ class Series:
         ]
         """
 
-    def reshape(
-        self, dimensions: tuple[int, ...], nested_type: type[Array] | type[List] = List
-    ) -> Series:
+    def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
-        Reshape this Series to a flat Series or a Series of Lists.
+        Reshape this Series to a flat Series or an Array Series.
 
         Parameters
         ----------
         dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
-        nested_type
-            The nested data type to create. List only supports 2 dimension,
-            whereas Array supports an arbitrary number of dimensions.
 
         Returns
         -------
@@ -6594,8 +6607,7 @@ class Series:
             If a single dimension is given, results in a Series of the original
             data type.
             If a multiple dimensions are given, results in a Series of data type
-            :class:`List` with shape (rows, cols)
-            or :class:`Array` with shape `dimensions`.
+            :class:`Array` with shape `dimensions`.
 
         See Also
         --------
@@ -6604,17 +6616,31 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("foo", [1, 2, 3, 4, 5, 6, 7, 8, 9])
-        >>> s.reshape((3, 3))
+        >>> square = s.reshape((3, 3))
+        >>> square
         shape: (3,)
-        Series: 'foo' [list[i64]]
+        Series: 'foo' [array[i64, 3]]
         [
                 [1, 2, 3]
                 [4, 5, 6]
                 [7, 8, 9]
         ]
+        >>> square.reshape((9,))
+        shape: (9,)
+        Series: 'foo' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+                7
+                8
+                9
+        ]
         """
-        is_list = nested_type == List
-        return self._from_pyseries(self._s.reshape(dimensions, is_list))
+        return self._from_pyseries(self._s.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Series:
         """

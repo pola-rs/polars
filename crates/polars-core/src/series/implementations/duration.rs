@@ -234,6 +234,13 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        let a = a.into_duration(self.0.time_unit()).into_series();
+        let b = b.into_duration(self.0.time_unit()).into_series();
+        (a, b)
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }

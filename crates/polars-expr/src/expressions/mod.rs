@@ -289,8 +289,7 @@ impl<'a> AggregationContext<'a> {
                 });
             },
             _ => {
-                // SAFETY: unstable series never lives longer than the iterator.
-                let groups = unsafe {
+                let groups = {
                     self.series()
                         .list()
                         .expect("impl error, should be a list at this point")

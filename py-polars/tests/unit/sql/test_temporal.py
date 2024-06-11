@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SQLSyntaxError
+from polars.exceptions import ComputeError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -56,37 +56,49 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("part", "dtype", "expected"),
+    ("parts", "dtype", "expected"),
     [
-        ("decade", pl.Int32, [202, 202, 200]),
-        ("isoyear", pl.Int32, [2024, 2020, 2005]),
-        ("year", pl.Int32, [2024, 2020, 2006]),
-        ("quarter", pl.Int8, [1, 4, 1]),
-        ("month", pl.Int8, [1, 12, 1]),
-        ("week", pl.Int8, [1, 53, 52]),
-        ("doy", pl.Int16, [7, 365, 1]),
-        ("isodow", pl.Int8, [7, 3, 7]),
-        ("dow", pl.Int8, [0, 3, 0]),
-        ("day", pl.Int8, [7, 30, 1]),
-        ("hour", pl.Int8, [1, 10, 23]),
-        ("minute", pl.Int8, [2, 30, 59]),
-        ("second", pl.Int8, [3, 45, 59]),
-        ("millisecond", pl.Float64, [3123.456, 45987.654, 59555.555]),
-        ("microsecond", pl.Float64, [3123456.0, 45987654.0, 59555555.0]),
-        ("nanosecond", pl.Float64, [3123456000.0, 45987654000.0, 59555555000.0]),
+        (["decade", "decades"], pl.Int32, [202, 202, 200]),
+        (["isoyear"], pl.Int32, [2024, 2020, 2005]),
+        (["year", "y"], pl.Int32, [2024, 2020, 2006]),
+        (["quarter"], pl.Int8, [1, 4, 1]),
+        (["month", "months", "mon", "mons"], pl.Int8, [1, 12, 1]),
+        (["week", "weeks"], pl.Int8, [1, 53, 52]),
+        (["doy"], pl.Int16, [7, 365, 1]),
+        (["isodow"], pl.Int8, [7, 3, 7]),
+        (["dow"], pl.Int8, [0, 3, 0]),
+        (["day", "days", "d"], pl.Int8, [7, 30, 1]),
+        (["hour", "hours", "h"], pl.Int8, [1, 10, 23]),
+        (["minute", "min", "mins", "m"], pl.Int8, [2, 30, 59]),
+        (["second", "seconds", "secs", "sec"], pl.Int8, [3, 45, 59]),
         (
-            "time",
+            ["millisecond", "milliseconds", "ms"],
+            pl.Float64,
+            [3123.456, 45987.654, 59555.555],
+        ),
+        (
+            ["microsecond", "microseconds", "us"],
+            pl.Float64,
+            [3123456.0, 45987654.0, 59555555.0],
+        ),
+        (
+            ["nanosecond", "nanoseconds", "ns"],
+            pl.Float64,
+            [3123456000.0, 45987654000.0, 59555555000.0],
+        ),
+        (
+            ["time"],
             pl.Time,
             [time(1, 2, 3, 123456), time(10, 30, 45, 987654), time(23, 59, 59, 555555)],
         ),
         (
-            "epoch",
+            ["epoch"],
             pl.Float64,
             [1704589323.123456, 1609324245.987654, 1136159999.555555],
         ),
     ],
 )
-def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
+def test_extract(parts: list[str], dtype: pl.DataType, expected: list[Any]) -> None:
     df = pl.DataFrame(
         {
             "dt": [
@@ -100,11 +112,14 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
         }
     )
     with pl.SQLContext(frame_data=df, eager=True) as ctx:
-        for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART('{part}',dt)"):
-            res = ctx.execute(f"SELECT {func} AS {part} FROM frame_data").to_series()
-
-            assert res.dtype == dtype
-            assert res.to_list() == expected
+        for part in parts:
+            for fn in (
+                f"EXTRACT({part} FROM dt)",
+                f"DATE_PART('{part}',dt)",
+            ):
+                res = ctx.execute(f"SELECT {fn} AS {part} FROM frame_data").to_series()
+                assert res.dtype == dtype
+                assert res.to_list() == expected
 
 
 def test_extract_errors() -> None:
@@ -260,3 +275,9 @@ def test_timestamp_time_unit_errors() -> None:
                 match=f"invalid temporal type precision; expected 1-9, found {prec}",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")
+
+        with pytest.raises(
+            SQLInterfaceError,
+            match="sql parser error: Expected literal int, found: - ",
+        ):
+            ctx.execute("SELECT ts::timestamp(-3) FROM frame_data")

@@ -59,3 +59,22 @@ def test_cum_reduce() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_alias_prune_in_fold_15438() -> None:
+    df = pl.DataFrame({"x": [1, 2], "expected_result": ["first", "second"]}).select(
+        actual_result=pl.fold(
+            acc=pl.lit("other", dtype=pl.Utf8),
+            function=lambda acc, x: pl.when(x).then(pl.lit(x.name)).otherwise(acc),  # type: ignore[arg-type, return-value]
+            exprs=[
+                (pl.col("x") == 1).alias("first"),
+                (pl.col("x") == 2).alias("second"),
+            ],
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "actual_result": ["first", "second"],
+        }
+    )
+    assert_frame_equal(df, expected)

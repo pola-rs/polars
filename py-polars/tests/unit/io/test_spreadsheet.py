@@ -46,6 +46,11 @@ def path_ods(io_files_path: Path) -> Path:
 
 
 @pytest.fixture()
+def path_xls_empty(io_files_path: Path) -> Path:
+    return io_files_path / "empty.xls"
+
+
+@pytest.fixture()
 def path_xlsx_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsx"
 
@@ -358,13 +363,18 @@ def test_read_mixed_dtype_columns(
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
 def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
-    df = pl.DataFrame({"A": [1.5, -2, 0, 3.0, -4.5, 5.0]})
+    df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
 
     excel_bytes = BytesIO()
     df.write_excel(excel_bytes)
 
     df_read = pl.read_excel(excel_bytes, engine=engine)
     assert_frame_equal(df, df_read)
+
+    # also confirm consistent behaviour when 'infer_schema_length=0'
+    df_read = pl.read_excel(excel_bytes, engine=engine, infer_schema_length=0)
+    expected = pl.DataFrame({"colx": ["1.5", "-2", "0"], "coly": ["a", None, "c"]})
+    assert_frame_equal(expected, df_read)
 
 
 def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> None:
@@ -806,6 +816,7 @@ def test_excel_freeze_panes() -> None:
     [
         (pl.read_excel, "path_xlsx_empty"),
         (pl.read_excel, "path_xlsb_empty"),
+        (pl.read_excel, "path_xls_empty"),
         (pl.read_ods, "path_ods_empty"),
     ],
 )
@@ -814,17 +825,31 @@ def test_excel_empty_sheet(
     source: str,
     request: pytest.FixtureRequest,
 ) -> None:
-    empty_spreadsheet_path = request.getfixturevalue(source)
-    read_spreadsheet = (
-        pl.read_ods  # type: ignore[assignment]
-        if empty_spreadsheet_path.suffix == ".ods"
-        else pl.read_excel
-    )
+    ods = (empty_spreadsheet_path := request.getfixturevalue(source)).suffix == ".ods"
+    read_spreadsheet = pl.read_ods if ods else pl.read_excel  # type: ignore[assignment]
+
     with pytest.raises(NoDataError, match="empty Excel sheet"):
         read_spreadsheet(empty_spreadsheet_path)
 
-    df = read_spreadsheet(empty_spreadsheet_path, raise_if_empty=False)
-    assert_frame_equal(df, pl.DataFrame())
+    engine_params = [{}] if ods else [{"engine": None}, {"engine": "calamine"}]
+    for params in engine_params:
+        df = read_spreadsheet(  # type: ignore[arg-type]
+            empty_spreadsheet_path,
+            sheet_name="no_data",
+            raise_if_empty=False,
+            **params,
+        )
+        expected = pl.DataFrame()
+        assert_frame_equal(df, expected)
+
+        df = read_spreadsheet(  # type: ignore[arg-type]
+            empty_spreadsheet_path,
+            sheet_name="no_rows",
+            raise_if_empty=False,
+            **params,
+        )
+        expected = pl.DataFrame(schema={f"col{c}": pl.String for c in ("x", "y", "z")})
+        assert_frame_equal(df, expected)
 
 
 @pytest.mark.parametrize(

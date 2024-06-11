@@ -72,7 +72,7 @@ impl PhysicalExpr for GatherExpr {
         let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
         let idx = s.list().unwrap();
 
-        let taken = unsafe {
+        let taken = {
             ac.aggregated()
                 .list()
                 .unwrap()

@@ -792,9 +792,9 @@ def test_take_list_15719() -> None:
     )
     df = df.select(
         a_explode=pl.col("a").explode(),
-        a_get=pl.col("a").list.get(0),
+        a_get=pl.col("a").list.get(0, null_on_oob=True),
         b_explode=pl.col("b").explode(),
-        b_get=pl.col("b").list.get(0),
+        b_get=pl.col("b").list.get(0, null_on_oob=True),
     )
 
     expected_schema = pl.List(pl.Int64)

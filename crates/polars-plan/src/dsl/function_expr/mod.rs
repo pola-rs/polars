@@ -62,7 +62,7 @@ mod sign;
 mod strings;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-#[cfg(any(feature = "temporal", feature = "date_offset"))]
+#[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
 pub mod trigonometry;
@@ -148,8 +148,6 @@ pub enum FunctionExpr {
     SearchSorted(SearchSortedSide),
     #[cfg(feature = "range")]
     Range(RangeFunction),
-    #[cfg(feature = "date_offset")]
-    DateOffset,
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
     #[cfg(feature = "trigonometry")]
@@ -413,8 +411,6 @@ impl Hash for FunctionExpr {
             Abs => {},
             Negate => {},
             NullCount => {},
-            #[cfg(feature = "date_offset")]
-            DateOffset => {},
             #[cfg(feature = "arg_where")]
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
@@ -615,8 +611,6 @@ impl Display for FunctionExpr {
             SearchSorted(_) => "search_sorted",
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
-            #[cfg(feature = "date_offset")]
-            DateOffset => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
             Trigonometry(func) => return write!(f, "{func}"),
             #[cfg(feature = "trigonometry")]
@@ -899,11 +893,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             #[cfg(feature = "range")]
             Range(func) => func.into(),
-
-            #[cfg(feature = "date_offset")]
-            DateOffset => {
-                map_as_slice!(temporal::date_offset)
-            },
 
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {

@@ -878,8 +878,8 @@ def test_list_get_with_null() -> None:
     # 2. null element are not stored in `value` array.
     out = df.select(
         # For performance reasons, when-then-otherwise produces the list with layout-1.
-        layout1=pl.when(pl.col("b")).then([1, 2]).list.get(0),
-        layout2=pl.col("a").list.get(0),
+        layout1=pl.when(pl.col("b")).then([1, 2]).list.get(0, null_on_oob=True),
+        layout2=pl.col("a").list.get(0, null_on_oob=True),
     )
 
     expected = pl.DataFrame(
@@ -896,3 +896,20 @@ def test_list_eval_err_raise_15653() -> None:
     df = pl.DataFrame({"foo": [[]]})
     with pytest.raises(pl.StructFieldNotFoundError):
         df.with_columns(bar=pl.col("foo").list.eval(pl.element().struct.field("baz")))
+
+
+def test_list_sum_bool_schema() -> None:
+    q = pl.LazyFrame({"x": [[True, True, False]]})
+    assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
+
+
+def test_list_eval_type_cast_11188() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": None},
+        ],
+        schema={"a": pl.List(pl.Int64)},
+    )
+    assert df.select(
+        pl.col("a").list.eval(pl.element().cast(pl.String)).alias("a_str")
+    ).schema == {"a_str": pl.List(pl.String)}

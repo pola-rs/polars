@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -105,11 +106,13 @@ def test_series_init_ambiguous_datetime() -> None:
     value = datetime(2001, 10, 28, 2)
     dtype = pl.Datetime(time_zone="Europe/Belgrade")
 
-    with pytest.raises(pl.ComputeError, match="ambiguous"):
-        pl.Series([value], dtype=dtype, strict=True)
+    result = pl.Series([value], dtype=dtype, strict=True)
+    expected = pl.Series([datetime(2001, 10, 28, 3)]).dt.replace_time_zone(
+        "Europe/Belgrade"
+    )
+    assert_series_equal(result, expected)
 
     result = pl.Series([value], dtype=dtype, strict=False)
-    expected = pl.Series([None], dtype=dtype)
     assert_series_equal(result, expected)
 
 
@@ -117,11 +120,13 @@ def test_series_init_nonexistent_datetime() -> None:
     value = datetime(2024, 3, 31, 2, 30)
     dtype = pl.Datetime(time_zone="Europe/Amsterdam")
 
-    with pytest.raises(pl.ComputeError, match="non-existent"):
-        pl.Series([value], dtype=dtype, strict=True)
+    result = pl.Series([value], dtype=dtype, strict=True)
+    expected = pl.Series([datetime(2024, 3, 31, 4, 30)]).dt.replace_time_zone(
+        "Europe/Amsterdam"
+    )
+    assert_series_equal(result, expected)
 
     result = pl.Series([value], dtype=dtype, strict=False)
-    expected = pl.Series([None], dtype=dtype)
     assert_series_equal(result, expected)
 
 
@@ -134,3 +139,18 @@ def test_series_init_np_temporal_with_nat_15518() -> None:
 
     expected = pl.Series([date(2020, 1, 1), None, date(2020, 1, 3)])
     assert_series_equal(result, expected)
+
+
+def test_series_init_np_2d_zero_zero_shape() -> None:
+    arr = np.array([]).reshape(0, 0)
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=re.escape("cannot reshape empty array into shape (0, 0)"),
+    ):
+        pl.Series(arr)
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.Series([[]]).dtype == expected
+    assert pl.Series([[]], dtype=pl.List).dtype == expected

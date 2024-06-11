@@ -215,6 +215,7 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
+        assert!(infer_schema_length != Some(0));
         use crate::file::read_if_bytesio;
         py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
@@ -222,7 +223,7 @@ impl PyDataFrame {
         py.allow_threads(move || {
             let mut builder = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::Json)
-                .infer_schema_len(infer_schema_length);
+                .infer_schema_len(infer_schema_length.and_then(NonZeroUsize::new));
 
             if let Some(schema) = schema {
                 builder = builder.with_schema(Arc::new(schema.0));
@@ -232,9 +233,7 @@ impl PyDataFrame {
                 builder = builder.with_schema_overwrite(&schema.0);
             }
 
-            let out = builder
-                .finish()
-                .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+            let out = builder.finish().map_err(PyPolarsErr::from)?;
             Ok(out.into())
         })
     }

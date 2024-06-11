@@ -10,11 +10,11 @@ use polars_plan::prelude::col;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{lit, StrptimeOptions};
 use sqlparser::ast::{
-    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SQLValue,
-    WindowSpec, WindowType,
+    DateTimeField, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Ident,
+    Value as SQLValue, WindowSpec, WindowType,
 };
 
-use crate::sql_expr::{parse_date_part, parse_sql_expr};
+use crate::sql_expr::{parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
@@ -889,7 +889,14 @@ impl SQLFunctionVisitor<'_> {
             },
             DatePart => self.try_visit_binary(|part, e| {
                 match part {
-                    Expr::Literal(LiteralValue::String(p)) => parse_date_part(e, &p),
+                    Expr::Literal(LiteralValue::String(p)) => {
+                        // note: 'DATE_PART' and 'EXTRACT' are minor syntactic
+                        // variations on otherwise identical functionality
+                        parse_extract_date_part(e, &DateTimeField::Custom(Ident {
+                            value: p,
+                            quote_style: None,
+                        }))
+                    },
                     _ => {
                         polars_bail!(SQLSyntax: "invalid 'part' for EXTRACT/DATE_PART: {}", function.args[1]);
                     }
@@ -1336,10 +1343,10 @@ impl FromSQLExpr for f64 {
             SQLExpr::Value(v) => match v {
                 SQLValue::Number(s, _) => s
                     .parse()
-                    .map_err(|_| polars_err!(SQLInterface: "can't parse literal {:?}", s)),
-                _ => polars_bail!(SQLInterface: "can't parse literal {:?}", v),
+                    .map_err(|_| polars_err!(SQLInterface: "cannot parse literal {:?}", s)),
+                _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse literal {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),
         }
     }
 }
@@ -1352,9 +1359,9 @@ impl FromSQLExpr for bool {
         match expr {
             SQLExpr::Value(v) => match v {
                 SQLValue::Boolean(v) => Ok(*v),
-                _ => polars_bail!(SQLInterface: "can't parse boolean {:?}", v),
+                _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse boolean {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse boolean {:?}", expr),
         }
     }
 }
@@ -1367,9 +1374,9 @@ impl FromSQLExpr for String {
         match expr {
             SQLExpr::Value(v) => match v {
                 SQLValue::SingleQuotedString(s) => Ok(s.clone()),
-                _ => polars_bail!(SQLInterface: "can't parse literal {:?}", v),
+                _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse literal {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),
         }
     }
 }
@@ -1385,9 +1392,9 @@ impl FromSQLExpr for StrptimeOptions {
                     format: Some(s.clone()),
                     ..StrptimeOptions::default()
                 }),
-                _ => polars_bail!(SQLInterface: "can't parse literal {:?}", v),
+                _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(SQLInterface: "can't parse literal {:?}", expr),
+            _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),
         }
     }
 }

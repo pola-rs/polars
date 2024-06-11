@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
@@ -131,7 +130,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     # conversion of Date to Datetime with specified timezone and units
     tu: TimeUnit = "ms"
     tz = "America/Argentina/Rio_Gallegos"
-    s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu, tz))
+    s = pl.Series(
+        [date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu)
+    ).dt.replace_time_zone(tz)
     d1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo(tz))
     d2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo(tz))
     assert s.to_list() == [d1, d2]
@@ -1566,98 +1567,6 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
         ]
     expected = pl.Series("a", expected_values)
     assert_series_equal(a.cast(Time), expected)
-
-
-def test_reshape() -> None:
-    s = pl.Series("a", [1, 2, 3, 4])
-    out = s.reshape((-1, 2))
-    expected = pl.Series("a", [[1, 2], [3, 4]])
-    assert_series_equal(out, expected)
-    out = s.reshape((2, 2))
-    assert_series_equal(out, expected)
-    out = s.reshape((2, -1))
-    assert_series_equal(out, expected)
-
-    out = s.reshape((-1, 1))
-    expected = pl.Series("a", [[1], [2], [3], [4]])
-    assert_series_equal(out, expected)
-    out = s.reshape((4, -1))
-    assert_series_equal(out, expected)
-    out = s.reshape((-1, -1))
-    assert_series_equal(out, expected)
-    out = s.reshape((4, 1))
-    assert_series_equal(out, expected)
-
-    # single dimension
-    out = s.reshape((4,))
-    assert_series_equal(out, s)
-    out = s.reshape((-1,))
-    assert_series_equal(out, s)
-
-    # test lazy_dispatch
-    out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
-    assert_series_equal(out, expected)
-
-    # invalid (empty) dimensions
-    with pytest.raises(ComputeError, match="reshape `dimensions` cannot be empty"):
-        s.reshape(())
-
-
-@pytest.mark.parametrize(
-    "shape",
-    [(1, 3), (5, 1), (-1, 5), (3, -1), (-1, 0), (0, 0), (0, -1), (-2, -2), (3,)],
-)
-def test_reshape_invalid(shape: tuple[int]) -> None:
-    s = pl.Series("a", [1, 2, 3, 4])
-    with pytest.raises(
-        ComputeError, match=re.escape(f"cannot reshape len 4 into shape {list(shape)}")
-    ):
-        s.reshape(shape)
-
-
-@pytest.mark.parametrize(
-    "shape",
-    [(0, 0), (-1, 0), (0, -1), (-1, -1)],
-)
-def test_reshape_empty_valid_2d(shape: tuple[int]) -> None:
-    s = pl.Series("a", [], dtype=pl.Int64)
-    out = s.reshape(shape)
-    expected = pl.Series("a", [], dtype=pl.List(pl.Int64))
-    assert_series_equal(out, expected)
-
-
-@pytest.mark.parametrize(
-    "shape",
-    [(0,), (-1,)],
-)
-def test_reshape_empty_valid_1d(shape: tuple[int]) -> None:
-    s = pl.Series("a", [], dtype=pl.Int64)
-    out = s.reshape(shape)
-    assert_series_equal(out, s)
-
-
-@pytest.mark.parametrize(
-    "shape",
-    [(0, 1), (1, 0), (1, -1), (-1, 1), (-2, -2)],
-)
-def test_reshape_empty_invalid_2d(shape: tuple[int]) -> None:
-    s = pl.Series("a", [], dtype=pl.Int64)
-    with pytest.raises(
-        ComputeError, match=re.escape(f"cannot reshape len 0 into shape {list(shape)}")
-    ):
-        s.reshape(shape)
-
-
-@pytest.mark.parametrize(
-    "shape",
-    [(1,), (2,), (-2,)],
-)
-def test_reshape_empty_invalid_1d(shape: tuple[int]) -> None:
-    s = pl.Series("a", [], dtype=pl.Int64)
-    with pytest.raises(
-        ComputeError, match=re.escape(f"cannot reshape len 0 into shape {list(shape)}")
-    ):
-        s.reshape(shape)
 
 
 def test_init_categorical() -> None:

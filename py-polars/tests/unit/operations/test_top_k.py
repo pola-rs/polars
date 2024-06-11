@@ -81,12 +81,12 @@ def test_top_k() -> None:
     )
 
     assert_frame_equal(
-        df.top_k(3, by=["a", "b"], descending=True),
+        df.top_k(3, by=["a", "b"], reverse=True),
         pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
         check_row_order=False,
     )
     assert_frame_equal(
-        df.bottom_k(4, by=["a", "b"], descending=True),
+        df.bottom_k(4, by=["a", "b"], reverse=True),
         pl.DataFrame({"a": [4, 3, 2, 2], "b": [4, 1, 3, 2]}),
         check_row_order=False,
     )
@@ -117,8 +117,8 @@ def test_top_k() -> None:
 
     assert_frame_equal(
         df2.select(
-            pl.col("a", "b").top_k_by("a", 2, descending=True).name.suffix("_top_by_a"),
-            pl.col("a", "b").top_k_by("b", 2, descending=True).name.suffix("_top_by_b"),
+            pl.col("a", "b").top_k_by("a", 2, reverse=True).name.suffix("_top_by_a"),
+            pl.col("a", "b").top_k_by("b", 2, reverse=True).name.suffix("_top_by_b"),
         ),
         pl.DataFrame(
             {
@@ -150,10 +150,10 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.select(
             pl.col("a", "b")
-            .bottom_k_by("a", 2, descending=True)
+            .bottom_k_by("a", 2, reverse=True)
             .name.suffix("_bottom_by_a"),
             pl.col("a", "b")
-            .bottom_k_by("b", 2, descending=True)
+            .bottom_k_by("b", 2, reverse=True)
             .name.suffix("_bottom_by_b"),
         ),
         pl.DataFrame(
@@ -238,10 +238,10 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.select(
             pl.col("a", "b", "c")
-            .top_k_by(["c", "a"], 2, descending=[True, False])
+            .top_k_by(["c", "a"], 2, reverse=[True, False])
             .name.suffix("_top_by_ca"),
             pl.col("a", "b", "c")
-            .top_k_by(["c", "b"], 2, descending=[True, False])
+            .top_k_by(["c", "b"], 2, reverse=[True, False])
             .name.suffix("_top_by_cb"),
         ),
         pl.DataFrame(
@@ -260,10 +260,10 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.select(
             pl.col("a", "b", "c")
-            .bottom_k_by(["c", "a"], 2, descending=[True, False])
+            .bottom_k_by(["c", "a"], 2, reverse=[True, False])
             .name.suffix("_bottom_by_ca"),
             pl.col("a", "b", "c")
-            .bottom_k_by(["c", "b"], 2, descending=[True, False])
+            .bottom_k_by(["c", "b"], 2, reverse=[True, False])
             .name.suffix("_bottom_by_cb"),
         ),
         pl.DataFrame(
@@ -282,10 +282,10 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.select(
             pl.col("a", "b", "c")
-            .top_k_by(["c", "a"], 2, descending=[False, True])
+            .top_k_by(["c", "a"], 2, reverse=[False, True])
             .name.suffix("_top_by_ca"),
             pl.col("a", "b", "c")
-            .top_k_by(["c", "b"], 2, descending=[False, True])
+            .top_k_by(["c", "b"], 2, reverse=[False, True])
             .name.suffix("_top_by_cb"),
         ),
         pl.DataFrame(
@@ -304,10 +304,10 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.select(
             pl.col("a", "b", "c")
-            .top_k_by(["c", "a"], 2, descending=[False, True])
+            .top_k_by(["c", "a"], 2, reverse=[False, True])
             .name.suffix("_bottom_by_ca"),
             pl.col("a", "b", "c")
-            .top_k_by(["c", "b"], 2, descending=[False, True])
+            .top_k_by(["c", "b"], 2, reverse=[False, True])
             .name.suffix("_bottom_by_cb"),
         ),
         pl.DataFrame(
@@ -325,29 +325,29 @@ def test_top_k() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)",
+        match=r"the length of `reverse` \(2\) does not match the length of `by` \(1\)",
     ):
-        df2.select(pl.all().top_k_by("a", 2, descending=[True, False]))
+        df2.select(pl.all().top_k_by("a", 2, reverse=[True, False]))
 
     with pytest.raises(
         ValueError,
-        match=r"the length of `descending` \(2\) does not match the length of `by` \(1\)",
+        match=r"the length of `reverse` \(2\) does not match the length of `by` \(1\)",
     ):
-        df2.select(pl.all().bottom_k_by("a", 2, descending=[True, False]))
+        df2.select(pl.all().bottom_k_by("a", 2, reverse=[True, False]))
 
 
-def test_top_k_descending() -> None:
+def test_top_k_reverse() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    result = df.top_k(1, by=["a", "b"], descending=True)
+    result = df.top_k(1, by=["a", "b"], reverse=True)
     expected = pl.DataFrame({"a": [1], "b": [4]})
     assert_frame_equal(result, expected, check_row_order=False)
-    result = df.top_k(1, by=["a", "b"], descending=[True, True])
+    result = df.top_k(1, by=["a", "b"], reverse=[True, True])
     assert_frame_equal(result, expected, check_row_order=False)
     with pytest.raises(
         ValueError,
-        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+        match=r"the length of `reverse` \(1\) does not match the length of `by` \(2\)",
     ):
-        df.top_k(1, by=["a", "b"], descending=[True])
+        df.top_k(1, by=["a", "b"], reverse=[True])
 
 
 def test_top_k_9385() -> None:
@@ -393,3 +393,8 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
 
     result = s.bottom_k(s.len() * 2)
     assert_series_equal(result, s, check_order=False)
+
+
+def test_top_k_descending_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]

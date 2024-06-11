@@ -126,6 +126,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         out.into_series()
     }
 
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b): (Vec<_>, Vec<_>) = self.0.fields().iter().map(|s| s.split_at(offset)).unzip();
+
+        let a = StructChunked::new(self.name(), &a).unwrap();
+        let b = StructChunked::new(self.name(), &b).unwrap();
+        (a.into_series(), b.into_series())
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
         if self.is_empty() {

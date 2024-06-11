@@ -59,59 +59,61 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
     // TODO: add fast path for smaller ints?
-    let mut out = match inner_dtype {
-        Boolean => {
-            let out: IdxCa = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        UInt32 => {
-            let out: UInt32Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        UInt64 => {
-            let out: UInt64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        Int32 => {
-            let out: Int32Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        Int64 => {
-            let out: Int64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        Float32 => {
-            let out: Float32Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        Float64 => {
-            let out: Float64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                .collect();
-            out.into_series()
-        },
-        _ => {
-            polars_bail!(ComputeError: "summing array with dtype: {} not yet supported", ca.dtype())
-        },
+    let mut out = {
+        match inner_dtype {
+            Boolean => {
+                let out: IdxCa = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            UInt32 => {
+                let out: UInt32Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            UInt64 => {
+                let out: UInt64Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            Int32 => {
+                let out: Int32Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            Int64 => {
+                let out: Int64Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            Float32 => {
+                let out: Float32Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            Float64 => {
+                let out: Float64Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
+            _ => {
+                polars_bail!(ComputeError: "summing array with dtype: {} not yet supported", ca.dtype())
+            },
+        }
     };
     out.rename(ca.name());
     Ok(out)

@@ -213,14 +213,14 @@ impl DateLikeNameSpace {
     }
 
     /// Roll backward to the first day of the month.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_start")]
     pub fn month_start(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
     }
 
     /// Roll forward to the last day of the month.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_end")]
     pub fn month_end(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
@@ -252,10 +252,14 @@ impl DateLikeNameSpace {
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "offset_by")]
     pub fn offset_by(self, by: Expr) -> Expr {
-        self.0
-            .map_many_private(FunctionExpr::DateOffset, &[by], false, false)
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::OffsetBy),
+            &[by],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "timezones")]

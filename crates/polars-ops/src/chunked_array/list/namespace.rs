@@ -136,8 +136,7 @@ pub trait ListNameSpaceImpl: AsList {
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca.amortized_iter()
                 .zip(separator)
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
@@ -428,8 +427,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
-            // SAFETY: unstable series never lives longer than the iterator.
-            unsafe {
+            {
                 list_ca
                     .amortized_iter()
                     .map(|s| {
@@ -451,8 +449,7 @@ pub trait ListNameSpaceImpl: AsList {
         match idx.dtype() {
             List(_) => {
                 let idx_ca = idx.list().unwrap();
-                // SAFETY: unstable series never lives longer than the iterator.
-                let mut out = unsafe {
+                let mut out = {
                     list_ca
                         .amortized_iter()
                         .zip(idx_ca)
@@ -479,8 +476,7 @@ pub trait ListNameSpaceImpl: AsList {
                     if min >= 0 {
                         index_typed_index(idx)
                     } else {
-                        // SAFETY: unstable series never lives longer than the iterator.
-                        let mut out = unsafe {
+                        let mut out = {
                             list_ca
                                 .amortized_iter()
                                 .map(|opt_s| {
@@ -684,8 +680,7 @@ pub trait ListNameSpaceImpl: AsList {
             let mut iters = Vec::with_capacity(other_len + 1);
 
             for s in other.iter_mut() {
-                // SAFETY: unstable series never lives longer than the iterator.
-                iters.push(unsafe { s.list()?.amortized_iter() })
+                iters.push(s.list()?.amortized_iter())
             }
             let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
             let mut builder = get_list_builder(

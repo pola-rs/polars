@@ -629,7 +629,7 @@ def _sequence_of_series_to_pydf(
             s = s.alias(column_names[i])
         new_dtype = schema_overrides.get(column_names[i])
         if new_dtype and new_dtype != s.dtype:
-            s = s.cast(new_dtype, strict=strict, allow_overflow=False)
+            s = s.cast(new_dtype, strict=strict, wrap_numerical=False)
         data_series.append(s._s)
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
@@ -766,7 +766,7 @@ def _sequence_of_pandas_to_pydf(
         pyseries = plc.pandas_to_pyseries(name=name, values=s)
         dtype = schema_overrides.get(name)
         if dtype is not None and dtype != pyseries.dtype():
-            pyseries = pyseries.cast(dtype, strict=strict, allow_overflow=False)
+            pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         data_series.append(pyseries)
 
     return PyDataFrame(data_series)
@@ -1354,7 +1354,7 @@ def series_to_pydf(
         new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
             data_series[0] = data_series[0].cast(
-                new_dtype, strict=strict, allow_overflow=False
+                new_dtype, strict=strict, wrap_numerical=False
             )
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
@@ -1381,7 +1381,7 @@ def dataframe_to_pydf(
         for name, new_dtype in schema_overrides.items():
             if new_dtype != existing_schema[name]:
                 data_series[name] = data_series[name].cast(
-                    new_dtype, strict=strict, allow_overflow=False
+                    new_dtype, strict=strict, wrap_numerical=False
                 )
 
     series_cols = _handle_columns_arg(list(data_series.values()), columns=column_names)

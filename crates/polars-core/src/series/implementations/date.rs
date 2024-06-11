@@ -165,6 +165,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_date().into_series()
     }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_date().into_series(), b.into_date().into_series())
+    }
 
     fn mean(&self) -> Option<f64> {
         self.0.mean()
@@ -325,11 +329,14 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av = AnyValue::from(self.median().map(|v| v as i64))
-            .cast(self.dtype())
-            .into_static()
-            .unwrap();
-        Ok(Scalar::new(self.dtype().clone(), av))
+        let av: AnyValue = self
+            .median()
+            .map(|v| (v * (MS_IN_DAY as f64)) as i64)
+            .into();
+        Ok(Scalar::new(
+            DataType::Datetime(TimeUnit::Milliseconds, None),
+            av,
+        ))
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

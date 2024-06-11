@@ -9,7 +9,9 @@ use rayon::prelude::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{slice_offsets, split_ca, split_df, try_get_supertype, NoNull};
+#[cfg(feature = "row_hash")]
+use crate::utils::split_df;
+use crate::utils::{slice_offsets, try_get_supertype, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -462,6 +464,13 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
+        // Fast check. It is also needed for correctness, as code below doesn't check if the number
+        // of chunks is equal.
+        if !self.get_columns().iter().map(|s| s.n_chunks()).all_equal() {
+            return true;
+        }
+
+        // From here we check chunk lengths.
         let mut chunk_lengths = self.columns.iter().map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
@@ -1623,36 +1632,6 @@ impl DataFrame {
         opt_idx.and_then(|idx| self.select_at_idx_mut(idx))
     }
 
-    /// Does a filter but splits thread chunks vertically instead of horizontally
-    /// This yields a DataFrame with `n_chunks == n_threads`.
-    fn filter_vertical(&mut self, mask: &BooleanChunked) -> PolarsResult<Self> {
-        let n_threads = POOL.current_num_threads();
-
-        let masks = split_ca(mask, n_threads).unwrap();
-        let dfs = split_df(self, n_threads, false);
-        let dfs: PolarsResult<Vec<_>> = POOL.install(|| {
-            masks
-                .par_iter()
-                .zip(dfs)
-                .map(|(mask, df)| {
-                    let cols = df
-                        .columns
-                        .iter()
-                        .map(|s| s.filter(mask))
-                        .collect::<PolarsResult<_>>()?;
-                    Ok(unsafe { DataFrame::new_no_checks(cols) })
-                })
-                .collect()
-        });
-
-        let mut iter = dfs?.into_iter();
-        let first = iter.next().unwrap();
-        Ok(iter.fold(first, |mut acc, df| {
-            acc.vstack_mut(&df).unwrap();
-            acc
-        }))
-    }
-
     /// Take the [`DataFrame`] rows by a boolean mask.
     ///
     /// # Example
@@ -1665,9 +1644,6 @@ impl DataFrame {
     /// }
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
-        if std::env::var("POLARS_VERT_PAR").is_ok() {
-            return self.clone().filter_vertical(mask);
-        }
         let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
         Ok(unsafe { DataFrame::new_no_checks(new_col) })
     }
@@ -2255,6 +2231,14 @@ impl DataFrame {
             .map(|s| s.slice(offset, length))
             .collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(col) }
+    }
+
+    /// Split [`DataFrame`] at the given `offset`.
+    pub fn split_at(&self, offset: i64) -> (Self, Self) {
+        let (a, b) = self.columns.iter().map(|s| s.split_at(offset)).unzip();
+        let a = unsafe { DataFrame::new_no_checks(a) };
+        let b = unsafe { DataFrame::new_no_checks(b) };
+        (a, b)
     }
 
     pub fn clear(&self) -> Self {

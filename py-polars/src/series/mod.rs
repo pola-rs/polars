@@ -126,13 +126,11 @@ impl PySeries {
         })
     }
 
-    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> PyResult<Self> {
-        let out = if is_list {
-            self.series.reshape_list(&dims)
-        } else {
-            self.series.reshape_array(&dims)
-        }
-        .map_err(PyPolarsErr::from)?;
+    fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
+        let out = self
+            .series
+            .reshape_array(&dims)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
@@ -710,8 +708,8 @@ impl PySeries {
         Ok(out)
     }
 
-    fn cast(&self, dtype: Wrap<DataType>, strict: bool, allow_overflow: bool) -> PyResult<Self> {
-        let options = if allow_overflow {
+    fn cast(&self, dtype: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> PyResult<Self> {
+        let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
             CastOptions::Strict

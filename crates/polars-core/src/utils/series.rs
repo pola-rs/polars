@@ -1,21 +1,23 @@
-use crate::prelude::*;
-use crate::series::unstable::UnstableSeries;
+use std::rc::Rc;
 
-/// A utility that allocates an [`UnstableSeries`]. The applied function can then use that
+use crate::prelude::*;
+use crate::series::amortized_iter::AmortSeries;
+
+/// A utility that allocates an [`AmortSeries`]. The applied function can then use that
 /// series container to save heap allocations and swap arrow arrays.
 pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
 where
-    F: Fn(&mut UnstableSeries) -> T,
+    F: Fn(&mut AmortSeries) -> T,
 {
-    let mut container = Series::full_null("", 0, dtype);
-    let mut us = UnstableSeries::new(&mut container);
+    let container = Series::full_null("", 0, dtype);
+    let mut us = AmortSeries::new(Rc::new(container));
 
     f(&mut us)
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     let failure_mask = !input.is_null() & output.is_null();
-    let failures = input.filter_threaded(&failure_mask, false)?;
+    let failures = input.filter(&failure_mask)?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {

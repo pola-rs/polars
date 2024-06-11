@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
@@ -19,6 +20,12 @@ DATETIME_DTYPES: set[pl.PolarsDataType] = {
 TEMPORAL_DTYPES: set[pl.PolarsDataType] = (
     {pl.Date, pl.Time} | pl.DURATION_DTYPES | DATETIME_DTYPES
 )
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @given(
@@ -89,11 +96,12 @@ def test_series_from_buffers_boolean() -> None:
 
 def test_series_from_buffers_datetime() -> None:
     dtype = pl.Datetime(time_zone="Europe/Amsterdam")
+    tzinfo = ZoneInfo("Europe/Amsterdam")
     data = pl.Series(
         [
-            datetime(2022, 2, 10, 6),
-            datetime(2022, 2, 11, 12),
-            datetime(2022, 2, 12, 18),
+            datetime(2022, 2, 10, 6, tzinfo=tzinfo),
+            datetime(2022, 2, 11, 12, tzinfo=tzinfo),
+            datetime(2022, 2, 12, 18, tzinfo=tzinfo),
         ],
         dtype=dtype,
     ).cast(pl.Int64)
@@ -103,9 +111,9 @@ def test_series_from_buffers_datetime() -> None:
 
     expected = pl.Series(
         [
-            datetime(2022, 2, 10, 6),
+            datetime(2022, 2, 10, 6, tzinfo=tzinfo),
             None,
-            datetime(2022, 2, 12, 18),
+            datetime(2022, 2, 12, 18, tzinfo=tzinfo),
         ],
         dtype=dtype,
     )

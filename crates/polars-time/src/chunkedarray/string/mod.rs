@@ -221,7 +221,7 @@ pub trait StringMethods: AsString {
                 NonExistent::Raise,
             ),
             #[cfg(feature = "timezones")]
-            (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
+            (true, tz) => Ok(ca.into_datetime(tu, tz.cloned().or_else(|| Some("UTC".to_string())))),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -305,7 +305,10 @@ pub trait StringMethods: AsString {
                 Ok(string_ca
                     .apply_generic(|opt_s| convert.eval(opt_s?, use_cache))
                     .with_name(string_ca.name())
-                    .into_datetime(tu, Some("UTC".to_string())))
+                    .into_datetime(
+                        tu,
+                        Some(tz.map(|x| x.to_string()).unwrap_or("UTC".to_string())),
+                    ))
             }
             #[cfg(not(feature = "timezones"))]
             {

@@ -11,7 +11,7 @@ mod categorical;
 use std::cmp::Ordering;
 
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
@@ -43,23 +43,42 @@ where
     }
 }
 
-#[inline]
-fn sort_unstable_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
+fn sort_unstable_by_branch<T, C>(slice: &mut [T], options: SortOptions, cmp: C)
 where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
-    if parallel {
-        POOL.install(|| match descending {
+    if options.multithreaded {
+        POOL.install(|| match options.descending {
             true => slice.par_sort_unstable_by(|a, b| cmp(b, a)),
             false => slice.par_sort_unstable_by(cmp),
         })
     } else {
-        match descending {
+        match options.descending {
             true => slice.sort_unstable_by(|a, b| cmp(b, a)),
             false => slice.sort_unstable_by(cmp),
         }
     }
+}
+
+// Reduce monomorphisation.
+fn sort_impl_unstable<T>(vals: &mut [T], options: SortOptions)
+where
+    T: TotalOrd + Send + Sync,
+{
+    sort_unstable_by_branch(vals, options, TotalOrd::tot_cmp);
+}
+
+fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
+    let mut validity = MutableBitmap::with_capacity(len);
+    if nulls_last {
+        validity.extend_constant(len - null_count, true);
+        validity.extend_constant(null_count, false);
+    } else {
+        validity.extend_constant(null_count, false);
+        validity.extend_constant(len - null_count, true);
+    }
+    validity.into()
 }
 
 macro_rules! sort_with_fast_path {
@@ -103,12 +122,7 @@ where
     if ca.null_count() == 0 {
         let mut vals = ca.to_vec_null_aware().left().unwrap();
 
-        sort_unstable_by_branch(
-            vals.as_mut_slice(),
-            options.descending,
-            TotalOrd::tot_cmp,
-            options.multithreaded,
-        );
+        sort_impl_unstable(vals.as_mut_slice(), options);
 
         let mut ca = ChunkedArray::from_vec(ca.name(), vals);
         let s = if options.descending {
@@ -139,27 +153,16 @@ where
             &mut vals[null_count..]
         };
 
-        sort_unstable_by_branch(
-            mut_slice,
-            options.descending,
-            TotalOrd::tot_cmp,
-            options.multithreaded,
-        );
+        sort_impl_unstable(mut_slice, options);
 
-        let mut validity = MutableBitmap::with_capacity(len);
         if options.nulls_last {
             vals.extend(std::iter::repeat(T::Native::default()).take(ca.null_count()));
-            validity.extend_constant(len - null_count, true);
-            validity.extend_constant(null_count, false);
-        } else {
-            validity.extend_constant(null_count, false);
-            validity.extend_constant(len - null_count, true);
-        };
+        }
 
         let arr = PrimitiveArray::new(
             T::get_dtype().to_arrow(true),
             vals.into(),
-            Some(validity.into()),
+            Some(create_validity(len, null_count, options.nulls_last)),
         );
         let mut new_ca = ChunkedArray::with_chunk(ca.name(), arr);
         let s = if options.descending {
@@ -176,31 +179,11 @@ fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
 {
-    let descending = options.descending;
     if ca.null_count() == 0 {
-        let mut vals = Vec::with_capacity(ca.len());
-        let mut count: IdxSize = 0;
-        ca.downcast_iter().for_each(|arr| {
-            let values = arr.values();
-            let iter = values.iter().map(|&v| {
-                let i = count;
-                count += 1;
-                (i, v)
-            });
-            vals.extend_trusted_len(iter);
-        });
-
-        sort_by_branch(
-            vals.as_mut_slice(),
-            descending,
-            |a, b| a.1.tot_cmp(&b.1),
-            options.multithreaded,
-        );
-
-        let out: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut out = out.into_inner();
-        out.rename(ca.name());
-        out
+        let iter = ca
+            .downcast_iter()
+            .map(|arr| arr.values().as_slice().iter().copied());
+        arg_sort::arg_sort_no_nulls(ca.name(), iter, options, ca.len())
     } else {
         let iter = ca
             .downcast_iter()
@@ -332,42 +315,73 @@ impl ChunkSort<StringType> for StringChunked {
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BinaryType> {
         sort_with_fast_path!(self, options);
+        // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
+        // We must rechunk to ensure that all views point into the proper buffers.
+        let ca = self.rechunk();
+        let arr = ca.downcast_into_array();
 
-        let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
-        for arr in self.downcast_iter() {
-            v.extend(arr.non_null_values_iter());
-        }
-        sort_unstable_by_branch(
-            v.as_mut_slice(),
-            options.descending,
-            Ord::cmp,
-            options.multithreaded,
-        );
+        let (views, buffers, mut validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+        let mut views = views.make_mut();
 
-        let len = self.len();
-        let null_count = self.null_count();
-        let mut mutable = MutableBinaryViewArray::with_capacity(len);
-
-        if options.nulls_last {
-            for row in v {
-                mutable.push_value_ignore_validity(row)
+        let partitioned_part = if let Some(bitmap) = &validity {
+            // Partition null last first
+            let mut out_len = 0;
+            for idx in bitmap.true_idx_iter() {
+                unsafe { *views.get_unchecked_mut(out_len) = *views.get_unchecked(idx) };
+                out_len += 1;
             }
-            mutable.extend_null(null_count);
+            let valid_count = out_len;
+            let null_count = views.len() - valid_count;
+            validity = Some(create_validity(
+                bitmap.len(),
+                bitmap.unset_bits(),
+                options.nulls_last,
+            ));
+
+            // Views are correctly partitioned.
+            if options.nulls_last {
+                &mut views[..valid_count]
+            }
+            // We need to swap the ends.
+            else {
+                // swap nulls with end
+                let mut end = views.len() - 1;
+
+                for i in 0..null_count {
+                    unsafe { *views.get_unchecked_mut(end) = *views.get_unchecked(i) };
+                    end = end.saturating_sub(1);
+                }
+                &mut views[null_count..]
+            }
         } else {
-            mutable.extend_null(null_count);
-            for row in v {
-                mutable.push_value(row)
-            }
-        }
-        let mut ca = ChunkedArray::with_chunk(self.name(), mutable.into());
+            views.as_mut_slice()
+        };
+
+        sort_unstable_by_branch(partitioned_part, options, |a, b| unsafe {
+            a.get_slice_unchecked(&buffers)
+                .tot_cmp(&b.get_slice_unchecked(&buffers))
+        });
+
+        let array = unsafe {
+            BinaryViewArray::new_unchecked(
+                ArrowDataType::BinaryView,
+                views.into(),
+                buffers,
+                validity,
+                total_bytes_len,
+                total_buffer_len,
+            )
+        };
+
+        let mut out = Self::with_chunk_like(self, array);
 
         let s = if options.descending {
             IsSorted::Descending
         } else {
             IsSorted::Ascending
         };
-        ca.set_sorted_flag(s);
-        ca
+        out.set_sorted_flag(s);
+        out
     }
 
     fn sort(&self, descending: bool) -> ChunkedArray<BinaryType> {
@@ -380,13 +394,22 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort::arg_sort(
-            self.name(),
-            self.downcast_iter().map(|arr| arr.iter()),
-            options,
-            self.null_count(),
-            self.len(),
-        )
+        if self.null_count() == 0 {
+            arg_sort::arg_sort_no_nulls(
+                self.name(),
+                self.downcast_iter().map(|arr| arr.values_iter()),
+                options,
+                self.len(),
+            )
+        } else {
+            arg_sort::arg_sort(
+                self.name(),
+                self.downcast_iter().map(|arr| arr.iter()),
+                options,
+                self.null_count(),
+                self.len(),
+            )
+        }
     }
 
     fn arg_sort_multiple(
@@ -420,12 +443,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             v.extend(arr.non_null_values_iter());
         }
 
-        sort_unstable_by_branch(
-            v.as_mut_slice(),
-            options.descending,
-            Ord::cmp,
-            options.multithreaded,
-        );
+        sort_impl_unstable(v.as_mut_slice(), options);
 
         let mut values = Vec::<u8>::with_capacity(self.get_values_size());
         let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
@@ -453,9 +471,6 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                     length_so_far = values.len() as i64;
                     offsets.push(length_so_far);
                 }
-                let mut validity = MutableBitmap::with_capacity(len);
-                validity.extend_constant(len - null_count, true);
-                validity.extend_constant(null_count, false);
                 offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 // SAFETY: offsets are correctly created.
@@ -463,15 +478,12 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                     BinaryArray::from_data_unchecked_default(
                         offsets.into(),
                         values.into(),
-                        Some(validity.into()),
+                        Some(create_validity(len, null_count, true)),
                     )
                 };
                 ChunkedArray::with_chunk(self.name(), arr)
             },
             (_, false) => {
-                let mut validity = MutableBitmap::with_capacity(len);
-                validity.extend_constant(null_count, false);
-                validity.extend_constant(len - null_count, true);
                 offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 for val in v {
@@ -485,7 +497,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                     BinaryArray::from_data_unchecked_default(
                         offsets.into(),
                         values.into(),
-                        Some(validity.into()),
+                        Some(create_validity(len, null_count, false)),
                     )
                 };
                 ChunkedArray::with_chunk(self.name(), arr)
@@ -511,13 +523,22 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort::arg_sort(
-            self.name(),
-            self.downcast_iter().map(|arr| arr.iter()),
-            options,
-            self.null_count(),
-            self.len(),
-        )
+        if self.null_count() == 0 {
+            arg_sort::arg_sort_no_nulls(
+                self.name(),
+                self.downcast_iter().map(|arr| arr.values_iter()),
+                options,
+                self.len(),
+            )
+        } else {
+            arg_sort::arg_sort(
+                self.name(),
+                self.downcast_iter().map(|arr| arr.iter()),
+                options,
+                self.null_count(),
+                self.len(),
+            )
+        }
     }
 
     /// # Panics
@@ -609,13 +630,22 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort::arg_sort(
-            self.name(),
-            self.downcast_iter().map(|arr| arr.iter()),
-            options,
-            self.null_count(),
-            self.len(),
-        )
+        if self.null_count() == 0 {
+            arg_sort::arg_sort_no_nulls(
+                self.name(),
+                self.downcast_iter().map(|arr| arr.values_iter()),
+                options,
+                self.len(),
+            )
+        } else {
+            arg_sort::arg_sort(
+                self.name(),
+                self.downcast_iter().map(|arr| arr.iter()),
+                options,
+                self.null_count(),
+                self.len(),
+            )
+        }
     }
     fn arg_sort_multiple(
         &self,

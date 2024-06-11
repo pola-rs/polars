@@ -26,7 +26,11 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
-from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -44,7 +48,6 @@ from polars._utils.various import (
 )
 from polars.datatypes import (
     Int64,
-    List,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -76,7 +79,6 @@ if TYPE_CHECKING:
     from polars._utils.various import (
         NoDefault,
     )
-    from polars.datatypes import Array
     from polars.type_aliases import (
         ClosedInterval,
         FillNullStrategy,
@@ -1708,9 +1710,9 @@ class Expr:
         dtype: PolarsDataType | type[Any],
         *,
         strict: bool = True,
-        allow_overflow: bool = False,
+        wrap_numerical: bool = False,
     ) -> Self:
-        """
+        r"""
         Cast between data types.
 
         Parameters
@@ -1718,10 +1720,10 @@ class Expr:
         dtype
             DataType to cast to.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
-        allow_overflow
-            Don't check for numeric overflow and instead do a `wrapping` numeric cast.
+            If True invalid casts generate exceptions instead of `null`\s.
+        wrap_numerical
+            If True numeric casts wrap overflowing values instead of
+            marking the cast as invalid.
 
         Examples
         --------
@@ -1747,7 +1749,7 @@ class Expr:
         └─────┴─────┘
         """
         dtype = py_type_to_dtype(dtype)
-        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, allow_overflow))
+        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
@@ -1876,18 +1878,19 @@ class Expr:
         k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.top_k(k))
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         k: int | IntoExprColumn = 5,
         *,
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         r"""
         Return the elements corresponding to the `k` largest elements of the `by` column(s).
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -1902,7 +1905,7 @@ class Expr:
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
-        descending
+        reverse
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
@@ -1957,10 +1960,10 @@ class Expr:
 
         >>> df.select(
         ...     pl.all()
-        ...     .top_k_by(["c", "a"], 2, descending=[False, True])
+        ...     .top_k_by(["c", "a"], 2, reverse=[False, True])
         ...     .name.suffix("_by_ca"),
         ...     pl.all()
-        ...     .top_k_by(["c", "b"], 2, descending=[False, True])
+        ...     .top_k_by(["c", "b"], 2, reverse=[False, True])
         ...     .name.suffix("_by_cb"),
         ... )
         shape: (2, 6)
@@ -1995,8 +1998,8 @@ class Expr:
         """  # noqa: W505
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, descending=descending))
+        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, reverse=reverse))
 
     def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
@@ -2048,18 +2051,19 @@ class Expr:
         k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
+    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def bottom_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         k: int | IntoExprColumn = 5,
         *,
-        descending: bool | Sequence[bool] = False,
+        reverse: bool | Sequence[bool] = False,
     ) -> Self:
         r"""
         Return the elements corresponding to the `k` smallest elements of the `by` column(s).
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `descending`. The output is not guaranteed to be in any
+        the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
@@ -2074,7 +2078,7 @@ class Expr:
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
-        descending
+        reverse
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
@@ -2129,10 +2133,10 @@ class Expr:
 
         >>> df.select(
         ...     pl.all()
-        ...     .bottom_k_by(["c", "a"], 2, descending=[False, True])
+        ...     .bottom_k_by(["c", "a"], 2, reverse=[False, True])
         ...     .name.suffix("_by_ca"),
         ...     pl.all()
-        ...     .bottom_k_by(["c", "b"], 2, descending=[False, True])
+        ...     .bottom_k_by(["c", "b"], 2, reverse=[False, True])
         ...     .name.suffix("_by_cb"),
         ... )
         shape: (2, 6)
@@ -2167,10 +2171,8 @@ class Expr:
         """  # noqa: W505
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        descending = extend_bool(descending, len(by), "descending", "by")
-        return self._from_pyexpr(
-            self._pyexpr.bottom_k_by(by, k=k, descending=descending)
-        )
+        reverse = extend_bool(reverse, len(by), "reverse", "by")
+        return self._from_pyexpr(self._pyexpr.bottom_k_by(by, k=k, reverse=reverse))
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
@@ -5540,6 +5542,9 @@ class Expr:
         """
         Method equivalent of exponentiation operator `expr ** exponent`.
 
+        If the exponent is float, the result follows the dtype of exponent.
+        Otherwise, it follows dtype of base.
+
         Parameters
         ----------
         exponent
@@ -5563,6 +5568,26 @@ class Expr:
         │ 4   ┆ 64   ┆ 16.0       │
         │ 8   ┆ 512  ┆ 512.0      │
         └─────┴──────┴────────────┘
+
+        Raising an integer to a positive integer results in an integer - in order
+        to raise to a negative integer, you can cast either the base or the exponent
+        to float first:
+
+        >>> df.with_columns(
+        ...     x_squared=pl.col("x").pow(2),
+        ...     x_inverse=pl.col("x").pow(-1.0),
+        ... )
+        shape: (4, 3)
+        ┌─────┬───────────┬───────────┐
+        │ x   ┆ x_squared ┆ x_inverse │
+        │ --- ┆ ---       ┆ ---       │
+        │ i64 ┆ i64       ┆ f64       │
+        ╞═════╪═══════════╪═══════════╡
+        │ 1   ┆ 1         ┆ 1.0       │
+        │ 2   ┆ 4         ┆ 0.5       │
+        │ 4   ┆ 16        ┆ 0.25      │
+        │ 8   ┆ 64        ┆ 0.125     │
+        └─────┴───────────┴───────────┘
         """
         return self.__pow__(exponent)
 
@@ -9051,20 +9076,15 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.radians())
 
-    def reshape(
-        self, dimensions: tuple[int, ...], nested_type: type[Array] | type[List] = List
-    ) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
-        Reshape this Expr to a flat Series or a Series of Lists.
+        Reshape this Expr to a flat column or an Array column.
 
         Parameters
         ----------
         dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
-        nested_type
-            The nested data type to create. List only supports 2 dimension,
-            whereas Array supports an arbitrary number of dimensions.
 
         Returns
         -------
@@ -9072,30 +9092,46 @@ class Expr:
             If a single dimension is given, results in an expression of the original
             data type.
             If a multiple dimensions are given, results in an expression of data type
-            :class:`List` with shape (rows, cols)
-            or :class:`Array` with shape `dimensions`.
+            :class:`Array` with shape `dimensions`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
-        >>> df.select(pl.col("foo").reshape((3, 3)))
+        >>> square = df.select(pl.col("foo").reshape((3, 3)))
+        >>> square
         shape: (3, 1)
-        ┌───────────┐
-        │ foo       │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2, 3] │
-        │ [4, 5, 6] │
-        │ [7, 8, 9] │
-        └───────────┘
+        ┌───────────────┐
+        │ foo           │
+        │ ---           │
+        │ array[i64, 3] │
+        ╞═══════════════╡
+        │ [1, 2, 3]     │
+        │ [4, 5, 6]     │
+        │ [7, 8, 9]     │
+        └───────────────┘
+        >>> square.select(pl.col("foo").reshape((9,)))
+        shape: (9, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        │ 7   │
+        │ 8   │
+        │ 9   │
+        └─────┘
 
         See Also
         --------
         Expr.list.explode : Explode a list column.
         """
-        is_list = nested_type == List
-        return self._from_pyexpr(self._pyexpr.reshape(dimensions, is_list))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """

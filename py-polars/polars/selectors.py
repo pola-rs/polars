@@ -308,15 +308,15 @@ class _selector_proxy_(Expr):
         elif hasattr(self, "_repr_override"):
             return self._repr_override
         else:
-            selector_name, params = self._attrs["name"], self._attrs["params"]
-            set_ops = {"and": "&", "or": "|", "sub": "-"}
+            selector_name, params = self._attrs["name"], self._attrs["params"] or {}
+            set_ops = {"and": "&", "or": "|", "sub": "-", "xor": "^"}
             if selector_name in set_ops:
                 op = set_ops[selector_name]
                 return "({})".format(f" {op} ".join(repr(p) for p in params.values()))
             else:
                 str_params = ", ".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
-                    for k, v in (params or {}).items()
+                    for k, v in params.items()
                 ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
@@ -381,6 +381,24 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
+    @overload  # type: ignore[override]
+    def __xor__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __xor__(self, other: Any) -> Expr: ...
+
+    def __xor__(self, other: Any) -> SelectorType | Expr:
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        if is_selector(other):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_xor(other),
+                parameters={"self": self, "other": other},
+                name="xor",
+            )
+        else:
+            return self.as_expr().__or__(other)
+
     def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
         if is_column(other):
             colname = other.meta.output_name()
@@ -395,6 +413,11 @@ class _selector_proxy_(Expr):
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
+
+    def __rxor__(self, other: Any) -> Expr:  # type: ignore[override]
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        return self.as_expr().__rxor__(other)
 
     def as_expr(self) -> Expr:
         """
@@ -1149,7 +1172,7 @@ def categorical() -> SelectorType:
     return _selector_proxy_(F.col(Categorical), name="categorical")
 
 
-def contains(substring: str | Collection[str]) -> SelectorType:
+def contains(*substring: str) -> SelectorType:
     """
     Select columns whose names contain the given literal substring(s).
 
@@ -1191,7 +1214,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
 
     Select columns that contain the substring 'ba' or the letter 'z':
 
-    >>> df.select(cs.contains(("ba", "z")))
+    >>> df.select(cs.contains("ba", "z"))
     shape: (2, 3)
     ┌─────┬─────┬───────┐
     │ bar ┆ baz ┆ zap   │
@@ -1221,7 +1244,7 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     return _selector_proxy_(
         F.col(raw_params),
         name="contains",
-        parameters={"substring": escaped_substring},
+        parameters={"*substring": escaped_substring},
     )
 
 
@@ -1307,17 +1330,20 @@ def datetime(
 
     Examples
     --------
-    >>> from datetime import datetime, date
+    >>> from datetime import datetime, date, timezone
     >>> import polars.selectors as cs
+    >>> from zoneinfo import ZoneInfo
+    >>> tokyo_tz = ZoneInfo("Asia/Tokyo")
+    >>> utc_tz = timezone.utc
     >>> df = pl.DataFrame(
     ...     {
     ...         "tstamp_tokyo": [
-    ...             datetime(1999, 7, 21, 5, 20, 16, 987654),
-    ...             datetime(2000, 5, 16, 6, 21, 21, 123465),
+    ...             datetime(1999, 7, 21, 5, 20, 16, 987654, tzinfo=tokyo_tz),
+    ...             datetime(2000, 5, 16, 6, 21, 21, 123465, tzinfo=tokyo_tz),
     ...         ],
     ...         "tstamp_utc": [
-    ...             datetime(2023, 4, 10, 12, 14, 16, 999000),
-    ...             datetime(2025, 8, 25, 14, 18, 22, 666000),
+    ...             datetime(2023, 4, 10, 12, 14, 16, 999000, tzinfo=utc_tz),
+    ...             datetime(2025, 8, 25, 14, 18, 22, 666000, tzinfo=utc_tz),
     ...         ],
     ...         "tstamp": [
     ...             datetime(2000, 11, 20, 18, 12, 16, 600000),

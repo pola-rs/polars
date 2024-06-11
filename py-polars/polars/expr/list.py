@@ -505,7 +505,7 @@ class ExprListNameSpace:
         self,
         index: int | Expr | str,
         *,
-        null_on_oob: bool = True,
+        null_on_oob: bool = False,
     ) -> Expr:
         """
         Get the value by index in the sublists.
@@ -526,7 +526,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[3, 2, 1], [], [1, 2]]})
-        >>> df.with_columns(get=pl.col("a").list.get(0))
+        >>> df.with_columns(get=pl.col("a").list.get(0, null_on_oob=True))
         shape: (3, 2)
         ┌───────────┬──────┐
         │ a         ┆ get  │
@@ -646,7 +646,7 @@ class ExprListNameSpace:
         │ [1, 2]    ┆ 1     │
         └───────────┴───────┘
         """
-        return self.get(0)
+        return self.get(0, null_on_oob=True)
 
     def last(self) -> Expr:
         """
@@ -667,7 +667,7 @@ class ExprListNameSpace:
         │ [1, 2]    ┆ 2    │
         └───────────┴──────┘
         """
-        return self.get(-1)
+        return self.get(-1, null_on_oob=True)
 
     def contains(
         self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
