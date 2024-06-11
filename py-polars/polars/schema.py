@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Iterable, Mapping
+from typing import TYPE_CHECKING, Iterable, Mapping
 
-from polars.datatypes import DataType
+if TYPE_CHECKING:
+    from polars.datatypes import DataType
+
+    BaseSchema = OrderedDict[str, DataType]
+else:
+    # Python 3.8 does not support generic OrderedDict at runtime
+    BaseSchema = OrderedDict
 
 
-class Schema(OrderedDict[str, DataType]):
+class Schema(BaseSchema):
     """
     Ordered mapping of column names to their data type.
 

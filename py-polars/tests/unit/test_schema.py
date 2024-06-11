@@ -20,3 +20,11 @@ def test_schema_parse_nonpolars_dtypes() -> None:
     assert s.len() == 2
     assert s.names() == ["a", "b"]
     assert s.dtypes() == [pl.List, int]
+
+
+def test_schema_equality() -> None:
+    s1 = pl.Schema({"a": pl.Int8(), "b": pl.Float64()})
+    s2 = pl.Schema({"b": pl.Float64(), "a": pl.Int8()})
+    assert s1 == s1
+    assert s2 == s2
+    assert s1 != s2
