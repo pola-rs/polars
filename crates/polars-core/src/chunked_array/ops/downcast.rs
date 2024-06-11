@@ -107,6 +107,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     #[inline]
+    pub fn downcast_into_array(self) -> T::Array {
+        assert_eq!(self.chunks.len(), 1);
+        self.downcast_get(0).unwrap().clone()
+    }
+
+    #[inline]
     /// # Safety
     /// It is up to the caller to ensure the chunk idx is in-bounds
     pub unsafe fn downcast_get_unchecked(&self, idx: usize) -> &T::Array {
