@@ -5,6 +5,11 @@
     "url": "https://docs.pola.rs/api/python/dev/"
   },
   {
+    "name": "1",
+    "version": "1",
+    "url": "https://docs.pola.rs/api/python/version/1/"
+  },
+  {
     "name": "0.20 (stable)",
     "version": "0.20",
     "url": "https://docs.pola.rs/api/python/stable/",
