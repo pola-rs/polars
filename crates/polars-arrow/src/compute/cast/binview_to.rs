@@ -3,7 +3,7 @@ use polars_error::PolarsResult;
 
 use crate::array::*;
 use crate::compute::cast::binary_to::Parse;
-use crate::compute::cast::CastOptions;
+use crate::compute::cast::CastOptionsImpl;
 #[cfg(feature = "dtype-decimal")]
 use crate::compute::decimal::deserialize_decimal;
 use crate::datatypes::{ArrowDataType, TimeUnit};
@@ -77,7 +77,7 @@ where
 pub(super) fn binview_to_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + Parse,

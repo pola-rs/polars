@@ -19,14 +19,11 @@ Computation
     Series.cos
     Series.cosh
     Series.cot
+    Series.cum_count
     Series.cum_max
     Series.cum_min
     Series.cum_prod
     Series.cum_sum
-    Series.cummax
-    Series.cummin
-    Series.cumprod
-    Series.cumsum
     Series.cumulative_eval
     Series.diff
     Series.dot
@@ -43,13 +40,11 @@ Computation
     Series.log
     Series.log10
     Series.log1p
-    Series.map_dict
     Series.pct_change
     Series.peak_max
     Series.peak_min
     Series.rank
     Series.replace
-    Series.rolling_apply
     Series.rolling_map
     Series.rolling_max
     Series.rolling_mean

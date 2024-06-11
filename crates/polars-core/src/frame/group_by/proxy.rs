@@ -285,6 +285,7 @@ impl IntoParallelIterator for GroupsIdx {
 /// Every group is indicated by an array where the
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
+///
 /// Only used when group values are stored together
 ///
 /// This type should have the invariant that it is always sorted in ascending order.

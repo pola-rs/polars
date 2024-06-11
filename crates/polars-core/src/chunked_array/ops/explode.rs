@@ -6,9 +6,11 @@ use arrow::legacy::array::list::AnonymousBuilder;
 use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::prelude::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
+use polars_utils::slice::GetSaferUnchecked;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
+use crate::chunked_array::metadata::MetadataProperties;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -121,12 +123,8 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        #[cfg(debug_assertions)]
-                        new_values.extend_from_slice(&values[start..last]);
-
-                        #[cfg(not(debug_assertions))]
                         unsafe {
-                            new_values.extend_from_slice(values.get_unchecked(start..last))
+                            new_values.extend_from_slice(values.get_unchecked_release(start..last))
                         };
                     }
 
@@ -272,7 +270,12 @@ impl ExplodeByOffsets for ListChunked {
         }
         process_range(start, last, &mut builder);
         let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
-        unsafe { self.copy_with_chunks(vec![Box::new(arr)], true, true) }.into_series()
+        let mut ca = unsafe { self.copy_with_chunks(vec![Box::new(arr)]) };
+
+        use MetadataProperties as P;
+        ca.copy_metadata(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca.into_series()
     }
 }
 
@@ -285,7 +288,7 @@ impl ExplodeByOffsets for ArrayChunked {
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
         let mut builder =
-            get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
+            get_fixed_size_list_builder(inner_type, cap, self.width(), self.name()).unwrap();
 
         let mut start = offsets[0] as usize;
         let mut last = start;

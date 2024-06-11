@@ -50,13 +50,13 @@ def test_equal(df: pl.DataFrame) -> None:
         pytest.param(
             pl.DataFrame({"a": [0.0, 1.0, 2.0]}, schema={"a": pl.Float64}),
             pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Int64}),
-            {"check_dtype": False},
+            {"check_dtypes": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
             pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Float64}),
             pl.DataFrame({"a": [0, 1, 2]}, schema={"a": pl.Float32}),
-            {"check_dtype": False},
+            {"check_dtypes": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
@@ -161,7 +161,7 @@ def test_assert_frame_equal_passes_assertion(
         pytest.param(
             pl.DataFrame({"a": [[2.0, 3.0]]}),
             pl.DataFrame({"a": [[2, 3]]}),
-            {"check_exact": False, "check_dtype": True},
+            {"check_exact": False, "check_dtypes": True},
             id="list_of_float_list_of_int_check_dtype_true",
         ),
         pytest.param(
@@ -270,7 +270,7 @@ def test_compare_frame_equal_nested_nans() -> None:
     assert_frame_not_equal(df3, df4)
     for check_dtype in (True, False):
         with pytest.raises(AssertionError, match="mismatch|different"):
-            assert_frame_equal(df3, df4, check_dtype=check_dtype)
+            assert_frame_equal(df3, df4, check_dtypes=check_dtype)
 
 
 def test_assert_frame_equal_pass() -> None:
@@ -378,6 +378,18 @@ def test_assert_frame_not_equal() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(AssertionError, match="frames are equal"):
         assert_frame_not_equal(df, df)
+
+
+def test_assert_frame_equal_check_dtype_deprecated() -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"a": [1.0, 2.0]})
+    df3 = pl.DataFrame({"a": [2, 1]})
+
+    with pytest.deprecated_call():
+        assert_frame_equal(df1, df2, check_dtype=False)  # type: ignore[call-arg]
+
+    with pytest.deprecated_call():
+        assert_frame_not_equal(df1, df3, check_dtype=False)  # type: ignore[call-arg]
 
 
 def test_tracebackhide(testdir: pytest.Testdir) -> None:

@@ -21,15 +21,18 @@ pub(super) fn process_semi_anti_join(
     let mut names_left = PlHashSet::with_capacity(n);
     let mut names_right = PlHashSet::with_capacity(n);
 
-    // if there are no projections we don't have to do anything (all columns are projected)
-    // otherwise we build local projections to sort out proper column names due to the
-    // join operation
-    //
-    // Joins on columns with different names, for example
-    // left_on = "a", right_on = "b
-    // will remove the name "b" (it is "a" now). That columns should therefore not
-    // be added to a local projection.
-    if !acc_projections.is_empty() {
+    if acc_projections.is_empty() {
+        // Only project the join columns.
+        for e in &right_on {
+            add_expr_to_accumulated(e.node(), &mut pushdown_right, &mut names_right, expr_arena);
+        }
+    } else {
+        // We build local projections to sort out proper column names due to the
+        // join operation.
+        // Joins on columns with different names, for example
+        // left_on = "a", right_on = "b
+        // will remove the name "b" (it is "a" now). That columns should therefore not
+        // be added to a local projection.
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 

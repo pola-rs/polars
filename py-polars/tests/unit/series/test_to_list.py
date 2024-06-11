@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from hypothesis import given
+from hypothesis import example, given
 
 import polars as pl
 from polars.testing import assert_series_equal
@@ -14,6 +14,7 @@ from polars.testing.parametric import series
         allow_time_zones=False,
     )
 )
+@example(s=pl.Series(dtype=pl.Array(pl.Date, 1)))
 def test_to_list(s: pl.Series) -> None:
     values = s.to_list()
     result = pl.Series(values, dtype=s.dtype)

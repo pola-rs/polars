@@ -47,13 +47,11 @@ def df() -> pl.DataFrame:
         }
     )
     return df.with_columns(
-        [
-            pl.col("date").cast(pl.Date),
-            pl.col("datetime").cast(pl.Datetime),
-            pl.col("strings").cast(pl.Categorical).alias("cat"),
-            pl.col("strings").cast(pl.Enum(["foo", "ham", "bar"])).alias("enum"),
-            pl.col("time").cast(pl.Time),
-        ]
+        pl.col("date").cast(pl.Date),
+        pl.col("datetime").cast(pl.Datetime),
+        pl.col("strings").cast(pl.Categorical).alias("cat"),
+        pl.col("strings").cast(pl.Enum(["foo", "ham", "bar"])).alias("enum"),
+        pl.col("time").cast(pl.Time),
     )
 
 

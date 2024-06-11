@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -21,7 +21,7 @@ def test_date() -> None:
             "version": ["0.0.1", "0.7.3", "0.7.4"],
         }
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
 
     expected = pl.DataFrame({"date": [True, False, False]})
@@ -99,12 +99,30 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
             ],
         }
     )
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
-        for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART(dt,'{part}')"):
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
+        for func in (f"EXTRACT({part} FROM dt)", f"DATE_PART('{part}',dt)"):
             res = ctx.execute(f"SELECT {func} AS {part} FROM frame_data").to_series()
 
             assert res.dtype == dtype
             assert res.to_list() == expected
+
+
+def test_extract_errors() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
+
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
+        for part in ("femtosecond", "stroopwafel"):
+            with pytest.raises(
+                SQLSyntaxError,
+                match=f"EXTRACT/DATE_PART does not support '{part}' part",
+            ):
+                ctx.execute(f"SELECT EXTRACT({part} FROM dt) FROM frame_data")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match=r"EXTRACT/DATE_PART does not support 'week\(tuesday\)' part",
+        ):
+            ctx.execute("SELECT DATE_PART('week(tuesday)', dt) FROM frame_data")
 
 
 @pytest.mark.parametrize(
@@ -125,16 +143,14 @@ def test_extract(part: str, dtype: pl.DataType, expected: list[Any]) -> None:
     ],
 )
 def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
-    with pl.SQLContext(
-        frame_data=pl.DataFrame({"dt": [dt]}), eager_execution=True
-    ) as ctx:
+    with pl.SQLContext(frame_data=pl.DataFrame({"dt": [dt]}), eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
               EXTRACT(MILLENNIUM FROM dt) AS c1,
-              DATE_PART(dt,'century') AS c2,
+              DATE_PART('century',dt) AS c2,
               EXTRACT(millennium FROM dt) AS c3,
-              DATE_PART(dt,'CENTURY') AS c4,
+              DATE_PART('CENTURY',dt) AS c4,
             FROM frame_data
             """
         )
@@ -226,7 +242,7 @@ def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
     )
     precision = {"ms": 3, "us": 6, "ns": 9}
 
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         prec = f"({precision[unit]})" if unit else ""
         res = ctx.execute(f"SELECT ts::timestamp{prec} FROM frame_data").to_series()
 
@@ -237,10 +253,10 @@ def test_timestamp_time_unit(unit: str | None, expected: list[int]) -> None:
 def test_timestamp_time_unit_errors() -> None:
     df = pl.DataFrame({"ts": [datetime(2024, 1, 7, 1, 2, 3, 123456)]})
 
-    with pl.SQLContext(frame_data=df, eager_execution=True) as ctx:
+    with pl.SQLContext(frame_data=df, eager=True) as ctx:
         for prec in (0, 15):
             with pytest.raises(
-                ComputeError,
+                SQLSyntaxError,
                 match=f"invalid temporal type precision; expected 1-9, found {prec}",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")

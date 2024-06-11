@@ -42,6 +42,7 @@ pub mod zip;
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::series::IsSorted;
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
@@ -182,7 +183,13 @@ pub trait ChunkSet<'a, A, B> {
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series>;
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(data_type, CastOptions::NonStrict)
+    }
+
+    /// Cast a [`ChunkedArray`] to [`DataType`]
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions)
+        -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
     ///
@@ -509,10 +516,10 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                unsafe { ca.to_logical(self.inner_dtype()) };
+                unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
-            None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
+            None => ListChunked::full_null_with_dtype(self.name(), length, self.inner_dtype()),
         }
     }
 }
@@ -524,13 +531,13 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);
-                unsafe { ca.to_logical(self.inner_dtype()) };
+                unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
             None => ArrayChunked::full_null_with_dtype(
                 self.name(),
                 length,
-                &self.inner_dtype(),
+                self.inner_dtype(),
                 self.width(),
             ),
         }

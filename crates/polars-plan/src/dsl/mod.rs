@@ -56,6 +56,8 @@ pub use list::*;
 pub use meta::*;
 pub use name::*;
 pub use options::*;
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -378,7 +380,7 @@ impl Expr {
         Expr::Cast {
             expr: Arc::new(self),
             data_type,
-            strict: true,
+            options: CastOptions::Strict,
         }
     }
 
@@ -387,7 +389,16 @@ impl Expr {
         Expr::Cast {
             expr: Arc::new(self),
             data_type,
-            strict: false,
+            options: CastOptions::NonStrict,
+        }
+    }
+
+    /// Cast expression to another data type.
+    pub fn cast_with_options(self, data_type: DataType, cast_options: CastOptions) -> Self {
+        Expr::Cast {
+            expr: Arc::new(self),
+            data_type,
+            options: cast_options,
         }
     }
 
@@ -449,8 +460,8 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: Expr, sort_options: SortOptions) -> Self {
-        self.apply_many_private(FunctionExpr::TopK { sort_options }, &[k], false, false)
+    pub fn top_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK { descending: false }, &[k], false, false)
     }
 
     /// Returns the `k` largest rows by given column.
@@ -461,26 +472,19 @@ impl Expr {
         self,
         k: K,
         by: E,
-        sort_options: SortMultipleOptions,
+        descending: Vec<bool>,
     ) -> Self {
         let mut args = vec![k.into()];
         args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
-        self.apply_many_private(FunctionExpr::TopKBy { sort_options }, &args, false, false)
+        self.apply_many_private(FunctionExpr::TopKBy { descending }, &args, false, false)
     }
 
     /// Returns the `k` smallest elements.
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(self, k: Expr, sort_options: SortOptions) -> Self {
-        self.apply_many_private(
-            FunctionExpr::TopK {
-                sort_options: sort_options.with_order_reversed(),
-            },
-            &[k],
-            false,
-            false,
-        )
+    pub fn bottom_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK { descending: true }, &[k], false, false)
     }
 
     /// Returns the `k` smallest rows by given column.
@@ -492,18 +496,12 @@ impl Expr {
         self,
         k: K,
         by: E,
-        sort_options: SortMultipleOptions,
+        descending: Vec<bool>,
     ) -> Self {
         let mut args = vec![k.into()];
         args.extend(by.as_ref().iter().map(|e| -> Expr { e.clone().into() }));
-        self.apply_many_private(
-            FunctionExpr::TopKBy {
-                sort_options: sort_options.with_order_reversed(),
-            },
-            &args,
-            false,
-            false,
-        )
+        let descending = descending.into_iter().map(|x| !x).collect();
+        self.apply_many_private(FunctionExpr::TopKBy { descending }, &args, false, false)
     }
 
     /// Reverse column
@@ -952,12 +950,13 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        self.over_with_options(partition_by, Default::default())
+        self.over_with_options(partition_by, None, Default::default())
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: E,
+        order_by: Option<(E, SortOptions)>,
         options: WindowMapping,
     ) -> Self {
         let partition_by = partition_by
@@ -965,9 +964,24 @@ impl Expr {
             .iter()
             .map(|e| e.clone().into())
             .collect();
+
+        let order_by = order_by.map(|(e, options)| {
+            let e = e.as_ref();
+            let e = if e.len() == 1 {
+                Arc::new(e[0].clone().into())
+            } else {
+                feature_gated!["dtype-struct", {
+                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+                    Arc::new(as_struct(e))
+                }]
+            };
+            (e, options)
+        });
+
         Expr::Window {
             function: Arc::new(self),
             partition_by,
+            order_by,
             options: options.into(),
         }
     }
@@ -980,6 +994,7 @@ impl Expr {
         Expr::Window {
             function: Arc::new(self),
             partition_by: vec![index_col],
+            order_by: None,
             options: WindowType::Rolling(options),
         }
     }

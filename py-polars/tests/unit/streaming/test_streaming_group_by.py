@@ -455,7 +455,7 @@ def test_streaming_group_null_count() -> None:
     ) == {"g": [1], "a": [3]}
 
 
-def test_streaming_groupby_binary_15116() -> None:
+def test_streaming_group_by_binary_15116() -> None:
     assert (
         pl.LazyFrame(
             {

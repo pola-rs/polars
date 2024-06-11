@@ -128,9 +128,7 @@ pub struct Select {
     #[pyo3(get)]
     expr: Vec<PyExprIR>,
     #[pyo3(get)]
-    cse_expr: Vec<PyExprIR>,
-    #[pyo3(get)]
-    options: (), //ProjectionOptions,
+    should_broadcast: bool,
 }
 
 #[pyclass]
@@ -141,7 +139,7 @@ pub struct Sort {
     #[pyo3(get)]
     by_column: Vec<PyExprIR>,
     #[pyo3(get)]
-    sort_options: (bool, bool, Vec<bool>),
+    sort_options: (bool, Vec<bool>, Vec<bool>),
     #[pyo3(get)]
     slice: Option<(i64, usize)>,
 }
@@ -197,9 +195,16 @@ pub struct HStack {
     #[pyo3(get)]
     exprs: Vec<PyExprIR>,
     #[pyo3(get)]
-    cse_exprs: Vec<PyExprIR>,
+    should_broadcast: bool,
+}
+
+#[pyclass]
+/// Like Select, but all operations produce a single row.
+pub struct Reduce {
     #[pyo3(get)]
-    options: (), // ProjectionOptions,
+    input: usize,
+    #[pyo3(get)]
+    exprs: Vec<PyExprIR>,
 }
 
 #[pyclass]
@@ -333,12 +338,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input,
             expr,
             schema: _,
-            options: _,
+            options,
         } => Select {
-            expr: expr.default_exprs().iter().map(|e| e.into()).collect(),
-            cse_expr: expr.cse_exprs().iter().map(|e| e.into()).collect(),
+            expr: expr.iter().map(|e| e.into()).collect(),
             input: input.0,
-            options: (),
+            should_broadcast: options.should_broadcast,
         }
         .into_py(py),
         IR::Sort {
@@ -351,7 +355,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             by_column: by_column.iter().map(|e| e.into()).collect(),
             sort_options: (
                 sort_options.maintain_order,
-                sort_options.nulls_last,
+                sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
             slice: *slice,
@@ -424,23 +428,20 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input,
             exprs,
             schema: _,
-            options: _,
+            options,
         } => HStack {
             input: input.0,
-            exprs: exprs.default_exprs().iter().map(|e| e.into()).collect(),
-            cse_exprs: exprs.cse_exprs().iter().map(|e| e.into()).collect(),
-            options: (),
+            exprs: exprs.iter().map(|e| e.into()).collect(),
+            should_broadcast: options.should_broadcast,
         }
         .into_py(py),
         IR::Reduce {
             input,
             exprs,
             schema: _,
-        } => Select {
+        } => Reduce {
             input: input.0,
-            expr: exprs.iter().map(|e| e.into()).collect(),
-            cse_expr: vec![],
-            options: (),
+            exprs: exprs.iter().map(|e| e.into()).collect(),
         }
         .into_py(py),
         IR::Distinct { input, options } => Distinct {

@@ -7,10 +7,10 @@ fn map_cats(
     left_closed: bool,
     include_breaks: bool,
 ) -> PolarsResult<Series> {
-    let out_name = format!("{}_bin", s.name());
+    let out_name = "category";
 
     // Create new categorical and pre-register labels for consistent categorical indexes.
-    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len(), Default::default());
+    let mut bld = CategoricalChunkedBuilder::new(out_name, s.len(), Default::default());
     for label in labels {
         bld.register_value(label);
     }
@@ -33,7 +33,7 @@ fn map_cats(
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("brk", s.len());
+        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new("breakpoint", s.len());
         s_iter
             .map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
@@ -59,7 +59,7 @@ fn map_cats(
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
                 .into_series(),
         ];
-        Ok(StructChunked::new(&out_name, &outvals)?.into_series())
+        Ok(StructChunked::new(out_name, &outvals)?.into_series())
     } else {
         Ok(bld
             .drain_iter_and_finish(s_iter.map(|opt| {

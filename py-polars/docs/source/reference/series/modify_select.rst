@@ -14,8 +14,6 @@ Manipulation/selection
     Series.ceil
     Series.clear
     Series.clip
-    Series.clip_max
-    Series.clip_min
     Series.clone
     Series.cut
     Series.drop_nans
@@ -47,19 +45,14 @@ Manipulation/selection
     Series.sample
     Series.scatter
     Series.set
-    Series.set_at_idx
     Series.shift
-    Series.shift_and_fill
     Series.shrink_dtype
     Series.shrink_to_fit
     Series.shuffle
     Series.slice
     Series.sort
     Series.tail
-    Series.take
-    Series.take_every
     Series.to_dummies
     Series.top_k
     Series.unique
-    Series.view
     Series.zip_with

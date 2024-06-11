@@ -1,3 +1,4 @@
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 
 use super::*;
@@ -7,16 +8,12 @@ pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) data_type: DataType,
     pub(crate) expr: Expr,
-    pub(crate) strict: bool,
+    pub(crate) options: CastOptions,
 }
 
 impl CastExpr {
     fn finish(&self, input: &Series) -> PolarsResult<Series> {
-        if self.strict {
-            input.strict_cast(&self.data_type)
-        } else {
-            input.cast(&self.data_type)
-        }
+        input.cast_with_options(&self.data_type, self.options)
     }
 }
 

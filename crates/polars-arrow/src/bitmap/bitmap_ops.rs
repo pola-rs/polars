@@ -270,6 +270,16 @@ fn eq(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     lhs_remainder.zip(rhs_remainder).all(|(x, y)| x == y)
 }
 
+pub fn num_intersections_with(lhs: &Bitmap, rhs: &Bitmap) -> usize {
+    binary_fold(
+        lhs,
+        rhs,
+        |lhs, rhs| (lhs & rhs).count_ones() as usize,
+        0,
+        |lhs, rhs| lhs + rhs,
+    )
+}
+
 pub fn intersects_with(lhs: &Bitmap, rhs: &Bitmap) -> bool {
     binary_fold(
         lhs,

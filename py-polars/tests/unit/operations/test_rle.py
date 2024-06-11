@@ -7,8 +7,8 @@ def test_rle() -> None:
     lf = pl.LazyFrame({"a": values})
 
     expected = pl.LazyFrame(
-        {"lengths": [2, 1, 1, 1, 1, 2], "values": [1, 2, 1, None, 1, 3]},
-        schema_overrides={"lengths": pl.Int32},
+        {"len": [2, 1, 1, 1, 1, 2], "value": [1, 2, 1, None, 1, 3]},
+        schema_overrides={"len": pl.get_index_type()},
     )
 
     result_expr = lf.select(pl.col("a").rle()).unnest("a")
@@ -22,7 +22,9 @@ def test_rle_id() -> None:
     values = [1, 1, 2, 1, None, 1, 3, 3]
     lf = pl.LazyFrame({"a": values})
 
-    expected = pl.LazyFrame({"a": [0, 0, 1, 2, 3, 4, 5, 5]}, schema={"a": pl.UInt32})
+    expected = pl.LazyFrame(
+        {"a": [0, 0, 1, 2, 3, 4, 5, 5]}, schema={"a": pl.get_index_type()}
+    )
 
     result_expr = lf.select(pl.col("a").rle_id())
     assert_frame_equal(result_expr, expected)

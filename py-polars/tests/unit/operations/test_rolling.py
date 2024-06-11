@@ -261,15 +261,13 @@ def test_rolling_empty_groups_9973() -> None:
         }
     )
 
-    with pytest.deprecated_call(match="`check_sorted` is now deprecated"):
-        out = data.rolling(
-            index_column="date",
-            group_by="id",
-            period="2d",
-            offset="1d",
-            closed="left",
-            check_sorted=True,
-        ).agg(pl.col("value"))
+    out = data.rolling(
+        index_column="date",
+        group_by="id",
+        period="2d",
+        offset="1d",
+        closed="left",
+    ).agg(pl.col("value"))
 
     assert_frame_equal(out, expected)
 
@@ -293,7 +291,9 @@ def test_rolling_duplicates_11281() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_rolling_check_sorted_15225() -> None:
+def test_rolling_15225() -> None:
+    # https://github.com/pola-rs/polars/issues/15225
+
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],

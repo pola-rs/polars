@@ -2,6 +2,7 @@ use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
+use crate::chunked_array::cast::CastOptions;
 use crate::config::verbose;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
 use crate::utils::flatten::flatten_par;
@@ -235,13 +236,17 @@ impl IntoGroupsProxy for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]
         {
-            let ca = self.cast(&DataType::UInt8).unwrap();
+            let ca = self
+                .cast_with_options(&DataType::UInt8, CastOptions::Overflowing)
+                .unwrap();
             let ca = ca.u8().unwrap();
             ca.group_tuples(multithreaded, sorted)
         }
         #[cfg(not(feature = "performant"))]
         {
-            let ca = self.cast(&DataType::UInt32).unwrap();
+            let ca = self
+                .cast_with_options(&DataType::UInt32, CastOptions::Overflowing)
+                .unwrap();
             let ca = ca.u32().unwrap();
             ca.group_tuples(multithreaded, sorted)
         }

@@ -65,11 +65,7 @@ def test_overflow_uint16_agg_mean() -> None:
                 "col3": [64 for _ in range(1025)],
             }
         )
-        .with_columns(
-            [
-                pl.col("col3").cast(pl.UInt16),
-            ]
-        )
+        .with_columns(pl.col("col3").cast(pl.UInt16))
         .group_by(["col1"])
         .agg(pl.col("col3").mean())
         .to_dict(as_series=False)
@@ -170,31 +166,6 @@ def test_group_by_agg_equals_zero_3535() -> None:
         "val1": [10, 0, -99],
         "val2": [0.0, 0.0, 10.5],
     }
-
-
-def test_arithmetic_in_aggregation_3739() -> None:
-    def demean_dot() -> pl.Expr:
-        x = pl.col("x")
-        y = pl.col("y")
-        x1 = x - x.mean()
-        y1 = y - y.mean()
-        return (x1 * y1).sum().alias("demean_dot")
-
-    assert (
-        pl.DataFrame(
-            {
-                "key": ["a", "a", "a", "a"],
-                "x": [4, 2, 2, 4],
-                "y": [2, 0, 2, 0],
-            }
-        )
-        .group_by("key")
-        .agg(
-            [
-                demean_dot(),
-            ]
-        )
-    ).to_dict(as_series=False) == {"key": ["a"], "demean_dot": [0.0]}
 
 
 def test_dtype_concat_3735() -> None:

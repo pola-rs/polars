@@ -21,6 +21,7 @@ pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<Arc<str>>,
     pub(crate) out_name: Option<Arc<str>>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
@@ -366,6 +367,11 @@ impl WindowExpr {
     }
 }
 
+// Utility to create partitions and cache keys
+pub fn window_function_format_order_by(to: &mut String, e: &Expr, k: &SortOptions) {
+    write!(to, "_PL_{:?}{}_{}", e, k.descending, k.nulls_last).unwrap();
+}
+
 impl PhysicalExpr for WindowExpr {
     // Note: this was first implemented with expression evaluation but this performed really bad.
     // Therefore we choose the group_by -> apply -> self join approach
@@ -439,7 +445,15 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
-            let out: PolarsResult<GroupsProxy> = Ok(gb.take_groups());
+            let mut groups = gb.take_groups();
+
+            if let Some((order_by, options)) = &self.order_by {
+                let order_by = order_by.evaluate(df, state)?;
+                polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
+                groups = update_groups_sort_by(&groups, &order_by, options)?
+            }
+
+            let out: PolarsResult<GroupsProxy> = Ok(groups);
             out
         };
 
@@ -449,6 +463,15 @@ impl PhysicalExpr for WindowExpr {
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &group_by_columns {
                 cache_key.push_str(s.name());
+            }
+            if let Some((e, options)) = &self.order_by {
+                let e = match e.as_expression() {
+                    Some(e) => e,
+                    None => {
+                        polars_bail!(InvalidOperation: "cannot order by this expression in window function")
+                    },
+                };
+                window_function_format_order_by(&mut cache_key, e, options)
             }
 
             let mut gt_map_guard = state.group_tuples.write().unwrap();

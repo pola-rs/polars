@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::slice::GetSaferUnchecked;
 use rayon::prelude::*;
 
 use super::*;
@@ -29,10 +30,7 @@ pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize
         .cont_slice()
         .unwrap()
         .iter()
-        .map(|&i| {
-            debug_assert!(idx.get(i as usize).is_some());
-            unsafe { *idx.get_unchecked(i as usize) }
-        })
+        .map(|&i| unsafe { *idx.get_unchecked_release(i as usize) })
         .collect()
 }
 

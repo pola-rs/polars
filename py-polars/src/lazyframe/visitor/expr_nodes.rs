@@ -14,6 +14,7 @@ use polars_time::prelude::RollingGroupOptions;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 
+use crate::series::PySeries;
 use crate::Wrap;
 
 #[pyclass]
@@ -269,8 +270,11 @@ pub struct Cast {
     expr: usize,
     #[pyo3(get)]
     dtype: PyObject,
+    // 0: strict
+    // 1: non-strict
+    // 2: overflow
     #[pyo3(get)]
-    strict: bool,
+    options: u8,
 }
 
 #[pyclass]
@@ -308,7 +312,7 @@ pub struct SortBy {
     by: Vec<usize>,
     #[pyo3(get)]
     /// maintain_order, nulls_last, descending
-    sort_options: (bool, bool, Vec<bool>),
+    sort_options: (bool, Vec<bool>, Vec<bool>),
 }
 
 #[pyclass]
@@ -343,6 +347,16 @@ pub struct Function {
 }
 
 #[pyclass]
+pub struct Slice {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    offset: usize,
+    #[pyo3(get)]
+    length: usize,
+}
+
+#[pyclass]
 pub struct Len {}
 
 #[pyclass]
@@ -351,6 +365,12 @@ pub struct Window {
     function: usize,
     #[pyo3(get)]
     partition_by: Vec<usize>,
+    #[pyo3(get)]
+    order_by: Option<usize>,
+    #[pyo3(get)]
+    order_by_descending: bool,
+    #[pyo3(get)]
+    order_by_nulls_last: bool,
     #[pyo3(get)]
     options: PyObject,
 }
@@ -539,9 +559,18 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     value: Wrap(lit.to_any_value().unwrap()).to_object(py),
                     dtype,
                 },
-                Duration(_, _) => return Err(PyNotImplementedError::new_err("duration literal")),
-                Time(_) => return Err(PyNotImplementedError::new_err("time literal")),
-                Series(_) => return Err(PyNotImplementedError::new_err("series literal")),
+                Duration(v, _) => Literal {
+                    value: v.to_object(py),
+                    dtype,
+                },
+                Time(ns) => Literal {
+                    value: ns.to_object(py),
+                    dtype,
+                },
+                Series(s) => Literal {
+                    value: PySeries::new((**s).clone()).into_py(py),
+                    dtype,
+                },
             }
         }
         .into_py(py),
@@ -554,11 +583,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         AExpr::Cast {
             expr,
             data_type,
-            strict,
+            options,
         } => Cast {
             expr: expr.0,
             dtype: Wrap(data_type.clone()).to_object(py),
-            strict: *strict,
+            options: *options as u8,
         }
         .into_py(py),
         AExpr::Sort { expr, options } => Sort {
@@ -594,7 +623,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             by: by.iter().map(|n| n.0).collect(),
             sort_options: (
                 sort_options.maintain_order,
-                sort_options.nulls_last,
+                sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
         }
@@ -906,18 +935,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::TimeStamp(time_unit) => {
                         (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
                     },
-                    TemporalFunction::Truncate(bucket) => {
-                        (PyTemporalFunction::Truncate, bucket).into_py(py)
-                    },
+                    TemporalFunction::Truncate => (PyTemporalFunction::Truncate).into_py(py),
                     TemporalFunction::MonthStart => (PyTemporalFunction::MonthStart,).into_py(py),
                     TemporalFunction::MonthEnd => (PyTemporalFunction::MonthEnd,).into_py(py),
                     TemporalFunction::BaseUtcOffset => {
                         (PyTemporalFunction::BaseUtcOffset,).into_py(py)
                     },
                     TemporalFunction::DSTOffset => (PyTemporalFunction::DSTOffset,).into_py(py),
-                    TemporalFunction::Round(bucket) => {
-                        (PyTemporalFunction::Round, bucket).into_py(py)
-                    },
+                    TemporalFunction::Round => (PyTemporalFunction::Round).into_py(py),
                     TemporalFunction::ReplaceTimeZone(time_zone, non_existent) => (
                         PyTemporalFunction::ReplaceTimeZone,
                         time_zone
@@ -993,9 +1018,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("search sorted"))
                 },
                 FunctionExpr::Range(_) => return Err(PyNotImplementedError::new_err("range")),
-                FunctionExpr::DateOffset => {
-                    return Err(PyNotImplementedError::new_err("date offset"))
-                },
+                FunctionExpr::DateOffset => ("offset_by",).to_object(py),
                 FunctionExpr::Trigonometry(trigfun) => match trigfun {
                     TrigonometricFunction::Cos => ("cos",),
                     TrigonometricFunction::Cot => ("cot",),
@@ -1091,9 +1114,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     has_max: _,
                 } => return Err(PyNotImplementedError::new_err("clip")),
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
-                FunctionExpr::TopK { sort_options: _ } => {
-                    return Err(PyNotImplementedError::new_err("top k"))
-                },
+                FunctionExpr::TopK { .. } => return Err(PyNotImplementedError::new_err("top k")),
                 FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
                 FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
                 FunctionExpr::CumProd { reverse } => ("cumprod", reverse).to_object(py),
@@ -1105,13 +1126,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     parallel: _,
                     name: _,
                 } => return Err(PyNotImplementedError::new_err("value counts")),
-                FunctionExpr::UniqueCounts => {
-                    return Err(PyNotImplementedError::new_err("unique counts"))
-                },
+                FunctionExpr::UniqueCounts => ("unique_counts",).to_object(py),
                 FunctionExpr::ApproxNUnique => {
                     return Err(PyNotImplementedError::new_err("approx nunique"))
                 },
-                FunctionExpr::Coalesce => return Err(PyNotImplementedError::new_err("coalesce")),
+                FunctionExpr::Coalesce => ("coalesce",).to_object(py),
                 FunctionExpr::ShrinkType => {
                     return Err(PyNotImplementedError::new_err("shrink type"))
                 },
@@ -1132,7 +1151,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Log { base: _ } => return Err(PyNotImplementedError::new_err("log")),
                 FunctionExpr::Log1p => return Err(PyNotImplementedError::new_err("log1p")),
                 FunctionExpr::Exp => return Err(PyNotImplementedError::new_err("exp")),
-                FunctionExpr::Unique(_) => return Err(PyNotImplementedError::new_err("unique")),
+                FunctionExpr::Unique(maintain_order) => ("unique", maintain_order).to_object(py),
                 FunctionExpr::Round { decimals } => ("round", decimals).to_object(py),
                 FunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).to_object(py),
                 FunctionExpr::Floor => ("floor",).to_object(py),
@@ -1216,7 +1235,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"))
                 },
-                FunctionExpr::TopKBy { sort_options: _ } => {
+                FunctionExpr::TopKBy { .. } => {
                     return Err(PyNotImplementedError::new_err("top_k_by"))
                 },
                 FunctionExpr::EwmMeanBy { half_life: _ } => {
@@ -1229,10 +1248,19 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         AExpr::Window {
             function,
             partition_by,
+            order_by,
             options,
         } => {
             let function = function.0;
             let partition_by = partition_by.iter().map(|n| n.0).collect();
+            let order_by_descending = order_by
+                .map(|(_, options)| options.descending)
+                .unwrap_or(false);
+            let order_by_nulls_last = order_by
+                .map(|(_, options)| options.nulls_last)
+                .unwrap_or(false);
+            let order_by = order_by.map(|(n, _)| n.0);
+
             let options = match options {
                 WindowType::Over(options) => PyWindowMapping { inner: *options }.into_py(py),
                 WindowType::Rolling(options) => PyRollingGroupOptions {
@@ -1243,12 +1271,24 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
             Window {
                 function,
                 partition_by,
+                order_by,
+                order_by_descending,
+                order_by_nulls_last,
                 options,
             }
             .into_py(py)
         },
         AExpr::Wildcard => return Err(PyNotImplementedError::new_err("wildcard")),
-        AExpr::Slice { .. } => return Err(PyNotImplementedError::new_err("slice")),
+        AExpr::Slice {
+            input,
+            offset,
+            length,
+        } => Slice {
+            input: input.0,
+            offset: offset.0,
+            length: length.0,
+        }
+        .into_py(py),
         AExpr::Nth(_) => return Err(PyNotImplementedError::new_err("nth")),
         AExpr::Len => Len {}.into_py(py),
     };

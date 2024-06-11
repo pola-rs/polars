@@ -69,7 +69,9 @@ where
 
         self.field.dtype = get_object_type::<T>();
 
-        ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len as IdxSize, null_count)
+        unsafe {
+            ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len as IdxSize, null_count)
+        }
     }
 }
 
@@ -141,7 +143,7 @@ where
             len,
         });
 
-        ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0)
+        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0) }
     }
 
     pub fn new_from_vec_and_validity(name: &str, v: Vec<T>, validity: Bitmap) -> Self {
@@ -155,7 +157,9 @@ where
             len,
         });
 
-        ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, null_count as IdxSize)
+        unsafe {
+            ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, null_count as IdxSize)
+        }
     }
 
     pub fn new_empty(name: &str) -> Self {

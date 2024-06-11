@@ -26,16 +26,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-    deprecate_saturating,
-    issue_deprecation_warning,
-    validate_rolling_aggs_arguments,
-    validate_rolling_by_aggs_arguments,
-)
+from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
 from polars._utils.parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -44,6 +35,7 @@ from polars._utils.parse_expr_input import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    extend_bool,
     find_stacklevel,
     no_default,
     normalize_filepath,
@@ -397,13 +389,11 @@ class Expr:
         function.
 
         >>> pl.DataFrame({"vals": ["a", "x", None, "a"]}).with_columns(
-        ...     [
-        ...         pl.col("vals").cast(pl.Categorical),
-        ...         pl.col("vals")
-        ...         .cast(pl.Categorical)
-        ...         .to_physical()
-        ...         .alias("vals_physical"),
-        ...     ]
+        ...     pl.col("vals").cast(pl.Categorical),
+        ...     pl.col("vals")
+        ...     .cast(pl.Categorical)
+        ...     .to_physical()
+        ...     .alias("vals_physical"),
         ... )
         shape: (4, 2)
         ┌──────┬───────────────┐
@@ -419,7 +409,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> Self:
         """
         Return whether any of the values in the column are `True`.
@@ -475,7 +464,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
 
-    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> Self:
         """
         Return whether all values in the column are `True`.
@@ -709,196 +697,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
 
-    @deprecate_renamed_function("name.map", moved=True, version="0.19.12")
-    def map_alias(self, function: Callable[[str], str]) -> Self:
-        """
-        Rename the output of an expression by mapping a function over the root name.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.map`.
-
-        Parameters
-        ----------
-        function
-            Function that maps a root name to a new name.
-
-        See Also
-        --------
-        keep_name
-        prefix
-        suffix
-
-        Examples
-        --------
-        Remove a common suffix and convert to lower case.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A_reverse": [3, 2, 1],
-        ...         "B_reverse": ["z", "y", "x"],
-        ...     }
-        ... )
-        >>> df.with_columns(
-        ...     pl.all().reverse().name.map(lambda c: c.rstrip("_reverse").lower())
-        ... )
-        shape: (3, 4)
-        ┌───────────┬───────────┬─────┬─────┐
-        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
-        │ ---       ┆ ---       ┆ --- ┆ --- │
-        │ i64       ┆ str       ┆ i64 ┆ str │
-        ╞═══════════╪═══════════╪═════╪═════╡
-        │ 3         ┆ z         ┆ 1   ┆ x   │
-        │ 2         ┆ y         ┆ 2   ┆ y   │
-        │ 1         ┆ x         ┆ 3   ┆ z   │
-        └───────────┴───────────┴─────┴─────┘
-        """
-        return self.name.map(function)  # type: ignore[return-value]
-
-    @deprecate_renamed_function("name.prefix", moved=True, version="0.19.12")
-    def prefix(self, prefix: str) -> Self:
-        """
-        Add a prefix to the root column name of the expression.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.prefix`.
-
-        Parameters
-        ----------
-        prefix
-            Prefix to add to the root column name.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
-
-        See Also
-        --------
-        suffix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["x", "y", "z"],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.all().reverse().name.prefix("reverse_"))
-        shape: (3, 4)
-        ┌─────┬─────┬───────────┬───────────┐
-        │ a   ┆ b   ┆ reverse_a ┆ reverse_b │
-        │ --- ┆ --- ┆ ---       ┆ ---       │
-        │ i64 ┆ str ┆ i64       ┆ str       │
-        ╞═════╪═════╪═══════════╪═══════════╡
-        │ 1   ┆ x   ┆ 3         ┆ z         │
-        │ 2   ┆ y   ┆ 2         ┆ y         │
-        │ 3   ┆ z   ┆ 1         ┆ x         │
-        └─────┴─────┴───────────┴───────────┘
-        """
-        return self.name.prefix(prefix)  # type: ignore[return-value]
-
-    @deprecate_renamed_function("name.suffix", moved=True, version="0.19.12")
-    def suffix(self, suffix: str) -> Self:
-        """
-        Add a suffix to the root column name of the expression.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.suffix`.
-
-        Parameters
-        ----------
-        suffix
-            Suffix to add to the root column name.
-
-        Notes
-        -----
-        This will undo any previous renaming operations on the expression.
-
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
-
-        See Also
-        --------
-        prefix
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["x", "y", "z"],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.all().reverse().name.suffix("_reverse"))
-        shape: (3, 4)
-        ┌─────┬─────┬───────────┬───────────┐
-        │ a   ┆ b   ┆ a_reverse ┆ b_reverse │
-        │ --- ┆ --- ┆ ---       ┆ ---       │
-        │ i64 ┆ str ┆ i64       ┆ str       │
-        ╞═════╪═════╪═══════════╪═══════════╡
-        │ 1   ┆ x   ┆ 3         ┆ z         │
-        │ 2   ┆ y   ┆ 2         ┆ y         │
-        │ 3   ┆ z   ┆ 1         ┆ x         │
-        └─────┴─────┴───────────┴───────────┘
-        """
-        return self.name.suffix(suffix)  # type: ignore[return-value]
-
-    @deprecate_renamed_function("name.keep", moved=True, version="0.19.12")
-    def keep_name(self) -> Self:
-        """
-        Keep the original root name of the expression.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`name.keep`.
-
-        Notes
-        -----
-        Due to implementation constraints, this method can only be called as the last
-        expression in a chain.
-
-        See Also
-        --------
-        alias
-
-        Examples
-        --------
-        Undo an alias operation.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
-        ... )
-        >>> df.with_columns((pl.col("a") * 9).alias("c").name.keep())
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 9   ┆ 3   │
-        │ 18  ┆ 4   │
-        └─────┴─────┘
-
-        Prevent errors due to duplicate column names.
-
-        >>> df.select((pl.lit(10) / pl.all()).name.keep())
-        shape: (2, 2)
-        ┌──────┬──────────┐
-        │ a    ┆ b        │
-        │ ---  ┆ ---      │
-        │ f64  ┆ f64      │
-        ╞══════╪══════════╡
-        │ 10.0 ┆ 3.333333 │
-        │ 5.0  ┆ 2.5      │
-        └──────┴──────────┘
-        """
-        return self.name.keep()  # type: ignore[return-value]
-
     def exclude(
         self,
         columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
@@ -1061,16 +859,6 @@ class Expr:
 
         '''
         return function(self, *args, **kwargs)
-
-    @deprecate_renamed_function("not_", version="0.19.2")
-    def is_not(self) -> Self:
-        """
-        Negate a boolean expression.
-
-        .. deprecated:: 0.19.2
-            This method has been renamed to :func:`Expr.not_`.
-        """
-        return self.not_()
 
     def not_(self) -> Self:
         """
@@ -1915,7 +1703,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.mode())
 
-    def cast(self, dtype: PolarsDataType | type[Any], *, strict: bool = True) -> Self:
+    def cast(
+        self,
+        dtype: PolarsDataType | type[Any],
+        *,
+        strict: bool = True,
+        allow_overflow: bool = False,
+    ) -> Self:
         """
         Cast between data types.
 
@@ -1926,6 +1720,8 @@ class Expr:
         strict
             Throw an error if a cast could not be done (for instance, due to an
             overflow).
+        allow_overflow
+            Don't check for numeric overflow and instead do a `wrapping` numeric cast.
 
         Examples
         --------
@@ -1936,10 +1732,8 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("a").cast(pl.Float64),
-        ...         pl.col("b").cast(pl.Int32),
-        ...     ]
+        ...     pl.col("a").cast(pl.Float64),
+        ...     pl.col("b").cast(pl.Int32),
         ... )
         shape: (3, 2)
         ┌─────┬─────┐
@@ -1953,7 +1747,7 @@ class Expr:
         └─────┴─────┘
         """
         dtype = py_type_to_dtype(dtype)
-        return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
+        return self._from_pyexpr(self._pyexpr.cast(dtype, strict, allow_overflow))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
@@ -2034,31 +1828,22 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(
-        self,
-        k: int | IntoExprColumn = 5,
-        *,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
-    ) -> Self:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` largest elements.
 
+        Non-null elements are always preferred over null elements. The output
+        is not guaranteed to be in any particular order, call :func:`sort`
+        after this function if you wish the output to be sorted.
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n)
 
         Parameters
         ----------
         k
             Number of elements to return.
-        nulls_last
-            Place null values last.
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-        multithreaded
-            Sort using multiple threads.
 
         See Also
         --------
@@ -2070,16 +1855,10 @@ class Expr:
         --------
         Get the 5 largest values in series.
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "value": [1, 98, 2, 3, 99, 4],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"value": [1, 98, 2, 3, 99, 4]})
         >>> df.select(
-        ...     [
-        ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").bottom_k().alias("bottom_k"),
-        ...     ]
+        ...     pl.col("value").top_k().alias("top_k"),
+        ...     pl.col("value").bottom_k().alias("bottom_k"),
         ... )
         shape: (5, 2)
         ┌───────┬──────────┐
@@ -2087,22 +1866,15 @@ class Expr:
         │ ---   ┆ ---      │
         │ i64   ┆ i64      │
         ╞═══════╪══════════╡
-        │ 99    ┆ 1        │
-        │ 98    ┆ 2        │
-        │ 4     ┆ 3        │
-        │ 3     ┆ 4        │
-        │ 2     ┆ 98       │
+        │ 4     ┆ 1        │
+        │ 98    ┆ 98       │
+        │ 2     ┆ 2        │
+        │ 3     ┆ 3        │
+        │ 99    ┆ 4        │
         └───────┴──────────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(
-            self._pyexpr.top_k(
-                k,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-                multithreaded=multithreaded,
-            )
-        )
+        return self._from_pyexpr(self._pyexpr.top_k(k))
 
     def top_k_by(
         self,
@@ -2110,34 +1882,30 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
     ) -> Self:
         r"""
-        Return elements corresponding to the `k` largest elements of the `by` column(s).
+        Return the elements corresponding to the `k` largest elements of the `by` column(s).
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n \log{n})
 
         Parameters
         ----------
         by
-            Column(s) included in sort order. Accepts expression input.
-            Strings are parsed as column names.
+            Column(s) used to determine the largest elements.
+            Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
         descending
-            If `True`, consider the k smallest (instead of the k largest). Top-k by
-            multiple columns can be specified per column by passing a sequence of
+            Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
             booleans.
-        nulls_last
-            Place null values last.
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-        multithreaded
-            Sort using multiple threads.
 
         See Also
         --------
@@ -2224,50 +1992,28 @@ class Expr:
         │ Banana ┆ 6   ┆ 1   │
         │ Banana ┆ 5   ┆ 2   │
         └────────┴─────┴─────┘
-        """
+        """  # noqa: W505
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
-        return self._from_pyexpr(
-            self._pyexpr.top_k_by(
-                k,
-                by,
-                descending=descending,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-                multithreaded=multithreaded,
-            )
-        )
+        descending = extend_bool(descending, len(by), "descending", "by")
+        return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, descending=descending))
 
-    def bottom_k(
-        self,
-        k: int | IntoExprColumn = 5,
-        *,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
-    ) -> Self:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` smallest elements.
 
+        Non-null elements are always preferred over null elements. The output is
+        not guaranteed to be in any particular order, call :func:`sort` after
+        this function if you wish the output to be sorted.
+
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n)
 
         Parameters
         ----------
         k
             Number of elements to return.
-        nulls_last
-            Place null values last.
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-        multithreaded
-            Sort using multiple threads.
 
         See Also
         --------
@@ -2283,10 +2029,8 @@ class Expr:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").bottom_k().alias("bottom_k"),
-        ...     ]
+        ...     pl.col("value").top_k().alias("top_k"),
+        ...     pl.col("value").bottom_k().alias("bottom_k"),
         ... )
         shape: (5, 2)
         ┌───────┬──────────┐
@@ -2294,22 +2038,15 @@ class Expr:
         │ ---   ┆ ---      │
         │ i64   ┆ i64      │
         ╞═══════╪══════════╡
-        │ 99    ┆ 1        │
-        │ 98    ┆ 2        │
-        │ 4     ┆ 3        │
-        │ 3     ┆ 4        │
-        │ 2     ┆ 98       │
+        │ 4     ┆ 1        │
+        │ 98    ┆ 98       │
+        │ 2     ┆ 2        │
+        │ 3     ┆ 3        │
+        │ 99    ┆ 4        │
         └───────┴──────────┘
         """
         k = parse_as_expression(k)
-        return self._from_pyexpr(
-            self._pyexpr.bottom_k(
-                k,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-                multithreaded=multithreaded,
-            )
-        )
+        return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
     def bottom_k_by(
         self,
@@ -2317,34 +2054,30 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
-        maintain_order: bool = False,
-        multithreaded: bool = True,
     ) -> Self:
         r"""
-        Return elements corresponding to the `k` smallest elements of `by` column(s).
+        Return the elements corresponding to the `k` smallest elements of the `by` column(s).
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         This has time complexity:
 
-        .. math:: O(n + k \log{n} - \frac{k}{2})
+        .. math:: O(n \log{n})
 
         Parameters
         ----------
         by
-            Column(s) included in sort order.
+            Column(s) used to determine the smallest elements.
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
         descending
-            If `True`, consider the k largest (instead of the k smallest). Bottom-k by
-            multiple columns can be specified per column by passing a sequence of
+            Consider the `k` largest elements of the `by` column(s) (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
             booleans.
-        nulls_last
-            Place null values last.
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-        multithreaded
-            Sort using multiple threads.
 
         See Also
         --------
@@ -2431,23 +2164,12 @@ class Expr:
         │ Banana ┆ 5   ┆ 2   │
         │ Banana ┆ 6   ┆ 1   │
         └────────┴─────┴─────┘
-        """
+        """  # noqa: W505
         k = parse_as_expression(k)
         by = parse_as_list_of_expressions(by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
+        descending = extend_bool(descending, len(by), "descending", "by")
         return self._from_pyexpr(
-            self._pyexpr.bottom_k_by(
-                k,
-                by,
-                descending=descending,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-                multithreaded=multithreaded,
-            )
+            self._pyexpr.bottom_k_by(by, k=k, descending=descending)
         )
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
@@ -2601,7 +2323,7 @@ class Expr:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | Sequence[bool] = False,
         multithreaded: bool = True,
         maintain_order: bool = False,
     ) -> Self:
@@ -2622,7 +2344,8 @@ class Expr:
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Place null values last; can specify a single boolean applying to all columns
+            or a sequence of booleans for per-column control.
         multithreaded
             Sort using multiple threads.
         maintain_order
@@ -2729,11 +2452,8 @@ class Expr:
         └───────┴────────┴────────┘
         """
         by = parse_as_list_of_expressions(by, *more_by)
-        if isinstance(descending, bool):
-            descending = [descending]
-        elif len(by) != len(descending):
-            msg = f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
-            raise ValueError(msg)
+        descending = extend_bool(descending, len(by), "descending", "by")
+        nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyexpr(
             self._pyexpr.sort_by(
                 by, descending, nulls_last, multithreaded, maintain_order
@@ -2788,7 +2508,7 @@ class Expr:
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
         """
-        if isinstance(indices, list) or (
+        if isinstance(indices, Sequence) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
@@ -2839,7 +2559,6 @@ class Expr:
         index_lit = parse_as_expression(index)
         return self._from_pyexpr(self._pyexpr.get(index_lit))
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
     ) -> Self:
@@ -3623,8 +3342,9 @@ class Expr:
 
     def over(
         self,
-        expr: IntoExpr | Iterable[IntoExpr],
+        partition_by: IntoExpr | Iterable[IntoExpr],
         *more_exprs: IntoExpr,
+        order_by: IntoExpr | Iterable[IntoExpr] | None = None,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Self:
         """
@@ -3639,11 +3359,14 @@ class Expr:
 
         Parameters
         ----------
-        expr
+        partition_by
             Column(s) to group by. Accepts expression input. Strings are parsed as
             column names.
         *more_exprs
             Additional columns to group by, specified as positional arguments.
+        order_by:
+            Order the window functions/aggregations with the partitioned groups by the
+            result of the expression passed to `order_by`.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
                 If the aggregation results in multiple values, assign them back to their
@@ -3760,8 +3483,18 @@ class Expr:
         └─────┴─────┴─────┘
 
         """
-        exprs = parse_as_list_of_expressions(expr, *more_exprs)
-        return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
+        partition_by = parse_as_list_of_expressions(partition_by, *more_exprs)
+        if order_by is not None:
+            order_by = parse_as_list_of_expressions(order_by)
+        return self._from_pyexpr(
+            self._pyexpr.over(
+                partition_by,
+                order_by=order_by,
+                order_by_descending=False,  # does not work yet
+                order_by_nulls_last=False,  # does not work yet
+                mapping_strategy=mapping_strategy,
+            )
+        )
 
     def rolling(
         self,
@@ -3770,7 +3503,6 @@ class Expr:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-        check_sorted: bool | None = None,
     ) -> Self:
         """
         Create rolling groups based on a temporal or integer column.
@@ -3828,10 +3560,6 @@ class Expr:
             Offset of the window. Default is `-period`.
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
-        check_sorted
-            Whether to check that `index_column` is sorted.
-            If you are sure the data is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output.
 
         Examples
         --------
@@ -3865,8 +3593,6 @@ class Expr:
         │ 2020-01-08 23:16:43 ┆ 1   ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴─────┴───────┴───────┴───────┘
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
@@ -4160,17 +3886,17 @@ class Expr:
         ...     pl.col("foo").cut([-1, 1], include_breaks=True).alias("cut")
         ... ).unnest("cut")
         shape: (5, 3)
-        ┌─────┬──────┬────────────┐
-        │ foo ┆ brk  ┆ foo_bin    │
-        │ --- ┆ ---  ┆ ---        │
-        │ i64 ┆ f64  ┆ cat        │
-        ╞═════╪══════╪════════════╡
-        │ -2  ┆ -1.0 ┆ (-inf, -1] │
-        │ -1  ┆ -1.0 ┆ (-inf, -1] │
-        │ 0   ┆ 1.0  ┆ (-1, 1]    │
-        │ 1   ┆ 1.0  ┆ (-1, 1]    │
-        │ 2   ┆ inf  ┆ (1, inf]   │
-        └─────┴──────┴────────────┘
+        ┌─────┬────────────┬────────────┐
+        │ foo ┆ breakpoint ┆ category   │
+        │ --- ┆ ---        ┆ ---        │
+        │ i64 ┆ f64        ┆ cat        │
+        ╞═════╪════════════╪════════════╡
+        │ -2  ┆ -1.0       ┆ (-inf, -1] │
+        │ -1  ┆ -1.0       ┆ (-inf, -1] │
+        │ 0   ┆ 1.0        ┆ (-1, 1]    │
+        │ 1   ┆ 1.0        ┆ (-1, 1]    │
+        │ 2   ┆ inf        ┆ (1, inf]   │
+        └─────┴────────────┴────────────┘
         """
         return self._from_pyexpr(
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
@@ -4270,17 +3996,17 @@ class Expr:
         ...     pl.col("foo").qcut([0.25, 0.75], include_breaks=True).alias("qcut")
         ... ).unnest("qcut")
         shape: (5, 3)
-        ┌─────┬──────┬────────────┐
-        │ foo ┆ brk  ┆ foo_bin    │
-        │ --- ┆ ---  ┆ ---        │
-        │ i64 ┆ f64  ┆ cat        │
-        ╞═════╪══════╪════════════╡
-        │ -2  ┆ -1.0 ┆ (-inf, -1] │
-        │ -1  ┆ -1.0 ┆ (-inf, -1] │
-        │ 0   ┆ 1.0  ┆ (-1, 1]    │
-        │ 1   ┆ 1.0  ┆ (-1, 1]    │
-        │ 2   ┆ inf  ┆ (1, inf]   │
-        └─────┴──────┴────────────┘
+        ┌─────┬────────────┬────────────┐
+        │ foo ┆ breakpoint ┆ category   │
+        │ --- ┆ ---        ┆ ---        │
+        │ i64 ┆ f64        ┆ cat        │
+        ╞═════╪════════════╪════════════╡
+        │ -2  ┆ -1.0       ┆ (-inf, -1] │
+        │ -1  ┆ -1.0       ┆ (-inf, -1] │
+        │ 0   ┆ 1.0        ┆ (-1, 1]    │
+        │ 1   ┆ 1.0        ┆ (-1, 1]    │
+        │ 2   ┆ inf        ┆ (1, inf]   │
+        └─────┴────────────┴────────────┘
         """
         if isinstance(quantiles, int):
             pyexpr = self._pyexpr.qcut_uniform(
@@ -4303,8 +4029,8 @@ class Expr:
         Returns
         -------
         Expr
-            Expression of data type `Struct` with fields `lengths` of data type `Int32`
-            and `values` of the original data type.
+            Expression of data type `Struct` with fields `len` of data type `UInt32`
+            and `value` of the original data type.
 
         See Also
         --------
@@ -4315,18 +4041,18 @@ class Expr:
         >>> df = pl.DataFrame({"a": [1, 1, 2, 1, None, 1, 3, 3]})
         >>> df.select(pl.col("a").rle()).unnest("a")
         shape: (6, 2)
-        ┌─────────┬────────┐
-        │ lengths ┆ values │
-        │ ---     ┆ ---    │
-        │ i32     ┆ i64    │
-        ╞═════════╪════════╡
-        │ 2       ┆ 1      │
-        │ 1       ┆ 2      │
-        │ 1       ┆ 1      │
-        │ 1       ┆ null   │
-        │ 1       ┆ 1      │
-        │ 2       ┆ 3      │
-        └─────────┴────────┘
+        ┌─────┬───────┐
+        │ len ┆ value │
+        │ --- ┆ ---   │
+        │ u32 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 2   ┆ 1     │
+        │ 1   ┆ 2     │
+        │ 1   ┆ 1     │
+        │ 1   ┆ null  │
+        │ 1   ┆ 1     │
+        │ 2   ┆ 3     │
+        └─────┴───────┘
         """
         return self._from_pyexpr(self._pyexpr.rle())
 
@@ -4388,6 +4114,9 @@ class Expr:
 
         The original order of the remaining elements is preserved.
 
+        Elements where the filter does not evaluate to True are discarded, including
+        nulls.
+
         Mostly useful in an aggregation context. If you want to filter on a DataFrame
         level, use `LazyFrame.filter`.
 
@@ -4446,16 +4175,6 @@ class Expr:
         │ b   ┆ 1   ┆ 2   ┆ 9   │
         └─────┴─────┴─────┴─────┘
         """
-        if "predicate" in constraints:
-            if isinstance(constraints["predicate"], pl.Expr):
-                issue_deprecation_warning(
-                    "`filter` no longer takes a 'predicate' parameter.\n"
-                    "To silence this warning you should omit the keyword and pass "
-                    "as a positional argument instead.",
-                    version="0.19.17",
-                )
-                predicates = (*predicates, constraints.pop("predicate"))
-
         predicate = parse_predicates_constraints_as_expression(
             *predicates, **constraints
         )
@@ -4524,21 +4243,22 @@ class Expr:
         *,
         agg_list: bool = False,
         is_elementwise: bool = False,
+        returns_scalar: bool = False,
     ) -> Self:
         """
         Apply a custom python function to a whole Series or sequence of Series.
 
-        The output of this custom function must be a Series (or a NumPy array, in which
-        case it will be automatically converted into a Series). If you want to apply a
+        The output of this custom function is presumed to be either a Series,
+        or a NumPy array (in which case it will be automatically converted into
+        a Series), or a scalar that will be converted into a Series. If the
+        result is a scalar and you want it to stay as a scalar, pass in
+        ``returns_scalar=True``. If you want to apply a
         custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        .. warning::
-            If you are looking to map a function over a window function or group_by
-            context, refer to :func:`map_elements` instead.
-            Read more in `the book
-            <https://docs.pola.rs/user-guide/expressions/user-defined-functions>`_.
+        If your function returns a scalar, for example a float, use
+        :func:`map_to_scalar` instead.
 
         Parameters
         ----------
@@ -4556,6 +4276,11 @@ class Expr:
             function. This parameter only works in a group-by context.
             The function will be invoked only once on a list of groups, rather than
             once per group.
+        returns_scalar
+            If the function returns a scalar, by default it will be wrapped in
+            a list in the output, since the assumption is that the function
+            always returns something Series-like. If you want to keep the
+            result as a scalar, set this argument to True.
 
         Warnings
         --------
@@ -4597,7 +4322,7 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.max(), agg_list=False)
+        ...     pl.col("b").map_batches(lambda x: x + 2, agg_list=False)
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬───────────┐
@@ -4605,15 +4330,39 @@ class Expr:
         │ --- ┆ ---       │
         │ i64 ┆ list[i64] │
         ╞═════╪═══════════╡
-        │ 1   ┆ [4]       │
-        │ 0   ┆ [3]       │
+        │ 1   ┆ [4, 6]    │
+        │ 0   ┆ [3, 5]    │
         └─────┴───────────┘
 
         Using `agg_list=True` would be more efficient. In this example, the input of
         the function is a Series of type `List(Int64)`.
 
         >>> df.group_by("a").agg(
-        ...     pl.col("b").map_batches(lambda x: x.list.max(), agg_list=True)
+        ...     pl.col("b").map_batches(
+        ...         lambda x: x.list.eval(pl.element() + 2), agg_list=True
+        ...     )
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ a   ┆ b         │
+        │ --- ┆ ---       │
+        │ i64 ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ 0   ┆ [3, 5]    │
+        │ 1   ┆ [4, 6]    │
+        └─────┴───────────┘
+
+        Here's an example of a function that returns a scalar, where we want it
+        to stay as a scalar:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [0, 1, 0, 1],
+        ...         "b": [1, 2, 3, 4],
+        ...     }
+        ... )
+        >>> df.group_by("a").agg(
+        ...     pl.col("b").map_batches(lambda x: x.max(), returns_scalar=True)
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌─────┬─────┐
@@ -4621,9 +4370,10 @@ class Expr:
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 0   ┆ 3   │
         │ 1   ┆ 4   │
+        │ 0   ┆ 3   │
         └─────┴─────┘
+
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
@@ -4634,6 +4384,7 @@ class Expr:
                 return_dtype,
                 agg_list,
                 is_elementwise,
+                returns_scalar,
             )
         )
 
@@ -4659,6 +4410,12 @@ class Expr:
               `pl.col("col_name").sqrt()`.
             - For mapping inner elements of lists, consider:
               `pl.col("col_name").list.eval(pl.element().sqrt())`.
+            - For mapping elements of struct fields, consider:
+              `pl.col("col_name").struct.field("field_name").sqrt()`.
+
+            If you want to replace the original column or field,
+            consider :meth:`.with_columns <polars.DataFrame.with_columns>`
+            and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
@@ -6308,7 +6065,6 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling min based on another column.
@@ -6355,12 +6111,6 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6422,14 +6172,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_min_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_min_by(by, window_size, min_periods, closed)
@@ -6443,7 +6186,6 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling max based on another column.
@@ -6490,12 +6232,6 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6583,14 +6319,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_max_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_max_by(by, window_size, min_periods, closed)
@@ -6604,7 +6333,6 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling mean based on another column.
@@ -6651,12 +6379,6 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6746,14 +6468,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
         └───────┴─────────────────────┴──────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_mean_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_mean_by(
@@ -6772,7 +6487,6 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling sum based on another column.
@@ -6819,12 +6533,6 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -6912,14 +6620,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_sum_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_sum_by(by, window_size, min_periods, closed)
@@ -6934,7 +6635,6 @@ class Expr:
         min_periods: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling standard deviation based on another column.
@@ -6983,12 +6683,6 @@ class Expr:
             defaults to `'right'`.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7076,14 +6770,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_std_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_std_by(
@@ -7104,7 +6791,6 @@ class Expr:
         min_periods: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling variance based on another column.
@@ -7153,12 +6839,6 @@ class Expr:
             defaults to `'right'`.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7246,14 +6926,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
         └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_var_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_var_by(
@@ -7273,7 +6946,6 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling median based on another column.
@@ -7320,12 +6992,6 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7389,14 +7055,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5               │
         └───────┴─────────────────────┴────────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_median_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_median_by(by, window_size, min_periods, closed)
@@ -7412,7 +7071,6 @@ class Expr:
         interpolation: RollingInterpolationMethod = "nearest",
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling quantile based on another column.
@@ -7463,12 +7121,6 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive),
             defaults to `'right'`.
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column.
-
-            .. deprecated:: 0.20.27
-                This operation no longer requires sorted data, you can safely remove
-                the `warn_if_unsorted` argument.
 
         Notes
         -----
@@ -7532,14 +7184,7 @@ class Expr:
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0                 │
         └───────┴─────────────────────┴──────────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
         window_size = _prepare_rolling_by_window_args(window_size)
-        if warn_if_unsorted is not None:
-            issue_deprecation_warning(
-                "`warn_if_unsorted` is deprecated in `rolling_quantile_by` because it "
-                "no longer requires sorted data - you can safely remove this argument.",
-                version="0.20.27",
-            )
         by = parse_as_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile_by(
@@ -7555,14 +7200,11 @@ class Expr:
     @unstable()
     def rolling_min(
         self,
-        window_size: int | timedelta | str,
+        window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -7573,69 +7215,23 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their min.
+        `weights` vector. The resulting values will be aggregated to their min.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
-
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic
-            temporal size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_min` is deprecated - please use
-                :meth:`.rolling_min_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
+            Set the labels at the center of the window.
 
         Notes
         -----
@@ -7702,99 +7298,24 @@ class Expr:
         │ 5.0 ┆ 4.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling min with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_min=pl.col("index").rolling_min(window_size="2h", by="date")
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_min │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ u32             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3               │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23              │
-        └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_min` is deprecated. Instead of "
-                "`rolling_min(..., by='foo')`, please use `rolling_min_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_min_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_min(
                 window_size,
                 weights,
                 min_periods,
-                center,
+                center=center,
             )
         )
 
     @unstable()
     def rolling_max(
         self,
-        window_size: int | timedelta | str,
+        window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -7805,69 +7326,23 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their max.
+        `weights` vector. The resulting values will be aggregated to their max.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
-
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_max` is deprecated - please use
-                :meth:`.rolling_max_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
+            Set the labels at the center of the window.
 
         Notes
         -----
@@ -7934,105 +7409,7 @@ class Expr:
         │ 5.0 ┆ 6.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling max with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_max=pl.col("index").rolling_max(window_size="2h", by="date")
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_max │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ u32             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
-        └───────┴─────────────────────┴─────────────────┘
-
-        Compute the rolling max with the closure of windows on both sides
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_max=pl.col("index").rolling_max(
-        ...         window_size="2h", by="date", closed="both"
-        ...     )
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_max │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ u32             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 2               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 3               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 4               │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 20              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 21              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 22              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 23              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 24              │
-        └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_max` is deprecated. Instead of "
-                "`rolling_max(..., by='foo')`, please use `rolling_max_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_max_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_max(
                 window_size,
@@ -8045,14 +7422,11 @@ class Expr:
     @unstable()
     def rolling_mean(
         self,
-        window_size: int | timedelta | str,
+        window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -8063,69 +7437,23 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their mean.
+        `weights` vector. The resulting values will be aggregated to their mean.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
-
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_mean` is deprecated - please use
-                :meth:`.rolling_mean_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
+            Set the labels at the center of the window.
 
         Notes
         -----
@@ -8192,107 +7520,7 @@ class Expr:
         │ 5.0 ┆ 5.0          │
         │ 6.0 ┆ null         │
         └─────┴──────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling mean with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_mean=pl.col("index").rolling_mean(
-        ...         window_size="2h", by="date"
-        ...     )
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬──────────────────┐
-        │ index ┆ date                ┆ rolling_row_mean │
-        │ ---   ┆ ---                 ┆ ---              │
-        │ u32   ┆ datetime[μs]        ┆ f64              │
-        ╞═══════╪═════════════════════╪══════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.5              │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.5              │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.5              │
-        │ …     ┆ …                   ┆ …                │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.5             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.5             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.5             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.5             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.5             │
-        └───────┴─────────────────────┴──────────────────┘
-
-        Compute the rolling mean with the closure of windows on both sides
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_mean=pl.col("index").rolling_mean(
-        ...         window_size="2h", by="date", closed="both"
-        ...     )
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬──────────────────┐
-        │ index ┆ date                ┆ rolling_row_mean │
-        │ ---   ┆ ---                 ┆ ---              │
-        │ u32   ┆ datetime[μs]        ┆ f64              │
-        ╞═══════╪═════════════════════╪══════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0.0              │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5              │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0              │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 2.0              │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 3.0              │
-        │ …     ┆ …                   ┆ …                │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 19.0             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 20.0             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 21.0             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0             │
-        └───────┴─────────────────────┴──────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_mean` is deprecated. Instead of "
-                "`rolling_mean(..., by='foo')`, please use `rolling_mean_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_mean_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_mean(
                 window_size,
@@ -8305,14 +7533,11 @@ class Expr:
     @unstable()
     def rolling_sum(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -8323,69 +7548,23 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weights` vector. The resulting values will be aggregated to their sum.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
-
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            of dtype `{Date, Datetime}`
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_sum` is deprecated - please use
-                :meth:`.rolling_sum_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
+            Set the labels at the center of the window.
 
         Notes
         -----
@@ -8452,105 +7631,7 @@ class Expr:
         │ 5.0 ┆ 15.0        │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling sum with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_sum=pl.col("index").rolling_sum(window_size="2h", by="date")
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_sum │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ u32             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 5               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 7               │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 39              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 41              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 43              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 45              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 47              │
-        └───────┴─────────────────────┴─────────────────┘
-
-        Compute the rolling sum with the closure of windows on both sides
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_sum=pl.col("index").rolling_sum(
-        ...         window_size="2h", by="date", closed="both"
-        ...     )
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_sum │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ u32             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ 0               │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 1               │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 3               │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 6               │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 9               │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 57              │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 60              │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 63              │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 66              │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 69              │
-        └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_sum` is deprecated. Instead of "
-                "`rolling_sum(..., by='foo')`, please use `rolling_sum_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_sum_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_sum(
                 window_size,
@@ -8563,15 +7644,12 @@ class Expr:
     @unstable()
     def rolling_std(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
         ddof: int = 1,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -8580,69 +7658,27 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weights` vector. The resulting values will be aggregated to their std.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
-            An optional slice with the same length as the window that determines the
-            relative contribution of each value in a window to the output.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_std` is deprecated - please use
-                :meth:`.rolling_std_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
+            Set the labels at the center of the window.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
 
         Notes
         -----
@@ -8709,128 +7745,26 @@ class Expr:
         │ 5.0 ┆ 1.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling std with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_std=pl.col("index").rolling_std(window_size="2h", by="date")
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_std │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ f64             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.707107        │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.707107        │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.707107        │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 0.707107        │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.707107        │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.707107        │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.707107        │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 0.707107        │
-        └───────┴─────────────────────┴─────────────────┘
-
-        Compute the rolling std with the closure of windows on both sides
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_std=pl.col("index").rolling_std(
-        ...         window_size="2h", by="date", closed="both"
-        ...     )
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_std │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ f64             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.707107        │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 1.0             │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 1.0             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
-        └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_std` is deprecated. Instead of "
-                "`rolling_std(..., by='foo')`, please use `rolling_std_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_std_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                ddof=ddof,
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
                 window_size,
                 weights,
                 min_periods,
-                center,
-                ddof,
+                center=center,
+                ddof=ddof,
             )
         )
 
     @unstable()
     def rolling_var(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
         ddof: int = 1,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -8839,69 +7773,27 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weights` vector. The resulting values will be aggregated to their var.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
-            An optional slice with the same length as the window that determines the
-            relative contribution of each value in a window to the output.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_var` is deprecated - please use
-                :meth:`.rolling_var_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
+            Set the labels at the center of the window.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
 
         Notes
         -----
@@ -8968,127 +7860,25 @@ class Expr:
         │ 5.0 ┆ 1.0         │
         │ 6.0 ┆ null        │
         └─────┴─────────────┘
-
-        Create a DataFrame with a datetime column and a row number column
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
-        ... ).with_row_index()
-        >>> df_temporal
-        shape: (25, 2)
-        ┌───────┬─────────────────────┐
-        │ index ┆ date                │
-        │ ---   ┆ ---                 │
-        │ u32   ┆ datetime[μs]        │
-        ╞═══════╪═════════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 │
-        │ 1     ┆ 2001-01-01 01:00:00 │
-        │ 2     ┆ 2001-01-01 02:00:00 │
-        │ 3     ┆ 2001-01-01 03:00:00 │
-        │ 4     ┆ 2001-01-01 04:00:00 │
-        │ …     ┆ …                   │
-        │ 20    ┆ 2001-01-01 20:00:00 │
-        │ 21    ┆ 2001-01-01 21:00:00 │
-        │ 22    ┆ 2001-01-01 22:00:00 │
-        │ 23    ┆ 2001-01-01 23:00:00 │
-        │ 24    ┆ 2001-01-02 00:00:00 │
-        └───────┴─────────────────────┘
-
-        Compute the rolling var with the temporal windows closed on the right (default)
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_var=pl.col("index").rolling_var(window_size="2h", by="date")
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_var │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ f64             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 0.5             │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 0.5             │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 0.5             │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 0.5             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 0.5             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 0.5             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 0.5             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 0.5             │
-        └───────┴─────────────────────┴─────────────────┘
-
-        Compute the rolling var with the closure of windows on both sides
-
-        >>> df_temporal.with_columns(
-        ...     rolling_row_var=pl.col("index").rolling_var(
-        ...         window_size="2h", by="date", closed="both"
-        ...     )
-        ... )  # doctest:+SKIP
-        shape: (25, 3)
-        ┌───────┬─────────────────────┬─────────────────┐
-        │ index ┆ date                ┆ rolling_row_var │
-        │ ---   ┆ ---                 ┆ ---             │
-        │ u32   ┆ datetime[μs]        ┆ f64             │
-        ╞═══════╪═════════════════════╪═════════════════╡
-        │ 0     ┆ 2001-01-01 00:00:00 ┆ null            │
-        │ 1     ┆ 2001-01-01 01:00:00 ┆ 0.5             │
-        │ 2     ┆ 2001-01-01 02:00:00 ┆ 1.0             │
-        │ 3     ┆ 2001-01-01 03:00:00 ┆ 1.0             │
-        │ 4     ┆ 2001-01-01 04:00:00 ┆ 1.0             │
-        │ …     ┆ …                   ┆ …               │
-        │ 20    ┆ 2001-01-01 20:00:00 ┆ 1.0             │
-        │ 21    ┆ 2001-01-01 21:00:00 ┆ 1.0             │
-        │ 22    ┆ 2001-01-01 22:00:00 ┆ 1.0             │
-        │ 23    ┆ 2001-01-01 23:00:00 ┆ 1.0             │
-        │ 24    ┆ 2001-01-02 00:00:00 ┆ 1.0             │
-        └───────┴─────────────────────┴─────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_var` is deprecated. Instead of "
-                "`rolling_var(..., by='foo')`, please use `rolling_var_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_var_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                ddof=ddof,
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
                 window_size,
                 weights,
                 min_periods,
-                center,
-                ddof,
+                center=center,
+                ddof=ddof,
             )
         )
 
     @unstable()
     def rolling_median(
         self,
-        window_size: int | timedelta | str,
+        window_size: int | timedelta,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling median.
@@ -9097,67 +7887,25 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weights` vector. The resulting values will be aggregated to their median.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic temporal
-            size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
-            An optional slice with the same length as the window that determines the
-            relative contribution of each value in a window to the output.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_median` is deprecated - please use
-                :meth:`.rolling_median_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
+            Set the labels at the center of the window.
 
         Notes
         -----
@@ -9225,32 +7973,12 @@ class Expr:
         │ 6.0 ┆ null           │
         └─────┴────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_median` is deprecated. Instead of "
-                "`rolling_median(..., by='foo')`, please use `rolling_median_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_median_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_median(
                 window_size,
                 weights,
                 min_periods,
-                center,
+                center=center,
             )
         )
 
@@ -9259,14 +7987,11 @@ class Expr:
         self,
         quantile: float,
         interpolation: RollingInterpolationMethod = "nearest",
-        window_size: int | timedelta | str = 2,
+        window_size: int | timedelta = 2,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
-        by: str | None = None,
-        closed: ClosedInterval | None = None,
-        warn_if_unsorted: bool | None = None,
     ) -> Self:
         """
         Compute a rolling quantile.
@@ -9275,16 +8000,12 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        If `by` has not been specified (the default), the window at a given row will
-        include the row itself, and the `window_size - 1` elements before it.
+        A window of length `window_size` will traverse the array. The values that fill
+        this window will (optionally) be multiplied with the weights given by the
+        `weights` vector. The resulting values will be aggregated to their quantile.
 
-        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="right"`
-        (the default) means the windows will be:
-
-            - (t_0 - window_size, t_0]
-            - (t_1 - window_size, t_1]
-            - ...
-            - (t_n - window_size, t_n]
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -9293,53 +8014,15 @@ class Expr:
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
             Interpolation method.
         window_size
-            The length of the window. Can be a fixed integer size, or a dynamic
-            temporal size indicated by a timedelta or the following string language:
-
-            - 1ns   (1 nanosecond)
-            - 1us   (1 microsecond)
-            - 1ms   (1 millisecond)
-            - 1s    (1 second)
-            - 1m    (1 minute)
-            - 1h    (1 hour)
-            - 1d    (1 calendar day)
-            - 1w    (1 calendar week)
-            - 1mo   (1 calendar month)
-            - 1q    (1 calendar quarter)
-            - 1y    (1 calendar year)
-            - 1i    (1 index count)
-
-            By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
-            "calendar year".
-
-            If a timedelta or the dynamic string language is used, the `by`
-            and `closed` arguments must also be set.
+            The length of the window in number of elements.
         weights
-            An optional slice with the same length as the window that determines the
-            relative contribution of each value in a window to the output.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
-            Set the labels at the center of the window
-        by
-            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
-            set the column that will be used to determine the windows. This column must
-            be of dtype Datetime or Date.
-
-            .. deprecated:: 0.20.24
-                Passing `by` to `rolling_quantile` is deprecated - please use
-                :meth:`.rolling_quantile_by` instead.
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive); only
-            applicable if `by` has been set (in which case, it defaults to `'right'`).
-        warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed).
+            Set the labels at the center of the window.
 
         Notes
         -----
@@ -9435,27 +8118,6 @@ class Expr:
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """
-        window_size = deprecate_saturating(window_size)
-        window_size, min_periods = _prepare_rolling_window_args(
-            window_size, min_periods
-        )
-        if by is not None:
-            issue_deprecation_warning(
-                "Passing `by` to `rolling_quantile` is deprecated. Instead of "
-                "`rolling_quantile(..., by='foo')`, please use `rolling_quantile_by('foo', ...)`.",
-                version="0.20.24",
-            )
-            validate_rolling_by_aggs_arguments(weights, center=center)
-            return self.rolling_quantile_by(
-                by=by,
-                # integer `window_size` was already not supported when `by` was passed
-                window_size=window_size,  # type: ignore[arg-type]
-                min_periods=min_periods,
-                closed=closed or "right",
-                warn_if_unsorted=warn_if_unsorted,
-                quantile=quantile,
-            )
-        window_size = validate_rolling_aggs_arguments(window_size, closed)
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile(
                 quantile,
@@ -9463,7 +8125,7 @@ class Expr:
                 window_size,
                 weights,
                 min_periods,
-                center,
+                center=center,
             )
         )
 
@@ -9476,8 +8138,8 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        The window at a given row includes the row itself and the
-        `window_size - 1` elements before it.
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
 
         Parameters
         ----------
@@ -9515,8 +8177,8 @@ class Expr:
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
-        min_periods: int | None = None,
         *,
+        min_periods: int | None = None,
         center: bool = False,
     ) -> Self:
         """
@@ -9531,17 +8193,13 @@ class Expr:
         function
             Custom aggregation function.
         window_size
-            Size of the window. The window at a given row will include the row
-            itself and the `window_size - 1` elements before it.
+            The length of the window in number of elements.
         weights
-            A list of weights with the same length as the window that will be multiplied
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
+            a result. If set to `None` (default), it will be set equal to `window_size`.
         center
             Set the labels at the center of the window.
 
@@ -10525,17 +9183,16 @@ class Expr:
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving average.
@@ -10578,7 +9235,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -10586,7 +9243,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -10608,16 +9265,6 @@ class Expr:
         │ 2.428571 │
         └──────────┘
         """
-        if ignore_nulls is None:
-            issue_deprecation_warning(
-                "The default value for `ignore_nulls` for `ewm` methods"
-                " will change from True to False in the next breaking release."
-                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
-                " and silence this warning.",
-                version="0.20.11",
-            )
-            ignore_nulls = True
-
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
@@ -10628,7 +9275,6 @@ class Expr:
         by: str | IntoExpr,
         *,
         half_life: str | timedelta,
-        check_sorted: bool | None = None,
     ) -> Self:
         r"""
         Calculate time-based exponentially weighted moving average.
@@ -10674,13 +9320,6 @@ class Expr:
             durations such as months (or even days in the time-zone-aware case)
             are not supported, please express your duration in an approximately
             equivalent number of hours (e.g. '370h' instead of '1mo').
-        check_sorted
-            Check whether `by` column is sorted.
-            Incorrectly setting this to `False` will lead to incorrect output.
-
-            .. deprecated:: 0.20.27
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -10720,25 +9359,19 @@ class Expr:
         """
         by = parse_as_expression(by)
         half_life = parse_as_duration_string(half_life)
-        if check_sorted is not None:
-            issue_deprecation_warning(
-                "`check_sorted` is now deprecated in `ewm_mean_by`, you can safely remove this argument.",
-                version="0.20.27",
-            )
         return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life))
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving standard deviation.
@@ -10784,7 +9417,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -10792,7 +9425,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -10814,33 +9447,22 @@ class Expr:
         │ 0.963624 │
         └──────────┘
         """
-        if ignore_nulls is None:
-            issue_deprecation_warning(
-                "The default value for `ignore_nulls` for `ewm` methods"
-                " will change from True to False in the next breaking release."
-                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
-                " and silence this warning.",
-                version="0.20.11",
-            )
-            ignore_nulls = True
-
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
+        *,
         com: float | None = None,
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
-        ignore_nulls: bool | None = None,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving variance.
@@ -10886,7 +9508,7 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When `ignore_nulls=False`, weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
@@ -10894,7 +9516,7 @@ class Expr:
                   :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
                   :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When `ignore_nulls=True` (current default), weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
@@ -10916,16 +9538,6 @@ class Expr:
         │ 0.928571 │
         └──────────┘
         """
-        if ignore_nulls is None:
-            issue_deprecation_warning(
-                "The default value for `ignore_nulls` for `ewm` methods"
-                " will change from True to False in the next breaking release."
-                " Explicitly set `ignore_nulls=True` to keep the existing behavior"
-                " and silence this warning.",
-                version="0.20.11",
-            )
-            ignore_nulls = True
-
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
@@ -10964,7 +9576,6 @@ class Expr:
         n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    @deprecate_renamed_parameter("multithreaded", "parallel", version="0.19.0")
     def value_counts(
         self, *, sort: bool = False, parallel: bool = False, name: str = "count"
     ) -> Self:
@@ -11157,7 +9768,7 @@ class Expr:
 
     @unstable()
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
+        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -11222,7 +9833,7 @@ class Expr:
 
         Warnings
         --------
-        This can lead to incorrect results if this `Series` is not sorted!!
+        This can lead to incorrect results if the data is NOT sorted!!
         Use with care!
 
         Examples
@@ -11525,205 +10136,6 @@ class Expr:
 
         return self._from_pyexpr(self._pyexpr.replace(old, new, default, return_dtype))
 
-    @deprecate_renamed_function("map_batches", version="0.19.0")
-    def map(
-        self,
-        function: Callable[[Series], Series | Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        agg_list: bool = False,
-    ) -> Self:
-        """
-        Apply a custom python function to a Series or sequence of Series.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Expr.map_batches`.
-
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        return_dtype
-            Dtype of the output Series.
-        agg_list
-            Aggregate list
-        """
-        return self.map_batches(function, return_dtype, agg_list=agg_list)
-
-    @deprecate_renamed_function("map_elements", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        skip_nulls: bool = True,
-        pass_name: bool = False,
-        strategy: MapElementsStrategy = "thread_local",
-    ) -> Self:
-        """
-        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Expr.map_elements`.
-
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be
-            `polars.Unknown`.
-        skip_nulls
-            Don't apply the function over values
-            that contain nulls. This is faster.
-        pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
-        strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
-
-            - 'thread_local': run the python function on a single thread.
-            - 'threading': run the python function on separate threads. Use with
-              care as this can slow performance. This might only speed up
-              your code if the amount of work per element is significant
-              and the python function releases the GIL (e.g. via calling
-              a c function)
-        """
-        return self.map_elements(
-            function,
-            return_dtype=return_dtype,
-            skip_nulls=skip_nulls,
-            pass_name=pass_name,
-            strategy=strategy,
-        )
-
-    @deprecate_renamed_function("rolling_map", version="0.19.0")
-    def rolling_apply(
-        self,
-        function: Callable[[Series], Any],
-        window_size: int,
-        weights: list[float] | None = None,
-        min_periods: int | None = None,
-        *,
-        center: bool = False,
-    ) -> Self:
-        """
-        Apply a custom rolling window function.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`Expr.rolling_map`.
-
-        Parameters
-        ----------
-        function
-            Aggregation function
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to:
-
-            - the window size, if `window_size` is a fixed integer
-            - 1, if `window_size` is a dynamic temporal size
-        center
-            Set the labels at the center of the window
-        """
-        return self.rolling_map(
-            function, window_size, weights, min_periods, center=center
-        )
-
-    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
-    def is_first(self) -> Self:
-        """
-        Return a boolean mask indicating the first occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Expr.is_first_distinct`.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Boolean`.
-        """
-        return self.is_first_distinct()
-
-    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
-    def is_last(self) -> Self:
-        """
-        Return a boolean mask indicating the last occurrence of each distinct value.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Expr.is_last_distinct`.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Boolean`.
-        """
-        return self.is_last_distinct()
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-        """
-        return self.clip(lower_bound=lower_bound)
-
-    @deprecate_function("Use `clip` instead.", version="0.19.12")
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        .. deprecated:: 0.19.12
-            Use :func:`clip` instead.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
-        """
-        return self.clip(upper_bound=upper_bound)
-
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: IntoExpr,
-        *,
-        n: int = 1,
-    ) -> Self:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            Fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
-        """
-        return self.shift(n, fill_value=fill_value)
-
     @deprecate_function(
         "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
     )
@@ -11807,174 +10219,6 @@ class Expr:
             input_wildcard_expansion=input_wildcard_expansion,
             pass_name_to_apply=pass_name_to_apply,
         )
-
-    @deprecate_renamed_function("register_plugin", version="0.19.12")
-    def _register_plugin(
-        self,
-        *,
-        lib: str,
-        symbol: str,
-        args: list[IntoExpr] | None = None,
-        kwargs: dict[Any, Any] | None = None,
-        is_elementwise: bool = False,
-        input_wildcard_expansion: bool = False,
-        auto_explode: bool = False,
-        cast_to_supertypes: bool = False,
-    ) -> Expr:
-        return self.register_plugin(
-            lib=lib,
-            symbol=symbol,
-            args=args,
-            kwargs=kwargs,
-            is_elementwise=is_elementwise,
-            input_wildcard_expansion=input_wildcard_expansion,
-            returns_scalar=auto_explode,
-            cast_to_supertypes=cast_to_supertypes,
-        )
-
-    @deprecate_renamed_function("gather_every", version="0.19.14")
-    def take_every(self, n: int, offset: int = 0) -> Self:
-        """
-        Take every nth value in the Series and return as a new Series.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)
-
-    @deprecate_renamed_function("gather", version="0.19.14")
-    def take(
-        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
-    ) -> Self:
-        """
-        Take values by index.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`gather`.
-
-        Parameters
-        ----------
-        indices
-            An expression that leads to a UInt32 dtyped Series.
-        """
-        return self.gather(indices)
-
-    @deprecate_renamed_function("cum_sum", version="0.19.14")
-    def cumsum(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative sum computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_sum`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_sum(reverse=reverse)
-
-    @deprecate_renamed_function("cum_prod", version="0.19.14")
-    def cumprod(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative product computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_prod`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_prod(reverse=reverse)
-
-    @deprecate_renamed_function("cum_min", version="0.19.14")
-    def cummin(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative min computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_min`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_min(reverse=reverse)
-
-    @deprecate_renamed_function("cum_max", version="0.19.14")
-    def cummax(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative max computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_max`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_max(reverse=reverse)
-
-    @deprecate_renamed_function("cum_count", version="0.19.14")
-    def cumcount(self, *, reverse: bool = False) -> Self:
-        """
-        Get an array with the cumulative count computed at every element.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :meth:`cum_count`.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the operation.
-        """
-        return self.cum_count(reverse=reverse)
-
-    @deprecate_function(
-        "It has been renamed to `replace`."
-        " The default behavior has changed to keep any values not present in the mapping unchanged."
-        " Pass `default=None` to keep existing behavior.",
-        version="0.19.16",
-    )
-    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
-    def map_dict(
-        self,
-        mapping: dict[Any, Any],
-        *,
-        default: Any = None,
-        return_dtype: PolarsDataType | None = None,
-    ) -> Self:
-        """
-        Replace values in column according to remapping dictionary.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :meth:`replace`. The default behavior
-            has changed to keep any values not present in the mapping unchanged.
-            Pass `default=None` to keep existing behavior.
-
-        Parameters
-        ----------
-        mapping
-            Dictionary containing the before/after values to map.
-        default
-            Value to use when the remapping dict does not contain the lookup value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Use `pl.first()`, to keep the original value.
-        return_dtype
-            Set return dtype to override automatic return dtype determination.
-        """
-        return self.replace(mapping, default=default, return_dtype=return_dtype)
 
     @classmethod
     def from_json(cls, value: str) -> Self:
@@ -12176,27 +10420,7 @@ def _prepare_alpha(
     return alpha
 
 
-def _prepare_rolling_window_args(
-    window_size: int | timedelta | str,
-    min_periods: int | None = None,
-) -> tuple[int | str, int]:
-    if isinstance(window_size, int):
-        if window_size < 1:
-            msg = "`window_size` must be positive"
-            raise ValueError(msg)
-
-        if min_periods is None:
-            min_periods = window_size
-    elif isinstance(window_size, timedelta):
-        window_size = parse_as_duration_string(window_size)
-    if min_periods is None:
-        min_periods = 1
-    return window_size, min_periods
-
-
-def _prepare_rolling_by_window_args(
-    window_size: timedelta | str,
-) -> str:
+def _prepare_rolling_by_window_args(window_size: timedelta | str) -> str:
     if isinstance(window_size, timedelta):
         window_size = parse_as_duration_string(window_size)
     return window_size

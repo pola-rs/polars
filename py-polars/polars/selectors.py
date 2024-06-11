@@ -15,7 +15,6 @@ from typing import (
 )
 
 from polars import functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.parse_expr_input import _parse_inputs_as_iterable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
@@ -87,7 +86,7 @@ def expand_selector(
     """
     Expand selector to column names, with respect to a specific frame or target schema.
 
-    .. versionchanged:: 0.20.30
+    .. versionadded:: 0.20.30
         The `strict` parameter was added.
 
     Parameters
@@ -994,13 +993,16 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
             all_indices.append(idx)
 
     return _selector_proxy_(
-        F.nth(all_indices), name="by_index", parameters={"*indices": indices}
+        F.nth(*all_indices), name="by_index", parameters={"*indices": indices}
     )
 
 
 def by_name(*names: str | Collection[str], require_all: bool = True) -> SelectorType:
     """
     Select all columns matching the given names.
+
+    .. versionadded:: 0.20.27
+      The `require_all` parameter was added.
 
     Parameters
     ----------
@@ -2423,8 +2425,7 @@ def starts_with(*prefix: str) -> SelectorType:
     )
 
 
-@deprecate_nonkeyword_arguments(version="0.19.3")
-def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
+def string(*, include_categorical: bool = False) -> SelectorType:
     """
     Select all String (and, optionally, Categorical) string columns .
 

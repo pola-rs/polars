@@ -1,4 +1,4 @@
-use arrow::compute::cast::{cast, utf8view_to_utf8, CastOptions};
+use arrow::compute::cast::{cast, utf8view_to_utf8, CastOptionsImpl};
 use arrow::datatypes::IntegerType;
 
 use super::*;
@@ -72,7 +72,7 @@ impl CategoricalChunked {
                 unsafe {
                     DictionaryArray::try_new_unchecked(
                         dtype,
-                        cast(keys, &ArrowDataType::Int64, CastOptions::unchecked())
+                        cast(keys, &ArrowDataType::Int64, CastOptionsImpl::unchecked())
                             .unwrap()
                             .as_any()
                             .downcast_ref::<PrimitiveArray<i64>>()

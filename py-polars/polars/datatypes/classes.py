@@ -52,10 +52,6 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
-        ...
-
-    @classmethod
     def is_numeric(cls) -> bool:  # noqa: D102
         ...
 
@@ -143,38 +139,6 @@ class DataType(metaclass=DataTypeClass):
         False
         """
         return self == other and hash(self) == hash(other)
-
-    @classinstmethod  # type: ignore[arg-type]
-    def is_not(self, other: PolarsDataType) -> bool:
-        """
-        Check if this DataType is NOT the same as another DataType.
-
-        .. deprecated:: 0.19.14
-            Use `not dtype.is_(...)` instead.
-
-        This is a stricter check than `self != other`, as it enforces an exact
-        match of all dtype attributes for nested and/or uninitialised dtypes.
-
-        Parameters
-        ----------
-        other
-            the other polars dtype to compare with.
-
-        Examples
-        --------
-        >>> pl.List != pl.List(pl.Int32)
-        False
-        >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
-        True
-        """
-        from polars._utils.deprecation import issue_deprecation_warning
-
-        issue_deprecation_warning(
-            "`DataType.is_not` is deprecated and will be removed in the next breaking release."
-            " Use `not dtype.is_(...)` instead.",
-            version="0.19.14",
-        )
-        return not self.is_(other)
 
     @classmethod
     def is_numeric(cls) -> bool:
@@ -434,23 +398,12 @@ class Datetime(TemporalType):
     epoch.
     """
 
-    time_unit: TimeUnit | None = None
-    time_zone: str | None = None
+    time_unit: TimeUnit
+    time_zone: str | None
 
     def __init__(
         self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
     ):
-        if time_unit is None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "Passing `time_unit=None` to the Datetime constructor is deprecated."
-                " Either avoid passing a time unit to use the default value ('us'),"
-                " or pass a valid time unit instead ('ms', 'us', 'ns').",
-                version="0.20.11",
-            )
-            time_unit = "us"
-
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -501,7 +454,7 @@ class Duration(TemporalType):
     negative time offsets.
     """
 
-    time_unit: TimeUnit | None = None
+    time_unit: TimeUnit
 
     def __init__(self, time_unit: TimeUnit = "us"):
         if time_unit not in ("ms", "us", "ns"):
@@ -680,7 +633,7 @@ class List(NestedType):
     └───────────────┴─────────────┘
     """
 
-    inner: PolarsDataType | None = None
+    inner: PolarsDataType
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         self.inner = polars.datatypes.py_type_to_dtype(inner)
@@ -695,11 +648,8 @@ class List(NestedType):
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, List):
             return True
-        if isinstance(other, List):
-            if self.inner is None or other.inner is None:
-                return True
-            else:
-                return self.inner == other.inner
+        elif isinstance(other, List):
+            return self.inner == other.inner
         else:
             return False
 
@@ -734,32 +684,48 @@ class Array(NestedType):
     ]
     """
 
-    inner: PolarsDataType | None = None
+    inner: PolarsDataType
     size: int
-    # outer shape
-    shape: None | tuple[int, ...] = None
+    shape: tuple[int, ...]
 
     def __init__(
         self,
         inner: PolarsDataType | PythonDataType,
         shape: int | tuple[int, ...] | None = None,
+        *,
         width: int | None = None,
     ):
         if width is not None:
+            from polars._utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                version="0.20.31",
+            )
             shape = width
+        elif shape is None:
+            msg = "Array constructor is missing the required argument `shape`"
+            raise TypeError(msg)
+
+        inner_parsed = polars.datatypes.py_type_to_dtype(inner)
+        inner_shape = inner_parsed.shape if isinstance(inner_parsed, Array) else ()
+
+        if isinstance(shape, int):
+            self.inner = inner_parsed
+            self.size = shape
+            self.shape = (shape,) + inner_shape
+
         elif isinstance(shape, tuple):
             if len(shape) > 1:
-                self.shape = shape
-                for dim in shape[1:]:
-                    inner = Array(inner, dim)
-            shape = shape[0]
+                inner_parsed = Array(inner_parsed, shape[1:])
 
-        if shape is None:
-            msg = "either 'shape' or 'width' must be set"
-            raise ValueError(msg)
+            self.inner = inner_parsed
+            self.size = shape[0]
+            self.shape = shape + inner_shape
 
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
-        self.size = shape
+        else:
+            msg = f"invalid input for shape: {shape!r}"
+            raise TypeError(msg)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -771,11 +737,9 @@ class Array(NestedType):
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
-        if isinstance(other, Array):
-            if self.size != other.size:
+        elif isinstance(other, Array):
+            if self.shape != other.shape:
                 return False
-            elif self.inner is None or other.inner is None:
-                return True
             else:
                 return self.inner == other.inner
         else:
@@ -785,16 +749,24 @@ class Array(NestedType):
         return hash((self.__class__, self.inner, self.size))
 
     def __repr__(self) -> str:
+        # Get leaf type
+        dtype = self.inner
+        while isinstance(dtype, Array):
+            dtype = dtype.inner
+
         class_name = self.__class__.__name__
+        return f"{class_name}({dtype!r}, shape={self.shape})"
 
-        if self.shape:
-            # get leaf type
-            dtype = self.inner
-            while isinstance(dtype, Array):
-                dtype = dtype.inner
+    @property
+    def width(self) -> int:
+        """The size of the Array."""
+        from polars._utils.deprecation import issue_deprecation_warning
 
-            return f"{class_name}({dtype!r}, shape={self.shape})"
-        return f"{class_name}({self.inner!r}, size={self.size})"
+        issue_deprecation_warning(
+            "The `width` attribute for `Array` is deprecated. Use `size` instead.",
+            version="0.20.31",
+        )
+        return self.size
 
 
 class Field:

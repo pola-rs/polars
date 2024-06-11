@@ -76,19 +76,19 @@ def test_df_serde_enum() -> None:
 @pytest.mark.parametrize(
     ("data", "dtype"),
     [
-        ([[1, 2, 3], [None, None, None], [1, None, 3]], pl.Array(pl.Int32(), width=3)),
-        ([["a", "b"], [None, None]], pl.Array(pl.Utf8, width=2)),
-        ([[True, False, None], [None, None, None]], pl.Array(pl.Utf8, width=3)),
+        ([[1, 2, 3], [None, None, None], [1, None, 3]], pl.Array(pl.Int32(), shape=3)),
+        ([["a", "b"], [None, None]], pl.Array(pl.Utf8, shape=2)),
+        ([[True, False, None], [None, None, None]], pl.Array(pl.Utf8, shape=3)),
         (
             [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
-            pl.List(pl.Array(pl.Int32(), width=3)),
+            pl.List(pl.Array(pl.Int32(), shape=3)),
         ),
         (
             [
                 [datetime(1991, 1, 1), datetime(1991, 1, 1), None],
                 [None, None, None],
             ],
-            pl.Array(pl.Datetime, width=3),
+            pl.Array(pl.Datetime, shape=3),
         ),
     ],
 )
@@ -112,18 +112,18 @@ def test_write_read_json_array(data: Any, dtype: pl.DataType) -> None:
                 ],
                 [None, None],
             ],
-            pl.Array(pl.Datetime, width=2),
+            pl.Array(pl.Datetime, shape=2),
         ),
         (
             [[date(1997, 10, 1), date(2000, 1, 1)], [None, None]],
-            pl.Array(pl.Date, width=2),
+            pl.Array(pl.Date, shape=2),
         ),
         (
             [
                 [timedelta(seconds=1), timedelta(seconds=10)],
                 [None, None],
             ],
-            pl.Array(pl.Duration, width=2),
+            pl.Array(pl.Duration, shape=2),
         ),
     ],
 )
@@ -146,15 +146,32 @@ def test_json_deserialize_empty_list_10458() -> None:
     assert df.schema == schema
 
 
-def test_df_write_json_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.deprecated_call():
-        result = df.write_json()
-    assert result == df.serialize()
-
-
-def test_df_write_json_pretty_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    with pytest.deprecated_call():
-        result = df.write_json(pretty=True)
-    assert isinstance(result, str)
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.DataFrame.deserialize(f)

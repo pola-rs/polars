@@ -2,25 +2,23 @@ from __future__ import annotations
 
 import contextlib
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
-from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
 
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias
-else:
-    pass
-
 if TYPE_CHECKING:
+    import sys
     from types import TracebackType
 
-    from typing_extensions import TypeAlias
-
     from polars.type_aliases import FloatFmt
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
+
 
 TableFormatNames: TypeAlias = Literal[
     "ASCII_FULL",
@@ -44,7 +42,6 @@ TableFormatNames: TypeAlias = Literal[
 # and/or unstable settings that should not be saved or reset with the Config vars.
 _POLARS_CFG_ENV_VARS = {
     "POLARS_WARN_UNSTABLE",
-    "POLARS_ACTIVATE_DECIMAL",
     "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
@@ -312,23 +309,19 @@ class Config(contextlib.ContextDecorator):
         file.write_text(cls.save())
 
     @classmethod
-    @deprecate_nonkeyword_arguments(version="0.19.3")
     def state(
-        cls,
-        if_set: bool = False,  # noqa: FBT001
-        env_only: bool = False,  # noqa: FBT001
+        cls, *, if_set: bool = False, env_only: bool = False
     ) -> dict[str, str | None]:
         """
         Show the current state of all Config variables as a dict.
 
         Parameters
         ----------
-        if_set : bool
+        if_set
             By default this will show the state of all `Config` environment variables.
             change this to `True` to restrict the returned dictionary to include only
             those that have been set to a specific value.
-
-        env_only : bool
+        env_only
             Include only Config environment variables in the output; some options (such
             as "set_fmt_float") are set directly, not via an environment variable.
 
@@ -347,20 +340,6 @@ class Config(contextlib.ContextDecorator):
                 config_state[cfg_methodname] = get_value()
 
         return config_state
-
-    @classmethod
-    def activate_decimals(cls, active: bool | None = True) -> type[Config]:
-        """
-        Activate `Decimal` data types.
-
-        This is a temporary setting that will be removed once the `Decimal` type
-        stabilizes (`Decimal` is currently considered to be in beta testing).
-        """
-        if not active:
-            os.environ.pop("POLARS_ACTIVATE_DECIMAL", None)
-        else:
-            os.environ["POLARS_ACTIVATE_DECIMAL"] = str(int(active))
-        return cls
 
     @classmethod
     def set_ascii_tables(cls, active: bool | None = True) -> type[Config]:

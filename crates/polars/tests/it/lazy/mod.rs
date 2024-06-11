@@ -4,6 +4,7 @@ mod cse;
 mod cwc;
 mod explodes;
 mod expressions;
+mod exprs;
 mod folds;
 mod functions;
 mod group_by;

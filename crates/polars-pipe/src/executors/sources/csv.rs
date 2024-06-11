@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use polars_core::POOL;
+use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
+use polars_io::utils::is_cloud_url;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
@@ -44,6 +45,14 @@ impl CsvSource {
             return Ok(());
         }
         let path = &self.paths[self.current_path_idx];
+
+        let force_async = config::force_async();
+        let run_async = force_async || is_cloud_url(path);
+
+        if self.current_path_idx == 0 && force_async && self.verbose {
+            eprintln!("ASYNC READING FORCED");
+        }
+
         self.current_path_idx += 1;
 
         let options = self.options.clone().unwrap();
@@ -80,14 +89,33 @@ impl CsvSource {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
         }
 
-        let reader: CsvReader<File> = options
+        let options = options
             .with_schema(Some(self.schema.clone()))
             .with_n_rows(n_rows)
             .with_columns(with_columns)
             .with_rechunk(false)
-            .with_row_index(row_index)
-            .with_path(Some(path))
-            .try_into_reader_with_file_path(None)?;
+            .with_row_index(row_index);
+
+        let reader: CsvReader<File> = if run_async {
+            #[cfg(feature = "cloud")]
+            {
+                options.into_reader_with_file_handle(
+                    polars_io::file_cache::FILE_CACHE
+                        .get_entry(path.to_str().unwrap())
+                        // Safety: This was initialized by schema inference.
+                        .unwrap()
+                        .try_open_assume_latest()?,
+                )
+            }
+            #[cfg(not(feature = "cloud"))]
+            {
+                panic!("required feature `cloud` is not enabled")
+            }
+        } else {
+            options
+                .with_path(Some(path))
+                .try_into_reader_with_file_path(None)?
+        };
 
         self.reader = Some(reader);
         let reader = self.reader.as_mut().unwrap();

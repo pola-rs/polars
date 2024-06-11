@@ -2,6 +2,7 @@ use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
+use crate::chunked_array::metadata::MetadataProperties;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
@@ -116,7 +117,20 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     self.clone()
                 } else {
                     let chunks = inner_rechunk(&self.chunks);
-                    unsafe { self.copy_with_chunks(chunks, true, true) }
+
+                    let mut ca = unsafe { self.copy_with_chunks(chunks) };
+
+                    use MetadataProperties as P;
+                    ca.copy_metadata(
+                        self,
+                        P::SORTED
+                            | P::FAST_EXPLODE_LIST
+                            | P::MIN_VALUE
+                            | P::MAX_VALUE
+                            | P::DISTINCT_COUNT,
+                    );
+
+                    ca
                 }
             },
         }
@@ -133,8 +147,57 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
         let exec = || {
             let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-            let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
+            let mut out = unsafe { self.copy_with_chunks(chunks) };
+
+            use MetadataProperties as P;
+            let mut properties = P::SORTED | P::FAST_EXPLODE_LIST;
+
+            let is_ascending = self.is_sorted_ascending_flag();
+            let is_descending = self.is_sorted_descending_flag();
+
+            if length != 0 && (is_ascending || is_descending) {
+                let (raw_offset, slice_len) = slice_offsets(offset, length, self.len());
+
+                let mut can_copy_min_value = false;
+                let mut can_copy_max_value = false;
+
+                let is_at_start = raw_offset == 0;
+                if is_at_start {
+                    let has_nulls_at_start = self.null_count() != 0
+                        && self
+                            .chunks()
+                            .first()
+                            .unwrap()
+                            .as_ref()
+                            .validity()
+                            .map_or(false, |bm| bm.get(0).unwrap());
+
+                    can_copy_min_value |= !has_nulls_at_start && is_ascending;
+                    can_copy_max_value |= !has_nulls_at_start && is_descending;
+                }
+
+                let is_until_end = raw_offset + slice_len == self.len();
+                if is_until_end {
+                    let has_nulls_at_end = self.null_count() != 0
+                        && self
+                            .chunks()
+                            .last()
+                            .unwrap()
+                            .as_ref()
+                            .validity()
+                            .map_or(false, |bm| bm.get(bm.len() - 1).unwrap());
+
+                    can_copy_min_value |= !has_nulls_at_end && is_descending;
+                    can_copy_max_value |= !has_nulls_at_end && is_ascending;
+                }
+
+                properties.set(P::MIN_VALUE, can_copy_min_value);
+                properties.set(P::MAX_VALUE, can_copy_max_value);
+            }
+
+            out.copy_metadata(self, properties);
             out.length = len as IdxSize;
+
             out
         };
 

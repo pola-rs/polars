@@ -15,15 +15,9 @@ impl ToMetadata<BooleanType> for BooleanStatistics {
     fn to_metadata(&self) -> Metadata<BooleanType> {
         let mut md = Metadata::default();
 
-        if let Some(distinct_count) = self.distinct_count.and_then(|v| v.try_into().ok()) {
-            md.set_distinct_count(distinct_count);
-        }
-        if let Some(min_value) = self.min_value {
-            md.set_min_value(min_value);
-        }
-        if let Some(max_value) = self.max_value {
-            md.set_max_value(max_value);
-        }
+        md.set_distinct_count(self.distinct_count.and_then(|v| v.try_into().ok()));
+        md.set_min_value(self.min_value);
+        md.set_max_value(self.max_value);
 
         md
     }
@@ -33,15 +27,17 @@ impl ToMetadata<BinaryType> for BinaryStatistics {
     fn to_metadata(&self) -> Metadata<BinaryType> {
         let mut md = Metadata::default();
 
-        if let Some(distinct_count) = self.distinct_count.and_then(|v| v.try_into().ok()) {
-            md.set_distinct_count(distinct_count);
-        }
-        if let Some(min_value) = self.min_value.as_ref() {
-            md.set_min_value(min_value.clone().into_boxed_slice());
-        }
-        if let Some(max_value) = self.max_value.as_ref() {
-            md.set_max_value(max_value.clone().into_boxed_slice());
-        }
+        md.set_distinct_count(self.distinct_count.and_then(|v| v.try_into().ok()));
+        md.set_min_value(
+            self.min_value
+                .as_ref()
+                .map(|v| v.clone().into_boxed_slice()),
+        );
+        md.set_max_value(
+            self.max_value
+                .as_ref()
+                .map(|v| v.clone().into_boxed_slice()),
+        );
 
         md
     }
@@ -51,23 +47,17 @@ impl ToMetadata<StringType> for BinaryStatistics {
     fn to_metadata(&self) -> Metadata<StringType> {
         let mut md = Metadata::default();
 
-        if let Some(distinct_count) = self.distinct_count.and_then(|v| v.try_into().ok()) {
-            md.set_distinct_count(distinct_count);
-        }
-        if let Some(min_value) = self
-            .min_value
-            .as_ref()
-            .and_then(|s| String::from_utf8(s.clone()).ok())
-        {
-            md.set_min_value(min_value);
-        }
-        if let Some(max_value) = self
-            .max_value
-            .as_ref()
-            .and_then(|s| String::from_utf8(s.clone()).ok())
-        {
-            md.set_max_value(max_value);
-        }
+        md.set_distinct_count(self.distinct_count.and_then(|v| v.try_into().ok()));
+        md.set_min_value(
+            self.min_value
+                .as_ref()
+                .and_then(|s| String::from_utf8(s.clone()).ok()),
+        );
+        md.set_max_value(
+            self.max_value
+                .as_ref()
+                .and_then(|s| String::from_utf8(s.clone()).ok()),
+        );
 
         md
     }
@@ -80,16 +70,9 @@ macro_rules! prim_statistics {
             fn to_metadata(&self) -> Metadata<$pltype> {
                 let mut md = Metadata::default();
 
-                if let Some(distinct_count) = self.distinct_count.and_then(|v| v.try_into().ok())
-                {
-                    md.set_distinct_count(distinct_count);
-                }
-                if let Some(min_value) = self.min_value {
-                    md.set_min_value(min_value as <$pltype as PolarsDataType>::OwnedPhysical);
-                }
-                if let Some(max_value) = self.max_value {
-                    md.set_max_value(max_value as <$pltype as PolarsDataType>::OwnedPhysical);
-                }
+                md.set_distinct_count(self.distinct_count.and_then(|v| v.try_into().ok()));
+                md.set_min_value(self.min_value.map(|v| v as <$pltype as PolarsDataType>::OwnedPhysical));
+                md.set_max_value(self.max_value.map(|v| v as <$pltype as PolarsDataType>::OwnedPhysical));
 
                 md
             }

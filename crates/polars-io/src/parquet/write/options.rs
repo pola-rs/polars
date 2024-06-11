@@ -1,7 +1,7 @@
 use polars_error::PolarsResult;
 use polars_parquet::write::{
     BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
-    ZstdLevel as ZstdLevelParquet,
+    StatisticsOptions, ZstdLevel as ZstdLevelParquet,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ pub struct ParquetWriteOptions {
     /// Data page compression
     pub compression: ParquetCompression,
     /// Compute and write column statistics.
-    pub statistics: bool,
+    pub statistics: StatisticsOptions,
     /// If `None` will be all written to a single row group.
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes

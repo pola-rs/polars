@@ -108,18 +108,16 @@ def test_pow_dtype() -> None:
     df = (
         df.with_columns([pl.col("foo").cast(pl.UInt32)])
         .with_columns(
-            [
-                (pl.col("foo") * 2**2).alias("scaled_foo"),
-                (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
-                (pl.col("a") ** pl.col("h")).alias("a_pow_h"),
-                (pl.col("b") ** pl.col("h")).alias("b_pow_h"),
-                (pl.col("c") ** pl.col("h")).alias("c_pow_h"),
-                (pl.col("d") ** pl.col("h")).alias("d_pow_h"),
-                (pl.col("e") ** pl.col("h")).alias("e_pow_h"),
-                (pl.col("f") ** pl.col("h")).alias("f_pow_h"),
-                (pl.col("g") ** pl.col("h")).alias("g_pow_h"),
-                (pl.col("h") ** pl.col("h")).alias("h_pow_h"),
-            ]
+            (pl.col("foo") * 2**2).alias("scaled_foo"),
+            (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
+            (pl.col("a") ** pl.col("h")).alias("a_pow_h"),
+            (pl.col("b") ** pl.col("h")).alias("b_pow_h"),
+            (pl.col("c") ** pl.col("h")).alias("c_pow_h"),
+            (pl.col("d") ** pl.col("h")).alias("d_pow_h"),
+            (pl.col("e") ** pl.col("h")).alias("e_pow_h"),
+            (pl.col("f") ** pl.col("h")).alias("f_pow_h"),
+            (pl.col("g") ** pl.col("h")).alias("g_pow_h"),
+            (pl.col("h") ** pl.col("h")).alias("h_pow_h"),
         )
         .drop(["a", "b", "c", "d", "e", "f", "g", "h"])
     )
@@ -238,14 +236,15 @@ def test_join_as_of_by_schema() -> None:
 
 def test_unknown_map_elements() -> None:
     df = pl.DataFrame(
-        {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
+        {
+            "Amount": [10, 1, 1, 5],
+            "Flour": ["1000g", "100g", "50g", "75g"],
+        }
     )
 
     q = df.lazy().select(
-        [
-            pl.col("Amount"),
-            pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
-        ]
+        pl.col("Amount"),
+        pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
     )
 
     assert q.collect().to_dict(as_series=False) == {

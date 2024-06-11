@@ -278,11 +278,9 @@ def test_power_by_expression() -> None:
     out = pl.DataFrame(
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
     ).select(
-        [
-            pl.col("a").pow(pl.col("b")).alias("pow_expr"),
-            (pl.col("a") ** pl.col("b")).alias("pow_op"),
-            (2 ** pl.col("b")).alias("pow_op_left"),
-        ]
+        pl.col("a").pow(pl.col("b")).alias("pow_expr"),
+        (pl.col("a") ** pl.col("b")).alias("pow_op"),
+        (2 ** pl.col("b")).alias("pow_op_left"),
     )
 
     for pow_col in ("pow_expr", "pow_op"):
@@ -695,17 +693,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
-
-
-def test_is_not_deprecated() -> None:
-    df = pl.DataFrame({"a": [True, False, True]})
-
-    with pytest.deprecated_call():
-        expr = pl.col("a").is_not()
-    result = df.select(expr)
-
-    expected = pl.DataFrame({"a": [False, True, False]})
-    assert_frame_equal(result, expected)
 
 
 def test_repr_short_expression() -> None:

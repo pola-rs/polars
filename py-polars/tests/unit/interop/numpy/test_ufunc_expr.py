@@ -12,11 +12,9 @@ from polars.testing import assert_frame_equal, assert_series_equal
 def test_ufunc() -> None:
     df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = df.select(
-        [
-            np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
-            np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
-            np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
-        ]
+        np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
+        np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
+        np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
     )
     expected = pl.DataFrame(
         [
@@ -33,11 +31,9 @@ def test_ufunc_expr_not_first() -> None:
     """Check numpy ufunc expressions also work if expression not the first argument."""
     df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
     out = df.select(
-        [
-            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
-            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
-        ]
+        np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
+        (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
+        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
@@ -52,11 +48,9 @@ def test_ufunc_expr_not_first() -> None:
 def test_lazy_ufunc() -> None:
     ldf = pl.LazyFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = ldf.select(
-        [
-            np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
-            np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
-            np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
-        ]
+        np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
+        np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
+        np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
     )
     expected = pl.DataFrame(
         [
@@ -72,11 +66,9 @@ def test_lazy_ufunc_expr_not_first() -> None:
     """Check numpy ufunc expressions also work if expression not the first argument."""
     ldf = pl.LazyFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
     out = ldf.select(
-        [
-            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
-            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
-        ]
+        np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
+        (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
+        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
@@ -131,6 +123,44 @@ def test_ufunc_multiple_expressions() -> None:
 def test_grouped_ufunc() -> None:
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [0.1, 0.1, -0.1, -0.1]})
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
+
+
+def test_generalized_ufunc_scalar() -> None:
+    numba = pytest.importorskip("numba")
+
+    @numba.guvectorize([(numba.int64[:], numba.int64[:])], "(n)->()")  # type: ignore[misc]
+    def my_custom_sum(arr, result) -> None:  # type: ignore[no-untyped-def]
+        total = 0
+        for value in arr:
+            total += value
+        result[0] = total
+
+    # Make type checkers happy:
+    custom_sum = cast(Callable[[object], object], my_custom_sum)
+
+    # Demonstrate NumPy as the canonical expected behavior:
+    assert custom_sum(np.array([10, 2, 3], dtype=np.int64)) == 15
+
+    # Direct call of the gufunc:
+    df = pl.DataFrame({"values": [10, 2, 3]})
+    assert custom_sum(df.get_column("values")) == 15
+
+    # Indirect call of the gufunc:
+    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=True))
+    assert_frame_equal(indirect, pl.DataFrame({"values": 15}))
+    indirect = df.select(pl.col("values").map_batches(custom_sum, returns_scalar=False))
+    assert_frame_equal(indirect, pl.DataFrame({"values": [15]}))
+
+    # group_by()
+    df = pl.DataFrame({"labels": ["a", "b", "a", "b"], "values": [10, 2, 3, 30]})
+    indirect = (
+        df.group_by("labels")
+        .agg(pl.col("values").map_batches(custom_sum, returns_scalar=True))
+        .sort("labels")
+    )
+    assert_frame_equal(
+        indirect, pl.DataFrame({"labels": ["a", "b"], "values": [13, 32]})
+    )
 
 
 def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:

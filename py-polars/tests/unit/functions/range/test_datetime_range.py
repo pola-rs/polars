@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -176,7 +176,7 @@ def test_timezone_aware_datetime_range() -> None:
     ]
 
     with pytest.raises(
-        ComputeError,
+        pl.SchemaError,
         match="failed to determine supertype",
     ):
         pl.datetime_range(

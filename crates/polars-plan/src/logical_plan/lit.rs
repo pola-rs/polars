@@ -410,6 +410,17 @@ impl Literal for ChronoDuration {
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+impl Literal for Duration {
+    fn lit(self) -> Expr {
+        let ns = self.duration_ns();
+        Expr::Literal(LiteralValue::Duration(
+            if self.negative() { -ns } else { ns },
+            TimeUnit::Nanoseconds,
+        ))
+    }
+}
+
 #[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
@@ -456,7 +467,7 @@ impl Hash for LiteralValue {
                 s.null_count().hash(state);
                 const RANDOM: u64 = 0x2c194fa5df32a367;
                 let mut rng = (len as u64) ^ RANDOM;
-                for _ in 0..5 {
+                for _ in 0..std::cmp::min(5, len) {
                     let idx = hash_to_partition(rng, len);
                     s.get(idx).unwrap().hash(state);
                     rng = rng.rotate_right(17).wrapping_add(RANDOM);

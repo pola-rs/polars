@@ -191,7 +191,7 @@ def test_allow_infinities_deprecated(data: st.DataObject) -> None:
 @given(
     df=dataframes(
         cols=[
-            column("colx", dtype=pl.Array(pl.UInt8, width=3)),
+            column("colx", dtype=pl.Array(pl.UInt8, shape=3)),
             column("coly", dtype=pl.List(pl.Datetime("ms"))),
             column(
                 name="colz",
@@ -208,7 +208,7 @@ def test_allow_infinities_deprecated(data: st.DataObject) -> None:
 )
 def test_dataframes_nested_strategies(df: pl.DataFrame) -> None:
     assert df.schema == {
-        "colx": pl.Array(pl.UInt8, width=3),
+        "colx": pl.Array(pl.UInt8, shape=3),
         "coly": pl.List(pl.Datetime("ms")),
         "colz": pl.List(pl.List(pl.String)),
     }

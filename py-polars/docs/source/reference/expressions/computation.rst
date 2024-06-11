@@ -24,11 +24,6 @@ Computation
     Expr.cum_min
     Expr.cum_prod
     Expr.cum_sum
-    Expr.cumcount
-    Expr.cummax
-    Expr.cummin
-    Expr.cumprod
-    Expr.cumsum
     Expr.cumulative_eval
     Expr.degrees
     Expr.diff
@@ -53,7 +48,6 @@ Computation
     Expr.peak_min
     Expr.radians
     Expr.rank
-    Expr.rolling_apply
     Expr.rolling_map
     Expr.rolling_max
     Expr.rolling_max_by

@@ -47,9 +47,11 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .lazy()
         .select([
             col("fruits"),
-            col("B")
-                .shift_and_fill(lit(-1), lit(-1))
-                .over_with_options([col("fruits")], WindowMapping::Join),
+            col("B").shift_and_fill(lit(-1), lit(-1)).over_with_options(
+                [col("fruits")],
+                None,
+                WindowMapping::Join,
+            ),
         ])
         .collect()?;
 
@@ -58,9 +60,11 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .lazy()
         .select([
             col("fruits"),
-            col("B")
-                .shift_and_fill(lit(-1), lit(-1))
-                .over_with_options([col("fruits")], WindowMapping::Join),
+            col("B").shift_and_fill(lit(-1), lit(-1)).over_with_options(
+                [col("fruits")],
+                None,
+                WindowMapping::Join,
+            ),
         ])
         .collect()?;
 
@@ -81,7 +85,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift(lit(1))
-                .over_with_options([col("fruits")], WindowMapping::Explode)
+                .over_with_options([col("fruits")], None, WindowMapping::Explode)
                 .alias("shifted"),
         ])
         .collect()?;
@@ -100,7 +104,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(lit(1), lit(-1.0f32))
-                .over_with_options([col("fruits")], WindowMapping::Explode)
+                .over_with_options([col("fruits")], None, WindowMapping::Explode)
                 .alias("shifted"),
         ])
         .collect()?;
@@ -169,7 +173,7 @@ fn test_literal_window_fn() -> PolarsResult<()> {
         .lazy()
         .select([repeat(1, len())
             .cum_sum(false)
-            .over_with_options([col("chars")], WindowMapping::Join)
+            .over_with_options([col("chars")], None, WindowMapping::Join)
             .alias("foo")])
         .collect()?;
 

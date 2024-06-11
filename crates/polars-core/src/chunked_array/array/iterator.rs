@@ -61,7 +61,7 @@ impl ArrayChunked {
             series_container,
             NonNull::new(ptr).unwrap(),
             self.downcast_iter().flat_map(|arr| arr.iter()),
-            inner_dtype,
+            inner_dtype.clone(),
         )
     }
 
@@ -72,7 +72,7 @@ impl ArrayChunked {
         if self.is_empty() {
             return Ok(Series::new_empty(
                 self.name(),
-                &DataType::List(Box::new(self.inner_dtype())),
+                &DataType::List(Box::new(self.inner_dtype().clone())),
             )
             .list()
             .unwrap()

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import SQLSyntaxError
 
 
 @pytest.fixture()
@@ -32,7 +32,7 @@ def test_regex_expr_match(regex_op: str, expected: list[int]) -> None:
             "pat": ["^A", "^A", "^A", r"[AB]\d.*$", ".*xxx$"],
         }
     )
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         out = ctx.execute(f"SELECT idx, str FROM df WHERE str {regex_op} pat")
         assert out.to_series().to_list() == expected
 
@@ -68,7 +68,7 @@ def test_regex_operators(
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+    with pl.SQLContext(foods=lf, eager=True) as ctx:
         out = ctx.execute(
             f"""
             SELECT DISTINCT category FROM foods
@@ -80,13 +80,13 @@ def test_regex_operators(
 
 def test_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
-            ComputeError, match="invalid pattern for '~' operator: dyn .*12345"
+            SQLSyntaxError, match="invalid pattern for '~' operator: dyn .*12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(
-            ComputeError,
+            SQLSyntaxError,
             match=r"""invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
@@ -113,7 +113,7 @@ def test_regexp_like(
 ) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
     flags = "" if flags is None else f",'{flags}'"
-    with pl.SQLContext(foods=lf, eager_execution=True) as ctx:
+    with pl.SQLContext(foods=lf, eager=True) as ctx:
         out = ctx.execute(
             f"""
             SELECT DISTINCT category FROM foods
@@ -126,19 +126,19 @@ def test_regexp_like(
 def test_regexp_like_errors() -> None:
     with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
         with pytest.raises(
-            InvalidOperationError,
-            match="invalid/empty 'flags' for RegexpLike",
+            SQLSyntaxError,
+            match="invalid/empty 'flags' for REGEXP_LIKE",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
 
         with pytest.raises(
-            InvalidOperationError,
-            match="invalid arguments for RegexpLike",
+            SQLSyntaxError,
+            match="invalid arguments for REGEXP_LIKE",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
 
         with pytest.raises(
-            InvalidOperationError,
-            match="invalid number of arguments for RegexpLike",
+            SQLSyntaxError,
+            match="invalid number of arguments for REGEXP_LIKE",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")

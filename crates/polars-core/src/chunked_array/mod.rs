@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
+use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::*;
 
@@ -50,7 +51,7 @@ use std::slice::Iter;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 
-use self::metadata::{Metadata, MetadataFlags};
+use self::metadata::{Metadata, MetadataFlags, MetadataMerge, MetadataProperties};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null};
 
@@ -148,16 +149,21 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// If you want to explicitly the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_dims`]
     pub fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
-        let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
-        chunked_arr.compute_len();
-        chunked_arr
+        unsafe {
+            let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
+            chunked_arr.compute_len();
+            chunked_arr
+        }
     }
 
     /// Create a new [`ChunkedArray`] and explicitly set its `length` and `null_count`.
     ///
     /// If you want to compute the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_compute_len`]
-    pub fn new_with_dims(
+    ///
+    /// # Safety
+    /// The length and null_count must be correct.
+    pub unsafe fn new_with_dims(
         field: Arc<Field>,
         chunks: Vec<ArrayRef>,
         length: IdxSize,
@@ -176,6 +182,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a reference to the used [`Metadata`]
     ///
     /// This results a reference to an empty [`Metadata`] if its unset for this [`ChunkedArray`].
+    #[inline(always)]
     pub fn effective_metadata(&self) -> &Metadata<T> {
         self.md.as_ref().map_or(&Metadata::DEFAULT, AsRef::as_ref)
     }
@@ -216,7 +223,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn unset_fast_explode_list(&mut self) {
-        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(false)
+        self.set_fast_explode_list(false)
+    }
+
+    pub fn set_fast_explode_list(&mut self, value: bool) {
+        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(value)
+    }
+
+    pub fn get_fast_explode_list(&self) -> bool {
+        self.get_flags().get_fast_explode_list()
     }
 
     pub fn get_flags(&self) -> MetadataFlags {
@@ -231,7 +246,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        self.effective_metadata().is_sorted()
+        self.md.as_ref().map_or(IsSorted::Not, |md| md.is_sorted())
     }
 
     /// Set the 'sorted' bit meta info.
@@ -244,6 +259,117 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let mut out = self.clone();
         out.set_sorted_flag(sorted);
         out
+    }
+
+    pub fn get_min_value(&self) -> Option<&T::OwnedPhysical> {
+        self.md.as_ref()?.get_min_value()
+    }
+
+    pub fn get_max_value(&self) -> Option<&T::OwnedPhysical> {
+        self.md.as_ref()?.get_max_value()
+    }
+
+    pub fn get_distinct_count(&self) -> Option<IdxSize> {
+        self.md.as_ref()?.get_distinct_count()
+    }
+
+    pub fn merge_metadata(&mut self, md: Metadata<T>) {
+        let Some(self_md) = self.metadata() else {
+            self.md = Some(Arc::new(md));
+            return;
+        };
+
+        match self_md.merge(md) {
+            MetadataMerge::Keep => {},
+            MetadataMerge::New(md) => self.md = Some(Arc::new(md)),
+            MetadataMerge::Conflict => {
+                panic!("Trying to merge metadata, but got conflicting information")
+            },
+        }
+    }
+
+    /// Copies [`Metadata`] properties specified by `props`  from `other` with different underlying [`PolarsDataType`] into
+    /// `self`.
+    ///
+    /// This does not copy the properties with a different type between the [`Metadata`]s (e.g.
+    /// `min_value` and `max_value`) and will panic on debug builds if that is attempted.
+    #[inline(always)]
+    pub fn copy_metadata_cast<O: PolarsDataType>(
+        &mut self,
+        other: &ChunkedArray<O>,
+        props: MetadataProperties,
+    ) {
+        use MetadataProperties as P;
+
+        // If you add a property, add it here and below to ensure that metadata is copied
+        // properly.
+        debug_assert!(
+            {
+                props
+                    - (P::SORTED
+                        | P::FAST_EXPLODE_LIST
+                        | P::MIN_VALUE
+                        | P::MAX_VALUE
+                        | P::DISTINCT_COUNT)
+            }
+            .is_empty(),
+            "A MetadataProperty was not added to the copy_metadata_cast check"
+        );
+
+        debug_assert!(!props.contains(P::MIN_VALUE));
+        debug_assert!(!props.contains(P::MAX_VALUE));
+
+        // We add a fast path here for if both metadatas are empty, as this is quite a common case.
+        if props.is_empty() {
+            return;
+        }
+
+        let Some(other_md) = other.metadata() else {
+            return;
+        };
+
+        if other.is_empty() {
+            return;
+        }
+
+        let other_md = other_md.filter_props_cast(props);
+        self.merge_metadata(other_md);
+    }
+
+    /// Copies [`Metadata`] properties specified by `props` from `other` into `self`.
+    #[inline(always)]
+    pub fn copy_metadata(&mut self, other: &Self, props: MetadataProperties) {
+        use MetadataProperties as P;
+
+        // If you add a property add it here and below to ensure that metadata is copied properly.
+        debug_assert!(
+            {
+                props
+                    - (P::SORTED
+                        | P::FAST_EXPLODE_LIST
+                        | P::MIN_VALUE
+                        | P::MAX_VALUE
+                        | P::DISTINCT_COUNT)
+            }
+            .is_empty(),
+            "A MetadataProperty was not added to the copy_metadata check"
+        );
+
+        // We add a fast path here for if both metadatas are empty, as this is quite a common case.
+        if props.is_empty() {
+            return;
+        }
+
+        let Some(other_md) = other.metadata() else {
+            return;
+        };
+
+        if other.is_empty() {
+            return;
+        }
+
+        let other_md = other_md.filter_props(props);
+        self.merge_metadata(other_md);
     }
 
     /// Get the index of the first non null value in this [`ChunkedArray`].
@@ -304,6 +430,31 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
+    pub fn drop_nulls(&self) -> Self {
+        if self.null_count() == 0 {
+            self.clone()
+        } else {
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    if arr.null_count() == 0 {
+                        arr.to_boxed()
+                    } else {
+                        filter_with_bitmap(arr, arr.validity().unwrap())
+                    }
+                })
+                .collect();
+            unsafe {
+                Self::new_with_dims(
+                    self.field.clone(),
+                    chunks,
+                    (self.len() - self.null_count()) as IdxSize,
+                    0,
+                )
+            }
+        }
+    }
+
     /// Get the buffer of bits representing null values
     #[inline]
     #[allow(clippy::type_complexity)]
@@ -328,15 +479,16 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     pub fn clear(&self) -> Self {
         // SAFETY: we keep the correct dtype
-        unsafe {
-            self.copy_with_chunks(
-                vec![new_empty_array(
-                    self.chunks.first().unwrap().data_type().clone(),
-                )],
-                true,
-                true,
-            )
-        }
+        let mut ca = unsafe {
+            self.copy_with_chunks(vec![new_empty_array(
+                self.chunks.first().unwrap().data_type().clone(),
+            )])
+        };
+
+        use MetadataProperties as P;
+        ca.copy_metadata(self, P::SORTED | P::FAST_EXPLODE_LIST);
+
+        ca
     }
 
     /// Unpack a [`Series`] to the same physical type.
@@ -410,19 +562,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// # Safety
     /// The caller must ensure the dtypes of the chunks are correct
-    unsafe fn copy_with_chunks(
-        &self,
-        chunks: Vec<ArrayRef>,
-        keep_sorted: bool,
-        keep_fast_explode: bool,
-    ) -> Self {
-        Self::from_chunks_and_metadata(
-            chunks,
-            self.field.clone(),
-            self.metadata_owned_arc(),
-            keep_sorted,
-            keep_fast_explode,
-        )
+    unsafe fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        Self::new_with_compute_len(self.field.clone(), chunks)
     }
 
     /// Get data type of [`ChunkedArray`].

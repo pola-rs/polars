@@ -4,10 +4,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
-from polars._utils.deprecation import (
-    deprecate_nonkeyword_arguments,
-    deprecate_renamed_function,
-)
+from polars._utils.deprecation import deprecate_renamed_function
 from polars._utils.various import normalize_filepath
 from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
@@ -283,7 +280,7 @@ class ExprMetaNameSpace:
         >>> expr = pl.col("foo").sum().over("bar")
         >>> json = expr.meta.serialize()
         >>> json
-        '{"Window":{"function":{"Agg":{"Sum":{"Column":"foo"}}},"partition_by":[{"Column":"bar"}],"options":{"Over":"GroupsToRows"}}}'
+        '{"Window":{"function":{"Agg":{"Sum":{"Column":"foo"}}},"partition_by":[{"Column":"bar"}],"order_by":null,"options":{"Over":"GroupsToRows"}}}'
 
         The expression can later be deserialized back into an `Expr` object.
 
@@ -334,8 +331,7 @@ class ExprMetaNameSpace:
     @overload
     def tree_format(self, *, return_as_string: Literal[True]) -> str: ...
 
-    @deprecate_nonkeyword_arguments(version="0.19.3")
-    def tree_format(self, return_as_string: bool = False) -> str | None:  # noqa: FBT001
+    def tree_format(self, *, return_as_string: bool = False) -> str | None:
         """
         Format the expression as a tree.
 

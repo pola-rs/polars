@@ -29,59 +29,6 @@ fn column_map_set(bitset: &mut MutableBitmap, column_map: &mut ColumnMap, column
         });
 }
 
-/// Perform a inplace `filtermap` over two vectors at the same time.
-fn inplace_zip_filtermap<T, U>(
-    x: &mut Vec<T>,
-    y: &mut Vec<U>,
-    mut f: impl FnMut(&mut T, &mut U) -> bool,
-) {
-    assert_eq!(x.len(), y.len());
-
-    let mut num_deleted = 0;
-
-    let x_ptr = x.as_mut_ptr();
-    let y_ptr = y.as_mut_ptr();
-
-    // SAFETY:
-    //
-    // We know we have a exclusive reference to x and y.
-    //
-    // We know that `i` is always smaller than `x.len()` and `y.len()`. Furthermore, we also know
-    // that `i - num_deleted > 0`.
-    //
-    // We know we don't have ownership of any element in x or y when we call `f`, so it is safe to
-    // panic.
-    //
-    // Items that are deleted are also dropped.
-    for i in 0..x.len() {
-        let xi = unsafe { x_ptr.wrapping_add(i).as_mut().unwrap_unchecked() };
-        let yi = unsafe { y_ptr.wrapping_add(i).as_mut().unwrap_unchecked() };
-
-        // We cannot just give `f` ownership over x[i] and y[i], because a panic would then mean
-        // that x[i] and y[i] are dropped twice.
-        let do_use = f(xi, yi);
-
-        // Now we take ownership of x[i] and y[i]
-        let xi = unsafe { x_ptr.wrapping_add(i).read() };
-        let yi = unsafe { y_ptr.wrapping_add(i).read() };
-
-        if do_use {
-            unsafe {
-                x_ptr.wrapping_add(i - num_deleted).write(xi);
-                y_ptr.wrapping_add(i - num_deleted).write(yi);
-            }
-        } else {
-            // Here we drop x[i] and y[i] which is intentional
-            num_deleted += 1;
-        }
-    }
-
-    unsafe {
-        x.set_len(x.len() - num_deleted);
-        y.set_len(y.len() - num_deleted);
-    }
-}
-
 pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>) {
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
@@ -133,11 +80,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         pushable.clear();
         potential_pushable.clear();
 
+        pushable.reserve(current_exprs.len());
+        potential_pushable.reserve(current_exprs.len());
+
         // @NOTE
         // We can pushdown any column that utilizes no live columns that are generated in the
         // input.
 
-        for input_expr in input_exprs.as_exprs() {
+        for input_expr in input_exprs.iter() {
             column_map_set(
                 &mut input_genset,
                 column_map,
@@ -145,7 +95,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             );
         }
 
-        for expr in current_exprs.as_exprs() {
+        for expr in current_exprs.iter() {
             let mut liveset = MutableBitmap::from_len_zeroed(column_map.len());
 
             for live in aexpr_to_leaf_names_iter(expr.node(), expr_arena) {
@@ -170,14 +120,15 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // Check for every expression in the current WITH_COLUMNS node whether it can be pushed
         // down or pruned.
         inplace_zip_filtermap(
-            current_exprs.exprs_mut(),
+            current_exprs,
             &mut current_expr_livesets,
-            |expr, liveset| {
-                let does_input_assign_column_that_expr_used = input_genset.intersects_with(liveset);
+            |mut expr, liveset| {
+                let does_input_assign_column_that_expr_used =
+                    input_genset.intersects_with(&liveset);
 
                 if does_input_assign_column_that_expr_used {
                     pushable.push(false);
-                    return true;
+                    return Some((expr, liveset));
                 }
 
                 let column_name = expr.output_name_arc();
@@ -199,7 +150,6 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                         // @NOTE: Expressions in a `WITH_COLUMNS` cannot alias to the same column.
                         // Otherwise, this would be faulty and would panic.
                         let input_expr = input_exprs
-                            .exprs_mut()
                             .iter_mut()
                             .find(|input_expr| column_name == input_expr.output_name())
                             .expect("No assigning expression for generated column");
@@ -207,8 +157,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                         // @NOTE
                         // Since we are reassigning a column and we are pushing to the input, we do
                         // not need to change the schema of the current or input nodes.
-                        std::mem::swap(expr, input_expr);
-                        return false;
+                        std::mem::swap(&mut expr, input_expr);
+                        return None;
                     }
 
                     // We cannot have multiple assignments to the same column in one WITH_COLUMNS
@@ -220,7 +170,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     if !does_input_alias_also_expr && is_alias_live_in_current {
                         potential_pushable.push(pushable.len());
                         pushable.push(false);
-                        return true;
+                        return Some((expr, liveset));
                     }
 
                     !does_input_alias_also_expr && !is_alias_live_in_current
@@ -229,7 +179,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                 };
 
                 pushable.push(is_pushable);
-                true
+                Some((expr, liveset))
             },
         );
 
@@ -239,7 +189,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         // This will pushdown the expressions that "has an output column that is mentioned by
         // neighbour columns, but all those neighbours were being pushed down".
         for candidate in potential_pushable.iter().copied() {
-            let column_name = current_exprs.as_exprs()[candidate].output_name_arc();
+            let column_name = current_exprs[candidate].output_name_arc();
             let column_idx = column_map.get(column_name).unwrap();
 
             current_liveset.clear();
@@ -265,10 +215,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             // @NOTE: To keep the schema correct, we reverse the order here. As a
             // `WITH_COLUMNS` higher up produces later columns. This also allows us not to
             // have to deal with schemas.
-            input_exprs
-                .exprs_mut()
-                .extend(std::mem::take(current_exprs.exprs_mut()));
-            std::mem::swap(current_exprs.exprs_mut(), input_exprs.exprs_mut());
+            input_exprs.extend(std::mem::take(current_exprs));
+            std::mem::swap(current_exprs, input_exprs);
 
             // Here, we perform the trick where we switch the inputs. This makes it possible to
             // change the essentially remove the `current` node without knowing the parent of
@@ -301,8 +249,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let mut needs_simple_projection = false;
 
         input_schema_inner.reserve(pushable_set_bits);
-        input_exprs.exprs_mut().reserve(pushable_set_bits);
-        *current_exprs.exprs_mut() = std::mem::take(current_exprs.exprs_mut())
+        input_exprs.reserve(pushable_set_bits);
+        *current_exprs = std::mem::take(current_exprs)
             .into_iter()
             .zip(pushable.iter())
             .filter_map(|(expr, do_pushdown)| {
@@ -314,7 +262,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
                     // earlier in the schema
                     let datatype = current_schema.get(column).unwrap();
                     input_schema_inner.with_column(column.into(), datatype.clone());
-                    input_exprs.exprs_mut().push(expr);
+                    input_exprs.push(expr);
 
                     None
                 } else {
@@ -350,4 +298,85 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             lp_arena.replace(moved_current, current);
         }
     }
+}
+
+/// Perform a inplace `filtermap` over two vectors at the same time.
+fn inplace_zip_filtermap<T, U>(
+    x: &mut Vec<T>,
+    y: &mut Vec<U>,
+    mut f: impl FnMut(T, U) -> Option<(T, U)>,
+) {
+    assert_eq!(x.len(), y.len());
+
+    let length = x.len();
+
+    struct OwnedBuffer<T> {
+        end: *mut T,
+        length: usize,
+    }
+
+    impl<T> Drop for OwnedBuffer<T> {
+        fn drop(&mut self) {
+            for i in 0..self.length {
+                unsafe { self.end.wrapping_sub(i + 1).read() };
+            }
+        }
+    }
+
+    let x_ptr = x.as_mut_ptr();
+    let y_ptr = y.as_mut_ptr();
+
+    let mut x_buf = OwnedBuffer {
+        end: x_ptr.wrapping_add(length),
+        length,
+    };
+    let mut y_buf = OwnedBuffer {
+        end: y_ptr.wrapping_add(length),
+        length,
+    };
+
+    // SAFETY: All items are now owned by `x_buf` and `y_buf`. Since we know that `x_buf` and
+    // `y_buf` will be dropped before the vecs representing `x` and `y`, this is safe.
+    unsafe {
+        x.set_len(0);
+        y.set_len(0);
+    }
+
+    // SAFETY:
+    //
+    // We know we have a exclusive reference to x and y.
+    //
+    // We know that `i` is always smaller than `x.len()` and `y.len()`. Furthermore, we also know
+    // that `i - num_deleted > 0`.
+    //
+    // Items are dropped exactly once, even if `f` panics.
+    for i in 0..length {
+        let xi = unsafe { x_ptr.wrapping_add(i).read() };
+        let yi = unsafe { y_ptr.wrapping_add(i).read() };
+
+        x_buf.length -= 1;
+        y_buf.length -= 1;
+
+        // We hold the invariant here that all items that are not yet deleted are either in
+        // - `xi` or `yi`
+        // - `x_buf` or `y_buf`
+        // ` `x` or `y`
+        //
+        // This way if `f` ever panics, we are sure that all items are dropped exactly once.
+        // Deleted items will be dropped when they are deleted.
+        let result = f(xi, yi);
+
+        if let Some((xi, yi)) = result {
+            x.push(xi);
+            y.push(yi);
+        }
+    }
+
+    debug_assert_eq!(x_buf.length, 0);
+    debug_assert_eq!(y_buf.length, 0);
+
+    // We are safe to forget `x_buf` and `y_buf` here since they will not deallocate anything
+    // anymore.
+    std::mem::forget(x_buf);
+    std::mem::forget(y_buf);
 }

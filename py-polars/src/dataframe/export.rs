@@ -1,6 +1,6 @@
 use polars::export::arrow::record_batch::RecordBatch;
 use polars_core::export::arrow::datatypes::IntegerType;
-use polars_core::utils::arrow::compute::cast::CastOptions;
+use polars_core::utils::arrow::compute::cast::CastOptionsImpl;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 
@@ -116,7 +116,7 @@ impl PyDataFrame {
                                 Box::new(ArrowDataType::LargeUtf8),
                                 false,
                             ),
-                            CastOptions::default(),
+                            CastOptionsImpl::default(),
                         )
                         .unwrap();
                         *arr = out;

@@ -49,8 +49,8 @@ use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
-    PolarsBaseError, PolarsBaseWarning, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
-    StructFieldNotFoundError,
+    PolarsBaseError, PolarsBaseWarning, PyPolarsErr, SQLInterfaceError, SQLSyntaxError,
+    SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
@@ -75,6 +75,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<GroupBy>().unwrap();
     m.add_class::<Join>().unwrap();
     m.add_class::<HStack>().unwrap();
+    m.add_class::<Reduce>().unwrap();
     m.add_class::<Distinct>().unwrap();
     m.add_class::<MapFunction>().unwrap();
     m.add_class::<Union>().unwrap();
@@ -102,6 +103,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Agg>().unwrap();
     m.add_class::<Ternary>().unwrap();
     m.add_class::<Function>().unwrap();
+    m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
     m.add_class::<Window>().unwrap();
     m.add_class::<PyOperator>().unwrap();
@@ -213,9 +215,6 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::arctan2)).unwrap();
-    #[cfg(feature = "trigonometry")]
-    m.add_wrapped(wrap_pyfunction!(functions::arctan2d))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::datetime))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_expr))
@@ -333,6 +332,13 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("OutOfBoundsError", py.get_type_bound::<OutOfBoundsError>())
         .unwrap();
     m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
+        .unwrap();
+    m.add(
+        "SQLInterfaceError",
+        py.get_type_bound::<SQLInterfaceError>(),
+    )
+    .unwrap();
+    m.add("SQLSyntaxError", py.get_type_bound::<SQLSyntaxError>())
         .unwrap();
     m.add("SchemaError", py.get_type_bound::<SchemaError>())
         .unwrap();

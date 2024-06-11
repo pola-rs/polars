@@ -6,7 +6,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -22,7 +22,7 @@ def test_cast() -> None:
     )
     # test various dtype casts, using standard ("CAST <col> AS <dtype>")
     # and postgres-specific ("<col>::<dtype>") cast syntax
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -141,8 +141,11 @@ def test_cast() -> None:
         (True, True),
     ]
 
-    with pytest.raises(ComputeError, match="unsupported use of FORMAT in CAST"):
-        pl.SQLContext(df=df, eager_execution=True).execute(
+    with pytest.raises(
+        SQLInterfaceError,
+        match="use of FORMAT is not currently supported in CAST",
+    ):
+        pl.SQLContext(df=df, eager=True).execute(
             "SELECT CAST(a AS STRING FORMAT 'HEX') FROM df"
         )
 
@@ -161,14 +164,20 @@ def test_cast() -> None:
 def test_cast_errors(values: Any, cast_op: str, error: str) -> None:
     df = pl.DataFrame({"values": values})
 
+    # invalid CAST should raise an error...
     with pytest.raises(ComputeError, match=error):
-        df.sql(f"SELECT {cast_op} FROM df")
+        df.sql(f"SELECT {cast_op} FROM self")
+
+    # ... or return `null` values if using TRY_CAST
+    target_type = cast_op.split("::")[1]
+    res = df.sql(f"SELECT TRY_CAST(values AS {target_type}) AS cast_values FROM self")
+    assert None in res.to_series()
 
 
 def test_cast_json() -> None:
     df = pl.DataFrame({"txt": ['{"a":[1,2,3],"b":["x","y","z"],"c":5.0}']})
 
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+    with pl.SQLContext(df=df, eager=True) as ctx:
         for json_cast in ("txt::json", "CAST(txt AS JSON)"):
             res = ctx.execute(f"SELECT {json_cast} AS j FROM df")
 

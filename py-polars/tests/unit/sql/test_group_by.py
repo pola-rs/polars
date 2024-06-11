@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -18,7 +18,7 @@ def foods_ipc_path() -> Path:
 def test_group_by(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    ctx = pl.SQLContext(eager_execution=True)
+    ctx = pl.SQLContext(eager=True)
     ctx.register("foods", lf)
 
     out = ctx.execute(
@@ -97,7 +97,7 @@ def test_group_by_all() -> None:
             "n": [3, 2, 1],
         }
     )
-    assert_frame_equal(expected, res, check_dtype=False)
+    assert_frame_equal(expected, res, check_dtypes=False)
 
     # more involved determination of agg/group columns
     res = df.sql(
@@ -198,7 +198,7 @@ def test_group_by_ordinal_position() -> None:
             ORDER BY c
             """
         )
-        assert_frame_equal(res1, expected, check_dtype=False)
+        assert_frame_equal(res1, expected, check_dtypes=False)
 
         res2 = ctx.execute(
             """
@@ -222,19 +222,19 @@ def test_group_by_errors() -> None:
     )
 
     with pytest.raises(
-        ComputeError,
-        match=r"expected a positive integer or valid expression; got -99",
+        SQLSyntaxError,
+        match=r"negative ordinals values are invalid for GROUP BY; found -99",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
 
     with pytest.raises(
-        ComputeError,
-        match=r"expected a positive integer or valid expression; got '!!!'",
+        SQLSyntaxError,
+        match=r"GROUP BY requires a valid expression or positive ordinal; found '!!!'",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
 
     with pytest.raises(
-        ComputeError,
+        SQLSyntaxError,
         match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY b")

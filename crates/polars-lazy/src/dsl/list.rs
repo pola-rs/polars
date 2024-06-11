@@ -50,7 +50,7 @@ fn run_per_sublist(
     parallel: bool,
     output_field: Field,
 ) -> PolarsResult<Option<Series>> {
-    let phys_expr = prepare_expression_for_context("", expr, &lst.inner_dtype(), Context::Default)?;
+    let phys_expr = prepare_expression_for_context("", expr, lst.inner_dtype(), Context::Default)?;
 
     let state = ExecutionState::new();
 
@@ -122,10 +122,10 @@ fn run_on_group_by_engine(
     let inner_dtype = lst.inner_dtype();
     // SAFETY:
     // Invariant in List means values physicals can be cast to inner dtype
-    let values = unsafe { values.cast_unchecked(&inner_dtype).unwrap() };
+    let values = unsafe { values.cast_unchecked(inner_dtype).unwrap() };
 
     let df_context = values.into_frame();
-    let phys_expr = prepare_expression_for_context("", expr, &inner_dtype, Context::Aggregation)?;
+    let phys_expr = prepare_expression_for_context("", expr, inner_dtype, Context::Aggregation)?;
 
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;

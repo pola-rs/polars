@@ -15,9 +15,10 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -50,9 +51,10 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -85,9 +87,10 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -119,9 +122,10 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -156,10 +160,11 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
         ddof: u8,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -195,10 +200,11 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
         ddof: u8,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -234,9 +240,10 @@ impl PyExpr {
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             min_periods,
@@ -274,9 +281,10 @@ impl PyExpr {
         interpolation: Wrap<QuantileInterpolOptions>,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -324,9 +332,10 @@ impl PyExpr {
         lambda: PyObject,
         window_size: usize,
         weights: Option<Vec<f64>>,
-        min_periods: usize,
+        min_periods: Option<usize>,
         center: bool,
     ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,

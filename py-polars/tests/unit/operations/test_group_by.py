@@ -329,10 +329,9 @@ def test_group_by_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    with pytest.deprecated_call():
-        gb_iter = enumerate(df.group_by("foo", maintain_order=True))
+    gb_iter = enumerate(df.group_by("foo", maintain_order=True))
     for i, (group, data) in gb_iter:
-        assert group == expected_names[i]
+        assert group == (expected_names[i],)
         assert data.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
@@ -461,16 +460,11 @@ def test_arg_sort_sort_by_groups_update__4360() -> None:
     out = df.with_columns(
         pl.col("col2").arg_sort().over("group").alias("col2_arg_sort")
     ).with_columns(
-        [
-            pl.col("col1")
-            .sort_by(pl.col("col2_arg_sort"))
-            .over("group")
-            .alias("result_a"),
-            pl.col("col1")
-            .sort_by(pl.col("col2").arg_sort())
-            .over("group")
-            .alias("result_b"),
-        ]
+        pl.col("col1").sort_by(pl.col("col2_arg_sort")).over("group").alias("result_a"),
+        pl.col("col1")
+        .sort_by(pl.col("col2").arg_sort())
+        .over("group")
+        .alias("result_b"),
     )
 
     assert_series_equal(out["result_a"], out["result_b"], check_names=False)
@@ -503,10 +497,10 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
             (pl.col("b") / pl.col("a")).last().alias("last_ratio_2"),
         ]
     ).to_dict(as_series=False) == {
-        "a": [0, 1, 2],
-        "sum_ratio_1": [1.0, 4.2, 5.0],
-        "last_ratio_1": [1.0, 6.0, 6.0],
-        "last_ratio_2": [1.0, 6.0, 6.0],
+        "a": [1, 2],
+        "sum_ratio_1": [4.2, 5.0],
+        "last_ratio_1": [6.0, 6.0],
+        "last_ratio_2": [6.0, 6.0],
     }
 
 
@@ -543,7 +537,7 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
         .to_dict(as_series=False)
     )
 
-    assert res["corr"] == pytest.approx([9.148920923684765])
+    assert res["corr"] == pytest.approx([6.988674024215477])
     assert res["a"] == [None]
 
 
@@ -776,69 +770,6 @@ def test_group_by_series_partitioned(partition_limit: int) -> None:
     df.group_by(groups).agg(pl.all().is_not_null().sum())
 
 
-def test_groupby_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
-
-    with pytest.deprecated_call():
-        result = df.groupby("a").agg(pl.sum("b"))
-    with pytest.deprecated_call():
-        result_lazy = df.lazy().groupby("a").agg(pl.sum("b")).collect()
-
-    expected = df.group_by("a").agg(pl.sum("b"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
-
-
-def test_groupby_rolling_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "date": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
-            ),
-            "value": [1, 2, 3, 4, 5],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.groupby_rolling("date", period="2d").agg(pl.sum("value"))
-    with pytest.deprecated_call():
-        result_lazy = (
-            df.lazy()
-            .groupby_rolling("date", period="2d")
-            .agg(pl.sum("value"))
-            .collect()
-        )
-
-    expected = df.rolling("date", period="2d").agg(pl.sum("value"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
-
-
-def test_group_by_rolling_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "date": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
-            ),
-            "value": [1, 2, 3, 4, 5],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
-    with pytest.deprecated_call():
-        result_lazy = (
-            df.lazy()
-            .groupby_rolling("date", period="2d")
-            .agg(pl.sum("value"))
-            .collect()
-        )
-
-    expected = df.rolling("date", period="2d").agg(pl.sum("value"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
-
-
 def test_group_by_list_scalar_11749() -> None:
     df = pl.DataFrame(
         {
@@ -931,18 +862,6 @@ def test_group_by_named() -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
     result = df.group_by(z=pl.col("a") * 2, maintain_order=True).agg(pl.col("b").min())
     expected = df.group_by((pl.col("a") * 2).alias("z"), maintain_order=True).agg(
-        pl.col("b").min()
-    )
-    assert_frame_equal(result, expected)
-
-
-def test_group_by_deprecated_by_arg() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 2, 3, 3], "b": range(6)})
-    with pytest.deprecated_call():
-        result = df.group_by(by=(pl.col("a") * 2), maintain_order=True).agg(
-            pl.col("b").min()
-        )
-    expected = df.group_by((pl.col("a") * 2), maintain_order=True).agg(
         pl.col("b").min()
     )
     assert_frame_equal(result, expected)

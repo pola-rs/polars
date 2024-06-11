@@ -11,7 +11,6 @@ This namespace is available after calling :code:`DataFrame.group_by(...)`.
     GroupBy.__iter__
     GroupBy.agg
     GroupBy.all
-    GroupBy.apply
     GroupBy.count
     GroupBy.first
     GroupBy.head

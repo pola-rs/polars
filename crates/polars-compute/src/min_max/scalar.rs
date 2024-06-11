@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryViewArray, PrimitiveArray, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray};
 use arrow::types::NativeType;
 use polars_utils::min_max::MinMax;
 
@@ -53,6 +53,38 @@ impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for [T] {
 
     fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         self.iter().copied().reduce(MinMax::max_propagate_nan)
+    }
+}
+
+impl MinMaxKernel for BooleanArray {
+    type Scalar<'a> = bool;
+
+    fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        if self.len() - self.null_count() == 0 {
+            return None;
+        }
+
+        let unset_bits = self.values().unset_bits();
+        Some(unset_bits == 0)
+    }
+
+    fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        if self.len() - self.null_count() == 0 {
+            return None;
+        }
+
+        let set_bits = self.values().set_bits();
+        Some(set_bits > 0)
+    }
+
+    #[inline(always)]
+    fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.min_ignore_nan_kernel()
+    }
+
+    #[inline(always)]
+    fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.max_ignore_nan_kernel()
     }
 }
 

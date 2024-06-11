@@ -1,6 +1,7 @@
 use arrow::bitmap::Bitmap;
 
 use super::*;
+use crate::chunked_array::metadata::MetadataProperties;
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
@@ -23,7 +24,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
         let chunks = coalesce_nulls(&self.chunks, other);
-        unsafe { self.copy_with_chunks(chunks, true, false) }
+        let mut ca = unsafe { self.copy_with_chunks(chunks) };
+        ca.copy_metadata(self, MetadataProperties::SORTED);
+        ca
     }
 }
 

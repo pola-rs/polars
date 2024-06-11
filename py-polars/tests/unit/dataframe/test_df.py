@@ -140,7 +140,6 @@ def test_mixed_sequence_selection() -> None:
 
 
 def test_from_arrow(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),
@@ -293,8 +292,7 @@ def test_sort_maintain_order_descending_repeated_nulls(nulls_last: bool) -> None
 def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     s = pl.Series("c", [True, False, True])
-    with pytest.deprecated_call():
-        df.replace("a", s)
+    df._replace("a", s)
     assert_frame_equal(df, pl.DataFrame({"a": [True, False, True], "b": [1, 2, 3]}))
 
 
@@ -403,20 +401,19 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
 
     for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
         out = df.sort("fruits").select(
-            [
-                pl.col("B")
-                .reverse()
-                .gather(index)  # type: ignore[arg-type]
-                .over("fruits", mapping_strategy="join"),
-                "fruits",
-            ]
+            pl.col("B")
+            .reverse()
+            .gather(index)  # type: ignore[arg-type]
+            .over("fruits", mapping_strategy="join"),
+            "fruits",
         )
 
         assert out[0, "B"].to_list() == [2, 3]
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().get(pl.lit(1)).over("fruits"), "fruits"]
+        pl.col("B").reverse().get(pl.lit(1)).over("fruits"),
+        "fruits",
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -1757,10 +1754,8 @@ def test_fill_null() -> None:
     )
 
     assert df.select(
-        [
-            pl.all().forward_fill().name.suffix("_forward"),
-            pl.all().backward_fill().name.suffix("_backward"),
-        ]
+        pl.all().forward_fill().name.suffix("_forward"),
+        pl.all().backward_fill().name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "c_forward": [
             ["Apple", "Orange"],
@@ -1836,84 +1831,6 @@ def test_shrink_to_fit() -> None:
     assert_frame_equal(df.shrink_to_fit(in_place=False), df)
 
 
-def test_arithmetic() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
-
-    for df_mul in (df * 2, 2 * df):
-        expected = pl.DataFrame({"a": [2.0, 4.0], "b": [6.0, 8.0]})
-        assert_frame_equal(df_mul, expected)
-
-    for df_plus in (df + 2, 2 + df):
-        expected = pl.DataFrame({"a": [3.0, 4.0], "b": [5.0, 6.0]})
-        assert_frame_equal(df_plus, expected)
-
-    df_div = df / 2
-    expected = pl.DataFrame({"a": [0.5, 1.0], "b": [1.5, 2.0]})
-    assert_frame_equal(df_div, expected)
-
-    df_minus = df - 2
-    expected = pl.DataFrame({"a": [-1.0, 0.0], "b": [1.0, 2.0]})
-    assert_frame_equal(df_minus, expected)
-
-    df_mod = df % 2
-    expected = pl.DataFrame({"a": [1.0, 0.0], "b": [1.0, 0.0]})
-    assert_frame_equal(df_mod, expected)
-
-    df2 = pl.DataFrame({"c": [10]})
-
-    out = df + df2
-    expected = pl.DataFrame({"a": [11.0, None], "b": [None, None]}).with_columns(
-        pl.col("b").cast(pl.Float64)
-    )
-    assert_frame_equal(out, expected)
-
-    out = df - df2
-    expected = pl.DataFrame({"a": [-9.0, None], "b": [None, None]}).with_columns(
-        pl.col("b").cast(pl.Float64)
-    )
-    assert_frame_equal(out, expected)
-
-    out = df / df2
-    expected = pl.DataFrame({"a": [0.1, None], "b": [None, None]}).with_columns(
-        pl.col("b").cast(pl.Float64)
-    )
-    assert_frame_equal(out, expected)
-
-    out = df * df2
-    expected = pl.DataFrame({"a": [10.0, None], "b": [None, None]}).with_columns(
-        pl.col("b").cast(pl.Float64)
-    )
-    assert_frame_equal(out, expected)
-
-    out = df % df2
-    expected = pl.DataFrame({"a": [1.0, None], "b": [None, None]}).with_columns(
-        pl.col("b").cast(pl.Float64)
-    )
-    assert_frame_equal(out, expected)
-
-    # cannot do arithmetic with a sequence
-    with pytest.raises(TypeError, match="operation not supported"):
-        _ = df + [1]  # type: ignore[operator]
-
-
-def test_df_series_division() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [2, 2, 4, 4, 6, 6],
-            "b": [2, 2, 10, 5, 6, 6],
-        }
-    )
-    s = pl.Series([2, 2, 2, 2, 2, 2])
-    assert (df / s).to_dict(as_series=False) == {
-        "a": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
-        "b": [1.0, 1.0, 5.0, 2.5, 3.0, 3.0],
-    }
-    assert (df // s).to_dict(as_series=False) == {
-        "a": [1, 1, 2, 2, 3, 3],
-        "b": [1, 1, 5, 2, 3, 3],
-    }
-
-
 def test_add_string() -> None:
     df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
     expected = pl.DataFrame(
@@ -1953,8 +1870,8 @@ def test_product() -> None:
     expected = pl.DataFrame(
         {"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1], "str": [None]}
     )
-    assert_frame_not_equal(out, expected, check_dtype=True)
-    assert_frame_equal(out, expected, check_dtype=False)
+    assert_frame_not_equal(out, expected, check_dtypes=True)
+    assert_frame_equal(out, expected, check_dtypes=False)
 
 
 def test_first_last_nth_expressions(fruits_cars: pl.DataFrame) -> None:
@@ -2162,10 +2079,8 @@ def test_fill_null_limits() -> None:
             "c": [True, None, None, None, False, True, None, None, None, False],
         }
     ).select(
-        [
-            pl.all().fill_null(strategy="forward", limit=2),
-            pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
-        ]
+        pl.all().fill_null(strategy="forward", limit=2),
+        pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
@@ -2227,11 +2142,9 @@ def test_selection_regex_and_multicol() -> None:
 
     # Selection only
     test_df.select(
-        [
-            pl.col(["a", "b", "c"]).name.suffix("_list"),
-            pl.all().exclude("foo").name.suffix("_wild"),
-            pl.col("^\\w$").name.suffix("_regex"),
-        ]
+        pl.col(["a", "b", "c"]).name.suffix("_list"),
+        pl.all().exclude("foo").name.suffix("_wild"),
+        pl.col("^\\w$").name.suffix("_regex"),
     )
 
     # Multi * Single
@@ -2695,9 +2608,7 @@ def test_format_empty_df() -> None:
             pl.Series("val2", [], dtype=pl.Categorical),
         ]
     ).select(
-        [
-            pl.format("{}:{}", pl.col("val1"), pl.col("val2")).alias("cat"),
-        ]
+        pl.format("{}:{}", pl.col("val1"), pl.col("val2")).alias("cat"),
     )
     assert df.shape == (0, 1)
     assert df.dtypes == [pl.String]
@@ -2717,7 +2628,7 @@ def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [1, 2, 3]})
         .with_columns(
-            [pl.col("col1").cumulative_eval(pl.element().map_batches(lambda x: 0))]
+            pl.col("col1").cumulative_eval(pl.element().map_batches(lambda x: 0))
         )
         .to_dict(as_series=False)
     ) == {"col1": [0, 0, 0]}
@@ -2808,12 +2719,10 @@ def test_window_deadlock() -> None:
         }
     )
 
-    df = df.select(
-        [
-            pl.col("*"),  # select all
-            pl.col("random").sum().over("groups").alias("sum[random]/groups"),
-            pl.col("random").implode().over("names").alias("random/name"),
-        ]
+    _df = df.select(
+        pl.col("*"),  # select all
+        pl.col("random").sum().over("groups").alias("sum[random]/groups"),
+        pl.col("random").implode().over("names").alias("random/name"),
     )
 
 

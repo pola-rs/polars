@@ -187,10 +187,8 @@ def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
 
     out = df.select(
-        [
-            pl.corr("a", "b").alias("pearson"),
-            pl.corr("a", "b", method="spearman").alias("spearman"),
-        ]
+        pl.corr("a", "b").alias("pearson"),
+        pl.corr("a", "b", method="spearman").alias("spearman"),
     )
     assert out["pearson"][0] == pytest.approx(1.0)
     assert out["spearman"][0] == pytest.approx(1.0)
@@ -447,7 +445,6 @@ def test_lazy_functions() -> None:
         pl.first("a").name.suffix("_first"),
         pl.first("b", "c").name.suffix("_first"),
         pl.last("c", "b", "a").name.suffix("_last"),
-        pl.nth(1, "c", "a").name.suffix("_nth1"),
     )
     expected: dict[str, list[Any]] = {
         "b_var": [1.0],
@@ -470,8 +467,6 @@ def test_lazy_functions() -> None:
         "c_last": [4.0],
         "b_last": [3],
         "a_last": ["foo"],
-        "c_nth1": [2.0],
-        "a_nth1": ["bar"],
     }
     assert_frame_equal(
         out,
@@ -492,11 +487,9 @@ def test_lazy_functions() -> None:
 
     # regex selection
     out = df.select(
-        [
-            pl.struct(pl.max("^a|b$")).alias("x"),
-            pl.struct(pl.min("^.*[bc]$")).alias("y"),
-            pl.struct(pl.sum("^[^a]$")).alias("z"),
-        ]
+        pl.struct(pl.max("^a|b$")).alias("x"),
+        pl.struct(pl.min("^.*[bc]$")).alias("y"),
+        pl.struct(pl.sum("^[^a]$")).alias("z"),
     )
     assert out.rows() == [
         ({"a": "foo", "b": 3}, {"b": 1, "c": -1.0}, {"b": 6, "c": 5.0})

@@ -28,7 +28,8 @@ pub(super) fn streamable_join(args: &JoinArgs) -> bool {
     let supported = match args.how {
         #[cfg(feature = "cross_join")]
         JoinType::Cross => true,
-        JoinType::Inner | JoinType::Left => {
+        JoinType::Left => true,
+        JoinType::Inner => {
             // no-coalescing not yet supported in streaming
             matches!(
                 args.coalesce,

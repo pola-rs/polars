@@ -104,7 +104,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             [col("sugars_g"), col("calories")],
-            SortMultipleOptions::default().with_order_descendings([false, false]),
+            SortMultipleOptions::default().with_order_descending_multi([false, false]),
         );
 
     assert_streaming_with_default(q, true, false);
@@ -327,7 +327,7 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
     let q = q.clone().left_join(q, col("sugars_g"), col("sugars_g"));
     let q1 = q.with_streaming(true);
     let out_streaming = q1.collect()?;
-    assert_eq!(out_streaming.shape(), (3, 3));
+    assert_eq!(out_streaming.shape(), (3, 4));
     Ok(())
 }
 

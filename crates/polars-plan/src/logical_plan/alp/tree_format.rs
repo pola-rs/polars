@@ -31,9 +31,9 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
             AExpr::Cast {
-                data_type, strict, ..
+                data_type, options, ..
             } => {
-                return if *strict {
+                return if options.strict() {
                     write!(f, "strict cast({})", data_type)
                 } else {
                     write!(f, "cast({})", data_type)
@@ -52,11 +52,10 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 for i in &sort_options.descending {
                     write!(f, "{}", *i as u8)?;
                 }
-                write!(
-                    f,
-                    "{}{}",
-                    sort_options.nulls_last as u8, sort_options.multithreaded as u8
-                )?;
+                for i in &sort_options.nulls_last {
+                    write!(f, "{}", *i as u8)?;
+                }
+                write!(f, "{}", sort_options.multithreaded as u8)?;
                 return Ok(());
             },
             AExpr::Filter { .. } => "filter",
@@ -103,8 +102,21 @@ fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
 
 impl<'a> TreeFmtNode<'a> {
     pub fn root_logical_plan(lp: IRPlanRef<'a>) -> Self {
+        if let Some(streaming_lp) = lp.extract_streaming_plan() {
+            return Self::streaming_root_logical_plan(streaming_lp);
+        }
+
         Self {
             h: None,
+            content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
+
+            lp,
+        }
+    }
+
+    fn streaming_root_logical_plan(lp: IRPlanRef<'a>) -> Self {
+        Self {
+            h: Some("Streaming".to_string()),
             content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
 
             lp,
@@ -326,10 +338,19 @@ impl<'a> TreeFmtNode<'a> {
                         wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                         vec![self.lp_node(None, *input)],
                     ),
-                    MapFunction { input, function } => ND(
-                        wh(h, &format!("{function}")),
-                        vec![self.lp_node(None, *input)],
-                    ),
+                    MapFunction { input, function } => {
+                        if let Some(streaming_lp) = function.to_streaming_lp() {
+                            ND(
+                                String::default(),
+                                vec![TreeFmtNode::streaming_root_logical_plan(streaming_lp)],
+                            )
+                        } else {
+                            ND(
+                                wh(h, &format!("{function}")),
+                                vec![self.lp_node(None, *input)],
+                            )
+                        }
+                    },
                     ExtContext { input, .. } => {
                         ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
                     },

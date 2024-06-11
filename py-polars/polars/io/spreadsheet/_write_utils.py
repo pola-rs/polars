@@ -250,20 +250,18 @@ def _xl_inject_dummy_table_columns(
                 df_select_cols.insert(insert_idx, col)
 
     df = df.select(
-        [
-            (
-                col
-                if col in df_original_columns
-                else (
-                    F.lit(None).cast(
-                        cast_lookup.get(col, dtype)  # type:ignore[arg-type]
-                    )
-                    if dtype or (col in cast_lookup and cast_lookup[col] is not None)
-                    else F.lit(None)
-                ).alias(col)
-            )
-            for col in df_select_cols
-        ]
+        (
+            col
+            if col in df_original_columns
+            else (
+                F.lit(None).cast(
+                    cast_lookup.get(col, dtype)  # type:ignore[arg-type]
+                )
+                if dtype or (col in cast_lookup and cast_lookup[col] is not None)
+                else F.lit(None)
+            ).alias(col)
+        )
+        for col in df_select_cols
     )
     return df
 

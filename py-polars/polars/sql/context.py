@@ -1,13 +1,28 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Collection, Generic, Mapping, overload
+import re
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Collection,
+    Generic,
+    Mapping,
+    Union,
+    overload,
+)
 
+from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals
 from polars._utils.wrap import wrap_ldf
+from polars.convert import from_arrow, from_pandas
 from polars.dataframe import DataFrame
+from polars.dependencies import _check_for_pandas, _check_for_pyarrow
+from polars.dependencies import pandas as pd
+from polars.dependencies import pyarrow as pa
 from polars.lazyframe import LazyFrame
+from polars.series import Series
 from polars.type_aliases import FrameType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -16,17 +31,69 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from types import TracebackType
-    from typing import Final, Literal
+    from typing import Any, Final, Literal
+
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
+    CompatibleFrameType: TypeAlias = Union[
+        DataFrame,
+        LazyFrame,
+        Series,
+        pd.DataFrame,
+        pd.Series[Any],
+        pa.Table,
+        pa.RecordBatch,
+    ]
+
+
+def _compatible_frame(obj: Any) -> bool:
+    """Check if the object can be converted to DataFrame."""
+    return (
+        isinstance(obj, (DataFrame, LazyFrame, Series))
+        or (_check_for_pandas(obj) and isinstance(obj, (pd.DataFrame, pd.Series)))
+        or (_check_for_pyarrow(obj) and isinstance(obj, (pa.Table, pa.RecordBatch)))
+    )
+
+
+def _ensure_lazyframe(obj: Any) -> LazyFrame:
+    """Return LazyFrame from compatible input."""
+    if isinstance(obj, (DataFrame, LazyFrame)):
+        return obj if isinstance(obj, LazyFrame) else obj.lazy()
+    elif isinstance(obj, Series):
+        return obj.to_frame().lazy()
+    elif _check_for_pandas(obj) and isinstance(obj, (pd.DataFrame, pd.Series)):
+        if isinstance(frame := from_pandas(obj), Series):
+            frame = frame.to_frame()
+        return frame.lazy()
+    elif _check_for_pyarrow(obj) and isinstance(obj, (pa.Table, pa.RecordBatch)):
+        return from_arrow(obj).lazy()  # type: ignore[union-attr]
+    else:
+        msg = f"Unrecognised frame type: {type(obj)}"
+        raise ValueError(msg)
+
+
+def _get_frame_locals(
+    *,
+    all_compatible: bool,
+    n_objects: int | None = None,
+    named: str | Collection[str] | Callable[[str], bool] | None = None,
+) -> dict[str, Any]:
+    """Return compatible frame objects from the local stack."""
+    of_type = _compatible_frame if all_compatible else (DataFrame, LazyFrame, Series)
+    return _get_stack_locals(of_type=of_type, n_objects=n_objects, named=named)  # type: ignore[arg-type]
+
 
 class SQLContext(Generic[FrameType]):
     """
-    Run SQL queries against DataFrame/LazyFrame data.
+    Run SQL queries against DataFrame, LazyFrame, and Series data.
 
     .. warning::
         This functionality is considered **unstable**, although it is close to being
@@ -40,47 +107,52 @@ class SQLContext(Generic[FrameType]):
 
     # note: the type-overloaded methods are required to support accurate typing
     # of the frame return from "execute" (which may be DataFrame or LazyFrame),
-    # as that is influenced by both the "eager_execution" flag at init-time AND
-    # the "eager" flag at query-time (if anyone can find a lighter-weight set
-    # of annotations that successfully resolves this, please go for it... ;)
+    # as that is influenced by both the "eager" flag at init-time AND the "eager"
+    # flag at query-time (if anyone can find a lighter-weight set of annotations
+    # that successfully resolves this, please go for it... ;)
 
     @overload
     def __init__(
         self: SQLContext[LazyFrame],
-        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
+        frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        eager_execution: Literal[False] = False,
-        **named_frames: DataFrame | LazyFrame | None,
+        all_compatible: bool = ...,
+        eager: Literal[False] = False,
+        **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
     @overload
     def __init__(
         self: SQLContext[DataFrame],
-        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
+        frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        eager_execution: Literal[True],
-        **named_frames: DataFrame | LazyFrame | None,
+        all_compatible: bool = ...,
+        eager: Literal[True],
+        **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
     @overload
     def __init__(
         self: SQLContext[DataFrame],
-        frames: Mapping[str, DataFrame | LazyFrame | None] | None = ...,
+        frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        eager_execution: bool,
-        **named_frames: DataFrame | LazyFrame | None,
+        all_compatible: bool = ...,
+        eager: bool,
+        **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
+    @deprecate_renamed_parameter("eager_execution", "eager", version="0.20.31")
     def __init__(
         self,
-        frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
+        frames: Mapping[str, CompatibleFrameType | None] | None = None,
         *,
         register_globals: bool | int = False,
-        eager_execution: bool = False,
-        **named_frames: DataFrame | LazyFrame | None,
+        all_compatible: bool = False,
+        eager: bool = False,
+        **named_frames: CompatibleFrameType | None,
     ) -> None:
         """
         Initialize a new `SQLContext`.
@@ -88,16 +160,20 @@ class SQLContext(Generic[FrameType]):
         Parameters
         ----------
         frames
-            A `{name:frame, ...}` mapping.
+            A `{name:frame, ...}` mapping which can include Polars frames *and*
+            pandas DataFrames, Series and pyarrow Table and RecordBatch objects.
         register_globals
-            Register all eager/lazy frames found in the globals, automatically
-            mapping their variable name to a table name. If given an integer
-            then only the most recent "n" frames found will be registered.
-        eager_execution
-            Return query execution results as `DataFrame` instead of `LazyFrame`.
-            (Note that the query itself is always executed in lazy-mode; this
-            parameter impacts whether :meth:`execute` returns an eager or lazy
-            result frame).
+            Register compatible objects found in the globals, automatically mapping
+            their variable name to a table name. If given an integer then only the
+            most recent "n" objects found will be registered.
+        all_compatible
+            If `register_globals` is set this option controls whether we *also* register
+            all pandas DataFrame, Series, and pyarrow Table and RecordBatch objects.
+            If False, only Polars classes are registered with the SQL engine.
+        eager
+            If True, returns execution results as `DataFrame` instead of `LazyFrame`.
+            (Note that the query itself is always executed in lazy-mode; this parameter
+            impacts whether :meth:`execute` returns an eager or lazy result frame).
         **named_frames
             Named eager/lazy frames, provided as kwargs.
 
@@ -121,14 +197,13 @@ class SQLContext(Generic[FrameType]):
         issue_unstable_warning(
             "`SQLContext` is considered **unstable**, although it is close to being considered stable."
         )
-
         self._ctxt = PySQLContext.new()
-        self._eager_execution = eager_execution
+        self._eager_execution = eager
 
         frames = dict(frames or {})
         if register_globals:
-            for name, obj in _get_stack_locals(
-                of_type=(DataFrame, LazyFrame),
+            for name, obj in _get_frame_locals(
+                all_compatible=all_compatible,
                 n_objects=None if (register_globals is True) else None,
             ).items():
                 if name not in frames and name not in named_frames:
@@ -137,6 +212,79 @@ class SQLContext(Generic[FrameType]):
         if frames or named_frames:
             frames.update(named_frames)
             self.register_many(frames)
+
+    @overload
+    @classmethod
+    def execute_global(
+        cls, query: str, *, eager: Literal[False] = False
+    ) -> LazyFrame: ...
+
+    @overload
+    @classmethod
+    def execute_global(cls, query: str, *, eager: Literal[True]) -> DataFrame: ...
+
+    @overload
+    @classmethod
+    def execute_global(cls, query: str, *, eager: bool) -> DataFrame | LazyFrame: ...
+
+    @classmethod
+    def execute_global(
+        cls, query: str, *, eager: bool = False
+    ) -> DataFrame | LazyFrame:
+        """
+        Immediately execute a SQL query, automatically registering frame globals.
+
+        Notes
+        -----
+        * This convenience method automatically registers all compatible objects in
+          the local stack, mapping their variable name to a table name. Note that in
+          addition to polars DataFrame, LazyFrame, and Series this method will *also*
+          register pandas DataFrame, Series, and pyarrow Table and RecordBatch objects.
+        * Instead of calling this classmethod you should consider using `pl.sql`,
+          which will use this code internally.
+
+        Parameters
+        ----------
+        query
+            A valid SQL query string.
+        eager
+            If True, returns execution results as `DataFrame` instead of `LazyFrame`.
+            (Note that the query itself is always executed in lazy-mode).
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> df = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> df_pandas = pd.DataFrame({"a": [2, 3, 4], "c": [7, 8, 9]})
+
+        Join a polars LazyFrame with a pandas DataFrame (note use of the preferred
+        `pl.sql` method, which is equivalent to `SQLContext.execute_global`):
+
+        >>> pl.sql("SELECT df.*, c FROM df JOIN df_pandas USING(a)").collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ 5   ┆ 7   │
+        │ 3   ┆ 6   ┆ 8   │
+        └─────┴─────┴─────┘
+        """
+        # basic extraction of possible table names from the query, so we don't register
+        # unnecessary objects from the globals (ideally we shuoold look to make the
+        # underlying `sqlparser-rs` lib parse the query to identify table names)
+        q = re.split(r"\bFROM\b", query, maxsplit=1, flags=re.I)[1]
+        possible_names = {
+            nm
+            for nm in re.split(r"\s", q)
+            if re.match(r'^("[^"]+")$', nm)
+            or (nm.isidentifier() and nm.lower() not in _SQL_KEYWORDS_)
+        }
+        # get compatible frame objects from the globals, constraining by possible names
+        named_frames = _get_frame_locals(all_compatible=True, named=possible_names)
+        with cls(frames=named_frames, register_globals=False) as ctx:
+            return ctx.execute(query=query, eager=eager)
 
     def __enter__(self) -> SQLContext[FrameType]:
         """Track currently registered tables on scope entry; supports nested scopes."""
@@ -166,39 +314,46 @@ class SQLContext(Generic[FrameType]):
         return f"<SQLContext [tables:{n_tables}] at 0x{id(self):x}>"
 
     # these overloads are necessary to cover the possible permutations
-    # of the init-time "eager_execution" param, and the "eager" param.
+    # of the init-time "eager" param, and the local "eager" param.
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, eager: None = ...
+        self: SQLContext[DataFrame], query: str, *, eager: None = ...
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, eager: Literal[False]
+        self: SQLContext[DataFrame], query: str, *, eager: Literal[False]
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, eager: Literal[True]
+        self: SQLContext[DataFrame], query: str, *, eager: Literal[True]
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, eager: None = ...
+        self: SQLContext[LazyFrame], query: str, *, eager: None = ...
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, eager: Literal[False]
+        self: SQLContext[LazyFrame], query: str, *, eager: Literal[False]
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, eager: Literal[True]
+        self: SQLContext[LazyFrame], query: str, *, eager: Literal[True]
     ) -> DataFrame: ...
 
-    def execute(self, query: str, eager: bool | None = None) -> LazyFrame | DataFrame:
+    @overload
+    def execute(
+        self, query: str, *, eager: bool | None = ...
+    ) -> LazyFrame | DataFrame: ...
+
+    def execute(
+        self, query: str, *, eager: bool | None = None
+    ) -> LazyFrame | DataFrame:
         """
         Parse the given SQL query and execute it against the registered frame data.
 
@@ -208,9 +363,9 @@ class SQLContext(Generic[FrameType]):
             A valid string SQL query.
         eager
             Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
-            If unset, the value of the init-time parameter "eager_execution" will be
-            used. (Note that the query itself is always executed in lazy-mode; this
-            parameter only impacts the type of the returned frame).
+            If unset, the value of the init-time "eager" parameter will be used.
+            Note that the query itself is always executed in lazy-mode; this
+            parameter only impacts the type of the returned frame.
 
         Examples
         --------
@@ -279,7 +434,7 @@ class SQLContext(Generic[FrameType]):
         res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if (eager or self._eager_execution) else res
 
-    def register(self, name: str, frame: DataFrame | LazyFrame | None) -> Self:
+    def register(self, name: str, frame: CompatibleFrameType | None) -> Self:
         """
         Register a single frame as a table, using the given name.
 
@@ -310,14 +465,13 @@ class SQLContext(Generic[FrameType]):
         │ world │
         └───────┘
         """
-        if frame is None:
-            frame = LazyFrame()
-        elif isinstance(frame, DataFrame):
-            frame = frame.lazy()
+        frame = LazyFrame() if frame is None else _ensure_lazyframe(frame)
         self._ctxt.register(name, frame._ldf)
         return self
 
-    def register_globals(self, n: int | None = None) -> Self:
+    def register_globals(
+        self, n: int | None = None, *, all_compatible: bool = True
+    ) -> Self:
         """
         Register all frames (lazy or eager) found in the current globals scope.
 
@@ -333,6 +487,10 @@ class SQLContext(Generic[FrameType]):
         ----------
         n
             Register only the most recent "n" frames.
+        all_compatible
+            Control whether we *also* register pandas DataFrame, Series, and
+            pyarrow Table and RecordBatch objects. If False, only Polars
+            classes are registered with the SQL engine.
 
         Examples
         --------
@@ -361,14 +519,13 @@ class SQLContext(Generic[FrameType]):
         │ 1   ┆ x    ┆ null │
         └─────┴──────┴──────┘
         """
-        return self.register_many(
-            frames=_get_stack_locals(of_type=(DataFrame, LazyFrame), n_objects=n)
-        )
+        frames = _get_frame_locals(all_compatible=all_compatible, n_objects=n)
+        return self.register_many(frames=frames)
 
     def register_many(
         self,
-        frames: Mapping[str, DataFrame | LazyFrame | None] | None = None,
-        **named_frames: DataFrame | LazyFrame | None,
+        frames: Mapping[str, CompatibleFrameType | None] | None = None,
+        **named_frames: CompatibleFrameType | None,
     ) -> Self:
         """
         Register multiple eager/lazy frames as tables, using the associated names.
@@ -509,3 +666,58 @@ class SQLContext(Generic[FrameType]):
         ['foo_bar', 'hello_data']
         """
         return sorted(self._ctxt.get_tables())
+
+
+_SQL_KEYWORDS_ = {
+    "and",
+    "anti",
+    "array",
+    "as",
+    "asc",
+    "boolean",
+    "by",
+    "case",
+    "create",
+    "date",
+    "datetime",
+    "desc",
+    "distinct",
+    "double",
+    "drop",
+    "exclude",
+    "float",
+    "from",
+    "full",
+    "group",
+    "having",
+    "in",
+    "inner",
+    "int",
+    "interval",
+    "join",
+    "left",
+    "limit",
+    "not",
+    "null",
+    "offset",
+    "on",
+    "or",
+    "order",
+    "outer",
+    "regexp",
+    "right",
+    "rlike",
+    "select",
+    "semi",
+    "show",
+    "table",
+    "tables",
+    "then",
+    "using",
+    "when",
+    "where",
+    "with",
+}
+
+
+__all__ = ["SQLContext"]
