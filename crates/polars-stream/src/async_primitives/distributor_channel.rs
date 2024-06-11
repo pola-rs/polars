@@ -13,7 +13,7 @@ use super::task_parker::TaskParker;
 /// Each [`Receiver`] has an internal buffer of `bufsize`. Thus it is possible
 /// that when one [`Sender`] is exhausted some other receivers still have data
 /// available.
-/// 
+///
 /// The FIFO order is only guaranteed per receiver. That is, each receiver is
 /// guaranteed to see a subset of the data sent by the sender in the order the
 /// sender sent it in, but not necessarily contiguously.
@@ -104,8 +104,8 @@ pub struct Receiver<T> {
     index: usize,
 }
 
-unsafe impl<T: Send> Send for Sender<T> { }
-unsafe impl<T: Send> Send for Receiver<T> { }
+unsafe impl<T: Send> Send for Sender<T> {}
+unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T: Send> Sender<T> {
     pub async fn send(&mut self, mut value: T) -> Result<(), T> {
@@ -149,7 +149,7 @@ impl<T: Send> Sender<T> {
                     },
                     Err(SendError::Closed(v)) => value = v,
                 }
-                
+
                 idx += 1;
                 if idx >= num_receivers {
                     idx -= num_receivers;

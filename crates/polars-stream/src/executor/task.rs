@@ -9,7 +9,7 @@ use std::task::{Context, Poll, Wake, Waker};
 use parking_lot::Mutex;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
-/// atomatically updateable, even when we hold the lock on the data.
+/// atomically updateable, even when we hold the lock on the data.
 #[derive(Default)]
 struct TaskState {
     state: AtomicU8,
@@ -18,10 +18,10 @@ struct TaskState {
 impl TaskState {
     /// Default state, not running, not scheduled.
     const IDLE: u8 = 0;
-    
+
     /// Task is scheduled, that is (task.schedule)(task) was called.
     const SCHEDULED: u8 = 1;
-    
+
     /// Task is currently running.
     const RUNNING: u8 = 2;
 
@@ -98,13 +98,13 @@ where
         task.data.try_lock().unwrap().0 = TaskData::Polling(future, waker);
         task
     }
-    
+
     fn into_runnable(self: Arc<Self>) -> Runnable<M> {
         let arc: Arc<dyn DynTask<M> + 'a> = self;
         let arc: Arc<dyn DynTask<M>> = unsafe { std::mem::transmute(arc) };
         Runnable(arc)
     }
-    
+
     fn into_join_handle(self: Arc<Self>) -> JoinHandle<F::Output> {
         let arc: Arc<dyn Joinable<F::Output> + 'a> = self;
         let arc: Arc<dyn Joinable<F::Output>> = unsafe { std::mem::transmute(arc) };
@@ -189,7 +189,7 @@ where
         }
         true
     }
-    
+
     fn schedule(self: Arc<Self>) {
         if self.state.wake() {
             (self.schedule)(self.clone().into_runnable());
@@ -229,7 +229,7 @@ where
     }
 }
 
-trait Cancellable : Send + Sync {
+trait Cancellable: Send + Sync {
     fn cancel(&self);
 }
 
@@ -244,15 +244,15 @@ where
         let mut data = self.data.lock();
         match data.0 {
             // Already done.
-            TaskData::Panic(_) | TaskData::Joined => return,
-            
+            TaskData::Panic(_) | TaskData::Joined => {},
+
             // Still in-progress, cancel.
             _ => {
                 data.0 = TaskData::Cancelled;
                 if let Some(join_waker) = data.1.take() {
                     join_waker.wake();
                 }
-            }
+            },
         }
     }
 }
@@ -269,7 +269,7 @@ impl<M> Runnable<M> {
     pub fn run(self) -> bool {
         self.0.run()
     }
-    
+
     /// Schedules this task.
     pub fn schedule(self) {
         self.0.schedule()
@@ -281,7 +281,10 @@ pub struct CancelHandle(Weak<dyn Cancellable>);
 
 impl<T> JoinHandle<T> {
     pub fn cancel_handle(&self) -> CancelHandle {
-        let arc = self.0.as_ref().expect("called cancel_handle on joined JoinHandle");
+        let arc = self
+            .0
+            .as_ref()
+            .expect("called cancel_handle on joined JoinHandle");
         Arc::clone(arc).cancel_handle()
     }
 }
@@ -321,7 +324,11 @@ where
     JoinHandle(Some(task))
 }
 
-pub unsafe fn spawn_with_lifetime<'a, F, S, M>(future: F, schedule: S, metadata: M) -> (Runnable<M>, JoinHandle<F::Output>)
+pub unsafe fn spawn_with_lifetime<'a, F, S, M>(
+    future: F,
+    schedule: S,
+    metadata: M,
+) -> (Runnable<M>, JoinHandle<F::Output>)
 where
     F: Future + Send + 'a,
     F::Output: Send + 'static,
@@ -331,8 +338,6 @@ where
     let task = Task::spawn(future, schedule, metadata);
     (task.clone().into_runnable(), task.into_join_handle())
 }
-
-
 
 // Copied from the standard library, except without the 'static bound.
 mod std_shim {
@@ -355,8 +360,13 @@ mod std_shim {
         unsafe fn clone_waker<W: Wake + Send + Sync>(waker: *const ()) -> RawWaker {
             unsafe { Arc::increment_strong_count(waker as *const W) };
             RawWaker::new(
-                waker as *const (),
-                &RawWakerVTable::new(clone_waker::<W>, wake::<W>, wake_by_ref::<W>, drop_waker::<W>),
+                waker,
+                &RawWakerVTable::new(
+                    clone_waker::<W>,
+                    wake::<W>,
+                    wake_by_ref::<W>,
+                    drop_waker::<W>,
+                ),
             )
         }
 
@@ -379,7 +389,12 @@ mod std_shim {
 
         RawWaker::new(
             Arc::into_raw(waker) as *const (),
-            &RawWakerVTable::new(clone_waker::<W>, wake::<W>, wake_by_ref::<W>, drop_waker::<W>),
+            &RawWakerVTable::new(
+                clone_waker::<W>,
+                wake::<W>,
+                wake_by_ref::<W>,
+                drop_waker::<W>,
+            ),
         )
     }
 }

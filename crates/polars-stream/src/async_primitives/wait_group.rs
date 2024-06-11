@@ -1,11 +1,10 @@
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
-use std::future::Future;
 
 use parking_lot::Mutex;
-
 
 #[derive(Default)]
 struct WaitGroupInner {
@@ -16,18 +15,20 @@ struct WaitGroupInner {
 
 #[derive(Default)]
 pub struct WaitGroup {
-    inner: Arc<WaitGroupInner>
+    inner: Arc<WaitGroupInner>,
 }
 
 impl WaitGroup {
     /// Creates a token.
     pub fn token(&self) -> WaitToken {
         self.inner.token_count.fetch_add(1, Ordering::Relaxed);
-        WaitToken { inner: Arc::clone(&self.inner) }
+        WaitToken {
+            inner: Arc::clone(&self.inner),
+        }
     }
-    
+
     /// Waits until all created tokens are dropped.
-    /// 
+    ///
     /// # Panics
     /// Panics if there is more than one simultaneous waiter.
     pub async fn wait(&self) {
@@ -67,15 +68,16 @@ impl<'a> Drop for WaitGroupFuture<'a> {
     }
 }
 
-
 pub struct WaitToken {
-    inner: Arc<WaitGroupInner>
+    inner: Arc<WaitGroupInner>,
 }
 
 impl Clone for WaitToken {
     fn clone(&self) -> Self {
         self.inner.token_count.fetch_add(1, Ordering::Relaxed);
-        Self { inner: self.inner.clone() }
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 

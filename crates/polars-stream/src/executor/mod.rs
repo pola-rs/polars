@@ -1,5 +1,5 @@
-mod task;
 mod park_group;
+mod task;
 
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
@@ -10,13 +10,12 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
+use park_group::ParkGroup;
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-
 use task::{CancelHandle, JoinHandle, Runnable};
-use park_group::ParkGroup;
 
 static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
 pub fn set_num_threads(t: usize) {
@@ -76,7 +75,7 @@ impl Executor {
     fn schedule_task(&self, task: ReadyTask) {
         let thread = TLS_THREAD_ID.get();
         let priority = task.metadata().priority;
-        if let Some(ttl) = self.thread_task_lists.get(thread as usize) {
+        if let Some(ttl) = self.thread_task_lists.get(thread) {
             // SAFETY: this slot may only be accessed from the local thread, which we are.
             let slot = unsafe { &mut *ttl.local_slot.get() };
 
@@ -93,7 +92,7 @@ impl Executor {
             } else {
                 // Optimization: while this is a low priority task we have no
                 // high priority tasks on this thread so we'll execute this one.
-                if ttl.high_prio_tasks.len() == 0 && slot.is_none() {
+                if ttl.high_prio_tasks.is_empty() && slot.is_none() {
                     *slot = Some(task);
                 } else {
                     self.global_low_prio_task_queue.push(task);
@@ -130,7 +129,7 @@ impl Executor {
         }
 
         // Try to steal tasks.
-        let ttl = &self.thread_task_lists[thread as usize];
+        let ttl = &self.thread_task_lists[thread];
         for _ in 0..4 {
             let mut retry = true;
             while retry {
@@ -162,7 +161,7 @@ impl Executor {
         let mut worker = self.park_group.new_worker();
 
         loop {
-            let ttl = &self.thread_task_lists[thread as usize];
+            let ttl = &self.thread_task_lists[thread];
             let task = (|| {
                 // Try to get a task from LIFO slot.
                 if let Some(task) = unsafe { (*ttl.local_slot.get()).take() } {
@@ -187,22 +186,24 @@ impl Executor {
                 park.park();
                 None
             })();
-            
+
             if let Some(task) = task {
                 worker.recruit_next();
                 task.run();
             }
         }
     }
-    
+
     fn global() -> &'static Executor {
         GLOBAL_SCHEDULER.get_or_init(|| {
             let mut n_threads = NUM_EXECUTOR_THREADS.load(Ordering::Relaxed);
             if n_threads == 0 {
-                n_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+                n_threads = std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(4);
             }
 
-            let thread_task_lists = (0..n_threads.try_into().unwrap())
+            let thread_task_lists = (0..n_threads)
                 .map(|t| {
                     std::thread::spawn(move || Self::global().runner(t));
 
@@ -241,7 +242,7 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
             t.cancel();
         }
     }
-    
+
     fn clear_completed_tasks(&self) {
         let mut cancel_handles = self.cancel_handles.lock();
         for t in self.completed_tasks.lock().drain(..) {
@@ -261,31 +262,28 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
 
         let mut runnable = None;
         let mut join_handle = None;
-        self.cancel_handles
-            .lock()
-            .insert_with_key(|task_key| {
-                let (run, jh) = unsafe {
-                    // SAFETY: we make sure to cancel this task before 'scope ends.
-                    let executor = Executor::global();
-                    task::spawn_with_lifetime(
-                        fut,
-                        move |task| executor.schedule_task(task),
-                        TaskMetadata {
-                            task_key,
-                            priority,
-                            completed_tasks: Arc::downgrade(&self.completed_tasks),
-                        },
-                    )
-                };
-                let cancel_handle = jh.cancel_handle();
-                runnable = Some(run);
-                join_handle = Some(jh);
-                cancel_handle
-            });
+        self.cancel_handles.lock().insert_with_key(|task_key| {
+            let (run, jh) = unsafe {
+                // SAFETY: we make sure to cancel this task before 'scope ends.
+                let executor = Executor::global();
+                task::spawn_with_lifetime(
+                    fut,
+                    move |task| executor.schedule_task(task),
+                    TaskMetadata {
+                        task_key,
+                        priority,
+                        completed_tasks: Arc::downgrade(&self.completed_tasks),
+                    },
+                )
+            };
+            let cancel_handle = jh.cancel_handle();
+            runnable = Some(run);
+            join_handle = Some(jh);
+            cancel_handle
+        });
         runnable.unwrap().schedule();
         join_handle.unwrap()
     }
-
 }
 
 pub fn task_scope<'env, F, T>(f: F) -> T

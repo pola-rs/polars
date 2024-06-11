@@ -87,7 +87,7 @@ impl ParkGroupWorker {
     pub fn prepare_park(&mut self) -> ParkAttempt<'_> {
         let mut state = self.inner.state.load(Ordering::SeqCst);
         self.version = state_version(state);
-        
+
         // If the version changes or someone else has set the
         // PREPARING_TO_PARK_BIT, stop trying to update the state.
         while state & PREPARING_TO_PARK_BIT == 0 && state_version(state) == self.version {

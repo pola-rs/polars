@@ -185,7 +185,7 @@ pub struct Sender<T> {
     pipe: Arc<Pipe<T>>,
 }
 
-unsafe impl<T: Send> Send for Sender<T> { }
+unsafe impl<T: Send> Send for Sender<T> {}
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
@@ -197,7 +197,7 @@ pub struct Receiver<T> {
     pipe: Arc<Pipe<T>>,
 }
 
-unsafe impl<T: Send> Send for Receiver<T> { }
+unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
@@ -212,7 +212,7 @@ pin_project! {
     }
 }
 
-unsafe impl<'a, T: Send> Send for SendFuture<'a, T> { }
+unsafe impl<'a, T: Send> Send for SendFuture<'a, T> {}
 
 impl<T: Send> Sender<T> {
     /// Returns a future that when awaited will send the value to the [`Receiver`].
@@ -224,7 +224,7 @@ impl<T: Send> Sender<T> {
             value: Some(value),
         }
     }
-    
+
     pub fn try_send(&mut self, value: T) -> Result<(), SendError<T>> {
         unsafe { self.pipe.try_send(value) }
     }
@@ -249,7 +249,7 @@ pin_project! {
     }
 }
 
-unsafe impl<'a, T: Send> Send for RecvFuture<'a, T> { }
+unsafe impl<'a, T: Send> Send for RecvFuture<'a, T> {}
 
 impl<T: Send> Receiver<T> {
     /// Returns a future that when awaited will return `Ok(value)` once the
@@ -262,7 +262,7 @@ impl<T: Send> Receiver<T> {
             done: false,
         }
     }
-    
+
     pub fn try_recv(&mut self) -> Result<T, RecvError> {
         unsafe { self.pipe.try_recv() }
     }
