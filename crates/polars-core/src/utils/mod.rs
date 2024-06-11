@@ -199,19 +199,24 @@ impl Container for Series {
 }
 
 fn split_impl<C: Container>(container: &C, target: usize, chunk_size: usize) -> Vec<C> {
-    let total_len = container.len();
-    let mut out = Vec::with_capacity(target);
-
-    for i in 0..target {
-        let offset = i * chunk_size;
-        let len = if i == (target - 1) {
-            total_len.saturating_sub(offset)
-        } else {
-            chunk_size
-        };
-        let container = container.slice((i * chunk_size) as i64, len);
-        out.push(container);
+    if target == 1 {
+        return vec![container.clone()];
     }
+    let mut out = Vec::with_capacity(target);
+    let chunk_size = chunk_size as i64;
+
+    // First split
+    let (chunk, mut remainder) = container.split_at(chunk_size);
+    out.push(chunk);
+
+    // Take the rest of the splits of exactly chunk size, but skip the last remainder as we won't split that.
+    for _ in 1..target - 1 {
+        let (a, b) = remainder.split_at(chunk_size);
+        out.push(a);
+        remainder = b
+    }
+    // This can be slightly larger than `chunk_size`, but is smaller than `2 * chunk_size`.
+    out.push(remainder);
     out
 }
 
@@ -223,6 +228,7 @@ pub fn split<C: Container>(container: &C, target: usize) -> Vec<C> {
     }
 
     let chunk_size = std::cmp::max(total_len / target, 1);
+
     if container.n_chunks() == target
         && container
             .chunk_lengths()
@@ -1155,6 +1161,16 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_split() {
+        let ca: Int32Chunked = (0..10).collect_ca("a");
+
+        let out = split(&ca, 3);
+        assert_eq!(out[0].len(), 3);
+        assert_eq!(out[1].len(), 3);
+        assert_eq!(out[2].len(), 4);
+    }
 
     #[test]
     fn test_align_chunks() {
