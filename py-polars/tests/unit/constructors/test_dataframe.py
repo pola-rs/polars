@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict
-from typing import Any
+from typing import Any, Iterator, Mapping
 
 import pytest
 
@@ -159,3 +159,35 @@ def test_unit_and_empty_construction_15896() -> None:
             A=pl.int_range("A"),  # creates empty series
         )
     )
+
+
+class CustomSchema(Mapping[str, Any]):
+    """Dummy schema object for testing compatibility with Mapping."""
+
+    _entries: dict[str, Any]
+
+    def __init__(self, **named_entries: Any) -> None:
+        self._items = OrderedDict(named_entries.items())
+
+    def __getitem__(self, key: str) -> Any:
+        return self._items[key]
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._items
+
+
+def test_custom_schema() -> None:
+    df = pl.DataFrame(schema=CustomSchema(bool=pl.Boolean, misc=pl.UInt8))
+    assert df.schema == OrderedDict([("bool", pl.Boolean), ("misc", pl.UInt8)])
+
+    with pytest.raises(ValueError):
+        pl.DataFrame(schema=CustomSchema(bool="boolean", misc="unsigned int"))
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
+    assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
