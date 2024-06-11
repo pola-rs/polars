@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -241,3 +242,30 @@ def test_values_clause_table_registration() -> None:
         res2 = ctx.execute("SELECT x, y FROM tbl")
         for res in (res1, res2):
             assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+
+
+def test_read_csv(tmp_path: Path) -> None:
+    # check empty string vs null, parsing of dates, etc
+    df = pl.DataFrame(
+        {
+            "label": ["lorem", None, "", "ipsum"],
+            "num": [-1, None, 0, 1],
+            "dt": [
+                date(1969, 7, 5),
+                date(1999, 12, 31),
+                date(2077, 10, 10),
+                None,
+            ],
+        }
+    )
+    csv_target = tmp_path / "test_sql_read.csv"
+    df.write_csv(csv_target)
+
+    res = pl.sql(f"SELECT * FROM read_csv('{csv_target}')").collect()
+    assert_frame_equal(df, res)
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match="`read_csv` expects a single file path; found 3 arguments",
+    ):
+        pl.sql("SELECT * FROM read_csv('a','b','c')")
