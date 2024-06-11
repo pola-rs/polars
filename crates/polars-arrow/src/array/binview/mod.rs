@@ -209,6 +209,28 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         self.views.make_mut()
     }
 
+    pub fn into_inner(
+        self,
+    ) -> (
+        Buffer<View>,
+        Arc<[Buffer<u8>]>,
+        Option<Bitmap>,
+        usize,
+        usize,
+    ) {
+        let views = self.views;
+        let buffers = self.buffers;
+        let validity = self.validity;
+
+        (
+            views,
+            buffers,
+            validity,
+            self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            self.total_buffer_len,
+        )
+    }
+
     pub fn try_new(
         data_type: ArrowDataType,
         views: Buffer<View>,

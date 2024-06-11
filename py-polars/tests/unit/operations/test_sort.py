@@ -1012,3 +1012,49 @@ def test_sort_chunked_no_nulls() -> None:
         0,
         2,
     ]
+
+
+def test_sort_string_nulls() -> None:
+    str_series = pl.Series(
+        "b", ["a", None, "c", None, "x", "z", "y", None], dtype=pl.String
+    )
+    assert str_series.sort(descending=False, nulls_last=False).to_list() == [
+        None,
+        None,
+        None,
+        "a",
+        "c",
+        "x",
+        "y",
+        "z",
+    ]
+    assert str_series.sort(descending=True, nulls_last=False).to_list() == [
+        None,
+        None,
+        None,
+        "z",
+        "y",
+        "x",
+        "c",
+        "a",
+    ]
+    assert str_series.sort(descending=True, nulls_last=True).to_list() == [
+        "z",
+        "y",
+        "x",
+        "c",
+        "a",
+        None,
+        None,
+        None,
+    ]
+    assert str_series.sort(descending=False, nulls_last=True).to_list() == [
+        "a",
+        "c",
+        "x",
+        "y",
+        "z",
+        None,
+        None,
+        None,
+    ]
