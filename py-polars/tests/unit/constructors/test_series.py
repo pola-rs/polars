@@ -106,11 +106,13 @@ def test_series_init_ambiguous_datetime() -> None:
     value = datetime(2001, 10, 28, 2)
     dtype = pl.Datetime(time_zone="Europe/Belgrade")
 
-    with pytest.raises(pl.ComputeError, match="ambiguous"):
-        pl.Series([value], dtype=dtype, strict=True)
+    result = pl.Series([value], dtype=dtype, strict=True)
+    expected = pl.Series([datetime(2001, 10, 28, 3)]).dt.replace_time_zone(
+        "Europe/Belgrade"
+    )
+    assert_series_equal(result, expected)
 
     result = pl.Series([value], dtype=dtype, strict=False)
-    expected = pl.Series([None], dtype=dtype)
     assert_series_equal(result, expected)
 
 
@@ -118,11 +120,13 @@ def test_series_init_nonexistent_datetime() -> None:
     value = datetime(2024, 3, 31, 2, 30)
     dtype = pl.Datetime(time_zone="Europe/Amsterdam")
 
-    with pytest.raises(pl.ComputeError, match="non-existent"):
-        pl.Series([value], dtype=dtype, strict=True)
+    result = pl.Series([value], dtype=dtype, strict=True)
+    expected = pl.Series([datetime(2024, 3, 31, 4, 30)]).dt.replace_time_zone(
+        "Europe/Amsterdam"
+    )
+    assert_series_equal(result, expected)
 
     result = pl.Series([value], dtype=dtype, strict=False)
-    expected = pl.Series([None], dtype=dtype)
     assert_series_equal(result, expected)
 
 

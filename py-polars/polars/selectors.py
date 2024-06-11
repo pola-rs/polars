@@ -1330,17 +1330,20 @@ def datetime(
 
     Examples
     --------
-    >>> from datetime import datetime, date
+    >>> from datetime import datetime, date, timezone
     >>> import polars.selectors as cs
+    >>> from zoneinfo import ZoneInfo
+    >>> tokyo_tz = ZoneInfo("Asia/Tokyo")
+    >>> utc_tz = timezone.utc
     >>> df = pl.DataFrame(
     ...     {
     ...         "tstamp_tokyo": [
-    ...             datetime(1999, 7, 21, 5, 20, 16, 987654),
-    ...             datetime(2000, 5, 16, 6, 21, 21, 123465),
+    ...             datetime(1999, 7, 21, 5, 20, 16, 987654, tzinfo=tokyo_tz),
+    ...             datetime(2000, 5, 16, 6, 21, 21, 123465, tzinfo=tokyo_tz),
     ...         ],
     ...         "tstamp_utc": [
-    ...             datetime(2023, 4, 10, 12, 14, 16, 999000),
-    ...             datetime(2025, 8, 25, 14, 18, 22, 666000),
+    ...             datetime(2023, 4, 10, 12, 14, 16, 999000, tzinfo=utc_tz),
+    ...             datetime(2025, 8, 25, 14, 18, 22, 666000, tzinfo=utc_tz),
     ...         ],
     ...         "tstamp": [
     ...             datetime(2000, 11, 20, 18, 12, 16, 600000),

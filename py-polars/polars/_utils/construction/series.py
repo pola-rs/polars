@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from itertools import islice
@@ -24,7 +23,6 @@ from polars._utils.construction.utils import (
     is_simple_numpy_backed_pandas_series,
 )
 from polars._utils.various import (
-    find_stacklevel,
     range_to_series,
 )
 from polars._utils.wrap import wrap_s
@@ -64,7 +62,6 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import TimeZoneAwareConstructorWarning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySeries
@@ -203,41 +200,13 @@ def sequence_to_pyseries(
             s = wrap_s(py_series).dt.cast_time_unit(time_unit)
 
         if (values_dtype == Date) & (dtype == Datetime):
-            return (
-                s.cast(Datetime(time_unit or "us"))
-                .dt.replace_time_zone(
-                    time_zone,
-                    ambiguous="raise" if strict else "null",
-                    non_existent="raise" if strict else "null",
-                )
-                ._s
-            )
+            result = s.cast(Datetime(time_unit or "us"))
+            if time_zone is not None:
+                result = result.dt.convert_time_zone(time_zone)
+            return result._s
 
         if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
-            values_tz = str(value.tzinfo) if value.tzinfo is not None else None
-            dtype_tz = time_zone
-            if values_tz is not None and (dtype_tz is not None and dtype_tz != "UTC"):
-                msg = (
-                    "time-zone-aware datetimes are converted to UTC"
-                    "\n\nPlease either drop the time zone from the dtype, or set it to 'UTC'."
-                    " To convert to a different time zone, please use `.dt.convert_time_zone`."
-                )
-                raise ValueError(msg)
-            if values_tz != "UTC" and dtype_tz is None:
-                warnings.warn(
-                    "Constructing a Series with time-zone-aware "
-                    "datetimes results in a Series with UTC time zone. "
-                    "To silence this warning, you can filter "
-                    "warnings of class TimeZoneAwareConstructorWarning, or "
-                    "set 'UTC' as the time zone of your datatype.",
-                    TimeZoneAwareConstructorWarning,
-                    stacklevel=find_stacklevel(),
-                )
-            return s.dt.replace_time_zone(
-                dtype_tz or "UTC",
-                ambiguous="raise" if strict else "null",
-                non_existent="raise" if strict else "null",
-            )._s
+            return s.dt.convert_time_zone(time_zone or "UTC")._s
         return s._s
 
     elif (
