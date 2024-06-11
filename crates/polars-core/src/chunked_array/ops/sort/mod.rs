@@ -349,7 +349,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
 
                 for i in 0..null_count {
                     unsafe { *views.get_unchecked_mut(end) = *views.get_unchecked(i) };
-                    end -= 1;
+                    end = end.saturating_sub(1);
                 }
                 &mut views[null_count..]
             }
