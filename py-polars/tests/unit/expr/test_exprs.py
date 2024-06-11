@@ -678,7 +678,7 @@ def test_head() -> None:
     assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").head(pl.len() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").head(pl.len() // 2)).to_dict(as_series=False) == {
         "a": [1, 2]
     }
 
@@ -690,7 +690,7 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").tail(pl.len() // 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
 

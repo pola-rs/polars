@@ -1976,7 +1976,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
+        .agg([pl.col("vals").slice((pl.len() * 0.1).cast(int), (pl.len() // 5))])
         .explode("vals")
     )
 
