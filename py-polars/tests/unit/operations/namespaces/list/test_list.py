@@ -896,3 +896,8 @@ def test_list_eval_err_raise_15653() -> None:
     df = pl.DataFrame({"foo": [[]]})
     with pytest.raises(pl.StructFieldNotFoundError):
         df.with_columns(bar=pl.col("foo").list.eval(pl.element().struct.field("baz")))
+
+
+def test_list_sum_bool_schema() -> None:
+    q = pl.LazyFrame({"x": [[True, True, False]]})
+    assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
