@@ -19,7 +19,7 @@ class Schema(BaseSchema):
     Parameters
     ----------
     schema
-        The schema definition as column names and their associated *instantiated*
+        The schema definition given by column names and their associated *instantiated*
         Polars data type. Accepts a mapping or an iterable of tuples.
 
     Examples
@@ -35,8 +35,7 @@ class Schema(BaseSchema):
     >>> schema["foo"]
     Int8
 
-    Access various properties about the schema using the `names`, `dtypes`, and `len`
-    methods.
+    Access various schema properties using the `names`, `dtypes`, and `len` methods.
 
     >>> schema.names()
     ['foo', 'bar']
