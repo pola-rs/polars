@@ -1,10 +1,46 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+
+
+@pytest.mark.parametrize(
+    ("sort_order", "limit", "expected"),
+    [
+        (None, None, [("a", ["x", "y"]), ("b", ["z", "X", "Y"])]),
+        ("ASC", None, [("a", ["x", "y"]), ("b", ["z", "Y", "X"])]),
+        ("DESC", None, [("a", ["y", "x"]), ("b", ["X", "Y", "z"])]),
+        ("ASC", 2, [("a", ["x", "y"]), ("b", ["z", "Y"])]),
+        ("DESC", 2, [("a", ["y", "x"]), ("b", ["X", "Y"])]),
+        ("ASC", 1, [("a", ["x"]), ("b", ["z"])]),
+        ("DESC", 1, [("a", ["y"]), ("b", ["X"])]),
+    ],
+)
+def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> None:
+    order_by = "" if not sort_order else f" ORDER BY col0 {sort_order}"
+    limit_clause = "" if not limit else f" LIMIT {limit}"
+
+    res = pl.sql(f"""
+        WITH data (col0, col1, col2) as (
+          VALUES
+            (1,'a','x'),
+            (2,'a','y'),
+            (4,'b','z'),
+            (8,'b','X'),
+            (7,'b','Y')
+        )
+        SELECT col1, ARRAY_AGG(col2{order_by}{limit_clause}) AS arrs
+        FROM data
+        GROUP BY col1
+        ORDER BY col1
+    """).collect()
+
+    assert res.rows() == expected
 
 
 def test_array_literals() -> None:
@@ -119,6 +155,6 @@ def test_unnest_table_function_errors() -> None:
 
         with pytest.raises(
             SQLInterfaceError,
-            match="nested array literals are not yet supported",
+            match="nested array literals are not currently supported",
         ):
             pl.sql_expr("[[1,2,3]] AS nested")
