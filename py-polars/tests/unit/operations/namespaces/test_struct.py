@@ -83,3 +83,15 @@ def test_prefix_suffix_fields() -> None:
     assert suffix_df.schema == OrderedDict(
         [("x", pl.Struct({"a_f": pl.Int64, "b_f": pl.Int64}))]
     )
+
+
+def test_struct_alias_prune_15401() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Struct({"b": pl.Int8})})
+    assert df.select(pl.col("a").alias("c").struct.field("b")).columns == ["b"]
+
+
+def test_empty_list_eval_schema_5734() -> None:
+    df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
+    assert df.filter(False).select(
+        pl.col("a").list.eval(pl.element().struct.field("b"))
+    ).schema == {"a": pl.List(pl.Int64)}

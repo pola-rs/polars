@@ -1,4 +1,5 @@
 import operator
+from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -583,3 +584,29 @@ def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
         df.select(expr),
         pl.Series("a", expected).to_frame(),
     )
+
+
+def test_schema_owned_arithmetic_5669() -> None:
+    df = (
+        pl.LazyFrame({"A": [1, 2, 3]})
+        .filter(pl.col("A") >= 3)
+        .with_columns(-pl.col("A").alias("B"))
+        .collect()
+    )
+    assert df.columns == ["A", "B"]
+    assert df.rows() == [(3, -3)]
+
+
+def test_schema_true_divide_6643() -> None:
+    df = pl.DataFrame({"a": [1]})
+    a = pl.col("a")
+    assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
+
+
+def test_literal_subtract_schema_13284() -> None:
+    assert (
+        pl.LazyFrame({"a": [23, 30]}, schema={"a": pl.UInt8})
+        .with_columns(pl.col("a") - pl.lit(1))
+        .group_by("a")
+        .len()
+    ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])

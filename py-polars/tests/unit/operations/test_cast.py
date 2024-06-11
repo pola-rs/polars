@@ -672,3 +672,20 @@ def test_invalid_inner_type_cast_list() -> None:
         match=r"cannot cast List inner type: 'Int64' to Categorical",
     ):
         s.cast(pl.List(pl.Categorical))
+
+
+def test_all_null_cast_5826() -> None:
+    df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
+    out = df.with_columns(pl.col("a").cast(pl.Boolean))
+    assert out.dtypes == [pl.Boolean]
+    assert out.item() is None
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_bool_numeric_supertype(dtype: pl.PolarsDataType) -> None:
+    df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
+    result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
+    assert result.item() - 0.3333333 <= 0.00001

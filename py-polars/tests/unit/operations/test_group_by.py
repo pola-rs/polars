@@ -1002,3 +1002,72 @@ def test_partitioned_group_by_chunked(partition_limit: int) -> None:
         df.group_by(gps).sum().sort("oo"),
         df.rechunk().group_by(gps, maintain_order=True).sum(),
     )
+
+
+def test_schema_on_agg() -> None:
+    lf = pl.LazyFrame({"a": ["x", "x", "y", "n"], "b": [1, 2, 3, 4]})
+
+    result = lf.group_by("a").agg(
+        pl.col("b").min().alias("min"),
+        pl.col("b").max().alias("max"),
+        pl.col("b").sum().alias("sum"),
+        pl.col("b").first().alias("first"),
+        pl.col("b").last().alias("last"),
+    )
+    expected_schema = {
+        "a": pl.String,
+        "min": pl.Int64,
+        "max": pl.Int64,
+        "sum": pl.Int64,
+        "first": pl.Int64,
+        "last": pl.Int64,
+    }
+    assert result.schema == expected_schema
+
+
+def test_group_by_schema_err() -> None:
+    lf = pl.LazyFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]})
+    with pytest.raises(pl.ColumnNotFoundError):
+        lf.group_by("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+
+
+@pytest.mark.parametrize(
+    ("data", "expr", "expected_select", "expected_gb"),
+    [
+        (
+            {"x": ["x"], "y": ["y"]},
+            pl.coalesce(pl.col("x"), pl.col("y")),
+            {"x": pl.String},
+            {"x": pl.List(pl.String)},
+        ),
+        (
+            {"x": [True]},
+            pl.col("x").sum(),
+            {"x": pl.UInt32},
+            {"x": pl.UInt32},
+        ),
+        (
+            {"a": [[1, 2]]},
+            pl.col("a").list.sum(),
+            {"a": pl.Int64},
+            {"a": pl.List(pl.Int64)},
+        ),
+    ],
+)
+def test_schemas(
+    data: dict[str, list[Any]],
+    expr: pl.Expr,
+    expected_select: dict[str, pl.PolarsDataType],
+    expected_gb: dict[str, pl.PolarsDataType],
+) -> None:
+    df = pl.DataFrame(data)
+
+    # test selection schema
+    schema = df.select(expr).schema
+    for key, dtype in expected_select.items():
+        assert schema[key] == dtype
+
+    # test group_by schema
+    schema = df.group_by(pl.lit(1)).agg(expr).schema
+    for key, dtype in expected_gb.items():
+        assert schema[key] == dtype

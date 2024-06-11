@@ -148,3 +148,9 @@ def test_series_init_np_2d_zero_zero_shape() -> None:
         match=re.escape("cannot reshape empty array into shape (0, 0)"),
     ):
         pl.Series(arr)
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.Series([[]]).dtype == expected
+    assert pl.Series([[]], dtype=pl.List).dtype == expected

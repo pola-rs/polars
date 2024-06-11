@@ -373,3 +373,9 @@ def test_cat_compare_with_bool() -> None:
 
     with pytest.raises(pl.ComputeError, match="cannot compare categorical with bool"):
         data.filter(pl.col("col1") == True)  # noqa: E712
+
+
+def test_schema_ne_missing_9256() -> None:
+    df = pl.DataFrame({"a": [0, 1, None], "b": [True, False, True]})
+
+    assert df.select(pl.col("a").ne_missing(0).or_(pl.col("b")))["a"].all()
