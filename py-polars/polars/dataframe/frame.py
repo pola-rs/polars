@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
@@ -94,6 +94,7 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
+from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
@@ -765,14 +766,9 @@ class DataFrame:
         return {name: self[name].flags for name in self.columns}
 
     @property
-    def schema(self) -> OrderedDict[str, DataType]:
+    def schema(self) -> Schema:
         """
-        Get a mapping of column names to their data type.
-
-        Returns
-        -------
-        OrderedDict
-            An ordered mapping of column names to their data type.
+        Get an ordered mapping of column names to their data type.
 
         Examples
         --------
@@ -784,9 +780,9 @@ class DataFrame:
         ...     }
         ... )
         >>> df.schema
-        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
+        Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return OrderedDict(zip(self.columns, self.dtypes))
+        return Schema(zip(self.columns, self.dtypes))
 
     def __array__(
         self, dtype: npt.DTypeLike | None = None, copy: bool | None = None

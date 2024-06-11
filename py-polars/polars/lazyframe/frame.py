@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, reduce
 from io import BytesIO, StringIO
@@ -77,6 +76,7 @@ from polars.datatypes import (
 from polars.dependencies import import_optional, subprocess
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
+from polars.schema import Schema
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
 from polars.slice import LazyPolarsSlice
 
@@ -452,14 +452,9 @@ class LazyFrame:
         return self._ldf.dtypes()
 
     @property
-    def schema(self) -> OrderedDict[str, DataType]:
+    def schema(self) -> Schema:
         """
-        Get a mapping of column names to their data type.
-
-        Returns
-        -------
-        OrderedDict
-            An ordered mapping of column names to their data type.
+        Get an ordered mapping of column names to their data type.
 
         Warnings
         --------
@@ -476,9 +471,9 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': String})
+        Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return OrderedDict(self._ldf.schema())
+        return Schema(self._ldf.schema())
 
     @property
     def width(self) -> int:
