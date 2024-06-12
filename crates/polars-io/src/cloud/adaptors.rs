@@ -30,7 +30,7 @@ impl CloudWriter {
         path: Path,
     ) -> PolarsResult<Self> {
         let writer = object_store.put_multipart(&path).await?;
-        Ok(CloudWriter {writer})
+        Ok(CloudWriter { writer })
     }
 
     /// Constructs a new CloudWriter from a path and an optional set of CloudOptions.
