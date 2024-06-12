@@ -20,7 +20,7 @@ def parse_into_expression(
     input: IntoExpr,
     *,
     str_as_lit: bool = False,
-    list_as_lit: bool = True,
+    list_as_series: bool = False,
     structify: bool = False,
     dtype: PolarsDataType | None = None,
 ) -> PyExpr:
@@ -34,9 +34,9 @@ def parse_into_expression(
     str_as_lit
         Interpret string input as a string literal. If set to `False` (default),
         strings are parsed as column names.
-    list_as_lit
-        Interpret list input as a lit literal, If set to `False`,
-        lists are parsed as `Series` literals.
+    list_as_series
+        Interpret list input as a Series literal. If set to `False` (default),
+        lists are parsed as list literals.
     structify
         Convert multi-column expressions to a single struct expression.
     dtype
@@ -49,18 +49,15 @@ def parse_into_expression(
     """
     if isinstance(input, pl.Expr):
         expr = input
+        if structify:
+            expr = _structify_expression(expr)
+
     elif isinstance(input, str) and not str_as_lit:
         expr = F.col(input)
-        structify = False
-    elif isinstance(input, list) and not list_as_lit:
+    elif isinstance(input, list) and list_as_series:
         expr = F.lit(pl.Series(input), dtype=dtype)
-        structify = False
     else:
         expr = F.lit(input, dtype=dtype)
-        structify = False
-
-    if structify:
-        expr = _structify_expression(expr)
 
     return expr._pyexpr
 

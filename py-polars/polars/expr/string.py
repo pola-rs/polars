@@ -2423,7 +2423,9 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ true         │
         └────────────────────────────────────────────────────┴──────────────┘
         """
-        patterns = parse_into_expression(patterns, str_as_lit=False, list_as_lit=False)
+        patterns = parse_into_expression(
+            patterns, str_as_lit=False, list_as_series=True
+        )
         return wrap_expr(
             self._pyexpr.str_contains_any(patterns, ascii_case_insensitive)
         )
@@ -2500,9 +2502,11 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
         """  # noqa: W505
-        patterns = parse_into_expression(patterns, str_as_lit=False, list_as_lit=False)
+        patterns = parse_into_expression(
+            patterns, str_as_lit=False, list_as_series=True
+        )
         replace_with = parse_into_expression(
-            replace_with, str_as_lit=True, list_as_lit=False
+            replace_with, str_as_lit=True, list_as_series=True
         )
         return wrap_expr(
             self._pyexpr.str_replace_many(

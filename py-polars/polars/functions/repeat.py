@@ -139,7 +139,7 @@ def repeat(
     """
     if isinstance(n, int):
         n = F.lit(n)
-    value = parse_into_expression(value, str_as_lit=True, list_as_lit=True, dtype=dtype)
+    value = parse_into_expression(value, str_as_lit=True, dtype=dtype)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if eager:
         return F.select(expr).to_series()

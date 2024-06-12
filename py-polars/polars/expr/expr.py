@@ -2317,7 +2317,7 @@ class Expr:
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
         """
-        element = parse_into_expression(element, list_as_lit=False, str_as_lit=True)  # type: ignore[arg-type]
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
@@ -10155,14 +10155,9 @@ class Expr:
         if new is no_default and isinstance(old, Mapping):
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
-        else:
-            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
-                old = pl.Series(old)
-            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
-                new = pl.Series(new)
 
-        old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        old = parse_into_expression(old, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
 
         default = (
             None
