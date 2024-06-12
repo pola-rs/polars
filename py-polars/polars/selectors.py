@@ -15,7 +15,7 @@ from typing import (
 )
 
 from polars import functions as F
-from polars._utils.parse_expr_input import _parse_inputs_as_iterable
+from polars._utils.parse.expr import _parse_inputs_as_iterable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
     FLOAT_DTYPES,

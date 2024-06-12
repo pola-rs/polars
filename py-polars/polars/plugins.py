@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
-from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -79,7 +79,7 @@ def register_plugin_function(
     The parameters you set dictate how Polars will handle the function.
     Make sure they are correct!
     """
-    pyexprs = parse_as_list_of_expressions(args)
+    pyexprs = parse_into_list_of_expressions(args)
     serialized_kwargs = _serialize_kwargs(kwargs)
     plugin_path = _resolve_plugin_path(plugin_path)
 

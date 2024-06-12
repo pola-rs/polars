@@ -16,72 +16,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, PolarsDataType
 
 
-def parse_as_list_of_expressions(
-    *inputs: IntoExpr | Iterable[IntoExpr],
-    __structify: bool = False,
-    **named_inputs: IntoExpr,
-) -> list[PyExpr]:
-    """
-    Parse multiple inputs into a list of expressions.
-
-    Parameters
-    ----------
-    *inputs
-        Inputs to be parsed as expressions, specified as positional arguments.
-    **named_inputs
-        Additional inputs to be parsed as expressions, specified as keyword arguments.
-        The expressions will be renamed to the keyword used.
-    __structify
-        Convert multi-column expressions to a single struct expression.
-
-    Returns
-    -------
-    list of PyExpr
-    """
-    exprs = _parse_positional_inputs(inputs, structify=__structify)  # type: ignore[arg-type]
-    if named_inputs:
-        named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
-        exprs.extend(named_exprs)
-
-    return exprs
-
-
-def _parse_positional_inputs(
-    inputs: tuple[IntoExpr, ...] | tuple[Iterable[IntoExpr]],
-    *,
-    structify: bool = False,
-) -> list[PyExpr]:
-    inputs_iter = _parse_inputs_as_iterable(inputs)
-    return [parse_as_expression(e, structify=structify) for e in inputs_iter]
-
-
-def _parse_inputs_as_iterable(
-    inputs: tuple[Any, ...] | tuple[Iterable[Any]],
-) -> Iterable[Any]:
-    if not inputs:
-        return []
-
-    # Treat elements of a single iterable as separate inputs
-    if len(inputs) == 1 and _is_iterable(inputs[0]):
-        return inputs[0]
-
-    return inputs
-
-
-def _is_iterable(input: Any | Iterable[Any]) -> bool:
-    return isinstance(input, Iterable) and not isinstance(
-        input, (str, bytes, pl.Series)
-    )
-
-
-def _parse_named_inputs(
-    named_inputs: dict[str, IntoExpr], *, structify: bool = False
-) -> Iterable[PyExpr]:
-    for name, input in named_inputs.items():
-        yield parse_as_expression(input, structify=structify).alias(name)
-
-
-def parse_as_expression(
+def parse_into_expression(
     input: IntoExpr,
     *,
     str_as_lit: bool = False,
@@ -142,7 +77,72 @@ def _structify_expression(expr: Expr) -> Expr:
     return expr
 
 
-def parse_predicates_constraints_as_expression(
+def parse_into_list_of_expressions(
+    *inputs: IntoExpr | Iterable[IntoExpr],
+    __structify: bool = False,
+    **named_inputs: IntoExpr,
+) -> list[PyExpr]:
+    """
+    Parse multiple inputs into a list of expressions.
+
+    Parameters
+    ----------
+    *inputs
+        Inputs to be parsed as expressions, specified as positional arguments.
+    **named_inputs
+        Additional inputs to be parsed as expressions, specified as keyword arguments.
+        The expressions will be renamed to the keyword used.
+    __structify
+        Convert multi-column expressions to a single struct expression.
+
+    Returns
+    -------
+    list of PyExpr
+    """
+    exprs = _parse_positional_inputs(inputs, structify=__structify)  # type: ignore[arg-type]
+    if named_inputs:
+        named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
+        exprs.extend(named_exprs)
+
+    return exprs
+
+
+def _parse_positional_inputs(
+    inputs: tuple[IntoExpr, ...] | tuple[Iterable[IntoExpr]],
+    *,
+    structify: bool = False,
+) -> list[PyExpr]:
+    inputs_iter = _parse_inputs_as_iterable(inputs)
+    return [parse_into_expression(e, structify=structify) for e in inputs_iter]
+
+
+def _parse_inputs_as_iterable(
+    inputs: tuple[Any, ...] | tuple[Iterable[Any]],
+) -> Iterable[Any]:
+    if not inputs:
+        return []
+
+    # Treat elements of a single iterable as separate inputs
+    if len(inputs) == 1 and _is_iterable(inputs[0]):
+        return inputs[0]
+
+    return inputs
+
+
+def _is_iterable(input: Any | Iterable[Any]) -> bool:
+    return isinstance(input, Iterable) and not isinstance(
+        input, (str, bytes, pl.Series)
+    )
+
+
+def _parse_named_inputs(
+    named_inputs: dict[str, IntoExpr], *, structify: bool = False
+) -> Iterable[PyExpr]:
+    for name, input in named_inputs.items():
+        yield parse_into_expression(input, structify=structify).alias(name)
+
+
+def parse_predicates_constraints_into_expression(
     *predicates: IntoExpr | Iterable[IntoExpr],
     **constraints: Any,
 ) -> PyExpr:

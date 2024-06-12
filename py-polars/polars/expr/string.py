@@ -9,7 +9,7 @@ from polars._utils.deprecation import (
     deprecate_function,
     issue_deprecation_warning,
 )
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
@@ -560,7 +560,7 @@ class ExprStringNameSpace:
         │ world  ┆              │
         └────────┴──────────────┘
         """
-        characters = parse_as_expression(characters, str_as_lit=True)
+        characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
     def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Expr:
@@ -629,7 +629,7 @@ class ExprStringNameSpace:
         │ aabcdef ┆ def             │
         └─────────┴─────────────────┘
         """
-        characters = parse_as_expression(characters, str_as_lit=True)
+        characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
     def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Expr:
@@ -710,7 +710,7 @@ class ExprStringNameSpace:
         │ abcdeff ┆ abc           │
         └─────────┴───────────────┘
         """
-        characters = parse_as_expression(characters, str_as_lit=True)
+        characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
 
     def strip_prefix(self, prefix: IntoExpr) -> Expr:
@@ -750,7 +750,7 @@ class ExprStringNameSpace:
         │ bar       ┆ bar      │
         └───────────┴──────────┘
         """
-        prefix = parse_as_expression(prefix, str_as_lit=True)
+        prefix = parse_into_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
 
     def strip_suffix(self, suffix: IntoExpr) -> Expr:
@@ -790,7 +790,7 @@ class ExprStringNameSpace:
         │ bar       ┆          │
         └───────────┴──────────┘
         """
-        suffix = parse_as_expression(suffix, str_as_lit=True)
+        suffix = parse_into_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
     def pad_start(self, length: int, fill_char: str = " ") -> Expr:
@@ -900,7 +900,7 @@ class ExprStringNameSpace:
         │ null   ┆ null   │
         └────────┴────────┘
         """
-        length = parse_as_expression(length)
+        length = parse_into_expression(length)
         return wrap_expr(self._pyexpr.str_zfill(length))
 
     def contains(
@@ -970,7 +970,7 @@ class ExprStringNameSpace:
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
     def find(
@@ -1063,7 +1063,7 @@ class ExprStringNameSpace:
         │ Crustaceon ┆ (?i)A[BC] ┆ 5        │
         └────────────┴───────────┴──────────┘
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_find(pattern, literal, strict))
 
     def ends_with(self, suffix: str | Expr) -> Expr:
@@ -1126,7 +1126,7 @@ class ExprStringNameSpace:
         │ mango  ┆ go     │
         └────────┴────────┘
         """
-        suffix = parse_as_expression(suffix, str_as_lit=True)
+        suffix = parse_into_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
 
     def starts_with(self, prefix: str | Expr) -> Expr:
@@ -1189,7 +1189,7 @@ class ExprStringNameSpace:
         │ apple  ┆ app    │
         └────────┴────────┘
         """
-        prefix = parse_as_expression(prefix, str_as_lit=True)
+        prefix = parse_into_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
     def json_decode(
@@ -1280,7 +1280,7 @@ class ExprStringNameSpace:
         │ {"a":true} ┆ true    │
         └────────────┴─────────┘
         """
-        json_path = parse_as_expression(json_path, str_as_lit=True)
+        json_path = parse_into_expression(json_path, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
@@ -1440,7 +1440,7 @@ class ExprStringNameSpace:
         │ ronaldo   ┆ polars  ┆ null  │
         └───────────┴─────────┴───────┘
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
@@ -1526,7 +1526,7 @@ class ExprStringNameSpace:
         └────────────────┘
 
         '''
-        pattern = parse_as_expression(pattern, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract_all(pattern))
 
     def extract_groups(self, pattern: str) -> Expr:
@@ -1670,7 +1670,7 @@ class ExprStringNameSpace:
         │ null       ┆ null         │
         └────────────┴──────────────┘
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
 
     def split(self, by: IntoExpr, *, inclusive: bool = False) -> Expr:
@@ -1727,7 +1727,7 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`String`.
         """
-        by = parse_as_expression(by, str_as_lit=True)
+        by = parse_into_expression(by, str_as_lit=True)
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
@@ -1795,7 +1795,7 @@ class ExprStringNameSpace:
         │ d_4  ┆ d          ┆ 4           │
         └──────┴────────────┴─────────────┘
         """
-        by = parse_as_expression(by, str_as_lit=True)
+        by = parse_into_expression(by, str_as_lit=True)
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
@@ -1858,7 +1858,7 @@ class ExprStringNameSpace:
         │ foo bar baz ┆ foo        ┆ bar baz     │
         └─────────────┴────────────┴─────────────┘
         """
-        by = parse_as_expression(by, str_as_lit=True)
+        by = parse_into_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_splitn(by, n))
 
     def replace(
@@ -1955,8 +1955,8 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
-        value = parse_as_expression(value, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
+        value = parse_into_expression(value, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_replace_n(pattern, value, literal, n))
 
     def replace_all(
@@ -2049,8 +2049,8 @@ class ExprStringNameSpace:
         │ Philadelphia ┆ Winter ┆ Sunny   │
         └──────────────┴────────┴─────────┘
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
-        value = parse_as_expression(value, str_as_lit=True)
+        pattern = parse_into_expression(pattern, str_as_lit=True)
+        value = parse_into_expression(value, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def reverse(self) -> Expr:
@@ -2133,8 +2133,8 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ onf   │
         └─────────────┴───────┘
         """
-        offset = parse_as_expression(offset)
-        length = parse_as_expression(length)
+        offset = parse_into_expression(offset)
+        length = parse_into_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
     def head(self, n: int | IntoExprColumn) -> Expr:
@@ -2207,7 +2207,7 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ -5  ┆ dragon   │
         └─────────────┴─────┴──────────┘
         """
-        n = parse_as_expression(n)
+        n = parse_into_expression(n)
         return wrap_expr(self._pyexpr.str_head(n))
 
     def tail(self, n: int | IntoExprColumn) -> Expr:
@@ -2280,7 +2280,7 @@ class ExprStringNameSpace:
         │ dragonfruit ┆ -5  ┆ nfruit   │
         └─────────────┴─────┴──────────┘
         """
-        n = parse_as_expression(n)
+        n = parse_into_expression(n)
         return wrap_expr(self._pyexpr.str_tail(n))
 
     @deprecate_function(
@@ -2377,7 +2377,7 @@ class ExprStringNameSpace:
         │ null ┆ null   │
         └──────┴────────┘
         """
-        base = parse_as_expression(base, str_as_lit=False)
+        base = parse_into_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
     def contains_any(
@@ -2423,7 +2423,7 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ true         │
         └────────────────────────────────────────────────────┴──────────────┘
         """
-        patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
+        patterns = parse_into_expression(patterns, str_as_lit=False, list_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_contains_any(patterns, ascii_case_insensitive)
         )
@@ -2500,8 +2500,8 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
         └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
         """  # noqa: W505
-        patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
-        replace_with = parse_as_expression(
+        patterns = parse_into_expression(patterns, str_as_lit=False, list_as_lit=False)
+        replace_with = parse_into_expression(
             replace_with, str_as_lit=True, list_as_lit=False
         )
         return wrap_expr(

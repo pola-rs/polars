@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Iterable, Sequence
 
-from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -311,7 +311,7 @@ class ExprStructNameSpace:
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        pyexprs = parse_as_list_of_expressions(
+        pyexprs = parse_into_list_of_expressions(
             *exprs, **named_exprs, __structify=structify
         )
 
