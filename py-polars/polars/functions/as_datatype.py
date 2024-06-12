@@ -607,8 +607,9 @@ def concat_str(
     ignore_nulls
         Ignore null values (default is ``False``).
 
-        If set to ``False``, null values will be propagated.
+        If ``False``, null values will be propagated: 
         if the row contains any null values, the output is null.
+        If ``True``, null values will be propagated and will appear to be empty strings.
 
     Examples
     --------
@@ -639,6 +640,27 @@ def concat_str(
     │ 2   ┆ cats ┆ swim ┆ 4 cats swim   │
     │ 3   ┆ null ┆ walk ┆ null          │
     └─────┴──────┴──────┴───────────────┘
+    >>> df.with_columns(
+    ...     pl.concat_str(
+    ...         [
+    ...             pl.col("a") * 2,
+    ...             pl.col("b"),
+    ...             pl.col("c"),
+    ...         ],
+    ...         separator=" ",
+    ...         ignore_nulls=True,
+    ...     ).alias("full_sentence_ignore_nulls"),
+    ... )
+    shape: (3, 4)
+    ┌─────┬──────┬──────┬────────────────────────────┐
+    │ a   ┆ b    ┆ c    ┆ full_sentence_ignore_nulls │
+    │ --- ┆ ---  ┆ ---  ┆ ---                        │
+    │ i64 ┆ str  ┆ str  ┆ str                        │
+    ╞═════╪══════╪══════╪════════════════════════════╡
+    │ 1   ┆ dogs ┆ play ┆ 2 dogs play                │
+    │ 2   ┆ cats ┆ swim ┆ 4 cats swim                │
+    │ 3   ┆ null ┆ walk ┆ 6 walk                     │
+    └─────┴──────┴──────┴────────────────────────────┘
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_str(exprs, separator, ignore_nulls))
