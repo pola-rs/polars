@@ -25,6 +25,47 @@ use crate::series::IsSorted;
 use crate::utils::NoNull;
 use crate::POOL;
 
+fn partition_nulls<T: Copy>(
+    values: &mut [T],
+    mut validity: Option<Bitmap>,
+    options: SortOptions,
+) -> (&mut [T], Option<Bitmap>) {
+    let partitioned = if let Some(bitmap) = &validity {
+        // Partition null last first
+        let mut out_len = 0;
+        for idx in bitmap.true_idx_iter() {
+            unsafe { *values.get_unchecked_mut(out_len) = *values.get_unchecked(idx) };
+            out_len += 1;
+        }
+        let valid_count = out_len;
+        let null_count = values.len() - valid_count;
+        validity = Some(create_validity(
+            bitmap.len(),
+            bitmap.unset_bits(),
+            options.nulls_last,
+        ));
+
+        // Views are correctly partitioned.
+        if options.nulls_last {
+            &mut values[..valid_count]
+        }
+        // We need to swap the ends.
+        else {
+            // swap nulls with end
+            let mut end = values.len() - 1;
+
+            for i in 0..null_count {
+                unsafe { *values.get_unchecked_mut(end) = *values.get_unchecked(i) };
+                end = end.saturating_sub(1);
+            }
+            &mut values[null_count..]
+        }
+    } else {
+        values
+    };
+    (partitioned, validity)
+}
+
 pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
 where
     T: Send,
@@ -320,42 +361,10 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         let ca = self.rechunk();
         let arr = ca.downcast_into_array();
 
-        let (views, buffers, mut validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
         let mut views = views.make_mut();
 
-        let partitioned_part = if let Some(bitmap) = &validity {
-            // Partition null last first
-            let mut out_len = 0;
-            for idx in bitmap.true_idx_iter() {
-                unsafe { *views.get_unchecked_mut(out_len) = *views.get_unchecked(idx) };
-                out_len += 1;
-            }
-            let valid_count = out_len;
-            let null_count = views.len() - valid_count;
-            validity = Some(create_validity(
-                bitmap.len(),
-                bitmap.unset_bits(),
-                options.nulls_last,
-            ));
-
-            // Views are correctly partitioned.
-            if options.nulls_last {
-                &mut views[..valid_count]
-            }
-            // We need to swap the ends.
-            else {
-                // swap nulls with end
-                let mut end = views.len() - 1;
-
-                for i in 0..null_count {
-                    unsafe { *views.get_unchecked_mut(end) = *views.get_unchecked(i) };
-                    end = end.saturating_sub(1);
-                }
-                &mut views[null_count..]
-            }
-        } else {
-            views.as_mut_slice()
-        };
+        let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
 
         sort_unstable_by_branch(partitioned_part, options, |a, b| unsafe {
             a.get_slice_unchecked(&buffers)
@@ -523,21 +532,27 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let ca = self.rechunk();
+        let arr = ca.downcast_into_array();
+        let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
+
+        let argsort = |args| {
+            sort_unstable_by_branch(args, options, |a, b| unsafe {
+                let a = arr.value_unchecked(*a as usize);
+                let b = arr.value_unchecked(*b as usize);
+                a.tot_cmp(&b)
+            });
+        };
+
         if self.null_count() == 0 {
-            arg_sort::arg_sort_no_nulls(
-                self.name(),
-                self.downcast_iter().map(|arr| arr.values_iter()),
-                options,
-                self.len(),
-            )
+            argsort(&mut idx);
+            IdxCa::from_vec(self.name(), idx)
         } else {
-            arg_sort::arg_sort(
-                self.name(),
-                self.downcast_iter().map(|arr| arr.iter()),
-                options,
-                self.null_count(),
-                self.len(),
-            )
+            // This branch (almost?) never gets called as the row-encoding also encodes nulls.
+            let (partitioned_part, validity) =
+                partition_nulls(&mut idx, arr.validity().cloned(), options);
+            argsort(partitioned_part);
+            IdxCa::with_chunk(self.name(), IdxArr::from_data_default(idx.into(), validity))
         }
     }
 
