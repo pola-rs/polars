@@ -151,6 +151,7 @@ impl LazyFrame {
             eager: false,
             fast_projection: false,
             row_estimate: false,
+            new_streaming: false,
         })
     }
 
@@ -207,6 +208,11 @@ impl LazyFrame {
     /// Run nodes that are capably of doing so on the streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.streaming = toggle;
+        self
+    }
+
+    pub fn with_new_streaming(mut self, toggle: bool) -> Self {
+        self.opt_state.new_streaming = toggle;
         self
     }
 
@@ -681,6 +687,17 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "new-streaming")]
+        {
+            if self.opt_state.new_streaming {
+                let alp_plan = self.to_alp_optimized()?;
+                return polars_stream::run_query(
+                    alp_plan.lp_top,
+                    alp_plan.lp_arena,
+                    alp_plan.expr_arena,
+                );
+            }
+        }
         self._collect_post_opt(|_, _, _| Ok(()))
     }
 

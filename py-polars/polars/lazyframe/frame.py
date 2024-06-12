@@ -1011,6 +1011,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 cluster_with_columns,
                 streaming,
                 _eager=False,
+                new_streaming=False
             )
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
@@ -1101,6 +1102,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False
         )
 
         dot = _ldf.to_dot(optimized)
@@ -1628,6 +1630,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False
         )
         df, timings = ldf.profile()
         (df, timings) = wrap_df(df), wrap_df(timings)
@@ -1815,6 +1818,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
+        new_streaming = _kwargs.get("new_streaming")
+
         if no_optimization or _eager:
             predicate_pushdown = False
             projection_pushdown = False
@@ -1838,6 +1843,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns,
             streaming,
             _eager,
+            new_streaming
         )
         if background:
             return InProcessQuery(ldf.collect_concurrently())
@@ -2013,6 +2019,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False
         )
 
         result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
@@ -2550,6 +2557,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False
         )
         return wrap_df(lf.fetch(n_rows))
 
