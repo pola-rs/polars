@@ -491,8 +491,7 @@ impl PyLazyFrame {
         cluster_with_columns: bool,
         streaming: bool,
         _eager: bool,
-        #[allow(unused_variables)]
-        new_streaming: bool,
+        #[allow(unused_variables)] new_streaming: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let mut ldf = ldf

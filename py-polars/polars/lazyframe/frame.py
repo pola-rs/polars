@@ -2455,7 +2455,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns=False,
             streaming=True,
             _eager=False,
-            new_streaming=False
+            new_streaming=False,
         )
 
     def fetch(
