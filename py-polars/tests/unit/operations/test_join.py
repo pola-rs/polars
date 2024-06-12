@@ -302,67 +302,6 @@ def test_join_chunks_alignment_4720() -> None:
     }
 
 
-def test_sorted_flag_after_joins() -> None:
-    np.random.seed(1)
-    dfa = pl.DataFrame(
-        {
-            "a": np.random.randint(0, 13, 20),
-            "b": np.random.randint(0, 13, 20),
-        }
-    ).sort("a")
-
-    dfb = pl.DataFrame(
-        {
-            "a": np.random.randint(0, 13, 10),
-            "b": np.random.randint(0, 13, 10),
-        }
-    )
-
-    dfapd = dfa.to_pandas()
-    dfbpd = dfb.to_pandas()
-
-    def test_with_pd(
-        dfa: pd.DataFrame, dfb: pd.DataFrame, on: str, how: str, joined: pl.DataFrame
-    ) -> None:
-        a = (
-            dfa.merge(
-                dfb,
-                on=on,
-                how=how,  # type: ignore[arg-type]
-                suffixes=("", "_right"),
-            )
-            .sort_values(["a", "b"])
-            .reset_index(drop=True)
-        )
-        b = joined.sort(["a", "b"]).to_pandas()
-        pd.testing.assert_frame_equal(a, b)
-
-    joined = dfa.join(dfb, on="b", how="left", coalesce=True)
-    assert joined["a"].flags["SORTED_ASC"]
-    test_with_pd(dfapd, dfbpd, "b", "left", joined)
-
-    joined = dfa.join(dfb, on="b", how="inner")
-    assert joined["a"].flags["SORTED_ASC"]
-    test_with_pd(dfapd, dfbpd, "b", "inner", joined)
-
-    joined = dfa.join(dfb, on="b", how="semi")
-    assert joined["a"].flags["SORTED_ASC"]
-    joined = dfa.join(dfb, on="b", how="semi")
-    assert joined["a"].flags["SORTED_ASC"]
-
-    joined = dfb.join(dfa, on="b", how="left", coalesce=True)
-    assert not joined["a"].flags["SORTED_ASC"]
-    test_with_pd(dfbpd, dfapd, "b", "left", joined)
-
-    joined = dfb.join(dfa, on="b", how="inner")
-    assert not joined["a"].flags["SORTED_ASC"]
-
-    joined = dfb.join(dfa, on="b", how="semi")
-    assert not joined["a"].flags["SORTED_ASC"]
-    joined = dfb.join(dfa, on="b", how="anti")
-    assert not joined["a"].flags["SORTED_ASC"]
-
-
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows

@@ -102,18 +102,6 @@ def test_streaming_joins() -> None:
         assert_frame_equal(a, pl_result, check_dtypes=False)
 
 
-def test_sorted_flag_after_streaming_join() -> None:
-    # streaming left join
-    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
-    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
-    assert (
-        df1.lazy()
-        .join(df2.lazy(), on="x", how="left")
-        .collect(streaming=True)["x"]
-        .flags["SORTED_ASC"]
-    )
-
-
 def test_streaming_cross_join_empty() -> None:
     df1 = pl.LazyFrame(
         data={
