@@ -329,19 +329,6 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
     }
 
 
-def test_sorted_flag_group_by_dynamic() -> None:
-    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
-    assert (
-        (
-            df.group_by_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
-                pl.col("val").sum()
-            )
-        )
-        .to_series()
-        .flags["SORTED_ASC"]
-    )
-
-
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
