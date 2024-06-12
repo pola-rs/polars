@@ -242,7 +242,7 @@ fn get_pipeline_node(
         schema: Arc::new(Schema::new()),
         output_schema: None,
         projection: None,
-        selection: None,
+        filter: None,
     });
 
     IR::MapFunction {

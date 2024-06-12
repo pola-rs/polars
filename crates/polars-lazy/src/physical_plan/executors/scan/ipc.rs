@@ -62,10 +62,7 @@ impl IpcExec {
         }
 
         let projection = materialize_projection(
-            self.file_options
-                .with_columns
-                .as_deref()
-                .map(|cols| cols.deref()),
+            self.file_options.with_columns.as_deref(),
             &self.schema,
             None,
             self.file_options.row_index.is_some(),
@@ -193,9 +190,7 @@ impl IpcExec {
                                     }),
                                 )
                                 .with_row_index(this.file_options.row_index.clone())
-                                .with_projection(
-                                    this.file_options.with_columns.as_deref().cloned(),
-                                ),
+                                .with_projection(this.file_options.with_columns.as_ref().cloned()),
                             verbose,
                         )
                         .await?;

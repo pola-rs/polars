@@ -6,7 +6,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::arena::{Arena, Node};
 
 use super::aexpr::AExpr;
-use super::alp::IR;
+use super::ir::IR;
 use super::{aexpr_to_leaf_names_iter, ColumnName};
 
 type ColumnMap = PlHashMap<ColumnName, usize>;

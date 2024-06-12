@@ -5,9 +5,9 @@ use polars_core::error::*;
 use regex::Regex;
 
 use crate::constants;
-use crate::logical_plan::alp::IRPlanRef;
+use crate::logical_plan::ir::IRPlanRef;
 use crate::logical_plan::visitor::{VisitRecursion, Visitor};
-use crate::prelude::alp::format::ColumnsDisplay;
+use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::visitor::AexprNode;
 use crate::prelude::*;
 
@@ -193,7 +193,7 @@ impl<'a> TreeFmtNode<'a> {
                     DataFrameScan {
                         schema,
                         projection,
-                        selection,
+                        filter: selection,
                         ..
                     } => ND(
                         wh(

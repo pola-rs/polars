@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -86,10 +86,7 @@ impl ParquetSource {
             .map(|hive| hive.materialize_partition_columns());
 
         let projection = materialize_projection(
-            file_options
-                .with_columns
-                .as_deref()
-                .map(|cols| cols.deref()),
+            file_options.with_columns.as_deref(),
             &schema,
             hive_partitions.as_deref(),
             false,
@@ -144,11 +141,7 @@ impl ParquetSource {
 
     fn finish_init_reader(&mut self, batched_reader: BatchedParquetReader) -> PolarsResult<()> {
         if self.processed_paths >= 1 {
-            let with_columns = self
-                .file_options
-                .with_columns
-                .as_ref()
-                .map(|v| v.as_slice());
+            let with_columns = self.file_options.with_columns.as_ref().map(|v| v.as_ref());
             check_projected_arrow_schema(
                 batched_reader.schema().as_ref(),
                 self.file_info

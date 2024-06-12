@@ -102,7 +102,7 @@ impl PyDataFrame {
                 .with_projection(projection.map(Arc::new))
                 .with_rechunk(rechunk)
                 .with_chunk_size(chunk_size)
-                .with_columns(columns.map(Arc::new))
+                .with_columns(columns.map(Arc::from))
                 .with_n_threads(n_threads)
                 .with_schema_overwrite(overwrite_dtype.map(Arc::new))
                 .with_dtype_overwrite(overwrite_dtype_slice.map(Arc::new))

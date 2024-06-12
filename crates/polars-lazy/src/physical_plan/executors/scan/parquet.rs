@@ -173,11 +173,7 @@ impl ParquetExec {
             .unwrap_left();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
-        let with_columns = self
-            .file_options
-            .with_columns
-            .as_ref()
-            .map(|v| v.as_slice());
+        let with_columns = self.file_options.with_columns.as_ref().map(|v| v.as_ref());
 
         let mut result = vec![];
         let batch_size = get_file_prefetch_size();

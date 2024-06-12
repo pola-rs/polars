@@ -512,9 +512,7 @@ fn test_empty_bytes_to_dataframe() {
 
     let result = CsvReadOptions::default()
         .with_has_header(false)
-        .with_columns(Some(Arc::new(
-            schema.iter_names().map(|s| s.to_string()).collect(),
-        )))
+        .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
         .with_schema(Some(Arc::new(schema)))
         .into_reader_with_file_handle(file)
         .finish();

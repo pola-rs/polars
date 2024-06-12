@@ -31,7 +31,7 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
         matches!(
             lp,
             DataFrameScan {
-                selection: Some(_),
+                filter: Some(_),
                 ..
             } | Scan {
                 predicate: Some(_),
@@ -50,7 +50,7 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
         matches!(
             lp,
             DataFrameScan {
-                selection: Some(_),
+                filter: Some(_),
                 ..
             } | Scan {
                 predicate: Some(_),
@@ -482,7 +482,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
         match lp {
             DataFrameScan { projection, .. } => {
                 let projection = projection.as_ref().unwrap();
-                let projection = projection.as_slice();
+                let projection = projection.as_ref();
                 assert_eq!(projection.len(), 1);
                 let name = &projection[0];
                 assert_eq!(name, "c1");

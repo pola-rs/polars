@@ -308,7 +308,7 @@ impl<'a> PredicatePushDown<'a> {
                 schema,
                 output_schema,
                 projection,
-                selection,
+                filter: selection,
             } => {
                 let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
                 let lp = DataFrameScan {
@@ -316,7 +316,7 @@ impl<'a> PredicatePushDown<'a> {
                     schema,
                     output_schema,
                     projection,
-                    selection,
+                    filter: selection,
                 };
                 Ok(lp)
             },
@@ -391,7 +391,7 @@ impl<'a> PredicatePushDown<'a> {
                                     schema: schema.clone(),
                                     output_schema: None,
                                     projection: None,
-                                    selection: None,
+                                    filter: None,
                                 });
                             } else {
                                 paths = Arc::from(new_paths)

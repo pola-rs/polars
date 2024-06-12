@@ -100,13 +100,13 @@ impl IR {
                 schema,
                 output_schema,
                 projection,
-                selection,
+                filter: selection,
             } => DslPlan::DataFrameScan {
                 df,
                 schema,
                 output_schema,
                 projection,
-                selection: selection.map(|e| e.to_expr(expr_arena)),
+                filter: selection.map(|e| e.to_expr(expr_arena)),
             },
             IR::Select {
                 expr,

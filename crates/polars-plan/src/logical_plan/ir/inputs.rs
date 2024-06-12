@@ -127,7 +127,7 @@ impl IR {
                 schema,
                 output_schema,
                 projection,
-                selection,
+                filter: selection,
             } => {
                 let mut new_selection = None;
                 if selection.is_some() {
@@ -139,7 +139,7 @@ impl IR {
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
                     projection: projection.clone(),
-                    selection: new_selection,
+                    filter: new_selection,
                 }
             },
             MapFunction { function, .. } => MapFunction {
@@ -188,7 +188,9 @@ impl IR {
                     container.push(pred.clone())
                 }
             },
-            DataFrameScan { selection, .. } => {
+            DataFrameScan {
+                filter: selection, ..
+            } => {
                 if let Some(expr) = selection {
                     container.push(expr.clone())
                 }

@@ -250,7 +250,7 @@ impl<'a> IRDisplay<'a> {
             DataFrameScan {
                 schema,
                 projection,
-                selection,
+                filter: selection,
                 ..
             } => {
                 let total_columns = schema.len();

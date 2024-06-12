@@ -21,7 +21,7 @@ pub struct CsvReadOptions {
     pub n_rows: Option<usize>,
     pub row_index: Option<RowIndex>,
     // Column-wise options
-    pub columns: Option<Arc<Vec<String>>>,
+    pub columns: Option<Arc<[String]>>,
     pub projection: Option<Arc<Vec<usize>>>,
     pub schema: Option<SchemaRef>,
     pub schema_overwrite: Option<SchemaRef>,
@@ -145,7 +145,7 @@ impl CsvReadOptions {
     }
 
     /// Which columns to select.
-    pub fn with_columns(mut self, columns: Option<Arc<Vec<String>>>) -> Self {
+    pub fn with_columns(mut self, columns: Option<Arc<[String]>>) -> Self {
         self.columns = columns;
         self
     }

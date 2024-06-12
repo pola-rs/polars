@@ -92,7 +92,7 @@ impl Hash for HashableEqLP<'_> {
                 schema: _,
                 output_schema: _,
                 projection,
-                selection,
+                filter: selection,
             } => {
                 (Arc::as_ptr(df) as usize).hash(state);
                 projection.hash(state);
@@ -281,14 +281,14 @@ impl HashableEqLP<'_> {
                     schema: _,
                     output_schema: _,
                     projection: pl,
-                    selection: sl,
+                    filter: sl,
                 },
                 IR::DataFrameScan {
                     df: dfr,
                     schema: _,
                     output_schema: _,
                     projection: pr,
-                    selection: sr,
+                    filter: sr,
                 },
             ) => {
                 Arc::as_ptr(dfl) == Arc::as_ptr(dfr)
