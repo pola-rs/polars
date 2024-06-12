@@ -1693,7 +1693,7 @@ def collect_all(
             cluster_with_columns,
             streaming,
             _eager=False,
-            new_streaming=False
+            new_streaming=False,
         )
         prepared.append(ldf)
 
@@ -1851,7 +1851,7 @@ def collect_all_async(
             cluster_with_columns,
             streaming,
             _eager=False,
-            new_streaming=False
+            new_streaming=False,
         )
         prepared.append(ldf)
 
