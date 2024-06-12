@@ -324,6 +324,10 @@ where
     JoinHandle(Some(task))
 }
 
+/// Takes a future and turns it into a runnable task with associated metadata.
+///
+/// When the task is pending its waker will be set to call schedule
+/// with the runnable.
 pub unsafe fn spawn_with_lifetime<'a, F, S, M>(
     future: F,
     schedule: S,

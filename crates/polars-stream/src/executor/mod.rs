@@ -226,6 +226,10 @@ impl Executor {
 }
 
 pub struct TaskScope<'scope, 'env: 'scope> {
+    // Keep track of in-progress tasks so we can forcibly cancel them
+    // when the scope ends, to ensure the lifetimes are respected.
+    // Tasks add their own key to completed_tasks when done so we can
+    // reclaim the memory used by the cancel_handles.
     cancel_handles: Mutex<SlotMap<TaskKey, CancelHandle>>,
     completed_tasks: Arc<Mutex<Vec<TaskKey>>>,
 
@@ -266,9 +270,10 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
             let (run, jh) = unsafe {
                 // SAFETY: we make sure to cancel this task before 'scope ends.
                 let executor = Executor::global();
+                let on_wake = move |task| executor.schedule_task(task);
                 task::spawn_with_lifetime(
                     fut,
-                    move |task| executor.schedule_task(task),
+                    on_wake,
                     TaskMetadata {
                         task_key,
                         priority,
