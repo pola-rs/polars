@@ -3300,6 +3300,7 @@ class DataFrame:
               combined with `use_pyarrow`.
             - `{ "statistic-key": True / False, ... }`. Cannot be combined with
               `use_pyarrow`. Available keys:
+
               - "min": column minimum value (default: `True`)
               - "max": column maximum value (default: `True`)
               - "distinct_count": number of unique column values (default: `False`)
