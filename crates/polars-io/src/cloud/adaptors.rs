@@ -1,15 +1,10 @@
 //! Interface with the object_store crate and define AsyncSeek, AsyncRead.
 
-use std::any::Any;
-use std::borrow::Borrow;
-use std::ops::Mul;
 use std::sync::Arc;
 
-use futures::io::Write;
 use object_store::path::Path;
-use object_store::{MultipartUpload, ObjectStore, PutPayload, WriteMultipart};
+use object_store::{MultipartUpload, ObjectStore};
 use polars_error::{to_compute_err, PolarsResult};
-use tokio::io::AsyncWrite;
 
 use super::CloudOptions;
 use crate::pl_async::get_runtime;
@@ -20,13 +15,8 @@ use crate::pl_async::get_runtime;
 /// This allows it to be used in sync code which would otherwise write to a simple File or byte stream,
 /// such as with `polars::prelude::CsvWriter`.
 pub struct CloudWriter {
-    // Hold a reference to the store
-    object_store: Arc<dyn ObjectStore>,
-    // The path in the object_store which we want to write to
-    path: Path,
     // Internal writer, constructed at creation
-    upload: Box<dyn MultipartUpload>,
-    // writer: WriteMultipart,
+    writer: Box<dyn MultipartUpload>,
 }
 
 impl CloudWriter {
@@ -39,14 +29,9 @@ impl CloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let upload = Self::build_writer(&object_store, &path).await?;
+        let writer = Self::build_writer(&object_store, &path).await?;
         
-        Ok(CloudWriter {
-            object_store,
-            path,
-            upload,
-            // writer,
-        })
+        Ok(CloudWriter {writer})
     }
 
     /// Constructs a new CloudWriter from a path and an optional set of CloudOptions.
@@ -63,25 +48,18 @@ impl CloudWriter {
         object_store: &Arc<dyn ObjectStore>,
         path: &Path,
     ) -> object_store::Result<Box<dyn MultipartUpload>> {
-        let upload = object_store.put_multipart(path).await?;        
-        // let writer = WriteMultipart::new(upload);
-        Ok(upload)
+        Ok(object_store.put_multipart(path).await?)
     }
 
     async fn abort(&mut self) -> PolarsResult<()> {
-        
-        self.upload.abort().await.map_err(to_compute_err)
-        // self.object_store
-            // .abort_multipart(&self.path, &self.multipart_id)
-            // .await
-            // .map_err(to_compute_err)
+        self.writer.abort().await.map_err(to_compute_err)
     }
 }
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         get_runtime().block_on(async {
-            let res = self.upload.put_part(buf.to_vec().into()).await;
+            let res = self.writer.put_part(buf.to_owned().into()).await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
@@ -91,7 +69,7 @@ impl std::io::Write for CloudWriter {
 
     fn flush(&mut self) -> std::io::Result<()> {
         get_runtime().block_on(async {
-            let res = self.upload.complete().await;
+            let res = self.writer.complete().await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
@@ -102,7 +80,7 @@ impl std::io::Write for CloudWriter {
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let _ = get_runtime().block_on(self.upload.complete());
+        let _ = get_runtime().block_on(self.writer.complete());
     }
 }
 
