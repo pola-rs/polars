@@ -27,7 +27,6 @@ pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
-mod projection_expr;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;

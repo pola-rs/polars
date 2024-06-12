@@ -63,7 +63,7 @@ pub struct SortOptions {
 ///         SortMultipleOptions::default()
 ///             .with_maintain_order(true)
 ///             .with_multithreaded(false)
-///             .with_order_descendings([false, true])
+///             .with_order_descending_multi([false, true])
 ///             .with_nulls_last(true),
 ///     )?;
 ///
@@ -83,15 +83,15 @@ pub struct SortMultipleOptions {
     ///
     /// If only one value is given, it will broadcast to all columns.
     ///
-    /// Use [`SortMultipleOptions::with_order_descendings`]
+    /// Use [`SortMultipleOptions::with_order_descending_multi`]
     /// or [`SortMultipleOptions::with_order_descending`] to modify.
     ///
     /// # Safety
     ///
-    /// Len must matches the number of columns or equal to 1.
+    /// Len must match the number of columns, or equal 1.
     pub descending: Vec<bool>,
     /// Whether place null values last. Default `false`.
-    pub nulls_last: bool,
+    pub nulls_last: Vec<bool>,
     /// Whether sort in multiple threads. Default `true`.
     pub multithreaded: bool,
     /// Whether maintain the order of equal elements. Default `false`.
@@ -113,7 +113,7 @@ impl Default for SortMultipleOptions {
     fn default() -> Self {
         Self {
             descending: vec![false],
-            nulls_last: false,
+            nulls_last: vec![false],
             multithreaded: true,
             maintain_order: false,
         }
@@ -126,12 +126,15 @@ impl SortMultipleOptions {
         Self::default()
     }
 
-    /// Specify order for each columns. Default all `false`.
+    /// Specify order for each column. Defaults all `false`.
     ///
     /// # Safety
     ///
-    /// Len must matches the number of columns or equal to 1.
-    pub fn with_order_descendings(mut self, descending: impl IntoIterator<Item = bool>) -> Self {
+    /// Len must match the number of columns, or be equal to 1.
+    pub fn with_order_descending_multi(
+        mut self,
+        descending: impl IntoIterator<Item = bool>,
+    ) -> Self {
         self.descending = descending.into_iter().collect();
         self
     }
@@ -142,19 +145,29 @@ impl SortMultipleOptions {
         self
     }
 
-    /// Whether place null values last. Default `false`.
-    pub fn with_nulls_last(mut self, enabled: bool) -> Self {
-        self.nulls_last = enabled;
+    /// Specify whether to place nulls last, per-column. Defaults all `false`.
+    ///
+    /// # Safety
+    ///
+    /// Len must match the number of columns, or be equal to 1.
+    pub fn with_nulls_last_multi(mut self, nulls_last: impl IntoIterator<Item = bool>) -> Self {
+        self.nulls_last = nulls_last.into_iter().collect();
         self
     }
 
-    /// Whether sort in multiple threads. Default `true`.
+    /// Whether to place null values last. Default `false`.
+    pub fn with_nulls_last(mut self, enabled: bool) -> Self {
+        self.nulls_last = vec![enabled];
+        self
+    }
+
+    /// Whether to sort in multiple threads. Default `true`.
     pub fn with_multithreaded(mut self, enabled: bool) -> Self {
         self.multithreaded = enabled;
         self
     }
 
-    /// Whether maintain the order of equal elements. Default `false`.
+    /// Whether to maintain the order of equal elements. Default `false`.
     pub fn with_maintain_order(mut self, enabled: bool) -> Self {
         self.maintain_order = enabled;
         self
@@ -208,7 +221,7 @@ impl From<&SortOptions> for SortMultipleOptions {
     fn from(value: &SortOptions) -> Self {
         SortMultipleOptions {
             descending: vec![value.descending],
-            nulls_last: value.nulls_last,
+            nulls_last: vec![value.nulls_last],
             multithreaded: value.multithreaded,
             maintain_order: value.maintain_order,
         }
@@ -219,7 +232,7 @@ impl From<&SortMultipleOptions> for SortOptions {
     fn from(value: &SortMultipleOptions) -> Self {
         SortOptions {
             descending: value.descending.first().copied().unwrap_or(false),
-            nulls_last: value.nulls_last,
+            nulls_last: value.nulls_last.first().copied().unwrap_or(false),
             multithreaded: value.multithreaded,
             maintain_order: value.maintain_order,
         }

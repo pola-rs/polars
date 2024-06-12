@@ -141,6 +141,8 @@ def test_object_apply_to_struct() -> None:
 
 
 def test_null_obj_str_13512() -> None:
+    # https://github.com/pola-rs/polars/issues/13512
+
     df1 = pl.DataFrame(
         {
             "key": [1],
@@ -148,7 +150,7 @@ def test_null_obj_str_13512() -> None:
     )
     df2 = pl.DataFrame({"key": [2], "a": pl.Series([1], dtype=pl.Object)})
 
-    out = df1.join(df2, on="key", how="left")
+    out = df1.join(df2, on="key", how="left", coalesce=True)
     s = str(out)
     assert s == (
         "shape: (1, 2)\n"

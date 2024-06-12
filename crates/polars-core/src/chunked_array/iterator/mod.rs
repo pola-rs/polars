@@ -224,7 +224,7 @@ impl<'a> IntoIterator for &'a ListChunked {
                             Some(Series::from_chunks_and_dtype_unchecked(
                                 "",
                                 vec![arr],
-                                &dtype,
+                                dtype,
                             ))
                         }),
                 )
@@ -238,7 +238,7 @@ impl<'a> IntoIterator for &'a ListChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             arr.map(|arr| {
-                                Series::from_chunks_and_dtype_unchecked("", vec![arr], &dtype)
+                                Series::from_chunks_and_dtype_unchecked("", vec![arr], dtype)
                             })
                         }),
                 )
@@ -258,7 +258,7 @@ impl ListChunked {
         unsafe {
             self.downcast_iter()
                 .flat_map(|arr| arr.values_iter())
-                .map(move |arr| Series::from_chunks_and_dtype_unchecked("", vec![arr], &inner_type))
+                .map(move |arr| Series::from_chunks_and_dtype_unchecked("", vec![arr], inner_type))
                 .trust_my_length(self.len())
         }
     }
@@ -282,7 +282,7 @@ impl<'a> IntoIterator for &'a ArrayChunked {
                             Some(Series::from_chunks_and_dtype_unchecked(
                                 "",
                                 vec![arr],
-                                &dtype,
+                                dtype,
                             ))
                         }),
                 )
@@ -296,7 +296,7 @@ impl<'a> IntoIterator for &'a ArrayChunked {
                         .trust_my_length(self.len())
                         .map(move |arr| {
                             arr.map(|arr| {
-                                Series::from_chunks_and_dtype_unchecked("", vec![arr], &dtype)
+                                Series::from_chunks_and_dtype_unchecked("", vec![arr], dtype)
                             })
                         }),
                 )

@@ -37,6 +37,20 @@ impl<T: GetSize, E: Error> GetSize for Result<T, E> {
     }
 }
 
+pub(crate) struct Size(u64);
+
+impl GetSize for Size {
+    fn size(&self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for Size {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 enum Optimization {
     Step,
     Accept,

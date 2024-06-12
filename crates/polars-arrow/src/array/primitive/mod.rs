@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use either::Either;
 
-use super::Array;
+use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -495,6 +495,31 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<T: NativeType> Splitable for PrimitiveArray<T> {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_values, rhs_values) = unsafe { self.values.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                values: lhs_values,
+                validity: lhs_validity,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                values: rhs_values,
+                validity: rhs_validity,
+            },
+        )
     }
 }
 

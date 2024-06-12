@@ -125,6 +125,13 @@ def test_array_data_type_equality() -> None:
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.String, 2)
     assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)
 
+    assert pl.Array(pl.Int64, (4, 2)) == pl.Array
+    assert pl.Array(pl.Array(pl.Int64, 2), 4) == pl.Array(pl.Int64, (4, 2))
+    assert pl.Array(pl.Int64, (4, 2)) == pl.Array(pl.Int64, (4, 2))
+    assert pl.Array(pl.Int64, (4, 2)) != pl.Array(pl.String, (4, 2))
+    assert pl.Array(pl.Int64, (4, 2)) != pl.Array(pl.Int64, 4)
+    assert pl.Array(pl.Int64, (4,)) != pl.Array(pl.Int64, (4, 2))
+
 
 @pytest.mark.parametrize(
     ("data", "inner_type"),

@@ -26,6 +26,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
@@ -286,6 +287,10 @@ impl Series {
         true
     }
 
+    pub fn from_arrow_chunks(name: &str, arrays: Vec<ArrayRef>) -> PolarsResult<Series> {
+        Self::try_from((name, arrays))
+    }
+
     pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
         Self::try_from((name, array))
     }
@@ -357,8 +362,12 @@ impl Series {
         self._get_inner_mut().as_single_ptr()
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
+
+    /// Cast `[Series]` to another `[DataType]`.
+    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         use DataType as D;
 
         let do_clone = match dtype {
@@ -424,12 +433,30 @@ impl Series {
             Some(ref dtype) => dtype,
         };
 
-        let ret = self.0.cast(dtype);
+        // Always allow casting all nulls to other all nulls.
         let len = self.len();
         if self.null_count() == len {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
-        ret
+
+        let new_options = match options {
+            // Strictness is handled on this level to improve error messages.
+            CastOptions::Strict => CastOptions::NonStrict,
+            opt => opt,
+        };
+
+        let ret = self.0.cast(dtype, new_options);
+
+        match options {
+            CastOptions::NonStrict | CastOptions::Overflowing => ret,
+            CastOptions::Strict => {
+                let ret = ret?;
+                if self.null_count() != ret.null_count() {
+                    handle_casting_failures(self, &ret)?;
+                }
+                Ok(ret)
+            },
+        }
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.
@@ -448,7 +475,7 @@ impl Series {
                 })
             },
             DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
-            _ => self.cast(dtype),
+            _ => self.cast_with_options(dtype, CastOptions::Overflowing),
         }
     }
 
@@ -456,7 +483,7 @@ impl Series {
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => Ok(self.clone()),
-            _ => self.cast(&DataType::Float64),
+            _ => self.cast_with_options(&DataType::Float64, CastOptions::Overflowing),
         }
     }
 
@@ -749,11 +776,7 @@ impl Series {
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let s = self.cast(dtype)?;
-        if self.null_count() != s.null_count() {
-            handle_casting_failures(self, &s)?;
-        }
-        Ok(s)
+        self.cast_with_options(dtype, CastOptions::Strict)
     }
 
     #[cfg(feature = "dtype-time")]
@@ -889,7 +912,26 @@ impl Series {
                 let val = self.mean();
                 Scalar::new(DataType::Float64, val.into())
             },
-            dt if dt.is_temporal() => {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let val = self.mean().map(|v| (v * MS_IN_DAY as f64) as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(DataType::Datetime(TimeUnit::Milliseconds, None), av)
+            },
+            #[cfg(feature = "dtype-datetime")]
+            dt @ DataType::Datetime(_, _) => {
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
+            },
+            #[cfg(feature = "dtype-duration")]
+            dt @ DataType::Duration(_) => {
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
+            },
+            #[cfg(feature = "dtype-time")]
+            dt @ DataType::Time => {
                 let val = self.mean().map(|v| v as i64);
                 let av: AnyValue = val.into();
                 Scalar::new(dt.clone(), av)
@@ -1101,18 +1143,12 @@ mod test {
             let mut s1 = s1.clone();
             s1.append(&s2).unwrap();
             assert_eq!(s1.len(), 3);
-            #[cfg(feature = "python")]
-            assert_eq!(s1.get(2).unwrap(), AnyValue::Float64(3.0));
-            #[cfg(not(feature = "python"))]
             assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
         }
 
         {
             let mut s2 = s2.clone();
             s2.extend(&s1).unwrap();
-            #[cfg(feature = "python")]
-            assert_eq!(s2.get(2).unwrap(), AnyValue::Float64(2.29)); // 2.3 == 2.2999999999999998
-            #[cfg(not(feature = "python"))]
             assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
         }
     }

@@ -147,21 +147,3 @@ def test_map_groups_numpy_output_3057() -> None:
 
     expected = pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]})
     assert_frame_equal(result, expected)
-
-
-def test_apply_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 1, 2, 2, 3],
-            "b": [1, 2, 3, 4, 5],
-        }
-    ).set_sorted("a")
-
-    with pytest.deprecated_call():
-        df.group_by("a").apply(lambda x: x)
-    with pytest.deprecated_call():
-        df.rolling("a", period="2i").apply(lambda x: x, schema=None)
-    with pytest.deprecated_call():
-        df.group_by_dynamic("a", every="2i").apply(lambda x: x, schema=None)
-    with pytest.deprecated_call():
-        pl.apply(["a", "b"], lambda x: x)

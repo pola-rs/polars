@@ -155,7 +155,7 @@ impl<'a> Iterator for FlatIter<'a> {
         } else {
             if self.chunk_offset < self.current_array.len() {
                 let mut arr = unsafe { self.current_array.sliced_unchecked(self.chunk_offset, 1) };
-                self.item.swap(&mut arr);
+                unsafe { self.item.swap(&mut arr) };
             } else {
                 match self.chunks.pop() {
                     Some(arr) => {

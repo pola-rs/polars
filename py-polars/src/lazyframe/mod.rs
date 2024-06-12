@@ -11,6 +11,8 @@ use polars::io::cloud::CloudOptions;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_parquet::arrow::write::StatisticsOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
@@ -148,7 +150,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema, cloud_options, retries
     )
     )]
     fn new_from_csv(
@@ -179,6 +181,8 @@ impl PyLazyFrame {
         decimal_comma: bool,
         glob: bool,
         schema: Option<Wrap<Schema>>,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
@@ -195,6 +199,32 @@ impl PyLazyFrame {
                 .map(|(name, dtype)| Field::new(&name, dtype.0))
                 .collect::<Schema>()
         });
+
+        #[cfg(feature = "cloud")]
+        let cloud_options = {
+            let first_path = if let Some(path) = &path {
+                path
+            } else {
+                paths
+                    .first()
+                    .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+            };
+
+            let first_path_url = first_path.to_string_lossy();
+            let mut cloud_options = cloud_options
+                .map(|kv| parse_cloud_options(&first_path_url, kv))
+                .transpose()?;
+            if retries > 0 {
+                cloud_options =
+                    cloud_options
+                        .or_else(|| Some(CloudOptions::default()))
+                        .map(|mut options| {
+                            options.max_retries = retries;
+                            options
+                        });
+            }
+            cloud_options
+        };
 
         let r = if let Some(path) = path.as_ref() {
             LazyCsvReader::new(path)
@@ -226,7 +256,8 @@ impl PyLazyFrame {
             .with_truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
-            .with_raise_if_empty(raise_if_empty);
+            .with_raise_if_empty(raise_if_empty)
+            .with_cloud_options(cloud_options);
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
@@ -494,7 +525,7 @@ impl PyLazyFrame {
             [by_column],
             SortMultipleOptions {
                 descending: vec![descending],
-                nulls_last,
+                nulls_last: vec![nulls_last],
                 multithreaded,
                 maintain_order,
             },
@@ -506,7 +537,7 @@ impl PyLazyFrame {
         &self,
         by: Vec<PyExpr>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         maintain_order: bool,
         multithreaded: bool,
     ) -> Self {
@@ -524,50 +555,24 @@ impl PyLazyFrame {
         .into()
     }
 
-    fn top_k(
-        &self,
-        k: IdxSize,
-        by: Vec<PyExpr>,
-        descending: Vec<bool>,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
-    ) -> Self {
+    fn top_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
         ldf.top_k(
             k,
             exprs,
-            SortMultipleOptions {
-                descending,
-                nulls_last,
-                maintain_order,
-                multithreaded,
-            },
+            SortMultipleOptions::new().with_order_descending_multi(descending),
         )
         .into()
     }
 
-    fn bottom_k(
-        &self,
-        k: IdxSize,
-        by: Vec<PyExpr>,
-        descending: Vec<bool>,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
-    ) -> Self {
+    fn bottom_k(&self, k: IdxSize, by: Vec<PyExpr>, descending: Vec<bool>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = by.to_exprs();
         ldf.bottom_k(
             k,
             exprs,
-            SortMultipleOptions {
-                descending,
-                nulls_last,
-                maintain_order,
-                multithreaded,
-            },
+            SortMultipleOptions::new().with_order_descending_multi(descending),
         )
         .into()
     }
@@ -659,7 +664,7 @@ impl PyLazyFrame {
         path: PathBuf,
         compression: &str,
         compression_level: Option<i32>,
-        statistics: bool,
+        statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
         data_pagesize_limit: Option<usize>,
         maintain_order: bool,
@@ -668,7 +673,7 @@ impl PyLazyFrame {
 
         let options = ParquetWriteOptions {
             compression,
-            statistics,
+            statistics: statistics.0,
             row_group_size,
             data_pagesize_limit,
             maintain_order,

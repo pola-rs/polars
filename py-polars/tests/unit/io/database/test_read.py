@@ -596,17 +596,6 @@ def test_read_database_mocked(
         pytest.param(
             *ExceptionTestParams(
                 read_method="read_database",
-                query="SELECT * FROM test_data",
-                protocol=sqlite3.connect(":memory:"),
-                errclass=ValueError,
-                errmsg=r"`read_database` \*\*kwargs only exist for passthrough to `read_database_uri`",
-                kwargs={"partition_on": "id"},
-            ),
-            id="Invalid kwargs",
-        ),
-        pytest.param(
-            *ExceptionTestParams(
-                read_method="read_database",
                 query="SELECT * FROM sqlite_master",
                 protocol=sqlite3.connect(":memory:"),
                 errclass=ValueError,
@@ -621,11 +610,22 @@ def test_read_database_mocked(
                 engine="adbc",
                 query="SELECT * FROM test_data",
                 protocol=sqlite3.connect(":memory:"),
-                errclass=ValueError,
-                errmsg=r"`read_database` \*\*kwargs only exist for passthrough to `read_database_uri`",
+                errclass=TypeError,
+                errmsg=r"unexpected keyword argument 'partition_on'",
                 kwargs={"partition_on": "id"},
             ),
             id="Invalid kwargs",
+        ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database",
+                engine="adbc",
+                query="SELECT * FROM test_data",
+                protocol="{not:a, valid:odbc_string}",
+                errclass=ValueError,
+                errmsg=r"unable to identify string connection as valid ODBC",
+            ),
+            id="Invalid ODBC string",
         ),
     ],
 )

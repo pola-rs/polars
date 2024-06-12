@@ -1,206 +1,153 @@
-use std::cmp::Ordering;
-
-use arrow::array::{BooleanArray, MutableBooleanArray};
-use arrow::bitmap::MutableBitmap;
-use either::Either;
+use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
+use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_core::series::IsSorted;
 use polars_utils::total_ord::TotalOrd;
-use rayon::prelude::*;
 
-fn arg_partition<T: Send, C: Fn(&T, &T) -> Ordering + Sync>(
-    v: &mut [T],
-    k: usize,
-    sort_options: SortOptions,
-    cmp: C,
-) -> &[T] {
-    let (lower, _el, upper) = v.select_nth_unstable_by(k, &cmp);
-    let to_sort = if sort_options.descending {
-        lower
+fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
+    if num_valid < out_len {
+        let mut bm = MutableBitmap::with_capacity(out_len);
+        bm.extend_constant(num_valid, true);
+        bm.extend_constant(out_len - num_valid, false);
+        Some(bm.freeze())
     } else {
-        upper
-    };
-    let cmp = |a: &T, b: &T| {
-        if sort_options.descending {
-            cmp(a, b)
-        } else {
-            cmp(b, a)
-        }
-    };
-    match (sort_options.multithreaded, sort_options.maintain_order) {
-        (true, true) => POOL.install(|| {
-            to_sort.par_sort_by(cmp);
-        }),
-        (true, false) => POOL.install(|| {
-            to_sort.par_sort_unstable_by(cmp);
-        }),
-        (false, true) => to_sort.sort_by(cmp),
-        (false, false) => to_sort.sort_unstable_by(cmp),
-    };
-    to_sort
-}
-
-fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, sort_options: SortOptions) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkSort<T>,
-{
-    if k >= ca.len() {
-        return ca.sort_with(
-            sort_options
-                .with_maintain_order(false)
-                .with_order_reversed(),
-        );
-    }
-
-    // descending is opposite from sort as top-k returns largest
-    let k = if sort_options.descending {
-        std::cmp::min(k, ca.len())
-    } else {
-        ca.len().saturating_sub(k + 1)
-    };
-
-    match ca.to_vec_null_aware() {
-        Either::Left(mut v) => {
-            let values = arg_partition(
-                &mut v,
-                k,
-                sort_options.with_maintain_order(false),
-                TotalOrd::tot_cmp,
-            );
-            ChunkedArray::from_slice(ca.name(), values)
-        },
-        Either::Right(mut v) => {
-            let values = arg_partition(
-                &mut v,
-                k,
-                sort_options.with_maintain_order(false),
-                TotalOrd::tot_cmp,
-            );
-            let mut out = ChunkedArray::from_iter(values.iter().copied());
-            out.rename(ca.name());
-            out
-        },
+        None
     }
 }
 
 fn top_k_bool_impl(
     ca: &ChunkedArray<BooleanType>,
     k: usize,
-    sort_options: SortOptions,
+    descending: bool,
 ) -> ChunkedArray<BooleanType> {
-    if ca.null_count() == 0 {
-        let true_count = ca.sum().unwrap() as usize;
-        let mut bitmap = MutableBitmap::with_capacity(k);
-        if !sort_options.descending {
-            // true first
-            bitmap.extend_constant(std::cmp::min(k, true_count), true);
-            bitmap.extend_constant(k.saturating_sub(true_count), false);
-        } else {
-            let false_count = ca.len().saturating_sub(true_count);
-            bitmap.extend_constant(std::cmp::min(k, false_count), false);
-            bitmap.extend_constant(k.saturating_sub(false_count), true);
-        }
-        let arr = BooleanArray::from_data_default(bitmap.into(), None);
-        unsafe {
-            ChunkedArray::from_chunks_and_dtype(ca.name(), vec![Box::new(arr)], DataType::Boolean)
-        }
-    } else {
-        let null_count = ca.null_count();
-        let true_count = ca.sum().unwrap() as usize;
-        let false_count = ca.len() - true_count - null_count;
-        let mut remaining = k;
-
-        fn extend_constant_check_remaining(
-            array: &mut MutableBooleanArray,
-            remaining: &mut usize,
-            additional: usize,
-            value: Option<bool>,
-        ) {
-            array.extend_constant(std::cmp::min(additional, *remaining), value);
-            *remaining = remaining.saturating_sub(additional);
-        }
-
-        let mut array = MutableBooleanArray::with_capacity(k);
-        if !sort_options.descending {
-            if sort_options.nulls_last {
-                // True -> False -> Null
-                extend_constant_check_remaining(&mut array, &mut remaining, true_count, Some(true));
-                extend_constant_check_remaining(
-                    &mut array,
-                    &mut remaining,
-                    false_count,
-                    Some(false),
-                );
-                extend_constant_check_remaining(&mut array, &mut remaining, null_count, None);
-            } else {
-                // Null -> True -> False
-                extend_constant_check_remaining(&mut array, &mut remaining, null_count, None);
-                extend_constant_check_remaining(&mut array, &mut remaining, true_count, Some(true));
-                extend_constant_check_remaining(
-                    &mut array,
-                    &mut remaining,
-                    false_count,
-                    Some(false),
-                );
-            }
-        } else {
-            // False -> True -> Null
-            extend_constant_check_remaining(&mut array, &mut remaining, false_count, Some(false));
-            extend_constant_check_remaining(&mut array, &mut remaining, true_count, Some(true));
-            extend_constant_check_remaining(&mut array, &mut remaining, null_count, None);
-        }
-        let mut new_ca: ChunkedArray<BooleanType> = BooleanArray::from(array).into();
-        new_ca.rename(ca.name());
-        new_ca
+    if k >= ca.len() && ca.null_count() == 0 {
+        return ca.clone();
     }
+
+    let null_count = ca.null_count();
+    let non_null_count = ca.len() - ca.null_count();
+    let true_count = ca.sum().unwrap() as usize;
+    let false_count = non_null_count - true_count;
+    let mut out_len = k.min(ca.len());
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    // Logical sequence of physical bits.
+    let sequence = if descending {
+        [
+            (false_count, false),
+            (true_count, true),
+            (null_count, false),
+        ]
+    } else {
+        [
+            (true_count, true),
+            (false_count, false),
+            (null_count, false),
+        ]
+    };
+
+    let mut bm = MutableBitmap::with_capacity(out_len);
+    for (n, value) in sequence {
+        if out_len == 0 {
+            break;
+        }
+        let extra = out_len.min(n);
+        bm.extend_constant(extra, value);
+        out_len -= extra;
+    }
+
+    let arr = BooleanArray::from_data_default(bm.into(), validity);
+    ChunkedArray::with_chunk_like(ca, arr)
+}
+
+fn top_k_num_impl<T>(ca: &ChunkedArray<T>, k: usize, descending: bool) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    if k >= ca.len() && ca.null_count() == 0 {
+        return ca.clone();
+    }
+
+    // Get rid of all the nulls and transform into Vec<T::Native>.
+    let nnca = ca.drop_nulls().rechunk();
+    let chunk = nnca.downcast_into_iter().next().unwrap();
+    let (_, buffer, _) = chunk.into_inner();
+    let mut vec = buffer.make_mut();
+
+    // Partition.
+    if k < vec.len() {
+        if descending {
+            vec.select_nth_unstable_by(k, TotalOrd::tot_cmp);
+        } else {
+            vec.select_nth_unstable_by(k, |a, b| TotalOrd::tot_cmp(b, a));
+        }
+    }
+
+    // Reconstruct output (with nulls at the end).
+    let out_len = k.min(ca.len());
+    let non_null_count = ca.len() - ca.null_count();
+    vec.resize(out_len, T::Native::default());
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    let arr = PrimitiveArray::from_vec(vec).with_validity_typed(validity);
+    ChunkedArray::with_chunk_like(ca, arr)
 }
 
 fn top_k_binary_impl(
     ca: &ChunkedArray<BinaryType>,
     k: usize,
-    sort_options: SortOptions,
+    descending: bool,
 ) -> ChunkedArray<BinaryType> {
-    if k >= ca.len() {
-        return ca.sort_with(
-            sort_options
-                .with_order_reversed()
-                // single series main order is meaningless
-                .with_maintain_order(false),
-        );
+    if k >= ca.len() && ca.null_count() == 0 {
+        return ca.clone();
     }
 
-    // descending is opposite from sort as top-k returns largest
-    let k = if sort_options.descending {
-        std::cmp::min(k, ca.len())
-    } else {
-        ca.len().saturating_sub(k + 1)
+    // Get rid of all the nulls and transform into mutable views.
+    let nnca = ca.drop_nulls().rechunk();
+    let chunk = nnca.downcast_into_iter().next().unwrap();
+    let buffers = chunk.data_buffers().clone();
+    let mut views = chunk.into_views();
+
+    // Partition.
+    if k < views.len() {
+        if descending {
+            views.select_nth_unstable_by(k, |a, b| unsafe {
+                let a_sl = a.get_slice_unchecked(&buffers);
+                let b_sl = b.get_slice_unchecked(&buffers);
+                a_sl.cmp(b_sl)
+            });
+        } else {
+            views.select_nth_unstable_by(k, |a, b| unsafe {
+                let a_sl = a.get_slice_unchecked(&buffers);
+                let b_sl = b.get_slice_unchecked(&buffers);
+                b_sl.cmp(a_sl)
+            });
+        }
+    }
+
+    // Reconstruct output (with nulls at the end).
+    let out_len = k.min(ca.len());
+    let non_null_count = ca.len() - ca.null_count();
+    views.resize(out_len, View::default());
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    let arr = unsafe {
+        BinaryViewArray::new_unchecked_unknown_md(
+            ArrowDataType::BinaryView,
+            views.into(),
+            buffers,
+            validity,
+            None,
+        )
     };
-
-    if ca.null_count() == 0 {
-        let mut v: Vec<&[u8]> = Vec::with_capacity(ca.len());
-        for arr in ca.downcast_iter() {
-            v.extend(arr.non_null_values_iter());
-        }
-        let values = arg_partition(&mut v, k, sort_options, TotalOrd::tot_cmp);
-        ChunkedArray::from_slice(ca.name(), values)
-    } else {
-        let mut v = Vec::with_capacity(ca.len());
-        for arr in ca.downcast_iter() {
-            v.extend(arr.iter());
-        }
-        let values = arg_partition(&mut v, k, sort_options, TotalOrd::tot_cmp);
-        let mut out = ChunkedArray::from_iter(values.iter().copied());
-        out.rename(ca.name());
-        out
-    }
+    ChunkedArray::with_chunk_like(ca, arr)
 }
 
-pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
+pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     fn extract_target_and_k(s: &[Series]) -> PolarsResult<(usize, &Series)> {
         let k_s = &s[1];
-
         polars_ensure!(
             k_s.len() == 1,
             ComputeError: "`k` must be a single value for `top_k`."
@@ -211,7 +158,6 @@ pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
         };
 
         let src = &s[0];
-
         Ok((k as usize, src))
     }
 
@@ -221,15 +167,29 @@ pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
         return Ok(src.clone());
     }
 
-    match src.is_sorted_flag() {
-        polars_core::series::IsSorted::Ascending => {
-            // TopK is the k element in the bottom of ascending sorted array
-            return Ok(src.slice((src.len() - k) as i64, k).reverse());
-        },
-        polars_core::series::IsSorted::Descending => {
-            return Ok(src.slice(0, k));
-        },
-        _ => {},
+    let sorted_flag = src.is_sorted_flag();
+    let is_sorted = match src.is_sorted_flag() {
+        IsSorted::Ascending => true,
+        IsSorted::Descending => true,
+        IsSorted::Not => false,
+    };
+    if is_sorted {
+        let out_len = k.min(src.len());
+        let ignored_len = src.len() - out_len;
+
+        let slice_at_start = (sorted_flag == IsSorted::Ascending) ^ descending;
+        let nulls_at_start = src.get(0).unwrap() == AnyValue::Null;
+        let offset = if nulls_at_start == slice_at_start {
+            src.null_count().min(ignored_len)
+        } else {
+            0
+        };
+
+        return if slice_at_start {
+            Ok(src.slice(offset as i64, out_len))
+        } else {
+            Ok(src.slice(-(offset as i64) - (out_len as i64), out_len))
+        };
     }
 
     let origin_dtype = src.dtype();
@@ -237,19 +197,29 @@ pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
     let s = src.to_physical_repr();
 
     match s.dtype() {
-        DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, sort_options).into_series()),
+        DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, descending).into_series()),
         DataType::String => {
-            let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, sort_options);
+            let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, descending);
             let ca = unsafe { ca.to_string_unchecked() };
             Ok(ca.into_series())
         },
-        DataType::Binary => {
-            Ok(top_k_binary_impl(s.binary().unwrap(), k, sort_options).into_series())
+        DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_series()),
+        DataType::Decimal(_, _) => {
+            let src = src.decimal().unwrap();
+            let ca = top_k_num_impl(src, k, descending);
+            let mut lca = DecimalChunked::new_logical(ca);
+            lca.2 = Some(DataType::Decimal(src.precision(), Some(src.scale())));
+            Ok(lca.into_series())
+        },
+        DataType::Null => Ok(src.slice(0, k)),
+        DataType::Struct(_) => {
+            // Fallback to more generic impl.
+            top_k_by_impl(k, src, &[src.clone()], vec![descending])
         },
         _dt => {
             macro_rules! dispatch {
                 ($ca:expr) => {{
-                    top_k_num_impl($ca, k, sort_options).into_series()
+                    top_k_num_impl($ca, k, descending).into_series()
                 }};
             }
             unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
@@ -257,7 +227,7 @@ pub fn top_k(s: &[Series], sort_options: SortOptions) -> PolarsResult<Series> {
     }
 }
 
-pub fn top_k_by(s: &[Series], sort_options: SortMultipleOptions) -> PolarsResult<Series> {
+pub fn top_k_by(s: &[Series], descending: Vec<bool>) -> PolarsResult<Series> {
     /// Return (k, src, by)
     fn extract_parameters(s: &[Series]) -> PolarsResult<(usize, &Series, &[Series])> {
         let k_s = &s[1];
@@ -294,22 +264,28 @@ pub fn top_k_by(s: &[Series], sort_options: SortMultipleOptions) -> PolarsResult
         }
     }
 
-    top_k_by_impl(k, src, by, sort_options)
+    top_k_by_impl(k, src, by, descending)
 }
 
 fn top_k_by_impl(
     k: usize,
     src: &Series,
     by: &[Series],
-    sort_options: SortMultipleOptions,
+    descending: Vec<bool>,
 ) -> PolarsResult<Series> {
     if src.is_empty() {
         return Ok(src.clone());
     }
 
-    let multithreaded = sort_options.multithreaded;
+    let multithreaded = k >= 10000;
+    let mut sort_options = SortMultipleOptions {
+        descending: descending.into_iter().map(|x| !x).collect(),
+        nulls_last: vec![true; by.len()],
+        multithreaded,
+        maintain_order: false,
+    };
 
-    let idx = _arg_bottom_k(k, by, &mut sort_options.with_order_reversed())?;
+    let idx = _arg_bottom_k(k, by, &mut sort_options)?;
 
     let result = unsafe {
         if multithreaded {

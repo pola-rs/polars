@@ -4,6 +4,7 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
@@ -259,13 +260,18 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> Self {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool, allow_overflow: bool) -> Self {
         let dt = data_type.0;
-        let expr = if strict {
-            self.inner.clone().strict_cast(dt)
+
+        let options = if allow_overflow {
+            CastOptions::Overflowing
+        } else if strict {
+            CastOptions::Strict
         } else {
-            self.inner.clone().cast(dt)
+            CastOptions::NonStrict
         };
+
+        let expr = self.inner.clone().cast_with_options(dt, options);
         expr.into()
     }
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
@@ -293,88 +299,27 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: Self, nulls_last: bool, maintain_order: bool, multithreaded: bool) -> Self {
-        self.inner
-            .clone()
-            .top_k(
-                k.inner,
-                SortOptions::default()
-                    .with_nulls_last(nulls_last)
-                    .with_maintain_order(maintain_order)
-                    .with_multithreaded(multithreaded),
-            )
-            .into()
+    fn top_k(&self, k: Self) -> Self {
+        self.inner.clone().top_k(k.inner).into()
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k_by(
-        &self,
-        k: Self,
-        by: Vec<Self>,
-        descending: Vec<bool>,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
-    ) -> Self {
+    fn top_k_by(&self, by: Vec<Self>, k: Self, descending: Vec<bool>) -> Self {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.inner.clone().top_k_by(k.inner, by, descending).into()
+    }
+
+    #[cfg(feature = "top_k")]
+    fn bottom_k(&self, k: Self) -> Self {
+        self.inner.clone().bottom_k(k.inner).into()
+    }
+
+    #[cfg(feature = "top_k")]
+    fn bottom_k_by(&self, by: Vec<Self>, k: Self, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
         self.inner
             .clone()
-            .top_k_by(
-                k.inner,
-                by,
-                SortMultipleOptions {
-                    descending,
-                    nulls_last,
-                    maintain_order,
-                    multithreaded,
-                },
-            )
-            .into()
-    }
-
-    #[cfg(feature = "top_k")]
-    fn bottom_k(
-        &self,
-        k: Self,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
-    ) -> Self {
-        self.inner
-            .clone()
-            .bottom_k(
-                k.inner,
-                SortOptions::default()
-                    .with_nulls_last(nulls_last)
-                    .with_maintain_order(maintain_order)
-                    .with_multithreaded(multithreaded),
-            )
-            .into()
-    }
-
-    #[cfg(feature = "top_k")]
-    fn bottom_k_by(
-        &self,
-        k: Self,
-        by: Vec<Self>,
-        descending: Vec<bool>,
-        nulls_last: bool,
-        maintain_order: bool,
-        multithreaded: bool,
-    ) -> Self {
-        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-        self.inner
-            .clone()
-            .bottom_k_by(
-                k.inner,
-                by,
-                SortMultipleOptions {
-                    descending,
-                    nulls_last,
-                    maintain_order,
-                    multithreaded,
-                },
-            )
+            .bottom_k_by(k.inner, by, descending)
             .into()
     }
 
@@ -415,7 +360,7 @@ impl PyExpr {
         &self,
         by: Vec<Self>,
         descending: Vec<bool>,
-        nulls_last: bool,
+        nulls_last: Vec<bool>,
         multithreaded: bool,
         maintain_order: bool,
     ) -> Self {
@@ -662,14 +607,35 @@ impl PyExpr {
         self.inner.clone().is_duplicated().into()
     }
 
-    fn over(&self, partition_by: Vec<Self>, mapping: Wrap<WindowMapping>) -> Self {
+    #[pyo3(signature = (partition_by, order_by, order_by_descending, order_by_nulls_last, mapping_strategy))]
+    fn over(
+        &self,
+        partition_by: Vec<Self>,
+        order_by: Option<Vec<Self>>,
+        order_by_descending: bool,
+        order_by_nulls_last: bool,
+        mapping_strategy: Wrap<WindowMapping>,
+    ) -> Self {
         let partition_by = partition_by
             .into_iter()
             .map(|e| e.inner)
             .collect::<Vec<Expr>>();
+
+        let order_by = order_by.map(|order_by| {
+            (
+                order_by.into_iter().map(|e| e.inner).collect::<Vec<Expr>>(),
+                SortOptions {
+                    descending: order_by_descending,
+                    nulls_last: order_by_nulls_last,
+                    maintain_order: false,
+                    ..Default::default()
+                },
+            )
+        });
+
         self.inner
             .clone()
-            .over_with_options(partition_by, mapping.0)
+            .over_with_options(partition_by, order_by, mapping_strategy.0)
             .into()
     }
 

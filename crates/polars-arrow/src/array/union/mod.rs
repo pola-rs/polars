@@ -1,6 +1,6 @@
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
-use super::{new_empty_array, new_null_array, Array};
+use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::{ArrowDataType, Field, UnionMode};
@@ -378,5 +378,38 @@ impl UnionArray {
     /// Panics iff `data_type`'s logical type is not [`ArrowDataType::Union`].
     pub fn is_sparse(data_type: &ArrowDataType) -> bool {
         Self::get_all(data_type).2.is_sparse()
+    }
+}
+
+impl Splitable for UnionArray {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_types, rhs_types) = unsafe { self.types.split_at_unchecked(offset) };
+        let (lhs_offsets, rhs_offsets) = self.offsets.as_ref().map_or((None, None), |v| {
+            let (lhs, rhs) = unsafe { v.split_at_unchecked(offset) };
+            (Some(lhs), Some(rhs))
+        });
+
+        (
+            Self {
+                types: lhs_types,
+                map: self.map,
+                fields: self.fields.clone(),
+                offsets: lhs_offsets,
+                data_type: self.data_type.clone(),
+                offset: self.offset,
+            },
+            Self {
+                types: rhs_types,
+                map: self.map,
+                fields: self.fields.clone(),
+                offsets: rhs_offsets,
+                data_type: self.data_type.clone(),
+                offset: self.offset + offset,
+            },
+        )
     }
 }

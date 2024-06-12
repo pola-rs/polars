@@ -5,12 +5,8 @@ mod binary_offset;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
-#[cfg(any(
-    feature = "dtype-datetime",
-    feature = "dtype-date",
-    feature = "dtype-time"
-))]
-mod dates_time;
+#[cfg(feature = "dtype-date")]
+mod date;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
 #[cfg(feature = "dtype-decimal")]
@@ -25,6 +21,8 @@ mod object;
 mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+#[cfg(feature = "dtype-time")]
+mod time;
 
 use std::any::Any;
 use std::borrow::Cow;
@@ -149,7 +147,10 @@ macro_rules! impl_dyn_series {
             unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
                 use DataType::*;
                 match self.dtype() {
-                    Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().agg_sum(groups),
+                    Int8 | UInt8 | Int16 | UInt16 => self
+                        .cast(&Int64, CastOptions::Overflowing)
+                        .unwrap()
+                        .agg_sum(groups),
                     _ => self.0.agg_sum(groups),
                 }
             }
@@ -323,8 +324,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
             }
 
-            fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-                self.0.cast(data_type)
+            fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+                self.0.cast_with_options(data_type, options)
             }
 
             fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -466,7 +467,7 @@ impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     }
     fn bit_repr_small(&self) -> UInt32Chunked {
         self.0
-            .cast(&DataType::UInt32)
+            .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
             .unwrap()
             .u32()
             .unwrap()

@@ -6,7 +6,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -141,7 +141,10 @@ def test_cast() -> None:
         (True, True),
     ]
 
-    with pytest.raises(ComputeError, match="unsupported use of FORMAT in CAST"):
+    with pytest.raises(
+        SQLInterfaceError,
+        match="use of FORMAT is not currently supported in CAST",
+    ):
         pl.SQLContext(df=df, eager=True).execute(
             "SELECT CAST(a AS STRING FORMAT 'HEX') FROM df"
         )

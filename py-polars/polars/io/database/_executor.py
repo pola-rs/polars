@@ -105,8 +105,11 @@ class ConnectionExecutor:
     ) -> None:
         # if we created it and are finished with it, we can
         # close the cursor (but NOT the connection)
-        if type(self.cursor).__name__ == "AsyncConnection":
-            _run_async(self._close_async_cursor())
+        if self._is_alchemy_async(self.cursor):
+            from sqlalchemy.ext.asyncio import AsyncConnection
+
+            if isinstance(self.cursor, AsyncConnection):
+                _run_async(self._close_async_cursor())
         elif self.can_close_cursor and hasattr(self.cursor, "close"):
             self.cursor.close()
 
@@ -312,11 +315,42 @@ class ConnectionExecutor:
 
         return schema_overrides
 
+    @staticmethod
+    def _is_alchemy_async(conn: Any) -> bool:
+        """Check if the cursor/connection/session object is async."""
+        from sqlalchemy.ext.asyncio import (
+            AsyncConnection,
+            AsyncSession,
+            async_sessionmaker,
+        )
+
+        return isinstance(conn, (AsyncConnection, AsyncSession, async_sessionmaker))
+
+    @staticmethod
+    def _is_alchemy_engine(conn: Any) -> bool:
+        """Check if the cursor/connection/session object is async."""
+        from sqlalchemy.engine import Engine
+        from sqlalchemy.ext.asyncio import AsyncEngine
+
+        return isinstance(conn, (Engine, AsyncEngine))
+
+    @staticmethod
+    def _is_alchemy_session(conn: Any) -> bool:
+        """Check if the cursor/connection/session object is async."""
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+        )
+        from sqlalchemy.orm import Session, sessionmaker
+
+        return isinstance(
+            conn, (Session, sessionmaker, AsyncSession, async_sessionmaker)
+        )
+
     def _normalise_cursor(self, conn: Any) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver_name == "sqlalchemy":
-            conn_type = type(conn).__name__
-            if conn_type in ("Session", "async_sessionmaker"):
+            if self._is_alchemy_session(conn):
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
@@ -326,7 +360,7 @@ class ConnectionExecutor:
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn.engine.raw_connection().driver_connection.c
-                elif conn_type in ("AsyncEngine", "Engine"):
+                elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True
                     return conn.connect()
@@ -348,9 +382,11 @@ class ConnectionExecutor:
 
     async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
         """Execute a query using an async SQLAlchemy connection."""
-        is_session = type(self.cursor).__name__ == "async_sessionmaker"
+        is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
         async with cursor as conn:
+            if is_session and not hasattr(conn, "execute"):
+                conn = conn.session
             result = await conn.execute(query, **options)
             return result
 
@@ -362,10 +398,6 @@ class ConnectionExecutor:
         from sqlalchemy.sql import text
         from sqlalchemy.sql.elements import TextClause
 
-        is_async = type(self.cursor).__name__ in (
-            "AsyncConnection",
-            "async_sessionmaker",
-        )
         param_key = "parameters"
         cursor_execute = None
         if (
@@ -378,6 +410,7 @@ class ConnectionExecutor:
             param_key = "params"
 
         params = options.get(param_key)
+        is_async = self._is_alchemy_async(self.cursor)
         if (
             not is_async
             and isinstance(params, Sequence)

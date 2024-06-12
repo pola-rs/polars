@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -13,6 +14,57 @@ if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
 
     from polars.type_aliases import TimeUnit
+
+
+DATE_FORMATS = ["%Y{}%m{}%d", "%d{}%m{}%Y"]
+SEPARATORS = ["-", "/", "."]
+TIME_FORMATS = [
+    "T%H:%M:%S",
+    "T%H%M%S",
+    "T%H:%M",
+    "T%H%M",
+    " %H:%M:%S",
+    " %H%M%S",
+    " %H:%M",
+    " %H%M",
+    "",  # allow no time part (plain date)
+]
+FRACTIONS = [
+    "%.9f",
+    "%.6f",
+    "%.3f",
+    # "%.f", # alternative which allows any number of digits
+    "",
+]
+TIMEZONES = ["%#z", ""]
+DATETIME_PATTERNS = [
+    date_format.format(separator, separator) + time_format + fraction + tz
+    for separator in SEPARATORS
+    for date_format in DATE_FORMATS
+    for time_format in TIME_FORMATS
+    for fraction in FRACTIONS
+    if time_format.endswith("%S") or fraction == ""
+    for tz in TIMEZONES
+    if date_format.startswith("%Y") and time_format != "" or tz == ""
+]
+
+
+@pytest.mark.parametrize("fmt", DATETIME_PATTERNS)
+def test_to_datetime_inferable_formats(fmt: str) -> None:
+    time_string = (
+        fmt.replace("%Y", "2024")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "23")
+        .replace("%M", "34")
+        .replace("%S", "45")
+        .replace("%.3f", ".123")
+        .replace("%.6f", ".123456")
+        .replace("%.9f", ".123456789")
+        .replace("%#z", "+0100")
+    )
+
+    pl.Series([time_string]).str.to_datetime(strict=True)
 
 
 @st.composite

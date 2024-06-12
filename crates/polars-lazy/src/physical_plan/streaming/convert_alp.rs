@@ -429,6 +429,7 @@ pub(crate) fn insert_streaming_nodes(
             },
         }
     }
+
     let mut inserted = false;
     for tree in pipeline_trees {
         if is_valid_tree(&tree)

@@ -150,7 +150,7 @@ impl ApplyExpr {
             // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-            let input = Series::full_null("", 0, &input_dtype);
+            let input = Series::full_null("", 0, input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
             let ca = ListChunked::full(&name, &output, 0);
@@ -238,9 +238,10 @@ impl ApplyExpr {
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac|
+            .map(|ac| {
                 // SAFETY: unstable series never lives longer than the iterator.
-                unsafe { ac.iter_groups(self.pass_name_to_apply) })
+                unsafe { ac.iter_groups(self.pass_name_to_apply) }
+            })
             .collect::<Vec<_>>();
 
         // Length of the items to iterate over.
@@ -457,7 +458,8 @@ fn apply_multiple_elementwise<'a>(
         },
         first_as => {
             let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
-            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal());
+            let aggregated = acs.iter().all(|ac| ac.is_aggregated() | ac.is_literal())
+                && acs.iter().any(|ac| ac.is_aggregated());
             let mut s = acs
                 .iter_mut()
                 .enumerate()

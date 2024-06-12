@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
+use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::*;
 
@@ -50,7 +51,7 @@ use std::slice::Iter;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 
-use self::metadata::{Metadata, MetadataFlags, MetadataProperties};
+use self::metadata::{Metadata, MetadataFlags, MetadataMerge, MetadataProperties};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null};
 
@@ -148,16 +149,21 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// If you want to explicitly the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_dims`]
     pub fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
-        let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
-        chunked_arr.compute_len();
-        chunked_arr
+        unsafe {
+            let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
+            chunked_arr.compute_len();
+            chunked_arr
+        }
     }
 
     /// Create a new [`ChunkedArray`] and explicitly set its `length` and `null_count`.
     ///
     /// If you want to compute the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_compute_len`]
-    pub fn new_with_dims(
+    ///
+    /// # Safety
+    /// The length and null_count must be correct.
+    pub unsafe fn new_with_dims(
         field: Arc<Field>,
         chunks: Vec<ArrayRef>,
         length: IdxSize,
@@ -267,6 +273,21 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.md.as_ref()?.get_distinct_count()
     }
 
+    pub fn merge_metadata(&mut self, md: Metadata<T>) {
+        let Some(self_md) = self.metadata() else {
+            self.md = Some(Arc::new(md));
+            return;
+        };
+
+        match self_md.merge(md) {
+            MetadataMerge::Keep => {},
+            MetadataMerge::New(md) => self.md = Some(Arc::new(md)),
+            MetadataMerge::Conflict => {
+                panic!("Trying to merge metadata, but got conflicting information")
+            },
+        }
+    }
+
     /// Copies [`Metadata`] properties specified by `props`  from `other` with different underlying [`PolarsDataType`] into
     /// `self`.
     ///
@@ -295,26 +316,24 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             "A MetadataProperty was not added to the copy_metadata_cast check"
         );
 
-        // We add a fast path here for if both metadatas are empty, as this is quite a common case.
-        if props.is_empty() || (self.md.is_none() && other.md.is_none()) {
-            return;
-        }
-
         debug_assert!(!props.contains(P::MIN_VALUE));
         debug_assert!(!props.contains(P::MAX_VALUE));
 
-        let md = Arc::make_mut(self.metadata_mut());
-        let other_md = other.effective_metadata();
+        // We add a fast path here for if both metadatas are empty, as this is quite a common case.
+        if props.is_empty() {
+            return;
+        }
 
-        if props.contains(P::SORTED) {
-            md.set_sorted_flag(other_md.is_sorted());
+        let Some(other_md) = other.metadata() else {
+            return;
+        };
+
+        if other.is_empty() {
+            return;
         }
-        if props.contains(P::FAST_EXPLODE_LIST) {
-            md.set_fast_explode_list(other_md.get_fast_explode_list());
-        }
-        if props.contains(P::DISTINCT_COUNT) {
-            md.set_distinct_count(other_md.get_distinct_count());
-        }
+
+        let other_md = other_md.filter_props_cast(props);
+        self.merge_metadata(other_md);
     }
 
     /// Copies [`Metadata`] properties specified by `props` from `other` into `self`.
@@ -337,41 +356,20 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         );
 
         // We add a fast path here for if both metadatas are empty, as this is quite a common case.
-        if props.is_empty() || (self.md.is_none() && other.md.is_none()) {
+        if props.is_empty() {
             return;
         }
 
-        // This checks whether we are okay to just clone the Arc.
-        if props.is_all()
-            || ((props.contains(P::SORTED) || self.is_sorted_flag() == other.is_sorted_flag())
-                && (props.contains(P::FAST_EXPLODE_LIST)
-                    || self.get_fast_explode_list() == other.get_fast_explode_list())
-                && (props.contains(P::MIN_VALUE) || self.get_min_value() == other.get_min_value())
-                && (props.contains(P::MAX_VALUE) || self.get_max_value() == other.get_max_value())
-                && (props.contains(P::DISTINCT_COUNT)
-                    || self.get_distinct_count() == other.get_distinct_count()))
-        {
-            self.md.clone_from(&other.md)
+        let Some(other_md) = other.metadata() else {
+            return;
+        };
+
+        if other.is_empty() {
+            return;
         }
 
-        let md = Arc::make_mut(self.metadata_mut());
-        let other_md = other.effective_metadata();
-
-        if props.contains(P::SORTED) {
-            md.set_sorted_flag(other_md.is_sorted());
-        }
-        if props.contains(P::FAST_EXPLODE_LIST) {
-            md.set_fast_explode_list(other_md.get_fast_explode_list());
-        }
-        if props.contains(P::MIN_VALUE) {
-            md.set_min_value(other_md.get_max_value().cloned());
-        }
-        if props.contains(P::MAX_VALUE) {
-            md.set_max_value(other_md.get_min_value().cloned());
-        }
-        if props.contains(P::DISTINCT_COUNT) {
-            md.set_distinct_count(other_md.get_distinct_count());
-        }
+        let other_md = other_md.filter_props(props);
+        self.merge_metadata(other_md);
     }
 
     /// Get the index of the first non null value in this [`ChunkedArray`].
@@ -429,6 +427,31 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             Some(out)
         } else {
             last_non_null(self.iter_validities(), self.len())
+        }
+    }
+
+    pub fn drop_nulls(&self) -> Self {
+        if self.null_count() == 0 {
+            self.clone()
+        } else {
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    if arr.null_count() == 0 {
+                        arr.to_boxed()
+                    } else {
+                        filter_with_bitmap(arr, arr.validity().unwrap())
+                    }
+                })
+                .collect();
+            unsafe {
+                Self::new_with_dims(
+                    self.field.clone(),
+                    chunks,
+                    (self.len() - self.null_count()) as IdxSize,
+                    0,
+                )
+            }
         }
     }
 

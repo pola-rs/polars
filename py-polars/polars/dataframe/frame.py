@@ -44,11 +44,7 @@ from polars._utils.construction import (
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_nonkeyword_arguments,
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
     deprecate_renamed_parameter,
-    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
@@ -146,7 +142,6 @@ if TYPE_CHECKING:
         Label,
         MultiColSelector,
         MultiIndexSelector,
-        NullStrategy,
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
@@ -628,7 +623,11 @@ class DataFrame:
     @property
     def height(self) -> int:
         """
-        Get the height of the DataFrame.
+        Get the number of rows.
+
+        Returns
+        -------
+        int
 
         Examples
         --------
@@ -641,13 +640,22 @@ class DataFrame:
     @property
     def width(self) -> int:
         """
-        Get the width of the DataFrame.
+        Get the number of columns.
+
+        Returns
+        -------
+        int
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4, 5, 6],
+        ...     }
+        ... )
         >>> df.width
-        1
+        2
         """
         return self._df.width()
 
@@ -655,6 +663,11 @@ class DataFrame:
     def columns(self) -> list[str]:
         """
         Get or set column names.
+
+        Returns
+        -------
+        list of str
+            A list containing the name of each column in order.
 
         Examples
         --------
@@ -701,13 +714,18 @@ class DataFrame:
     @property
     def dtypes(self) -> list[DataType]:
         """
-        Get the datatypes of the columns of this DataFrame.
+        Get the column data types.
 
-        The datatypes can also be found in column headers when printing the DataFrame.
+        The data types can also be found in column headers when printing the DataFrame.
+
+        Returns
+        -------
+        list of DataType
+            A list containing the data type of each column in order.
 
         See Also
         --------
-        schema : Returns a {colname:dtype} mapping.
+        schema
 
         Examples
         --------
@@ -749,7 +767,12 @@ class DataFrame:
     @property
     def schema(self) -> OrderedDict[str, DataType]:
         """
-        Get a dict[column name, DataType].
+        Get a mapping of column names to their data type.
+
+        Returns
+        -------
+        OrderedDict
+            An ordered mapping of column names to their data type.
 
         Examples
         --------
@@ -1267,21 +1290,18 @@ class DataFrame:
         return pa.Table.from_batches(record_batches)
 
     @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]: ...
+    def to_dict(self, *, as_series: Literal[True] = ...) -> dict[str, Series]: ...
 
     @overload
-    def to_dict(self, as_series: Literal[False]) -> dict[str, list[Any]]: ...
+    def to_dict(self, *, as_series: Literal[False]) -> dict[str, list[Any]]: ...
 
     @overload
     def to_dict(
-        self,
-        as_series: bool,  # noqa: FBT001
+        self, *, as_series: bool
     ) -> dict[str, Series] | dict[str, list[Any]]: ...
 
-    @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
-        self,
-        as_series: bool = True,  # noqa: FBT001
+        self, *, as_series: bool = True
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -1389,14 +1409,13 @@ class DataFrame:
         """
         return self.rows(named=True)
 
-    @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
         self,
-        structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
         writable: bool = False,
         allow_copy: bool = True,
+        structured: bool = False,
         use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -1414,12 +1433,6 @@ class DataFrame:
 
         Parameters
         ----------
-        structured
-            Return a `structured array`_ with a data type that corresponds to the
-            DataFrame schema. If set to `False` (default), a 2D ndarray is
-            returned instead.
-
-            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -1433,6 +1446,12 @@ class DataFrame:
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        structured
+            Return a `structured array`_ with a data type that corresponds to the
+            DataFrame schema. If set to `False` (default), a 2D ndarray is
+            returned instead.
+
+            .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
 
         use_pyarrow
             Use `pyarrow.Array.to_numpy
@@ -2185,9 +2204,9 @@ class DataFrame:
         >>> print(df.to_init_repr())
         pl.DataFrame(
             [
-                pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
-                pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.String),
+                pl.Series('foo', [1, 2, 3], dtype=pl.UInt8),
+                pl.Series('bar', [6.0, 7.0, 8.0], dtype=pl.Float32),
+                pl.Series('ham', ['a', 'b', 'c'], dtype=pl.String),
             ]
         )
 
@@ -2267,30 +2286,12 @@ class DataFrame:
             return None
 
     @overload
-    def write_json(
-        self,
-        file: None = ...,
-        *,
-        row_oriented: bool = ...,
-        pretty: bool | None = ...,
-    ) -> str: ...
+    def write_json(self, file: None = ...) -> str: ...
 
     @overload
-    def write_json(
-        self,
-        file: IOBase | str | Path,
-        *,
-        row_oriented: bool = ...,
-        pretty: bool | None = ...,
-    ) -> None: ...
+    def write_json(self, file: IOBase | str | Path) -> None: ...
 
-    def write_json(
-        self,
-        file: IOBase | str | Path | None = None,
-        *,
-        row_oriented: bool = False,
-        pretty: bool | None = None,
-    ) -> str | None:
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """
         Serialize to JSON representation.
 
@@ -2299,17 +2300,6 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        row_oriented
-            Write to row oriented json. This is slower, but more common.
-
-        pretty
-            Pretty serialize json.
-
-            .. deprecated:: 0.20.31
-                The `pretty` functionality for `write_json` will be removed in the next
-                breaking release. Use :meth:`serialize` to serialize the DataFrame in
-                the regular JSON format.
-
 
         See Also
         --------
@@ -2323,43 +2313,28 @@ class DataFrame:
         ...         "bar": [6, 7, 8],
         ...     }
         ... )
-        >>> df.write_json(row_oriented=True)
+        >>> df.write_json()
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
         """
-        if pretty is not None:
-            issue_deprecation_warning(
-                "The `pretty` functionality for `write_json` will be removed in the next breaking release."
-                " Use `DataFrame.serialize` to serialize the DataFrame in the regular JSON format.",
-                version="0.20.31",
-            )
-        else:
-            pretty = False
 
-        if not row_oriented:
-            issue_deprecation_warning(
-                "`DataFrame.write_json` will only write row-oriented JSON in the next breaking release."
-                " Use `DataFrame.serialize` instead.",
-                version="0.20.31",
-            )
-
-        def write_json_to_string(*, pretty: bool, row_oriented: bool) -> str:
+        def write_json_to_string() -> str:
             with BytesIO() as buf:
-                self._df.write_json_old(buf, pretty=pretty, row_oriented=row_oriented)
+                self._df.write_json(buf)
                 json_bytes = buf.getvalue()
             return json_bytes.decode("utf8")
 
         if file is None:
-            return write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            return write_json_to_string()
         elif isinstance(file, StringIO):
-            json_str = write_json_to_string(pretty=pretty, row_oriented=row_oriented)
+            json_str = write_json_to_string()
             file.write(json_str)
             return None
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
-            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json(file)
             return None
         else:
-            self._df.write_json_old(file, pretty=pretty, row_oriented=row_oriented)
+            self._df.write_json(file)
             return None
 
     @overload
@@ -2448,8 +2423,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -2636,7 +2609,6 @@ class DataFrame:
 
         self._df.write_avro(file, compression, name)
 
-    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
         workbook: Workbook | IO[bytes] | Path | str | None = None,
@@ -3291,7 +3263,7 @@ class DataFrame:
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool = True,
+        statistics: bool | str | dict[str, bool] = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
@@ -3319,6 +3291,19 @@ class DataFrame:
 
         statistics
             Write statistics to the parquet headers. This is the default behavior.
+
+            Possible values:
+
+            - `True`: enable default set of statistics (default)
+            - `False`: disable all statistics
+            - "full": calculate and write all available statistics. Cannot be
+              combined with `use_pyarrow`.
+            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
+              `use_pyarrow`. Available keys:
+              - "min": column minimum value (default: `True`)
+              - "max": column maximum value (default: `True`)
+              - "distinct_count": number of unique column values (default: `False`)
+              - "null_count": number of null values in column (default: `True`)
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
         data_page_size
@@ -3370,6 +3355,10 @@ class DataFrame:
                 file = normalize_filepath(file)
 
         if use_pyarrow:
+            if statistics == "full" or isinstance(statistics, dict):
+                msg = "write_parquet with `use_pyarrow=True` allows only boolean values for `statistics`"
+                raise ValueError(msg)
+
             tbl = self.to_arrow()
             data = {}
 
@@ -3409,6 +3398,23 @@ class DataFrame:
                 )
 
         else:
+            if isinstance(statistics, bool) and statistics:
+                statistics = {
+                    "min": True,
+                    "max": True,
+                    "distinct_count": False,
+                    "null_count": True,
+                }
+            elif isinstance(statistics, bool) and not statistics:
+                statistics = {}
+            elif statistics == "full":
+                statistics = {
+                    "min": True,
+                    "max": True,
+                    "distinct_count": True,
+                    "null_count": True,
+                }
+
             self._df.write_parquet(
                 file,
                 compression,
@@ -3418,7 +3424,6 @@ class DataFrame:
                 data_page_size,
             )
 
-    @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
         table_name: str,
@@ -4153,6 +4158,8 @@ class DataFrame:
 
         The original order of the remaining rows is preserved.
 
+        Rows where the filter does not evaluate to True are discarded, including nulls.
+
         Parameters
         ----------
         predicates
@@ -4404,21 +4411,21 @@ class DataFrame:
 
         >>> df.describe()
         shape: (9, 7)
-        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
-        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
-        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
-        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
-        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
-        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
-        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
-        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
-        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
-        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
-        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31 ┆ 23:15:10 │
-        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
-        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬─────────────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date                ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---                 ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str                 ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪═════════════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3                   ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0                   ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 16:00:00 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null                ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01          ┆ 10:20:30 │
+        │ 25%        ┆ 2.8      ┆ 40.0     ┆ null     ┆ null ┆ 2021-07-05          ┆ 14:45:50 │
+        │ 50%        ┆ 2.8      ┆ 50.0     ┆ null     ┆ null ┆ 2021-07-05          ┆ 14:45:50 │
+        │ 75%        ┆ 3.0      ┆ 50.0     ┆ null     ┆ null ┆ 2022-12-31          ┆ 23:15:10 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31          ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴─────────────────────┴──────────┘
 
         Customize which percentiles are displayed, applying linear interpolation:
 
@@ -4428,24 +4435,24 @@ class DataFrame:
         ...         interpolation="linear",
         ...     )
         shape: (11, 7)
-        ┌────────────┬──────────┬──────────┬──────────┬──────┬────────────┬──────────┐
-        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date       ┆ time     │
-        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---        ┆ ---      │
-        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str        ┆ str      │
-        ╞════════════╪══════════╪══════════╪══════════╪══════╪════════════╪══════════╡
-        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3          ┆ 3        │
-        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0          ┆ 0        │
-        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 ┆ 16:07:10 │
-        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null       ┆ null     │
-        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01 ┆ 10:20:30 │
-        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20 ┆ 11:13:34 │
-        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26 ┆ 12:59:42 │
-        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05 ┆ 14:45:50 │
-        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07 ┆ 18:09:34 │
-        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13 ┆ 21:33:18 │
-        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31 ┆ 23:15:10 │
-        └────────────┴──────────┴──────────┴──────────┴──────┴────────────┴──────────┘
-        """
+        ┌────────────┬──────────┬──────────┬──────────┬──────┬─────────────────────┬──────────┐
+        │ statistic  ┆ float    ┆ int      ┆ bool     ┆ str  ┆ date                ┆ time     │
+        │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---                 ┆ ---      │
+        │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str                 ┆ str      │
+        ╞════════════╪══════════╪══════════╪══════════╪══════╪═════════════════════╪══════════╡
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 3    ┆ 3                   ┆ 3        │
+        │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 0    ┆ 0                   ┆ 0        │
+        │ mean       ┆ 2.266667 ┆ 45.0     ┆ 0.666667 ┆ null ┆ 2021-07-02 16:00:00 ┆ 16:07:10 │
+        │ std        ┆ 1.101514 ┆ 7.071068 ┆ null     ┆ null ┆ null                ┆ null     │
+        │ min        ┆ 1.0      ┆ 40.0     ┆ 0.0      ┆ xx   ┆ 2020-01-01          ┆ 10:20:30 │
+        │ 10%        ┆ 1.36     ┆ 41.0     ┆ null     ┆ null ┆ 2020-04-20          ┆ 11:13:34 │
+        │ 30%        ┆ 2.08     ┆ 43.0     ┆ null     ┆ null ┆ 2020-11-26          ┆ 12:59:42 │
+        │ 50%        ┆ 2.8      ┆ 45.0     ┆ null     ┆ null ┆ 2021-07-05          ┆ 14:45:50 │
+        │ 70%        ┆ 2.88     ┆ 47.0     ┆ null     ┆ null ┆ 2022-02-07          ┆ 18:09:34 │
+        │ 90%        ┆ 2.96     ┆ 49.0     ┆ null     ┆ null ┆ 2022-09-13          ┆ 21:33:18 │
+        │ max        ┆ 3.0      ┆ 50.0     ┆ 1.0      ┆ zz   ┆ 2022-12-31          ┆ 23:15:10 │
+        └────────────┴──────────┴──────────┴──────────┴──────┴─────────────────────┴──────────┘
+        """  # noqa: W505
         if not self.columns:
             msg = "cannot describe a DataFrame that has no columns"
             raise TypeError(msg)
@@ -4518,7 +4525,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool = False,
+        nulls_last: bool | Sequence[bool] = False,
         multithreaded: bool = True,
         maintain_order: bool = False,
     ) -> DataFrame:
@@ -4536,7 +4543,8 @@ class DataFrame:
             Sort in descending order. When sorting by multiple columns, can be specified
             per column by passing a sequence of booleans.
         nulls_last
-            Place null values last.
+            Place null values last; can specify a single boolean applying to all columns
+            or a sequence of booleans for per-column control.
         multithreaded
             Sort using multiple threads.
         maintain_order
@@ -4707,13 +4715,9 @@ class DataFrame:
         issue_unstable_warning(
             "`sql` is considered **unstable** (although it is close to being considered stable)."
         )
-        with SQLContext(
-            register_globals=True,
-            eager=True,
-        ) as ctx:
-            frames = {table_name: self} if table_name else {}
-            frames["self"] = self
-            ctx.register_many(frames)
+        with SQLContext(register_globals=False, eager=True) as ctx:
+            name = table_name if table_name else "self"
+            ctx.register(name=name, frame=self)
             return ctx.execute(query)  # type: ignore[return-value]
 
     def top_k(
@@ -4722,11 +4726,14 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
-        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
         Return the `k` largest rows.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         Parameters
         ----------
@@ -4739,23 +4746,6 @@ class DataFrame:
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
-
-        nulls_last
-            Place null values last.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Null values will be considered lowest priority and will only be
-                included if `k` is larger than the number of non-null elements.
-
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
-            worse since this requires a stable search.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                There will be no guarantees about the order of the output.
 
         See Also
         --------
@@ -4802,13 +4792,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .top_k(
-                k,
-                by=by,
-                descending=descending,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-            )
+            .top_k(k, by=by, descending=descending)
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4823,11 +4807,14 @@ class DataFrame:
         *,
         by: IntoExpr | Iterable[IntoExpr],
         descending: bool | Sequence[bool] = False,
-        nulls_last: bool | None = None,
-        maintain_order: bool | None = None,
     ) -> DataFrame:
         """
         Return the `k` smallest rows.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `descending`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
 
         Parameters
         ----------
@@ -4840,23 +4827,6 @@ class DataFrame:
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
-
-        nulls_last
-            Place null values last.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                Null values will be considered lowest priority and will only be
-                included if `k` is larger than the number of non-null elements.
-
-        maintain_order
-            Whether the order should be maintained if elements are equal.
-            Note that if `true` streaming is not possible and performance might be
-            worse since this requires a stable search.
-
-            .. deprecated:: 0.20.31
-                This parameter will be removed in the next breaking release.
-                There will be no guarantees about the order of the output.
 
         See Also
         --------
@@ -4903,13 +4873,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .bottom_k(
-                k,
-                by=by,
-                descending=descending,
-                nulls_last=nulls_last,
-                maintain_order=maintain_order,
-            )
+            .bottom_k(k, by=by, descending=descending)
             .collect(
                 projection_pushdown=False,
                 predicate_pushdown=False,
@@ -4955,46 +4919,6 @@ class DataFrame:
         False
         """
         return self._df.equals(other._df, null_equal=null_equal)
-
-    @deprecate_function(
-        "DataFrame.replace is deprecated and will be removed in a future version. "
-        "Please use\n"
-        "    df = df.with_columns(new_column.alias(column_name))\n"
-        "instead.",
-        version="0.19.0",
-    )
-    def replace(self, column: str, new_column: Series) -> Self:
-        """
-        Replace a column by a new Series.
-
-        .. deprecated:: 0.19.0
-            Use :meth:`with_columns` instead, e.g.
-            `df = df.with_columns(new_column.alias(column_name))`.
-
-        Parameters
-        ----------
-        column
-            Column to replace.
-        new_column
-            New column to insert.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
-        >>> s = pl.Series([10, 20, 30])
-        >>> df.replace("foo", s)  # works in-place!  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 10  ┆ 4   │
-        │ 20  ┆ 5   │
-        │ 30  ┆ 6   │
-        └─────┴─────┘
-        """
-        return self._replace(column, new_column)
 
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
@@ -5151,6 +5075,29 @@ class DataFrame:
         See Also
         --------
         head
+
+        Examples
+        --------
+        Get the first 3 rows of a DataFrame.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> df.limit(3)
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
         """
         return self.head(n)
 
@@ -5443,7 +5390,6 @@ class DataFrame:
         """
         return self.with_row_index(name, offset)
 
-    @deprecate_parameter_as_positional("by", version="0.20.7")
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
@@ -5592,7 +5538,6 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a temporal or integer column.
@@ -5658,18 +5603,6 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         group_by
             Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -5719,9 +5652,28 @@ class DataFrame:
         │ 2020-01-03 19:45:32 ┆ 11    ┆ 2     ┆ 9     │
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
+
+        If you use an index count in `period` or `offset`, then it's based on the
+        values in `index_column`:
+
+        >>> df = pl.DataFrame({"int": [0, 4, 5, 6, 8], "value": [1, 4, 2, 4, 1]})
+        >>> df.rolling("int", period="3i").agg(pl.col("int").alias("aggregated"))
+        shape: (5, 2)
+        ┌─────┬────────────┐
+        │ int ┆ aggregated │
+        │ --- ┆ ---        │
+        │ i64 ┆ list[i64]  │
+        ╞═════╪════════════╡
+        │ 0   ┆ [0]        │
+        │ 4   ┆ [4]        │
+        │ 5   ┆ [4, 5]     │
+        │ 6   ┆ [4, 5, 6]  │
+        │ 8   ┆ [6, 8]     │
+        └─────┴────────────┘
+
+        If you want the index count to be based on row number, then you may want to
+        combine `rolling` with :meth:`.with_row_index`.
         """
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         return RollingGroupBy(
             self,
             index_column=index_column,
@@ -5729,7 +5681,6 @@ class DataFrame:
             offset=offset,
             closed=closed,
             group_by=group_by,
-            check_sorted=check_sorted,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -5740,13 +5691,11 @@ class DataFrame:
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
         label: Label = "left",
         group_by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-        check_sorted: bool | None = None,
     ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -5784,12 +5733,7 @@ class DataFrame:
             length of the window, if None it will equal 'every'
         offset
             offset of the window, does not take effect if `start_by` is 'datapoint'.
-            Defaults to negative `every`.
-        truncate
-            truncate the time value to the window lower bound
-
-            .. deprecated:: 0.19.4
-                Use `label` instead.
+            Defaults to zero.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_boundary" and
             "_upper_boundary" columns. This will impact performance because it's harder to
@@ -5822,18 +5766,6 @@ class DataFrame:
 
               The resulting window is then shifted back until the earliest datapoint
               is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `group_by` is given,
-            check whether it's sorted within each group).
-            When the `group_by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-            .. deprecated:: 0.20.31
-                Sortedness is now verified in a quick manner, you can safely remove
-                this argument.
 
         Returns
         -------
@@ -5975,13 +5907,12 @@ class DataFrame:
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
         >>> df.group_by_dynamic("time", every="1h", closed="both").agg(pl.col("n"))
-        shape: (5, 2)
+        shape: (4, 2)
         ┌─────────────────────┬───────────┐
         │ time                ┆ n         │
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-15 23:00:00 ┆ [0]       │
         │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
         │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
@@ -6013,13 +5944,12 @@ class DataFrame:
         ...     group_by="groups",
         ...     include_boundaries=True,
         ... ).agg(pl.col("n"))
-        shape: (7, 5)
+        shape: (6, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬───────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n         │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
         │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
-        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ [0]       │
         │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
         │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
         │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
@@ -6057,22 +5987,17 @@ class DataFrame:
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        every = deprecate_saturating(every)
-        period = deprecate_saturating(period)
-        offset = deprecate_saturating(offset)
         return DynamicGroupBy(
             self,
             index_column=index_column,
             every=every,
             period=period,
             offset=offset,
-            truncate=truncate,
             label=label,
             include_boundaries=include_boundaries,
             closed=closed,
             group_by=group_by,
             start_by=start_by,
-            check_sorted=check_sorted,
         )
 
     @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
@@ -6081,15 +6006,13 @@ class DataFrame:
         time_column: str,
         *,
         every: str | timedelta,
-        offset: str | timedelta | None = None,
         group_by: str | Sequence[str] | None = None,
         maintain_order: bool = False,
     ) -> Self:
         """
         Upsample a DataFrame at a regular frequency.
 
-        The `every` and `offset` arguments are created with
-        the following string language:
+        The `every` argument is created with the following string language:
 
         - 1ns   (1 nanosecond)
         - 1us   (1 microsecond)
@@ -6120,12 +6043,6 @@ class DataFrame:
             Note that this column has to be sorted for the output to make sense.
         every
             Interval will start 'every' duration.
-        offset
-            Change the start of the date_range by this offset.
-
-            .. deprecated:: 0.20.19
-                This argument is deprecated and will be removed in the next breaking
-                release. Instead, chain `upsample` with `dt.offset_by`.
         group_by
             First group by these columns and then upsample for every group.
         maintain_order
@@ -6172,26 +6089,15 @@ class DataFrame:
         │ 2021-06-01 00:00:00 ┆ B      ┆ 3      │
         └─────────────────────┴────────┴────────┘
         """
-        every = deprecate_saturating(every)
-        if offset is not None:
-            issue_deprecation_warning(
-                "`offset` is deprecated and will be removed in the next breaking release. "
-                "Instead, chain `upsample` with `dt.offset_by`.",
-                version="0.20.19",
-            )
-        offset = deprecate_saturating(offset)
         if group_by is None:
             group_by = []
         if isinstance(group_by, str):
             group_by = [group_by]
-        if offset is None:
-            offset = "0ns"
 
         every = parse_as_duration_string(every)
-        offset = parse_as_duration_string(offset)
 
         return self._from_pydf(
-            self._df.upsample(group_by, time_column, every, offset, maintain_order)
+            self._df.upsample(group_by, time_column, every, maintain_order)
         )
 
     def join_asof(
@@ -6471,7 +6377,6 @@ class DataFrame:
         └─────────────┴────────────┴────────────┴──────┘
 
         """
-        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
             raise TypeError(msg)
@@ -6947,7 +6852,6 @@ class DataFrame:
                 raise
         return self
 
-    @deprecate_parameter_as_positional("columns", version="0.20.4")
     def drop(
         self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
     ) -> DataFrame:
@@ -7527,20 +7431,11 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self"],
-        message=(
-            "The order of the parameters of `pivot` will change in the next breaking release."
-            " The order will become `index, columns, values` with `values` as an optional parameter."
-            " Use keyword arguments to silence this warning."
-        ),
-        version="0.20.8",
-    )
     def pivot(
         self,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -7650,7 +7545,7 @@ class DataFrame:
         └──────┴──────────┴──────────┘
 
         Note that `pivot` is only available in eager mode. If you know the unique
-        column values in advance, you can use :meth:`polars.LazyFrame.groupby` to
+        column values in advance, you can use :meth:`polars.LazyFrame.group_by` to
         get the same result as above in lazy mode:
 
         >>> index = pl.col("col1")
@@ -7690,14 +7585,14 @@ class DataFrame:
         ...     separator="/",
         ... )
         shape: (2, 5)
-        ┌─────┬───────────┬───────────┬───────────┬───────────┐
-        │ ix  ┆ foo/col/a ┆ foo/col/b ┆ bar/col/a ┆ bar/col/b │
-        │ --- ┆ ---       ┆ ---       ┆ ---       ┆ ---       │
-        │ i64 ┆ i64       ┆ i64       ┆ i64       ┆ i64       │
-        ╞═════╪═══════════╪═══════════╪═══════════╪═══════════╡
-        │ 1   ┆ 1         ┆ 7         ┆ 2         ┆ 9         │
-        │ 2   ┆ 4         ┆ 1         ┆ 0         ┆ 4         │
-        └─────┴───────────┴───────────┴───────────┴───────────┘
+        ┌─────┬───────┬───────┬───────┬───────┐
+        │ ix  ┆ foo/a ┆ foo/b ┆ bar/a ┆ bar/b │
+        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
+        ╞═════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
+        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
+        └─────┴───────┴───────┴───────┴───────┘
         """  # noqa: W505
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
@@ -7923,10 +7818,8 @@ class DataFrame:
                 fill_values = [fill_values for _ in range(df.width)]
 
             df = df.select(
-                [
-                    s.extend_constant(next_fill, n_fill)
-                    for s, next_fill in zip(df, fill_values)
-                ]
+                s.extend_constant(next_fill, n_fill)
+                for s, next_fill in zip(df, fill_values)
             )
 
         if how == "horizontal":
@@ -7955,7 +7848,7 @@ class DataFrame:
     def partition_by(
         self,
         by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: str,
+        *more_by: ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[False] = ...,
@@ -7965,11 +7858,21 @@ class DataFrame:
     def partition_by(
         self,
         by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        *more_by: str,
+        *more_by: ColumnNameOrSelector,
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[Any, Self]: ...
+    ) -> dict[tuple[object, ...], Self]: ...
+
+    @overload
+    def partition_by(
+        self,
+        by: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *more_by: ColumnNameOrSelector,
+        maintain_order: bool = ...,
+        include_key: bool = ...,
+        as_dict: bool,
+    ) -> list[Self] | dict[tuple[object, ...], Self]: ...
 
     def partition_by(
         self,
@@ -7978,7 +7881,7 @@ class DataFrame:
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
-    ) -> list[Self] | dict[Any, Self]:
+    ) -> list[Self] | dict[tuple[object, ...], Self]:
         """
         Group by the given columns and return the groups as separate dataframes.
 
@@ -8114,33 +8017,18 @@ class DataFrame:
         ]
 
         if as_dict:
-            key_as_single_value = isinstance(by, str) and not more_by
-            if key_as_single_value:
-                issue_deprecation_warning(
-                    "`partition_by(..., as_dict=True)` will change to always return tuples as dictionary keys."
-                    f" Pass `by` as a list to silence this warning, e.g. `partition_by([{by!r}], as_dict=True)`.",
-                    version="0.20.4",
-                )
-
             if include_key:
-                if key_as_single_value:
-                    names = [p.get_column(by)[0] for p in partitions]  # type: ignore[arg-type]
-                else:
-                    names = [p.select(by_parsed).row(0) for p in partitions]
+                names = [p.select(by_parsed).row(0) for p in partitions]
             else:
                 if not maintain_order:  # Group keys cannot be matched to partitions
                     msg = "cannot use `partition_by` with `maintain_order=False, include_key=False, as_dict=True`"
                     raise ValueError(msg)
-                if key_as_single_value:
-                    names = self.get_column(by).unique(maintain_order=True).to_list()  # type: ignore[arg-type]
-                else:
-                    names = self.select(by_parsed).unique(maintain_order=True).rows()
+                names = self.select(by_parsed).unique(maintain_order=True).rows()
 
             return dict(zip(names, partitions))
 
         return partitions
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> DataFrame:
         """
         Shift values by the given number of indices.
@@ -8523,14 +8411,12 @@ class DataFrame:
         │ 4.0 ┆ 13.0 ┆ true  │
         └─────┴──────┴───────┘
 
-        Multiple columns can be added by passing a list of expressions.
+        Multiple columns can be added using positional arguments.
 
         >>> df.with_columns(
-        ...     [
-        ...         (pl.col("a") ** 2).alias("a^2"),
-        ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").not_()).alias("not c"),
-        ...     ]
+        ...     (pl.col("a") ** 2).alias("a^2"),
+        ...     (pl.col("b") / 2).alias("b/2"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... )
         shape: (4, 6)
         ┌─────┬──────┬───────┬─────┬──────┬───────┐
@@ -8544,12 +8430,14 @@ class DataFrame:
         │ 4   ┆ 13.0 ┆ true  ┆ 16  ┆ 6.5  ┆ false │
         └─────┴──────┴───────┴─────┴──────┴───────┘
 
-        Multiple columns also can be added using positional arguments instead of a list.
+        Multiple columns can also be added by passing a list of expressions.
 
         >>> df.with_columns(
-        ...     (pl.col("a") ** 2).alias("a^2"),
-        ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").not_()).alias("not c"),
+        ...     [
+        ...         (pl.col("a") ** 2).alias("a^2"),
+        ...         (pl.col("b") / 2).alias("b/2"),
+        ...         (pl.col("c").not_()).alias("not c"),
+        ...     ]
         ... )
         shape: (4, 6)
         ┌─────┬──────┬───────┬─────┬──────┬───────┐
@@ -8678,28 +8566,9 @@ class DataFrame:
             )
             raise ValueError(msg)
 
-    @overload
-    def max(self, axis: Literal[0] = ...) -> Self: ...
-
-    @overload
-    def max(self, axis: Literal[1]) -> Series: ...
-
-    @overload
-    def max(self, axis: int = 0) -> Self | Series: ...
-
-    def max(self, axis: int | None = None) -> Self | Series:
+    def max(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their maximum value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`max_horizontal`.
 
         Examples
         --------
@@ -8720,21 +8589,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.max` is deprecated."
-                " Use `DataFrame.max_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().max().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            return wrap_s(self._df.max_horizontal())
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().max().collect(_eager=True)
 
     def max_horizontal(self) -> Series:
         """
@@ -8764,28 +8619,9 @@ class DataFrame:
         """
         return self.select(max=F.max_horizontal(F.all())).to_series()
 
-    @overload
-    def min(self, axis: Literal[0] | None = ...) -> Self: ...
-
-    @overload
-    def min(self, axis: Literal[1]) -> Series: ...
-
-    @overload
-    def min(self, axis: int) -> Self | Series: ...
-
-    def min(self, axis: int | None = None) -> Self | Series:
+    def min(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their minimum value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`min_horizontal`.
 
         Examples
         --------
@@ -8806,21 +8642,7 @@ class DataFrame:
         │ 1   ┆ 6   ┆ a   │
         └─────┴─────┴─────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.min` is deprecated."
-                " Use `DataFrame.min_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().min().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            return wrap_s(self._df.min_horizontal())
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().min().collect(_eager=True)
 
     def min_horizontal(self) -> Series:
         """
@@ -8850,53 +8672,9 @@ class DataFrame:
         """
         return self.select(min=F.min_horizontal(F.all())).to_series()
 
-    @overload
-    def sum(
-        self,
-        *,
-        axis: Literal[0] = ...,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self: ...
-
-    @overload
-    def sum(
-        self,
-        *,
-        axis: Literal[1],
-        null_strategy: NullStrategy = "ignore",
-    ) -> Series: ...
-
-    @overload
-    def sum(
-        self,
-        *,
-        axis: int,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series: ...
-
-    def sum(
-        self,
-        *,
-        axis: int | None = None,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
+    def sum(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their sum value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`sum_horizontal`.
-        null_strategy : {'ignore', 'propagate'}
-            This argument is only used if `axis == 1`.
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version.
 
         Examples
         --------
@@ -8917,28 +8695,7 @@ class DataFrame:
         │ 6   ┆ 21  ┆ null │
         └─────┴─────┴──────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.sum` is deprecated."
-                " Use `DataFrame.sum_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().sum().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            if null_strategy == "ignore":
-                ignore_nulls = True
-            elif null_strategy == "propagate":
-                ignore_nulls = False
-            else:
-                msg = f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
-                raise ValueError(msg)
-            return self.sum_horizontal(ignore_nulls=ignore_nulls)
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().sum().collect(_eager=True)
 
     def sum_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -8974,53 +8731,9 @@ class DataFrame:
         """
         return wrap_s(self._df.sum_horizontal(ignore_nulls)).alias("sum")
 
-    @overload
-    def mean(
-        self,
-        *,
-        axis: Literal[0] = ...,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self: ...
-
-    @overload
-    def mean(
-        self,
-        *,
-        axis: Literal[1],
-        null_strategy: NullStrategy = "ignore",
-    ) -> Series: ...
-
-    @overload
-    def mean(
-        self,
-        *,
-        axis: int,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series: ...
-
-    def mean(
-        self,
-        *,
-        axis: int | None = None,
-        null_strategy: NullStrategy = "ignore",
-    ) -> Self | Series:
+    def mean(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their mean value.
-
-        Parameters
-        ----------
-        axis
-            Either 0 (vertical) or 1 (horizontal).
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version. This method will only
-                support vertical aggregation, as if `axis` were set to `0`.
-                To perform horizontal aggregation, use :meth:`mean_horizontal`.
-        null_strategy : {'ignore', 'propagate'}
-            This argument is only used if `axis == 1`.
-
-            .. deprecated:: 0.19.14
-                This argument will be removed in a future version.
 
         Examples
         --------
@@ -9042,28 +8755,7 @@ class DataFrame:
         │ 2.0 ┆ 7.0 ┆ null ┆ 0.5  │
         └─────┴─────┴──────┴──────┘
         """
-        if axis is not None:
-            issue_deprecation_warning(
-                "The `axis` parameter for `DataFrame.mean` is deprecated."
-                " Use `DataFrame.mean_horizontal()` to perform horizontal aggregation.",
-                version="0.19.14",
-            )
-        else:
-            axis = 0
-
-        if axis == 0:
-            return self.lazy().mean().collect(_eager=True)  # type: ignore[return-value]
-        if axis == 1:
-            if null_strategy == "ignore":
-                ignore_nulls = True
-            elif null_strategy == "propagate":
-                ignore_nulls = False
-            else:
-                msg = f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
-                raise ValueError(msg)
-            return self.mean_horizontal(ignore_nulls=ignore_nulls)
-        msg = "axis should be 0 or 1"
-        raise ValueError(msg)
+        return self.lazy().mean().collect(_eager=True)
 
     def mean_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -10621,26 +10313,32 @@ class DataFrame:
 
     def set_sorted(
         self,
-        column: str | Iterable[str],
-        *more_columns: str,
+        column: str,
+        *,
         descending: bool = False,
     ) -> DataFrame:
         """
         Indicate that one or multiple columns are sorted.
 
+        This can speed up future operations.
+
         Parameters
         ----------
         column
-            Columns that are sorted
-        more_columns
-            Additional columns that are sorted, specified as positional arguments.
+            Column that are sorted
         descending
             Whether the columns are sorted in descending order.
+
+        Warnings
+        --------
+        This can lead to incorrect results if the data is NOT sorted!!
+        Use with care!
+
         """
+        # NOTE: Only accepts 1 column on purpose! User think they are sorted by
+        # the combined multicolumn values.
         return (
-            self.lazy()
-            .set_sorted(column, *more_columns, descending=descending)
-            .collect(_eager=True)
+            self.lazy().set_sorted(column, descending=descending).collect(_eager=True)
         )
 
     @unstable()
@@ -10661,10 +10359,6 @@ class DataFrame:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        By default, null values in the right frame are ignored. Use
-        `include_nulls=False` to overwrite values in this frame with
-        null values in the other frame.
-
         Parameters
         ----------
         other
@@ -10683,8 +10377,8 @@ class DataFrame:
         right_on
            Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
+            Overwrite values in the left frame with null values from the right frame.
+            If set to `False` (default), null values in the right frame are ignored.
 
         Notes
         -----
@@ -10815,379 +10509,6 @@ class DataFrame:
         └─────┴─────┴─────┘
         """
         return self.lazy().count().collect(_eager=True)
-
-    @deprecate_renamed_function("group_by", version="0.19.0")
-    def groupby(
-        self,
-        by: IntoExpr | Iterable[IntoExpr],
-        *more_by: IntoExpr,
-        maintain_order: bool = False,
-    ) -> GroupBy:
-        """
-        Start a group by operation.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.group_by`.
-
-        Parameters
-        ----------
-        by
-            Column(s) to group by. Accepts expression input. Strings are parsed as
-            column names.
-        *more_by
-            Additional columns to group by, specified as positional arguments.
-        maintain_order
-            Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default group by.
-            Settings this to `True` blocks the possibility
-            to run on the streaming engine.
-
-            .. note::
-                Within each group, the order of rows is always preserved, regardless
-                of this argument.
-
-        Returns
-        -------
-        GroupBy
-            Object which can be used to perform aggregations.
-        """
-        return self.group_by(by, *more_by, maintain_order=maintain_order)
-
-    @deprecate_renamed_function("rolling", version="0.19.0")
-    def groupby_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
-    ) -> RollingGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            Check whether the `index` column is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-        """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            group_by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("rolling", version="0.19.9")
-    def group_by_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool | None = None,
-    ) -> RollingGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.9
-            This method has been renamed to :func:`DataFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-        """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            group_by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
-    def groupby_dynamic(
-        self,
-        index_column: IntoExpr,
-        *,
-        every: str | timedelta,
-        period: str | timedelta | None = None,
-        offset: str | timedelta | None = None,
-        truncate: bool = True,
-        include_boundaries: bool = False,
-        closed: ClosedInterval = "left",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        start_by: StartBy = "window",
-        check_sorted: bool | None = None,
-    ) -> DynamicGroupBy:
-        """
-        Group based on a time value (or index value of type Int32, Int64).
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.group_by_dynamic`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a dynamic group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        every
-            interval of the window
-        period
-            length of the window, if None it will equal 'every'
-        offset
-            offset of the window, only takes effect if `start_by` is `'window'`.
-            Defaults to negative `every`.
-        truncate
-            truncate the time value to the window lower bound
-        include_boundaries
-            Add the lower and upper bound of the window to the "_lower_bound" and
-            "_upper_bound" columns. This will impact performance because it's harder to
-            parallelize
-        closed : {'left', 'right', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
-            The strategy to determine the start of the first window by.
-
-            * 'window': Start by taking the earliest timestamp, truncating it with
-              `every`, and then adding `offset`.
-              Note that weekly windows start on Monday.
-            * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains `'w'`):
-
-              * 'monday': Start the window on the Monday before the first data point.
-              * 'tuesday': Start the window on the Tuesday before the first data point.
-              * ...
-              * 'sunday': Start the window on the Sunday before the first data point.
-
-              The resulting window is then shifted back until the earliest datapoint
-              is in or in front of it.
-        check_sorted
-            Check whether `index_column` is sorted (or, if `by` is given,
-            check whether it's sorted within each group).
-            When the `by` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the groups is sorted, you can set this to `False`.
-            Doing so incorrectly will lead to incorrect output
-
-        Returns
-        -------
-        DynamicGroupBy
-            Object you can call `.agg` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
-        """  # noqa: W505
-        return self.group_by_dynamic(
-            index_column,
-            every=every,
-            period=period,
-            offset=offset,
-            truncate=truncate,
-            include_boundaries=include_boundaries,
-            closed=closed,
-            group_by=by,
-            start_by=start_by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("map_rows", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[tuple[Any, ...]], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        inference_size: int = 256,
-    ) -> DataFrame:
-        """
-        Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.map_rows`.
-
-        Parameters
-        ----------
-        function
-            Custom function or lambda.
-        return_dtype
-            Output type of the operation. If none given, Polars tries to infer the type.
-        inference_size
-            Only used in the case when the custom function returns rows.
-            This uses the first `n` rows to determine the output schema
-        """
-        return self.map_rows(function, return_dtype, inference_size=inference_size)
-
-    @deprecate_function("Use `shift` instead.", version="0.19.12")
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: int | str | float,
-        *,
-        n: int = 1,
-    ) -> DataFrame:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        .. deprecated:: 0.19.12
-            Use :func:`shift` instead.
-
-        Parameters
-        ----------
-        fill_value
-            fill None values with this value.
-        n
-            Number of places to shift (may be negative).
-        """
-        return self.shift(n, fill_value=fill_value)
-
-    @deprecate_renamed_function("gather_every", version="0.19.12")
-    def take_every(self, n: int, offset: int = 0) -> DataFrame:
-        """
-        Take every nth row in the DataFrame and return as a new DataFrame.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`gather_every`.
-
-        Parameters
-        ----------
-        n
-            Gather every *n*-th row.
-        offset
-            Starting index.
-        """
-        return self.gather_every(n, offset)
-
-    @deprecate_renamed_function("get_column_index", version="0.19.14")
-    def find_idx_by_name(self, name: str) -> int:
-        """
-        Find the index of a column by name.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`get_column_index`.
-
-        Parameters
-        ----------
-        name
-            Name of the column to find.
-        """
-        return self.get_column_index(name)
-
-    @deprecate_renamed_function("insert_column", version="0.19.14")
-    @deprecate_renamed_parameter("series", "column", version="0.19.14")
-    def insert_at_idx(self, index: int, column: Series) -> Self:
-        """
-        Insert a Series at a certain column index. This operation is in place.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`insert_column`.
-
-        Parameters
-        ----------
-        index
-            Column to insert the new `Series` column.
-        column
-            `Series` to insert.
-        """
-        return self.insert_column(index, column)
-
-    @deprecate_renamed_function("replace_column", version="0.19.14")
-    @deprecate_renamed_parameter("series", "new_column", version="0.19.14")
-    def replace_at_idx(self, index: int, new_column: Series) -> Self:
-        """
-        Replace a column at an index location.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`replace_column`.
-
-        Parameters
-        ----------
-        index
-            Column index.
-        new_column
-            Series that will replace the column.
-        """
-        return self.replace_column(index, new_column)
-
-    @deprecate_renamed_function("equals", version="0.19.16")
-    def frame_equal(self, other: DataFrame, *, null_equal: bool = True) -> bool:
-        """
-        Check whether the DataFrame is equal to another DataFrame.
-
-        .. deprecated:: 0.19.16
-            This method has been renamed to :func:`equals`.
-
-        Parameters
-        ----------
-        other
-            DataFrame to compare with.
-        null_equal
-            Consider null values as equal.
-        """
-        return self.equals(other, null_equal=null_equal)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

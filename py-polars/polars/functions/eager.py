@@ -163,10 +163,8 @@ def concat(
                 x.join(y, how="full", on=common_cols, suffix="_PL_CONCAT_RIGHT")
                 # Coalesce full outer join columns
                 .with_columns(
-                    [
-                        F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
-                        for name in common_cols
-                    ]
+                    F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
+                    for name in common_cols
                 )
                 .drop([f"{name}_PL_CONCAT_RIGHT" for name in common_cols])
             ),

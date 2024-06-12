@@ -245,7 +245,7 @@ def test_streaming_empty_df() -> None:
 
 def test_streaming_duplicate_cols_5537() -> None:
     assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
-        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
+        (pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)
     ).collect(streaming=True).to_dict(as_series=False) == {
         "a": [3, 6, 9],
         "b": [1, 2, 3],

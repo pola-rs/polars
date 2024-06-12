@@ -7,6 +7,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
@@ -136,7 +137,7 @@ pub enum AExpr {
     Cast {
         expr: Node,
         data_type: DataType,
-        strict: bool,
+        options: CastOptions,
     },
     Sort {
         expr: Node,
@@ -172,7 +173,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefore we need `[ExprIr]`.
+        /// Therefor we need `[ExprIr]`.
         input: Vec<ExprIR>,
         /// function to apply
         function: FunctionExpr,
@@ -181,6 +182,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
+        order_by: Option<(Node, SortOptions)>,
         options: WindowType,
     },
     #[default]
@@ -303,8 +305,12 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 options: _,
             } => {
+                if let Some((n, _)) = order_by {
+                    container.push_node(*n);
+                }
                 for e in partition_by.iter().rev() {
                     container.push_node(*e);
                 }
@@ -397,11 +403,17 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                let offset = order_by.is_some() as usize;
                 *function = *inputs.last().unwrap();
                 partition_by.clear();
-                partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
+                partition_by.extend_from_slice(&inputs[offset..inputs.len() - 1]);
+
+                if let Some((_, options)) = order_by {
+                    *order_by = Some((inputs[0], *options));
+                }
 
                 return self;
             },

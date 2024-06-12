@@ -31,7 +31,7 @@ where
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -53,7 +53,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -82,7 +82,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -104,7 +104,7 @@ impl ChunkFilter<BinaryOffsetType> for BinaryOffsetChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -129,7 +129,7 @@ impl ChunkFilter<ListType> for ListChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )
@@ -155,7 +155,7 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask).unwrap(),
+                |left, mask| filter_fn(left, mask),
                 true,
                 true,
             )

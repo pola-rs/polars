@@ -18,20 +18,14 @@ Manipulation/selection
     DataFrame.fill_nan
     DataFrame.fill_null
     DataFrame.filter
-    DataFrame.find_idx_by_name
     DataFrame.gather_every
     DataFrame.get_column
     DataFrame.get_column_index
     DataFrame.get_columns
     DataFrame.group_by
     DataFrame.group_by_dynamic
-    DataFrame.group_by_rolling
-    DataFrame.groupby
-    DataFrame.groupby_dynamic
-    DataFrame.groupby_rolling
     DataFrame.head
     DataFrame.hstack
-    DataFrame.insert_at_idx
     DataFrame.insert_column
     DataFrame.interpolate
     DataFrame.item
@@ -48,8 +42,6 @@ Manipulation/selection
     DataFrame.pivot
     DataFrame.rechunk
     DataFrame.rename
-    DataFrame.replace
-    DataFrame.replace_at_idx
     DataFrame.replace_column
     DataFrame.reverse
     DataFrame.rolling
@@ -61,13 +53,11 @@ Manipulation/selection
     DataFrame.select_seq
     DataFrame.set_sorted
     DataFrame.shift
-    DataFrame.shift_and_fill
     DataFrame.shrink_to_fit
     DataFrame.slice
     DataFrame.sort
     DataFrame.sql
     DataFrame.tail
-    DataFrame.take_every
     DataFrame.to_dummies
     DataFrame.to_series
     DataFrame.top_k

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Mutex;
 
 use polars_plan::logical_plan::{to_aexpr, Context, IR};
@@ -119,44 +118,12 @@ impl NodeTraverser {
         Wrap(&**schema).into_py(py)
     }
 
-    /// Get expression dtype.
+    /// Get expression dtype of expr_node, the schema used is that of the current root node
     fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
         let expr_node = Node(expr_node);
         let lp_arena = self.lp_arena.lock().unwrap();
-        let ir_node = lp_arena.get(self.root);
+        let schema = lp_arena.get(self.root).schema(&lp_arena);
         let expr_arena = self.expr_arena.lock().unwrap();
-        let schema = if let Some(schema) = ir_node.input_schema(&lp_arena) {
-            // TODO: This is a hack for CSE expressions when
-            // determining the dtype. It should be removed once
-            // to_field, or its moral equivalent can handle this in a
-            // proper way. The schema needs to include the dtype of
-            // CSE expressions for to_field to work with expressions
-            // that reference them, but is not part of the public
-            // schema of the input.
-            match ir_node {
-                // Both select and hstack must augment with any CSE
-                // expressions.
-                IR::Select { expr, .. } | IR::HStack { exprs: expr, .. } => {
-                    let cse_exprs = expr.cse_exprs();
-                    if cse_exprs.is_empty() {
-                        schema
-                    } else {
-                        let mut new_schema: Schema = (**schema).clone();
-                        for e in cse_exprs {
-                            let field = expr_arena
-                                .get(e.node())
-                                .to_field(&schema, Context::Default, &expr_arena)
-                                .map_err(PyPolarsErr::from)?;
-                            new_schema.with_column(e.output_name().into(), field.dtype);
-                        }
-                        Cow::Owned(Arc::new(new_schema))
-                    }
-                },
-                _ => schema,
-            }
-        } else {
-            raise_err!("Not able to compute input schema", ComputeError)
-        };
         let field = expr_arena
             .get(expr_node)
             .to_field(&schema, Context::Default, &expr_arena)

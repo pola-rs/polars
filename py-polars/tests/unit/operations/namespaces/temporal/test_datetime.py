@@ -451,32 +451,6 @@ def test_duration_extract_times(
 
 
 @pytest.mark.parametrize(
-    ("unit_attr", "expected"),
-    [
-        ("days", pl.Series([1])),
-        ("hours", pl.Series([24])),
-        ("minutes", pl.Series([24 * 60])),
-        ("seconds", pl.Series([3600 * 24])),
-        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
-        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
-        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
-    ],
-)
-def test_duration_extract_times_deprecated_methods(
-    unit_attr: str,
-    expected: pl.Series,
-) -> None:
-    duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
-
-    with pytest.deprecated_call():
-        assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
-    with pytest.deprecated_call():
-        # Test Expr case too
-        result_df = pl.select(getattr(pl.lit(duration).dt, unit_attr)())
-        assert_series_equal(result_df[result_df.columns[0]], expected)
-
-
-@pytest.mark.parametrize(
     ("time_unit", "every"),
     [
         ("ms", "1h"),
@@ -703,11 +677,9 @@ def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> No
 
     # Combine datetime/date with time
     df = df.select(
-        [
-            pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # datetime & time
-            pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # date & time
-            pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # date & specified time
-        ]
+        pl.col("dtm").dt.combine(pl.col("tm")).alias("d1"),  # datetime & time
+        pl.col("dt").dt.combine(pl.col("tm")).alias("d2"),  # date & time
+        pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),  # date & specified time
     )
 
     # Assert that the new columns have the expected values and datatypes
@@ -808,10 +780,8 @@ def test_date_offset() -> None:
 
     # Add two new columns to the DataFrame using the offset_by() method
     df = df.with_columns(
-        [
-            df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
-            df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
-        ]
+        df["dates"].dt.offset_by("1y").alias("date_plus_1y"),
+        df["dates"].dt.offset_by("-1y2mo").alias("date_min"),
     )
 
     # Assert that the day of the month for all the dates in new columns is 1
@@ -1027,9 +997,9 @@ def test_weekday(time_unit: TimeUnit) -> None:
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 1, 2)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 4)], datetime(2022, 1, 2)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], datetime(2022, 1, 2)),
         ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
@@ -1078,9 +1048,15 @@ def test_median(
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 10, 16)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        (
+            [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 4)],
+            datetime(2022, 1, 2, 8),
+        ),
+        (
+            [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)],
+            datetime(2022, 10, 16, 16, 0),
+        ),
         ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
         (
             [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
@@ -1207,6 +1183,10 @@ def test_duration_median_with_tu(
 def test_agg_mean_expr() -> None:
     df = pl.DataFrame(
         {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)],
+                dtype=pl.Date,
+            ),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
                 dtype=pl.Datetime("ms"),
@@ -1240,6 +1220,7 @@ def test_agg_mean_expr() -> None:
 
     expected = pl.DataFrame(
         {
+            "date": pl.Series([datetime(2023, 1, 2, 8, 0)], dtype=pl.Datetime("ms")),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ms")
             ),
@@ -1268,6 +1249,10 @@ def test_agg_mean_expr() -> None:
 def test_agg_median_expr() -> None:
     df = pl.DataFrame(
         {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)],
+                dtype=pl.Date,
+            ),
             "datetime_ms": pl.Series(
                 [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
                 dtype=pl.Datetime("ms"),
@@ -1301,6 +1286,7 @@ def test_agg_median_expr() -> None:
 
     expected = pl.DataFrame(
         {
+            "date": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
             "datetime_ms": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ms")),
             "datetime_us": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("us")),
             "datetime_ns": pl.Series([datetime(2023, 1, 2)], dtype=pl.Datetime("ns")),

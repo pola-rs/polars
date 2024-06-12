@@ -90,13 +90,13 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             (DataType::Datetime(tu, tz), DataType::Datetime(tur, tzr)) => {
                 assert_eq!(tu, tur);
                 assert_eq!(tz, tzr);
-                let lhs = self.cast(&DataType::Int64).unwrap();
+                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             },
             (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
-                let lhs = self.cast(&DataType::Int64).unwrap();
+                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
                     .subtract(&rhs)?
@@ -110,7 +110,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
-                let lhs = self.cast(&DataType::Int64).unwrap();
+                let lhs = self.cast(&DataType::Int64, CastOptions::NonStrict).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
                     .add_to(&rhs)?
@@ -246,7 +246,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         match (data_type, self.0.time_unit()) {
             (DataType::String, TimeUnit::Milliseconds) => {
                 Ok(self.0.to_string("%F %T%.3f")?.into_series())
@@ -257,7 +257,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             (DataType::String, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
             },
-            _ => self.0.cast(data_type),
+            _ => self.0.cast_with_options(data_type, cast_options),
         }
     }
 

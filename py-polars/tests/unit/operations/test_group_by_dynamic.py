@@ -239,18 +239,6 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     assert result_empty.schema == result.schema
 
 
-def test_group_by_dynamic_truncate_to_label_deprecation() -> None:
-    df = pl.LazyFrame({"ts": [], "n": []})
-    with pytest.warns(
-        DeprecationWarning, match="replace `truncate=False` with `label='datapoint'`"
-    ):
-        df.group_by_dynamic("ts", every="1d", truncate=False)
-    with pytest.warns(
-        DeprecationWarning, match="replace `truncate=True` with `label='left'`"
-    ):
-        df.group_by_dynamic("ts", every="1d", truncate=True)
-
-
 @pytest.mark.parametrize(
     ("label", "expected"),
     [
@@ -333,11 +321,11 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
         pl.col("value").max().alias("max_value"),
         pl.col("value").sum().alias("sum_value"),
     ).to_dict(as_series=False) == {
-        "time": [-1, 0, 1, 2, 3],
-        "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
-        "min_value": [0, 0, 1, 2, 3],
-        "max_value": [1, 2, 3, 3, 3],
-        "sum_value": [1, 3, 6, 5, 3],
+        "time": [0, 1, 2, 3],
+        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
+        "min_value": [0, 1, 2, 3],
+        "max_value": [2, 3, 3, 3],
+        "sum_value": [3, 6, 5, 3],
     }
 
 
@@ -378,28 +366,6 @@ def test_rolling_dynamic_sortedness_check() -> None:
         df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
 
 
-def test_groupby_dynamic_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "date": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
-            ),
-            "value": [1, 2, 3, 4, 5],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.groupby_dynamic("date", every="2d").agg(pl.sum("value"))
-    with pytest.deprecated_call():
-        result_lazy = (
-            df.lazy().groupby_dynamic("date", every="2d").agg(pl.sum("value")).collect()
-        )
-
-    expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
-
-
 @pytest.mark.parametrize("time_zone", [None, "UTC", "Asia/Kathmandu"])
 def test_group_by_dynamic_elementwise_following_mean_agg_6904(
     time_zone: str | None,
@@ -423,11 +389,10 @@ def test_group_by_dynamic_elementwise_following_mean_agg_6904(
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2020, 12, 31, 23, 59, 50),
                     datetime(2021, 1, 1, 0, 0),
                     datetime(2021, 1, 1, 0, 0, 10),
                 ],
-                "c": [0.9092974268256817, 0.9092974268256817, -0.7568024953079282],
+                "c": [0.9092974268256817, -0.7568024953079282],
             }
         ).with_columns(pl.col("a").dt.replace_time_zone(time_zone)),
     )
@@ -585,9 +550,8 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             "idx", every="2i", period="3i", include_boundaries=True
         ).agg(pl.col("A"))
 
-        assert out.shape == (4, 4)
+        assert out.shape == (3, 4)
         assert out["A"].to_list() == [
-            ["A"],
             ["A", "A", "B"],
             ["B", "B", "B"],
             ["B", "C"],
@@ -613,14 +577,13 @@ def test_groupy_by_dynamic_median_10695() -> None:
         period="3m",
     ).agg(pl.col("foo").median()).to_dict(as_series=False) == {
         "timestamp": [
-            datetime(2023, 8, 22, 15, 43),
             datetime(2023, 8, 22, 15, 44),
             datetime(2023, 8, 22, 15, 45),
             datetime(2023, 8, 22, 15, 46),
             datetime(2023, 8, 22, 15, 47),
             datetime(2023, 8, 22, 15, 48),
         ],
-        "foo": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        "foo": [1.0, 1.0, 1.0, 1.0, 1.0],
     }
 
 
@@ -872,8 +835,8 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
         for name, data in df.group_by_dynamic("datetime", every=every, closed="left")
     ]
     expected1 = [
-        (datetime(2020, 1, 1, 10, tzinfo=tzinfo), (2, 3)),
-        (datetime(2020, 1, 1, 11, tzinfo=tzinfo), (1, 3)),
+        ((datetime(2020, 1, 1, 10, tzinfo=tzinfo),), (2, 3)),
+        ((datetime(2020, 1, 1, 11, tzinfo=tzinfo),), (1, 3)),
     ]
     assert result1 == expected1
 
@@ -966,7 +929,7 @@ def test_group_by_dynamic_agg_bad_input_types(input: Any) -> None:
         ).agg(input)
 
 
-def test_group_by_dynamic_check_sorted_15225() -> None:
+def test_group_by_dynamic_15225() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -974,10 +937,7 @@ def test_group_by_dynamic_check_sorted_15225() -> None:
             "c": [1, 1, 2],
         }
     )
-    with pytest.deprecated_call(match="`check_sorted` is now deprecated"):
-        result = df.group_by_dynamic("b", every="2d", check_sorted=False).agg(
-            pl.sum("a")
-        )
+    result = df.group_by_dynamic("b", every="2d").agg(pl.sum("a"))
     expected = pl.DataFrame({"b": [date(2020, 1, 1), date(2020, 1, 3)], "a": [3, 3]})
     assert_frame_equal(result, expected)
     result = df.group_by_dynamic("b", every="2d", group_by="c").agg(pl.sum("a"))

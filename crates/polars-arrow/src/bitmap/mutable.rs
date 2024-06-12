@@ -255,12 +255,6 @@ impl MutableBitmap {
         self.length - self.unset_bits()
     }
 
-    /// Returns the number of unset bits on this [`MutableBitmap`].
-    #[deprecated(since = "0.13.0", note = "use `unset_bits` instead")]
-    pub fn null_count(&self) -> usize {
-        self.unset_bits()
-    }
-
     /// Returns the length of the [`MutableBitmap`].
     #[inline]
     pub fn len(&self) -> usize {

@@ -10,6 +10,7 @@
 //! * [`BinaryArray`] and [`MutableBinaryArray`], an array of opaque variable length values
 //! * [`ListArray`] and [`MutableListArray`], an array of arrays (e.g. `[[1, 2], None, [], [None]]`)
 //! * [`StructArray`] and [`MutableStructArray`], an array of arrays identified by a string (e.g. `{"a": [1, 2], "b": [true, false]}`)
+//!
 //! All immutable arrays implement the trait object [`Array`] and that can be downcasted
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::data_type`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
@@ -23,6 +24,38 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
 
 pub mod physical_binary;
+
+pub trait Splitable: Sized {
+    fn check_bound(&self, offset: usize) -> bool;
+
+    /// Split [`Self`] at `offset` where `offset <= self.len()`.
+    #[inline]
+    #[must_use]
+    fn split_at(&self, offset: usize) -> (Self, Self) {
+        assert!(self.check_bound(offset));
+        unsafe { self._split_at_unchecked(offset) }
+    }
+
+    /// Split [`Self`] at `offset` without checking `offset <= self.len()`.
+    ///
+    /// # Safety
+    ///
+    /// Safe if `offset <= self.len()`.
+    #[inline]
+    #[must_use]
+    unsafe fn split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        debug_assert!(self.check_bound(offset));
+        unsafe { self._split_at_unchecked(offset) }
+    }
+
+    /// Internal implementation of `split_at_unchecked`. For any usage, prefer the using
+    /// `split_at` or `split_at_unchecked`.
+    ///
+    /// # Safety
+    ///
+    /// Safe if `offset <= self.len()`.
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self);
+}
 
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
 /// that are infallibly downcasted to concrete types according to the [`Array::data_type`].
@@ -93,6 +126,18 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     fn is_valid(&self, i: usize) -> bool {
         !self.is_null(i)
     }
+
+    /// Split [`Self`] at `offset` into two boxed [`Array`]s where `offset <= self.len()`.
+    #[must_use]
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>);
+
+    /// Split [`Self`] at `offset` into two boxed [`Array`]s without checking `offset <= self.len()`.
+    ///
+    /// # Safety
+    ///
+    /// Safe if `offset <= self.len()`.
+    #[must_use]
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>);
 
     /// Slices this [`Array`].
     /// # Implementation
@@ -612,6 +657,21 @@ macro_rules! impl_common_array {
         }
 
         #[inline]
+        fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+            let (lhs, rhs) = $crate::array::Splitable::split_at(self, offset);
+            (Box::new(lhs), Box::new(rhs))
+        }
+
+        #[inline]
+        unsafe fn split_at_boxed_unchecked(
+            &self,
+            offset: usize,
+        ) -> (Box<dyn Array>, Box<dyn Array>) {
+            let (lhs, rhs) = unsafe { $crate::array::Splitable::split_at_unchecked(self, offset) };
+            (Box::new(lhs), Box::new(rhs))
+        }
+
+        #[inline]
         fn slice(&mut self, offset: usize, length: usize) {
             self.slice(offset, length);
         }
@@ -769,3 +829,20 @@ pub unsafe trait GenericBinaryArray<O: crate::offset::Offset>: Array {
 }
 
 pub type ArrayRef = Box<dyn Array>;
+
+impl Splitable for Option<Bitmap> {
+    #[inline(always)]
+    fn check_bound(&self, offset: usize) -> bool {
+        self.as_ref().map_or(true, |v| offset <= v.len())
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        self.as_ref().map_or((None, None), |bm| {
+            let (lhs, rhs) = unsafe { bm.split_at_unchecked(offset) };
+            (
+                (lhs.unset_bits() > 0).then_some(lhs),
+                (rhs.unset_bits() > 0).then_some(rhs),
+            )
+        })
+    }
+}

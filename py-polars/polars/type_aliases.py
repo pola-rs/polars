@@ -97,7 +97,6 @@ JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
-NullStrategy: TypeAlias = Literal["ignore", "propagate"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]
 ParquetCompression: TypeAlias = Literal[
     "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
@@ -140,7 +139,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "full", "semi", "anti", "cross", "outer", "outer_coalesce"
+    "inner", "left", "full", "semi", "anti", "cross", "outer"
 ]  # JoinType
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
@@ -216,9 +215,7 @@ FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 BufferInfo: TypeAlias = Tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
-ExcelSpreadsheetEngine: TypeAlias = Literal[
-    "xlsx2csv", "openpyxl", "calamine", "pyxlsb"
-]
+ExcelSpreadsheetEngine: TypeAlias = Literal["xlsx2csv", "openpyxl", "calamine"]
 
 
 class SeriesBuffers(TypedDict):

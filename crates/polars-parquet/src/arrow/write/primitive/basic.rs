@@ -1,6 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::total_ord::TotalOrd;
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
@@ -12,6 +13,7 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::PrimitiveStatistics;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::Page;
+use crate::write::StatisticsOptions;
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,
@@ -136,8 +138,8 @@ where
 
     let buffer = encode(array, is_optional, buffer);
 
-    let statistics = if options.write_statistics {
-        Some(build_statistics(array, type_.clone()).serialize())
+    let statistics = if options.has_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };
@@ -159,6 +161,7 @@ where
 pub fn build_statistics<T, P>(
     array: &PrimitiveArray<T>,
     primitive_type: PrimitiveType,
+    options: &StatisticsOptions,
 ) -> PrimitiveStatistics<P>
 where
     T: NativeType,
@@ -167,21 +170,25 @@ where
 {
     PrimitiveStatistics::<P> {
         primitive_type,
-        null_count: Some(array.null_count() as i64),
+        null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
-        max_value: array
-            .non_null_values_iter()
-            .map(|x| {
-                let x: P = x.as_();
-                x
+        max_value: options
+            .max_value
+            .then(|| {
+                array
+                    .non_null_values_iter()
+                    .max_by(TotalOrd::tot_cmp)
+                    .map(T::as_)
             })
-            .max_by(|x, y| x.ord(y)),
-        min_value: array
-            .non_null_values_iter()
-            .map(|x| {
-                let x: P = x.as_();
-                x
+            .flatten(),
+        min_value: options
+            .min_value
+            .then(|| {
+                array
+                    .non_null_values_iter()
+                    .min_by(TotalOrd::tot_cmp)
+                    .map(T::as_)
             })
-            .min_by(|x, y| x.ord(y)),
+            .flatten(),
     }
 }

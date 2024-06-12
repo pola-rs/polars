@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+use polars_time::Duration;
 
 fn create_sample_df() -> PolarsResult<DataFrame> {
     let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
@@ -172,7 +173,8 @@ fn test_literal_exprs() {
             1.0 as float_lit,
             'foo' as string_lit,
             true as bool_lit,
-            null as null_lit
+            null as null_lit,
+            interval '1 quarter 2 weeks 1 day 50 seconds' as duration_lit
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
@@ -183,6 +185,7 @@ fn test_literal_exprs() {
             lit("foo").alias("string_lit"),
             lit(true).alias("bool_lit"),
             lit(NULL).alias("null_lit"),
+            lit(Duration::parse("1q2w1d50s")).alias("duration_lit"),
         ])
         .collect()
         .unwrap();
@@ -560,7 +563,7 @@ fn test_group_by_2() -> PolarsResult<()> {
         ])
         .sort_by_exprs(
             vec![col("count"), col("category")],
-            SortMultipleOptions::default().with_order_descendings([false, true]),
+            SortMultipleOptions::default().with_order_descending_multi([false, true]),
         )
         .limit(2);
     let expected = expected.collect()?;

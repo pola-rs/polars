@@ -156,6 +156,7 @@ impl DslBuilder {
         paths: P,
         read_options: CsvReadOptions,
         cache: bool,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
 
@@ -182,6 +183,7 @@ impl DslBuilder {
             predicate: None,
             scan_type: FileScan::Csv {
                 options: read_options,
+                cloud_options,
             },
         }
         .into())

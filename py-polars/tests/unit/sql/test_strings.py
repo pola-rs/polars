@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -76,7 +76,7 @@ def test_string_concat() -> None:
 )
 def test_string_concat_errors(invalid_concat: str) -> None:
     lf = pl.LazyFrame({"x": ["a", "b", "c"]})
-    with pytest.raises(InvalidOperationError, match="invalid number of arguments"):
+    with pytest.raises(SQLSyntaxError, match="invalid number of arguments"):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
@@ -100,8 +100,8 @@ def test_string_left_right_reverse() -> None:
     }
     for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "6.66")):
         with pytest.raises(
-            InvalidOperationError,
-            match=f"invalid 'n_chars' for {func.capitalize()}: {invalid}",
+            SQLSyntaxError,
+            match=f"invalid 'n_chars' for {func}: {invalid}",
         ):
             ctx.execute(f"""SELECT {func}(txt,{invalid}) FROM df""").collect()
 
@@ -317,7 +317,7 @@ def test_string_replace() -> None:
         res = out["words"].to_list()
         assert res == ["English breakfast tea is the best tea", "", None]
 
-        with pytest.raises(InvalidOperationError, match="invalid number of arguments"):
+        with pytest.raises(SQLSyntaxError, match="invalid number of arguments"):
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
@@ -348,8 +348,8 @@ def test_string_substr() -> None:
         ).collect()
 
         with pytest.raises(
-            InvalidOperationError,
-            match="Substring does not support negative length: -99",
+            SQLSyntaxError,
+            match="SUBSTR does not support negative length: -99",
         ):
             ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
 
@@ -372,24 +372,18 @@ def test_string_substr() -> None:
 
 def test_string_trim(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
-    out = pl.SQLContext(foods1=lf).execute(
+    out = lf.sql(
         """
         SELECT DISTINCT TRIM(LEADING 'vmf' FROM category) as new_category
-        FROM foods1
-        ORDER BY new_category DESC
-        """,
-        eager=True,
-    )
+        FROM self ORDER BY new_category DESC
+        """
+    ).collect()
     assert out.to_dict(as_series=False) == {
         "new_category": ["seafood", "ruit", "egetables", "eat"]
     }
     with pytest.raises(
-        ComputeError,
-        match="unsupported TRIM",
+        SQLSyntaxError,
+        match="unsupported TRIM syntax",
     ):
-        # currently unsupported (snowflake) trim syntax
-        pl.SQLContext(foods=lf).execute(
-            """
-            SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM foods
-            """,
-        )
+        # currently unsupported (snowflake-style) trim syntax
+        lf.sql("SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self")

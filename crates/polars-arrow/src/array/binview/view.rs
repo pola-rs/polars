@@ -57,6 +57,23 @@ impl View {
             }
         }
     }
+
+    /// Constructs a byteslice from this view.
+    ///
+    /// # Safety
+    /// Assumes that this view is valid for the given buffers.
+    pub unsafe fn get_slice_unchecked<'a>(&'a self, buffers: &'a [Buffer<u8>]) -> &'a [u8] {
+        unsafe {
+            if self.length <= 12 {
+                let ptr = self as *const View as *const u8;
+                std::slice::from_raw_parts(ptr.add(4), self.length as usize)
+            } else {
+                let data = buffers.get_unchecked_release(self.buffer_idx as usize);
+                let offset = self.offset as usize;
+                data.get_unchecked_release(offset..offset + self.length as usize)
+            }
+        }
+    }
 }
 
 impl IsNull for View {

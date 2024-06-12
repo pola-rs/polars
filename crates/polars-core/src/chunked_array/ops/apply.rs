@@ -1,6 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -165,7 +166,9 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         // this will ensure we have a single ref count
         // and we can mutate in place
         let chunks = {
-            let s = self.cast(&S::get_dtype()).unwrap();
+            let s = self
+                .cast_with_options(&S::get_dtype(), CastOptions::Overflowing)
+                .unwrap();
             s.chunks().clone()
         };
         apply_in_place_impl(self.name(), chunks, f)

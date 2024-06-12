@@ -32,11 +32,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
+@deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecate_renamed_parameter(
-    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
-)
 def read_csv(
     source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
@@ -47,8 +45,10 @@ def read_csv(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
     schema: SchemaDict | None = None,
+    schema_overrides: (
+        Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
+    ) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -103,12 +103,12 @@ def read_csv(
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
         Start reading after `skip_rows` lines.
-    dtypes
-        Overwrite dtypes for specific or all columns during schema inference.
     schema
         Provide the schema. This means that polars doesn't do schema inference.
-        This argument expects the complete schema, whereas `dtypes` can be used
-        to partially overwrite a schema.
+        This argument expects the complete schema, whereas `schema_overrides` can be
+        used to partially overwrite a schema.
+    schema_overrides
+        Overwrite dtypes for specific or all columns during schema inference.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -124,7 +124,7 @@ def read_csv(
         Try to keep reading lines if some lines yield errors.
         Before using this option, try to increase the number of lines used for schema
         inference with e.g `infer_schema_length=10000` or override automatic dtype
-        inference for specific columns with the `dtypes` option or use
+        inference for specific columns with the `schema_overrides` option or use
         `infer_schema_length=0` to read all columns as `pl.String` to check which
         values might cause an issue.
     try_parse_dates
@@ -205,7 +205,7 @@ def read_csv(
     If the schema is inferred incorrectly (e.g. as `pl.Int64` instead of `pl.Float64`),
     try to increase the number of lines used to infer the schema with
     `infer_schema_length` or override the inferred dtype for those columns with
-    `dtypes`.
+    `schema_overrides`.
 
     This operation defaults to a `rechunk` operation at the end, meaning that all data
     will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
@@ -254,7 +254,7 @@ def read_csv(
 
     if (
         use_pyarrow
-        and dtypes is None
+        and schema_overrides is None
         and n_rows is None
         and n_threads is None
         and not low_memory
@@ -321,9 +321,9 @@ def read_csv(
             return _update_columns(df, new_columns)
         return df
 
-    if projection and dtypes and isinstance(dtypes, list):
-        if len(projection) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
+    if projection and schema_overrides and isinstance(schema_overrides, list):
+        if len(projection) < len(schema_overrides):
+            msg = "more schema overrides are specified than there are selected columns"
             raise ValueError(msg)
 
         # Fix list of dtypes when used together with projection as polars CSV reader
@@ -331,22 +331,22 @@ def read_csv(
         dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
-            if idx < len(dtypes):
-                dtypes_list[column_idx] = dtypes[idx]
+            if idx < len(schema_overrides):
+                dtypes_list[column_idx] = schema_overrides[idx]
 
-        dtypes = dtypes_list
+        schema_overrides = dtypes_list
 
-    if columns and dtypes and isinstance(dtypes, list):
-        if len(columns) < len(dtypes):
+    if columns and schema_overrides and isinstance(schema_overrides, list):
+        if len(columns) < len(schema_overrides):
             msg = "more dtypes overrides are specified than there are selected columns"
             raise ValueError(msg)
 
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        dtypes = dict(zip(columns, dtypes))
+        schema_overrides = dict(zip(columns, schema_overrides))
 
-    if new_columns and dtypes and isinstance(dtypes, dict):
+    if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
 
         # As new column names are not available yet while parsing the CSV file, rename
@@ -387,26 +387,26 @@ def read_csv(
         else:
             # When a header is present, column names are not known yet.
 
-            if len(dtypes) <= len(new_columns):
+            if len(schema_overrides) <= len(new_columns):
                 # If dtypes dictionary contains less or same amount of values than new
                 # column names a list of dtypes can be created if all listed column
                 # names in dtypes dictionary appear in the first consecutive new column
                 # names.
                 dtype_list = [
-                    dtypes[new_column_name]
-                    for new_column_name in new_columns[0 : len(dtypes)]
-                    if new_column_name in dtypes
+                    schema_overrides[new_column_name]
+                    for new_column_name in new_columns[0 : len(schema_overrides)]
+                    if new_column_name in schema_overrides
                 ]
 
-                if len(dtype_list) == len(dtypes):
-                    dtypes = dtype_list
+                if len(dtype_list) == len(schema_overrides):
+                    schema_overrides = dtype_list
 
-        if current_columns and isinstance(dtypes, dict):
+        if current_columns and isinstance(schema_overrides, dict):
             new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
-            dtypes = {
+            schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
-                for column_name, column_dtype in dtypes.items()
+                for column_name, column_dtype in schema_overrides.items()
             }
 
     with prepare_file_arg(
@@ -424,7 +424,7 @@ def read_csv(
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
-            dtypes=dtypes,
+            schema_overrides=schema_overrides,
             schema=schema,
             null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
@@ -462,8 +462,8 @@ def _read_csv_impl(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
-    dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
     schema: None | SchemaDict = None,
+    schema_overrides: None | (SchemaDict | Sequence[PolarsDataType]) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -497,15 +497,15 @@ def _read_csv_impl(
 
     dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
     dtype_slice: Sequence[PolarsDataType] | None = None
-    if dtypes is not None:
-        if isinstance(dtypes, dict):
+    if schema_overrides is not None:
+        if isinstance(schema_overrides, dict):
             dtype_list = []
-            for k, v in dtypes.items():
+            for k, v in schema_overrides.items():
                 dtype_list.append((k, py_type_to_dtype(v)))
-        elif isinstance(dtypes, Sequence):
-            dtype_slice = dtypes
+        elif isinstance(schema_overrides, Sequence):
+            dtype_slice = schema_overrides
         else:
-            msg = f"`dtypes` should be of type list or dict, got {type(dtypes).__name__!r}"
+            msg = f"`schema_overrides` should be of type list or dict, got {type(schema_overrides).__name__!r}"
             raise TypeError(msg)
 
     processed_null_values = _process_null_values(null_values)
@@ -518,8 +518,8 @@ def _read_csv_impl(
             dtypes_dict = dict(dtype_list)
         if dtype_slice is not None:
             msg = (
-                "cannot use glob patterns and unnamed dtypes as `dtypes` argument"
-                "\n\nUse `dtypes`: Mapping[str, Type[DataType]]"
+                "cannot use glob patterns and unnamed dtypes as `schema_overrides` argument"
+                "\n\nUse `schema_overrides`: Mapping[str, Type[DataType]]"
             )
             raise ValueError(msg)
         from polars import scan_csv
@@ -531,8 +531,8 @@ def _read_csv_impl(
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
-            dtypes=dtypes_dict,
             schema=schema,
+            schema_overrides=dtypes_dict,
             null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             ignore_errors=ignore_errors,
@@ -597,11 +597,9 @@ def _read_csv_impl(
     return wrap_df(pydf)
 
 
+@deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecate_renamed_parameter(
-    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
-)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -612,7 +610,9 @@ def read_csv_batched(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
+    schema_overrides: (
+        Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
+    ) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -668,7 +668,7 @@ def read_csv_batched(
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
         Start reading after `skip_rows` lines.
-    dtypes
+    schema_overrides
         Overwrite dtypes during inference.
     null_values
         Values to interpret as null values. You can provide a:
@@ -787,9 +787,9 @@ def read_csv_batched(
                 )
                 raise ValueError(msg)
 
-    if projection and dtypes and isinstance(dtypes, list):
-        if len(projection) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
+    if projection and schema_overrides and isinstance(schema_overrides, list):
+        if len(projection) < len(schema_overrides):
+            msg = "more schema overrides are specified than there are selected columns"
             raise ValueError(msg)
 
         # Fix list of dtypes when used together with projection as polars CSV reader
@@ -797,22 +797,22 @@ def read_csv_batched(
         dtypes_list: list[PolarsDataType] = [String] * (max(projection) + 1)
 
         for idx, column_idx in enumerate(projection):
-            if idx < len(dtypes):
-                dtypes_list[column_idx] = dtypes[idx]
+            if idx < len(schema_overrides):
+                dtypes_list[column_idx] = schema_overrides[idx]
 
-        dtypes = dtypes_list
+        schema_overrides = dtypes_list
 
-    if columns and dtypes and isinstance(dtypes, list):
-        if len(columns) < len(dtypes):
-            msg = "more dtypes overrides are specified than there are selected columns"
+    if columns and schema_overrides and isinstance(schema_overrides, list):
+        if len(columns) < len(schema_overrides):
+            msg = "more schema overrides are specified than there are selected columns"
             raise ValueError(msg)
 
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        dtypes = dict(zip(columns, dtypes))
+        schema_overrides = dict(zip(columns, schema_overrides))
 
-    if new_columns and dtypes and isinstance(dtypes, dict):
+    if new_columns and schema_overrides and isinstance(schema_overrides, dict):
         current_columns = None
 
         # As new column names are not available yet while parsing the CSV file, rename
@@ -847,26 +847,26 @@ def read_csv_batched(
         else:
             # When a header is present, column names are not known yet.
 
-            if len(dtypes) <= len(new_columns):
+            if len(schema_overrides) <= len(new_columns):
                 # If dtypes dictionary contains less or same amount of values than new
                 # column names a list of dtypes can be created if all listed column
                 # names in dtypes dictionary appear in the first consecutive new column
                 # names.
                 dtype_list = [
-                    dtypes[new_column_name]
-                    for new_column_name in new_columns[0 : len(dtypes)]
-                    if new_column_name in dtypes
+                    schema_overrides[new_column_name]
+                    for new_column_name in new_columns[0 : len(schema_overrides)]
+                    if new_column_name in schema_overrides
                 ]
 
-                if len(dtype_list) == len(dtypes):
-                    dtypes = dtype_list
+                if len(dtype_list) == len(schema_overrides):
+                    schema_overrides = dtype_list
 
-        if current_columns and isinstance(dtypes, dict):
+        if current_columns and isinstance(schema_overrides, dict):
             new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
-            dtypes = {
+            schema_overrides = {
                 new_to_current.get(column_name, column_name): column_dtype
-                for column_name, column_dtype in dtypes.items()
+                for column_name, column_dtype in schema_overrides.items()
             }
 
     return BatchedCsvReader(
@@ -877,7 +877,7 @@ def read_csv_batched(
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
-        dtypes=dtypes,
+        schema_overrides=schema_overrides,
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
@@ -901,11 +901,9 @@ def read_csv_batched(
     )
 
 
+@deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
-@deprecate_renamed_parameter(
-    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
-)
 def scan_csv(
     source: str | Path | list[str] | list[Path],
     *,
@@ -914,8 +912,8 @@ def scan_csv(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
-    dtypes: SchemaDict | Sequence[PolarsDataType] | None = None,
     schema: SchemaDict | None = None,
+    schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -936,6 +934,8 @@ def scan_csv(
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
+    storage_options: dict[str, Any] | None = None,
+    retries: int = 0,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -963,14 +963,14 @@ def scan_csv(
     skip_rows
         Start reading after `skip_rows` lines. The header will be parsed at this
         offset.
-    dtypes
+    schema
+        Provide the schema. This means that polars doesn't do schema inference.
+        This argument expects the complete schema, whereas `schema_overrides` can be
+        used to partially overwrite a schema.
+    schema_overrides
         Overwrite dtypes during inference; should be a {colname:dtype,} dict or,
         if providing a list of strings to `new_columns`, a list of dtypes of
         the same length.
-    schema
-        Provide the schema. This means that polars doesn't do schema inference.
-        This argument expects the complete schema, whereas `dtypes` can be used
-        to partially overwrite a schema.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -1032,6 +1032,22 @@ def scan_csv(
         Parse floats using a comma as the decimal separator instead of a period.
     glob
         Expand path given via globbing rules.
+    storage_options
+        Options that indicate how to connect to a cloud provider.
+        If the cloud provider is not supported by Polars, the storage options
+        are passed to `fsspec.open()`.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
+    retries
+        Number of retries if accessing a cloud instance fails.
 
     Returns
     -------
@@ -1085,7 +1101,7 @@ def scan_csv(
     >>> pl.scan_csv(
     ...     path,
     ...     new_columns=["idx", "txt"],
-    ...     dtypes=[pl.UInt16, pl.String],
+    ...     schema_overrides=[pl.UInt16, pl.String],
     ... ).collect()
     shape: (4, 2)
     ┌─────┬──────┐
@@ -1099,15 +1115,15 @@ def scan_csv(
     │ 4   ┆ read │
     └─────┴──────┘
     """
-    if not new_columns and isinstance(dtypes, Sequence):
-        msg = f"expected 'dtypes' dict, found {type(dtypes).__name__!r}"
+    if not new_columns and isinstance(schema_overrides, Sequence):
+        msg = f"expected 'schema_overrides' dict, found {type(schema_overrides).__name__!r}"
         raise TypeError(msg)
     elif new_columns:
         if with_column_names:
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
-        if dtypes and isinstance(dtypes, Sequence):
-            dtypes = dict(zip(new_columns, dtypes))
+        if schema_overrides and isinstance(schema_overrides, Sequence):
+            schema_overrides = dict(zip(new_columns, schema_overrides))
 
         # wrap new column names as a callable
         def with_column_names(cols: list[str]) -> list[str]:
@@ -1131,7 +1147,7 @@ def scan_csv(
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
-        dtypes=dtypes,  # type: ignore[arg-type]
+        schema_overrides=schema_overrides,  # type: ignore[arg-type]
         schema=schema,
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
@@ -1152,6 +1168,8 @@ def scan_csv(
         truncate_ragged_lines=truncate_ragged_lines,
         decimal_comma=decimal_comma,
         glob=glob,
+        retries=retries,
+        storage_options=storage_options,
     )
 
 
@@ -1163,8 +1181,8 @@ def _scan_csv_impl(
     comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
-    dtypes: SchemaDict | None = None,
     schema: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -1184,11 +1202,13 @@ def _scan_csv_impl(
     truncate_ragged_lines: bool = True,
     decimal_comma: bool = False,
     glob: bool = True,
+    storage_options: dict[str, Any] | None = None,
+    retries: int = 0,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
-    if dtypes is not None:
+    if schema_overrides is not None:
         dtype_list = []
-        for k, v in dtypes.items():
+        for k, v in schema_overrides.items():
             dtype_list.append((k, py_type_to_dtype(v)))
     processed_null_values = _process_null_values(null_values)
 
@@ -1197,6 +1217,12 @@ def _scan_csv_impl(
         source = None  # type: ignore[assignment]
     else:
         sources = []
+
+    if storage_options:
+        storage_options = list(storage_options.items())  # type: ignore[assignment]
+    else:
+        # Handle empty dict input
+        storage_options = None
 
     pylf = PyLazyFrame.new_from_csv(
         source,
@@ -1226,5 +1252,7 @@ def _scan_csv_impl(
         decimal_comma=decimal_comma,
         schema=schema,
         glob=glob,
+        retries=retries,
+        cloud_options=storage_options,
     )
     return wrap_ldf(pylf)

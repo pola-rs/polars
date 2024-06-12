@@ -139,7 +139,7 @@ impl FunctionExpr {
                 if *include_breakpoint || *include_category {
                     let mut fields = Vec::with_capacity(3);
                     if *include_breakpoint {
-                        fields.push(Field::new("break_point", DataType::Float64));
+                        fields.push(Field::new("breakpoint", DataType::Float64));
                     }
                     if *include_category {
                         fields.push(Field::new(
@@ -226,14 +226,9 @@ impl FunctionExpr {
                 include_breaks: true,
                 ..
             } => {
-                let name = fields[0].name();
-                let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
-                    Field::new("brk", DataType::Float64),
-                    Field::new(
-                        name_bin.as_str(),
-                        DataType::Categorical(None, Default::default()),
-                    ),
+                    Field::new("breakpoint", DataType::Float64),
+                    Field::new("category", DataType::Categorical(None, Default::default())),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
@@ -269,26 +264,21 @@ impl FunctionExpr {
                 include_breaks: true,
                 ..
             } => {
-                let name = fields[0].name();
-                let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
-                    Field::new("brk", DataType::Float64),
-                    Field::new(
-                        name_bin.as_str(),
-                        DataType::Categorical(None, Default::default()),
-                    ),
+                    Field::new("breakpoint", DataType::Float64),
+                    Field::new("category", DataType::Categorical(None, Default::default())),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
-                    Field::new("lengths", DataType::Int32),
-                    Field::new("values", dt.clone()),
+                    Field::new("len", IDX_DTYPE),
+                    Field::new("value", dt.clone()),
                 ])
             }),
             #[cfg(feature = "rle")]
-            RLEID => mapper.with_dtype(DataType::UInt32),
+            RLEID => mapper.with_dtype(IDX_DTYPE),
             ToPhysical => mapper.to_physical_type(),
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),

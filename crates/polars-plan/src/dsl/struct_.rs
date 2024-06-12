@@ -93,6 +93,8 @@ impl StructNameSpace {
             function: FunctionExpr::StructExpr(StructFunction::WithFields),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
+                pass_name_to_apply: true,
+                allow_group_aware: false,
                 ..Default::default()
             },
         }

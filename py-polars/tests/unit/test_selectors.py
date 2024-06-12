@@ -120,7 +120,7 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
 def test_selector_by_index(df: pl.DataFrame) -> None:
     # one or more +ve indexes
     assert df.select(cs.by_index(0)).columns == ["abc"]
-    assert df.select(pl.nth([0, 1, 2])).columns == ["abc", "bbb", "cde"]
+    assert df.select(pl.nth(0, 1, 2)).columns == ["abc", "bbb", "cde"]
     assert df.select(cs.by_index(0, 1, 2)).columns == ["abc", "bbb", "cde"]
 
     # one or more -ve indexes

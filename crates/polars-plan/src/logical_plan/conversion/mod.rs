@@ -115,7 +115,7 @@ impl IR {
                 options,
             } => {
                 let i = convert_to_lp(input, lp_arena);
-                let expr = expr_irs_to_exprs(expr.all_exprs(), expr_arena);
+                let expr = expr_irs_to_exprs(expr, expr_arena);
                 DslPlan::Select {
                     expr,
                     input: Arc::new(i),
@@ -221,7 +221,7 @@ impl IR {
                 ..
             } => {
                 let i = convert_to_lp(input, lp_arena);
-                let exprs = expr_irs_to_exprs(exprs.all_exprs(), expr_arena);
+                let exprs = expr_irs_to_exprs(exprs, expr_arena);
 
                 DslPlan::HStack {
                     input: Arc::new(i),

@@ -61,18 +61,18 @@ def test_value_counts_duplicate_name() -> None:
         s.value_counts()
 
     # ... but can customize that
-    assert_frame_equal(
-        pl.DataFrame({"count": [1, 0], "n": [2, 1]}, schema_overrides={"n": pl.UInt32}),
-        s.value_counts(name="n", sort=True),
+    result = s.value_counts(name="n", sort=True)
+    expected = pl.DataFrame(
+        {"count": [1, 0], "n": [2, 1]}, schema_overrides={"n": pl.UInt32}
     )
+    assert_frame_equal(result, expected)
 
     df = pl.DataFrame({"a": [None, 1, None, 2, 3]})
-    assert df.select(pl.col("a").count()).item() == 3
+    result = df.select(pl.col("a").count())
+    assert result.item() == 3
 
-    assert df.group_by(1).agg(pl.col("a").count()).to_dict(as_series=False) == {
-        "literal": [1],
-        "a": [3],
-    }
+    result = df.group_by(1).agg(pl.col("a").count())
+    assert result.to_dict(as_series=False) == {"literal": [1], "a": [3]}
 
 
 def test_count() -> None:

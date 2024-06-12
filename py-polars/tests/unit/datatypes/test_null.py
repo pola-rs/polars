@@ -77,3 +77,7 @@ def test_null_hash_rows_14100() -> None:
     assert df.hash_rows().dtype == pl.UInt64
     assert df["b"].hash().dtype == pl.UInt64
     assert df.select([pl.col("b").hash().alias("foo")])["foo"].dtype == pl.UInt64
+
+
+def test_null_lit_filter_16664() -> None:
+    assert pl.DataFrame({"x": []}).filter(pl.lit(True)).shape == (0, 1)

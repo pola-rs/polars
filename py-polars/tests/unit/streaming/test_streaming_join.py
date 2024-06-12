@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -10,6 +11,8 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -73,7 +76,7 @@ def test_streaming_joins() -> None:
 
         pl_result = (
             dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on="a", how=how)
+            .join(dfb_pl.lazy(), on="a", how=how, coalesce=True)
             .sort(["a", "b"], maintain_order=True)
             .collect(streaming=True)
         )
@@ -89,7 +92,7 @@ def test_streaming_joins() -> None:
 
         pl_result = (
             dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on=["a", "b"], how=how)
+            .join(dfb_pl.lazy(), on=["a", "b"], how=how, coalesce=True)
             .sort(["a", "b"])
             .collect(streaming=True)
         )
@@ -181,10 +184,16 @@ def test_join_null_matches(streaming: bool) -> None:
 
     # Left outer
     expected = pl.DataFrame(
-        {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
+        {
+            "idx_a": [0, 1, 2],
+            "a": [None, 1, 2],
+            "idx_b": [None, 2, 1],
+            "a_right": [None, 1, 2],
+        }
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
+        expected,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -224,7 +233,9 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
         {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
+        df_a.join(df_b, on=["a", "idx"], how="left", coalesce=True).collect(
+            streaming=streaming
+        ),
         expected,
     )
 
@@ -255,3 +266,50 @@ def test_streaming_join_and_union() -> None:
     out = q.collect(streaming=True)
     assert_frame_equal(out, q.collect(streaming=False))
     assert out.to_series().to_list() == [1, 2, 1, 2, 4, 8, 1, 2]
+
+
+def test_non_coalescing_streaming_left_join() -> None:
+    df1 = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+
+    df2 = pl.LazyFrame({"a": [1, 2], "c": ["j", "i"]})
+
+    q = df1.join(df2, on="a", how="left", coalesce=False)
+    assert q.explain(streaming=True).startswith("STREAMING")
+    assert q.collect(streaming=True).to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": ["a", "b", "c"],
+        "a_right": [1, 2, None],
+        "c": ["j", "i", None],
+    }
+
+
+@pytest.mark.write_disk()
+def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
+    data = {
+        "value_at": [datetime(2024, i + 1, 1) for i in range(6)],
+        "value": list(range(6)),
+    }
+
+    parquet_path = tmp_path / "data.parquet"
+    pl.DataFrame(data=data).write_parquet(parquet_path)
+
+    other_parquet_path = tmp_path / "data2.parquet"
+    pl.DataFrame(data=data).write_parquet(other_parquet_path)
+
+    lf1 = pl.scan_parquet(other_parquet_path)
+    lf2 = pl.scan_parquet(parquet_path)
+
+    join_cols = set(lf1.columns).intersection(set(lf2.columns))
+    final_lf = lf1.join(lf2, on=list(join_cols), how="full", coalesce=True)
+
+    assert final_lf.collect(streaming=True).to_dict(as_series=False) == {
+        "value_at": [
+            datetime(2024, 1, 1, 0, 0),
+            datetime(2024, 2, 1, 0, 0),
+            datetime(2024, 3, 1, 0, 0),
+            datetime(2024, 4, 1, 0, 0),
+            datetime(2024, 5, 1, 0, 0),
+            datetime(2024, 6, 1, 0, 0),
+        ],
+        "value": [0, 1, 2, 3, 4, 5],
+    }

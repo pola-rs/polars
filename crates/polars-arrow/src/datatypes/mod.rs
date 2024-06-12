@@ -67,6 +67,7 @@ pub enum ArrowDataType {
     /// * As used in the Olson time zone database (the "tz database" or
     ///   "tzdata"), such as "America/New_York"
     /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    ///
     /// When the timezone is not specified, the timestamp is considered to have no timezone
     /// and is represented _as is_
     Timestamp(TimeUnit, Option<String>),

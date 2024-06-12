@@ -190,8 +190,12 @@ macro_rules! dyn_prim {
 
         let buffer = primitive_encode_plain::<$from, $to>(values, false, vec![]);
 
-        let stats: Option<ParquetStatistics> = if $options.write_statistics {
-            let mut stats = primitive_build_statistics::<$from, $to>(values, $type_.clone());
+        let stats: Option<ParquetStatistics> = if !$options.statistics.is_empty() {
+            let mut stats = primitive_build_statistics::<$from, $to>(
+                values,
+                $type_.clone(),
+                &$options.statistics,
+            );
             stats.null_count = Some($array.null_count() as i64);
             Some(stats.serialize())
         } else {
@@ -240,8 +244,12 @@ pub fn array_to_pages<K: DictionaryKey>(
 
                         let mut buffer = vec![];
                         binary_encode_plain::<i64>(array, &mut buffer);
-                        let stats = if options.write_statistics {
-                            Some(binary_build_statistics(array, type_.clone()))
+                        let stats = if options.has_statistics() {
+                            Some(binary_build_statistics(
+                                array,
+                                type_.clone(),
+                                &options.statistics,
+                            ))
                         } else {
                             None
                         };
@@ -256,8 +264,12 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let mut buffer = vec![];
                         binview::encode_plain(array, &mut buffer);
 
-                        let stats = if options.write_statistics {
-                            Some(binview::build_statistics(array, type_.clone()))
+                        let stats = if options.has_statistics() {
+                            Some(binview::build_statistics(
+                                array,
+                                type_.clone(),
+                                &options.statistics,
+                            ))
                         } else {
                             None
                         };
@@ -273,8 +285,12 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let mut buffer = vec![];
                         binview::encode_plain(&array, &mut buffer);
 
-                        let stats = if options.write_statistics {
-                            Some(binview::build_statistics(&array, type_.clone()))
+                        let stats = if options.has_statistics() {
+                            Some(binview::build_statistics(
+                                &array,
+                                type_.clone(),
+                                &options.statistics,
+                            ))
                         } else {
                             None
                         };
@@ -285,8 +301,12 @@ pub fn array_to_pages<K: DictionaryKey>(
 
                         let mut buffer = vec![];
                         binary_encode_plain::<i64>(values, &mut buffer);
-                        let stats = if options.write_statistics {
-                            Some(binary_build_statistics(values, type_.clone()))
+                        let stats = if options.has_statistics() {
+                            Some(binary_build_statistics(
+                                values,
+                                type_.clone(),
+                                &options.statistics,
+                            ))
                         } else {
                             None
                         };
@@ -296,8 +316,12 @@ pub fn array_to_pages<K: DictionaryKey>(
                         let mut buffer = vec![];
                         let array = array.values().as_any().downcast_ref().unwrap();
                         fixed_binary_encode_plain(array, false, &mut buffer);
-                        let stats = if options.write_statistics {
-                            let stats = fixed_binary_build_statistics(array, type_.clone());
+                        let stats = if options.has_statistics() {
+                            let stats = fixed_binary_build_statistics(
+                                array,
+                                type_.clone(),
+                                &options.statistics,
+                            );
                             Some(stats.serialize())
                         } else {
                             None

@@ -41,7 +41,7 @@ def test_hist() -> None:
     a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
     assert (
         str(a.hist(bin_count=4).to_dict(as_series=False))
-        == "{'break_point': [0.0, 2.25, 4.5, 6.75, inf], 'category': ['(-inf, 0.0]', '(0.0, 2.25]', '(2.25, 4.5]', '(4.5, 6.75]', '(6.75, inf]'], 'count': [0, 3, 2, 0, 2]}"
+        == "{'breakpoint': [0.0, 2.25, 4.5, 6.75, inf], 'category': ['(-inf, 0.0]', '(0.0, 2.25]', '(2.25, 4.5]', '(4.5, 6.75]', '(6.75, inf]'], 'count': [0, 3, 2, 0, 2]}"
     )
 
     assert a.hist(
@@ -54,7 +54,7 @@ def test_hist_empty_or_all_null(values: list[None]) -> None:
     ser = pl.Series(values, dtype=pl.Float64)
     assert (
         str(ser.hist().to_dict(as_series=False))
-        == "{'break_point': [inf], 'category': ['(-inf, inf]'], 'count': [0]}"
+        == "{'breakpoint': [inf], 'category': ['(-inf, inf]'], 'count': [0]}"
     )
 
 
@@ -63,7 +63,7 @@ def test_hist_rand(n: int) -> None:
     a = pl.Series(np.random.randint(0, 100, n))
     out = a.hist(bin_count=10)
 
-    bp = out["break_point"]
+    bp = out["breakpoint"]
     count = out["count"]
     for i in range(out.height):
         if i == 0:

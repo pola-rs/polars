@@ -104,6 +104,14 @@ where
         unsafe { Self::from_chunks(name, vec![Box::new(arr)]) }
     }
 
+    pub fn with_chunk_like<A>(ca: &Self, arr: A) -> Self
+    where
+        A: Array,
+        T: PolarsDataType<Array = A>,
+    {
+        Self::from_chunk_iter_like(ca, std::iter::once(arr))
+    }
+
     pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
     where
         I: IntoIterator,
@@ -165,12 +173,14 @@ where
             })
             .collect();
 
-        ChunkedArray::new_with_dims(
-            field,
-            chunks,
-            length.try_into().expect(LENGTH_LIMIT_MSG),
-            null_count as IdxSize,
-        )
+        unsafe {
+            ChunkedArray::new_with_dims(
+                field,
+                chunks,
+                length.try_into().expect(LENGTH_LIMIT_MSG),
+                null_count as IdxSize,
+            )
+        }
     }
 
     /// Create a new [`ChunkedArray`] from existing chunks.
@@ -206,8 +216,8 @@ where
         // that check if the data types in the arrays are as expected
         #[cfg(debug_assertions)]
         {
-            if !chunks.is_empty() && dtype.is_primitive() {
-                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow(true))
+            if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
+                assert_eq!(chunks[0].data_type(), &dtype.to_arrow(true))
             }
         }
         let field = Arc::new(Field::new(name, dtype));

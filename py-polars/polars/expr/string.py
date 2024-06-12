@@ -7,15 +7,12 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
     issue_deprecation_warning,
-    rename_use_earliest_to_ambiguous,
 )
 from polars._utils.parse_expr_input import parse_as_expression
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
+from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -94,7 +91,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
@@ -125,15 +121,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -154,7 +141,6 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
-        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(
@@ -214,7 +200,6 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
@@ -240,15 +225,6 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -307,8 +283,8 @@ class ExprStringNameSpace:
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
-            time_unit = dtype.time_unit  # type: ignore[union-attr]
-            time_zone = dtype.time_zone  # type: ignore[union-attr]
+            time_unit = getattr(dtype, "time_unit", None)
+            time_zone = getattr(dtype, "time_zone", None)
             return self.to_datetime(
                 format,
                 time_unit=time_unit,
@@ -316,7 +292,6 @@ class ExprStringNameSpace:
                 strict=strict,
                 exact=exact,
                 cache=cache,
-                use_earliest=use_earliest,
                 ambiguous=ambiguous,
             )
         elif dtype == Time:
@@ -458,57 +433,6 @@ class ExprStringNameSpace:
         └──────┴─────────┴─────────┘
         """
         return wrap_expr(self._pyexpr.str_len_chars())
-
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Expr:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`String`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df.select(pl.col("foo").str.concat("-"))
-        shape: (1, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ 1-2 │
-        └─────┘
-        >>> df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
-        shape: (1, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ str  │
-        ╞══════╡
-        │ null │
-        └──────┘
-        """
-        if delimiter is None:
-            issue_deprecation_warning(
-                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
-                " Pass a delimiter to silence this warning.",
-                version="0.20.5",
-            )
-            delimiter = "-"
-        return wrap_expr(self._pyexpr.str_concat(delimiter, ignore_nulls))
 
     def to_uppercase(self) -> Expr:
         """
@@ -928,7 +852,6 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
-    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int | IntoExprColumn) -> Expr:
         """
         Pad the start of the string with zeros until it reaches the given length.
@@ -1844,12 +1767,10 @@ class ExprStringNameSpace:
         each part to a new column.
 
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("x")
-        ...         .str.split_exact("_", 1)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
+        ...     pl.col("x")
+        ...     .str.split_exact("_", 1)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
         ... ).unnest("fields")
         shape: (4, 3)
         ┌──────┬────────────┬─────────────┐
@@ -1909,12 +1830,10 @@ class ExprStringNameSpace:
         each part to a new column.
 
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("s")
-        ...         .str.splitn(" ", 2)
-        ...         .struct.rename_fields(["first_part", "second_part"])
-        ...         .alias("fields"),
-        ...     ]
+        ...     pl.col("s")
+        ...     .str.splitn(" ", 2)
+        ...     .struct.rename_fields(["first_part", "second_part"])
+        ...     .alias("fields")
         ... ).unnest("fields")
         shape: (4, 3)
         ┌─────────────┬────────────┬─────────────┐
@@ -2450,181 +2369,6 @@ class ExprStringNameSpace:
         base = parse_as_expression(base, str_as_lit=False)
         return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
-    @deprecate_renamed_function("to_integer", version="0.19.14")
-    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
-    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Expr:
-        """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`to_integer`.
-
-        Parameters
-        ----------
-        base
-            Positive integer which is the base of the string we are parsing.
-        strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
-        """
-        if base is None:
-            base = 2
-        return self.to_integer(base=base, strict=strict).cast(Int32, strict=strict)
-
-    @deprecate_renamed_function("strip_chars", version="0.19.3")
-    def strip(self, characters: str | None = None) -> Expr:
-        """
-        Remove leading and trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-        return self.strip_chars(characters)
-
-    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
-    def lstrip(self, characters: str | None = None) -> Expr:
-        """
-        Remove leading characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars_start`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-        return self.strip_chars_start(characters)
-
-    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
-    def rstrip(self, characters: str | None = None) -> Expr:
-        """
-        Remove trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars_end`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-        return self.strip_chars_end(characters)
-
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(self, pattern: str | Expr) -> Expr:
-        """
-        Count all successive non-overlapping regex matches.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`UInt32`. Returns null if the
-            original value is null.
-        """
-        return self.count_matches(pattern)
-
-    @deprecate_renamed_function("len_bytes", version="0.19.8")
-    def lengths(self) -> Expr:
-        """
-        Return the length of each string as the number of bytes.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_bytes`.
-        """
-        return self.len_bytes()
-
-    @deprecate_renamed_function("len_chars", version="0.19.8")
-    def n_chars(self) -> Expr:
-        """
-        Return the length of each string as the number of characters.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_chars`.
-        """
-        return self.len_chars()
-
-    @deprecate_renamed_function("pad_end", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def ljust(self, length: int, fill_char: str = " ") -> Expr:
-        """
-        Return the string left justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_end`.
-
-        Parameters
-        ----------
-        length
-            Justify left to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-        return self.pad_end(length, fill_char)
-
-    @deprecate_renamed_function("pad_start", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def rjust(self, length: int, fill_char: str = " ") -> Expr:
-        """
-        Return the string right justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_start`.
-
-        Parameters
-        ----------
-        length
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-        return self.pad_start(length, fill_char)
-
-    @deprecate_renamed_function("json_decode", version="0.19.15")
-    def json_extract(
-        self,
-        dtype: PolarsDataType | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Expr:
-        """
-        Parse string values as JSON.
-
-        .. deprecated:: 0.19.15
-            This method has been renamed to :meth:`json_decode`.
-
-        Parameters
-        ----------
-        dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
-        infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
-        """
-        return self.json_decode(dtype, infer_schema_length)
-
     def contains_any(
         self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
     ) -> Expr:
@@ -2754,6 +2498,101 @@ class ExprStringNameSpace:
                 patterns, replace_with, ascii_case_insensitive
             )
         )
+
+    def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, None, 3]})
+        >>> df.select(pl.col("foo").str.join("-"))
+        shape: (1, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ 1-3 │
+        └─────┘
+        >>> df.select(pl.col("foo").str.join(ignore_nulls=False))
+        shape: (1, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ str  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        """
+        return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
+
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Expr:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`String`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, None, 2]})
+        >>> df.select(pl.col("foo").str.concat("-"))  # doctest: +SKIP
+        shape: (1, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ 1-2 │
+        └─────┘
+        >>> df.select(
+        ...     pl.col("foo").str.concat("-", ignore_nulls=False)
+        ... )  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ str  │
+        ╞══════╡
+        │ null │
+        └──────┘
+        """
+        if delimiter is None:
+            issue_deprecation_warning(
+                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
+                " Pass a delimiter to silence this warning.",
+                version="0.20.5",
+            )
+            delimiter = "-"
+        return self.join(delimiter, ignore_nulls=ignore_nulls)
 
 
 def _validate_format_argument(format: str | None) -> None:

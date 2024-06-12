@@ -12,11 +12,9 @@ from polars.testing import assert_frame_equal, assert_series_equal
 def test_ufunc() -> None:
     df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = df.select(
-        [
-            np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
-            np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
-            np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
-        ]
+        np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
+        np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
+        np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
     )
     expected = pl.DataFrame(
         [
@@ -33,11 +31,9 @@ def test_ufunc_expr_not_first() -> None:
     """Check numpy ufunc expressions also work if expression not the first argument."""
     df = pl.DataFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
     out = df.select(
-        [
-            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
-            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
-        ]
+        np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
+        (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
+        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [
@@ -52,11 +48,9 @@ def test_ufunc_expr_not_first() -> None:
 def test_lazy_ufunc() -> None:
     ldf = pl.LazyFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = ldf.select(
-        [
-            np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
-            np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
-            np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
-        ]
+        np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
+        np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
+        np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
     )
     expected = pl.DataFrame(
         [
@@ -72,11 +66,9 @@ def test_lazy_ufunc_expr_not_first() -> None:
     """Check numpy ufunc expressions also work if expression not the first argument."""
     ldf = pl.LazyFrame([pl.Series("a", [1, 2, 3], dtype=pl.Float64)])
     out = ldf.select(
-        [
-            np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
-            (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
-            (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
-        ]
+        np.power(2.0, cast(Any, pl.col("a"))).alias("power"),
+        (2.0 / cast(Any, pl.col("a"))).alias("divide_scalar"),
+        (np.array([2, 2, 2]) / cast(Any, pl.col("a"))).alias("divide_array"),
     )
     expected = pl.DataFrame(
         [

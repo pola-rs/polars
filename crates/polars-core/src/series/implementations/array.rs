@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use super::{private, MetadataFlags};
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
@@ -50,6 +51,24 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.add_to(rhs)
+    }
+
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.subtract(rhs)
+    }
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.multiply(rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.divide(rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.remainder(rhs)
     }
 }
 
@@ -122,8 +141,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

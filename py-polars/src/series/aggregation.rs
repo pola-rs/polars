@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use DataType::*;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
@@ -44,7 +45,7 @@ impl PySeries {
 
     fn mean(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
-            DataType::Boolean => Ok(Wrap(
+            Boolean => Ok(Wrap(
                 self.series
                     .cast(&DataType::UInt8)
                     .unwrap()
@@ -52,7 +53,8 @@ impl PySeries {
                     .as_any_value(),
             )
             .into_py(py)),
-            DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
+            // For non-numeric output types we require mean_reduce.
+            dt if dt.is_temporal() => {
                 Ok(Wrap(self.series.mean_reduce().as_any_value()).into_py(py))
             },
             _ => Ok(self.series.mean().into_py(py)),
@@ -61,7 +63,7 @@ impl PySeries {
 
     fn median(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
-            DataType::Boolean => Ok(Wrap(
+            Boolean => Ok(Wrap(
                 self.series
                     .cast(&DataType::UInt8)
                     .unwrap()
@@ -70,7 +72,8 @@ impl PySeries {
                     .as_any_value(),
             )
             .into_py(py)),
-            DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => Ok(Wrap(
+            // For non-numeric output types we require median_reduce.
+            dt if dt.is_temporal() => Ok(Wrap(
                 self.series
                     .median_reduce()
                     .map_err(PyPolarsErr::from)?

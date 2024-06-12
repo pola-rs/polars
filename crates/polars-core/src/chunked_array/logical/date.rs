@@ -27,12 +27,17 @@ impl LogicalType for DateChunked {
         self.0.get_any_value_unchecked(i).as_date()
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
         use DataType::*;
         match dtype {
+            Date => Ok(self.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
             Datetime(tu, tz) => {
-                let casted = self.0.cast(dtype)?;
+                let casted = self.0.cast_with_options(dtype, cast_options)?;
                 let casted = casted.datetime().unwrap();
                 let conversion = match tu {
                     TimeUnit::Nanoseconds => NS_IN_DAY,
@@ -43,11 +48,14 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             },
-            #[cfg(feature = "dtype-time")]
-            Time => {
-                polars_bail!(ComputeError: "cannot cast `Date` to `Time`");
+            dt if dt.is_numeric() => self.0.cast_with_options(dtype, cast_options),
+            dt => {
+                polars_bail!(
+                    InvalidOperation:
+                    "casting from {:?} to {:?} not supported",
+                    self.dtype(), dt
+                )
             },
-            _ => self.0.cast(dtype),
         }
     }
 }
