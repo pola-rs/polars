@@ -72,7 +72,9 @@ pub trait TotalOrdKernel: Sized + Array {
     }
 }
 
+mod null;
 mod scalar;
+mod struct_;
 mod view;
 
 #[cfg(feature = "simd")]

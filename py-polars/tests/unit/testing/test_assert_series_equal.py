@@ -5,12 +5,13 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal as D
 from typing import Any
 
+import hypothesis.strategies as st
 import pytest
 from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_series_equal, assert_series_not_equal
-from polars.testing.parametric import series
+from polars.testing.parametric import dtypes, series
 
 nan = float("nan")
 pytest_plugins = ["pytester"]
@@ -18,6 +19,16 @@ pytest_plugins = ["pytester"]
 
 @given(s=series())
 def test_assert_series_equal_parametric(s: pl.Series) -> None:
+    assert_series_equal(s, s)
+
+
+@given(data=st.data())
+def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
+    inner = data.draw(dtypes(excluded_dtypes=[pl.Struct, pl.Categorical]))
+    shape = data.draw(st.integers(min_value=1, max_value=3))
+    dtype = pl.Array(inner, shape=shape)
+    s = data.draw(series(dtype=dtype))
+
     assert_series_equal(s, s)
 
 
