@@ -228,7 +228,7 @@ impl<'a> IRDotDisplay<'a> {
             DataFrameScan {
                 schema,
                 projection,
-                selection,
+                filter: selection,
                 ..
             } => {
                 let num_columns = NumColumns(projection.as_ref().map(|p| p.as_ref().as_ref()));

@@ -100,7 +100,7 @@ impl IR {
                 schema,
                 output_schema,
                 projection,
-                selection,
+                filter: selection,
             } => DslPlan::DataFrameScan {
                 df,
                 schema,

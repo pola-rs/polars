@@ -63,7 +63,7 @@ pub enum IR {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         projection: Option<Arc<Vec<String>>>,
-        selection: Option<ExprIR>,
+        filter: Option<ExprIR>,
     },
     // Only selects columns (semantically only has row access).
     // This is a more restricted operation than `Select`.

@@ -31,7 +31,7 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
         matches!(
             lp,
             DataFrameScan {
-                selection: Some(_),
+                filter: Some(_),
                 ..
             } | Scan {
                 predicate: Some(_),
@@ -50,7 +50,7 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
         matches!(
             lp,
             DataFrameScan {
-                selection: Some(_),
+                filter: Some(_),
                 ..
             } | Scan {
                 predicate: Some(_),

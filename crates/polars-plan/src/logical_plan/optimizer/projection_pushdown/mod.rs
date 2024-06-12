@@ -354,7 +354,7 @@ impl ProjectionPushDown {
                 df,
                 schema,
                 mut output_schema,
-                selection,
+                filter: selection,
                 ..
             } => {
                 let mut projection = None;
@@ -372,10 +372,10 @@ impl ProjectionPushDown {
                     schema,
                     output_schema,
                     projection,
-                    selection,
+                    filter: selection,
                 };
                 Ok(lp)
-            },
+            }
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,

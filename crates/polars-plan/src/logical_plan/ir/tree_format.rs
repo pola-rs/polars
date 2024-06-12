@@ -193,7 +193,7 @@ impl<'a> TreeFmtNode<'a> {
                     DataFrameScan {
                         schema,
                         projection,
-                        selection,
+                        filter: selection,
                         ..
                     } => ND(
                         wh(

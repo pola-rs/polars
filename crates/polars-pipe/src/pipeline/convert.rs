@@ -54,7 +54,7 @@ where
         DataFrameScan {
             df,
             projection,
-            selection,
+            filter: selection,
             output_schema,
             ..
         } => {

@@ -351,7 +351,7 @@ fn create_physical_plan_impl(
         DataFrameScan {
             df,
             projection,
-            selection: predicate,
+            filter: predicate,
             schema,
             ..
         } => {

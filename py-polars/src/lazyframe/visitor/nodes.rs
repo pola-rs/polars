@@ -322,7 +322,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             schema: _,
             output_schema: _,
             projection,
-            selection,
+            filter: selection,
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
             projection: projection
