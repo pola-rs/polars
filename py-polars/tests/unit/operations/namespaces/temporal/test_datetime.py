@@ -1042,11 +1042,7 @@ def test_weekday(time_unit: TimeUnit) -> None:
 def test_median(
     values: list[TemporalLiteral | None], expected_median: TemporalLiteral | None
 ) -> None:
-    s = pl.Series(values)
-    assert s.dt.median() == expected_median
-
-    if s.dtype in (pl.Datetime, pl.Duration, pl.Time):
-        assert s.median() == expected_median
+    assert pl.Series(values).median() == expected_median
 
 
 @pytest.mark.parametrize(
@@ -1099,11 +1095,7 @@ def test_median(
 def test_mean(
     values: list[TemporalLiteral | None], expected_mean: TemporalLiteral | None
 ) -> None:
-    s = pl.Series(values)
-    assert s.dt.mean() == expected_mean
-
-    if s.dtype in (pl.Datetime, pl.Duration, pl.Time):
-        assert s.mean() == expected_mean
+    assert pl.Series(values).mean() == expected_mean
 
 
 @pytest.mark.parametrize(
@@ -1122,7 +1114,6 @@ def test_datetime_mean_with_tu(
     values: list[datetime], expected_mean: datetime, time_unit: TimeUnit
 ) -> None:
     assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean
 
 
 @pytest.mark.parametrize(
@@ -1141,9 +1132,6 @@ def test_datetime_median_with_tu(
     values: list[datetime], expected_median: datetime, time_unit: TimeUnit
 ) -> None:
     assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
-    assert (
-        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median
-    )
 
 
 @pytest.mark.parametrize(
@@ -1162,7 +1150,6 @@ def test_duration_mean_with_tu(
     values: list[timedelta], expected_mean: timedelta, time_unit: TimeUnit
 ) -> None:
     assert pl.Series(values, dtype=pl.Duration(time_unit)).mean() == expected_mean
-    assert pl.Series(values, dtype=pl.Duration(time_unit)).dt.mean() == expected_mean
 
 
 @pytest.mark.parametrize(
@@ -1181,9 +1168,6 @@ def test_duration_median_with_tu(
     values: list[timedelta], expected_median: timedelta, time_unit: TimeUnit
 ) -> None:
     assert pl.Series(values, dtype=pl.Duration(time_unit)).median() == expected_median
-    assert (
-        pl.Series(values, dtype=pl.Duration(time_unit)).dt.median() == expected_median
-    )
 
 
 def test_agg_mean_expr() -> None:
@@ -1352,3 +1336,19 @@ def test_series_datetime_timeunits(
     assert list(s.dt.millisecond()) == [v.microsecond // 1000 for v in s]
     assert list(s.dt.nanosecond()) == [v.microsecond * 1000 for v in s]
     assert list(s.dt.microsecond()) == [v.microsecond for v in s]
+
+
+def test_dt_median_deprecated() -> None:
+    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
+    s = pl.Series(values)
+    with pytest.deprecated_call():
+        result = s.dt.median()
+    assert result == s.median()
+
+
+def test_dt_mean_deprecated() -> None:
+    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
+    s = pl.Series(values)
+    with pytest.deprecated_call():
+        result = s.dt.mean()
+    assert result == s.mean()
