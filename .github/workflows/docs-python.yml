@@ -58,7 +58,7 @@ jobs:
           target-folder: api/python/dev
           single-commit: true
 
-      - name: Parse the tag to find the major/minor version of Polars
+      - name: Parse the tag to find the major version of Polars
         id: version
         if: github.event_name == 'repository_dispatch'
         shell: bash
