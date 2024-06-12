@@ -53,14 +53,14 @@ def test_scatter() -> None:
     assert a.to_list() == [None, 1, 2, None, 4], a
 
 
-def test_index_with_None_errors_15294():
+def test_index_with_None_errors_16905():
     s = pl.Series("s", [1, 2, 3])
     with pytest.raises(pl.ComputeError, match="index values should not be null"):
         s[[1, None]] = 5
     assert s.to_list() == [1, 2, 3]
 
 
-def test_object_dtype_15294():
+def test_object_dtype_16905():
     obj = object()
     s = pl.Series("s", [obj, 27], dtype=pl.Object)
     with pytest.raises(pl.InvalidOperationError):
