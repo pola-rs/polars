@@ -38,7 +38,7 @@ fn get_scan_columns(
     acc_projections: &mut Vec<ColumnNode>,
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
-) -> Option<Arc<Vec<String>>> {
+) -> Option<Arc<[String]>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
@@ -55,7 +55,7 @@ fn get_scan_columns(
                 columns.push((*name).to_owned())
             }
         }
-        with_columns = Some(Arc::new(columns));
+        with_columns = Some(Arc::from(columns));
     }
     with_columns
 }
@@ -375,7 +375,7 @@ impl ProjectionPushDown {
                     filter: selection,
                 };
                 Ok(lp)
-            }
+            },
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,

@@ -188,7 +188,9 @@ impl IR {
                     container.push(pred.clone())
                 }
             },
-            DataFrameScan { filter: selection, .. } => {
+            DataFrameScan {
+                filter: selection, ..
+            } => {
                 if let Some(expr) = selection {
                     container.push(expr.clone())
                 }

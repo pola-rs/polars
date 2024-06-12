@@ -68,7 +68,7 @@ where
                 }
                 // projection is free
                 if let Some(projection) = projection {
-                    df = df.select(projection.as_slice())?;
+                    df = df.select(projection.as_ref())?;
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)

@@ -25,7 +25,7 @@ pub type FileCount = u32;
 /// Generic options for all file types.
 pub struct FileScanOptions {
     pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
+    pub with_columns: Option<Arc<[String]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,
     pub rechunk: bool,
@@ -204,7 +204,7 @@ pub struct PythonOptions {
     pub scan_fn: Option<PythonFunction>,
     pub schema: SchemaRef,
     pub output_schema: Option<SchemaRef>,
-    pub with_columns: Option<Arc<Vec<String>>>,
+    pub with_columns: Option<Arc<[String]>>,
     pub pyarrow: bool,
     // a pyarrow predicate python expression
     // can be evaluated with python.eval

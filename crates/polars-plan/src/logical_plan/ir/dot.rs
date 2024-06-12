@@ -153,7 +153,7 @@ impl<'a> IRDotDisplay<'a> {
             #[cfg(feature = "python")]
             PythonScan { predicate, options } => {
                 let predicate = predicate.as_ref().map(|e| self.display_expr(e));
-                let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_slice()));
+                let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
                 let total_columns = options.schema.len();
                 let predicate = OptionExprIRDisplay(predicate);
 
@@ -231,7 +231,7 @@ impl<'a> IRDotDisplay<'a> {
                 filter: selection,
                 ..
             } => {
-                let num_columns = NumColumns(projection.as_ref().map(|p| p.as_ref().as_ref()));
+                let num_columns = NumColumns(projection.as_ref().map(|p| p.as_ref()));
                 let selection = selection.as_ref().map(|e| self.display_expr(e));
                 let selection = OptionExprIRDisplay(selection);
                 let total_columns = schema.len();
@@ -250,7 +250,7 @@ impl<'a> IRDotDisplay<'a> {
             } => {
                 let name: &str = scan_type.into();
                 let path = PathsDisplay(paths.as_ref());
-                let with_columns = options.with_columns.as_ref().map(|cols| cols.as_slice());
+                let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
                 let total_columns = file_info.schema.len();
                 let predicate = predicate.as_ref().map(|e| self.display_expr(e));

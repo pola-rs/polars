@@ -204,7 +204,7 @@ pub fn to_alp_impl(
             schema,
             output_schema,
             projection,
-            selection,
+            filter: selection,
         } => IR::DataFrameScan {
             df,
             schema,

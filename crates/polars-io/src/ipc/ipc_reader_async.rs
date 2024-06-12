@@ -25,7 +25,7 @@ pub struct IpcReaderAsync {
 #[derive(Default, Clone)]
 pub struct IpcReadOptions {
     // Names of the columns to include in the output.
-    projection: Option<Vec<String>>,
+    projection: Option<Arc<[String]>>,
 
     // The maximum number of rows to include in the output.
     row_limit: Option<usize>,
@@ -38,8 +38,8 @@ pub struct IpcReadOptions {
 }
 
 impl IpcReadOptions {
-    pub fn with_projection(mut self, indices: impl Into<Option<Vec<String>>>) -> Self {
-        self.projection = indices.into();
+    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+        self.projection = projection;
         self
     }
 

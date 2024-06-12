@@ -144,7 +144,7 @@ impl<'a> CoreReader<'a> {
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Arc<Vec<String>>>,
+        columns: Option<Arc<[String]>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
