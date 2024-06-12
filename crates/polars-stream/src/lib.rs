@@ -2,6 +2,9 @@
 mod async_primitives;
 #[allow(unused)]
 mod executor;
+mod skeleton;
+
+pub use skeleton::run_query;
 
 pub async fn dummy() {
     let num_threads = 8;

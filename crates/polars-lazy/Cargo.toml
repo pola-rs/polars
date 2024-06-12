@@ -18,6 +18,7 @@ polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-pipe = { workspace = true, optional = true }
 polars-plan = { workspace = true }
+polars-stream = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
@@ -39,6 +40,7 @@ version_check = { workspace = true }
 [features]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids", "polars-expr/streaming"]
+new-streaming = ["polars-stream"]
 parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet", "polars-expr/parquet"]
 async = [
   "polars-plan/async",
