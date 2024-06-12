@@ -154,15 +154,19 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
+    @deprecate_function("Use `Series.median` instead.", version="0.20.32")
     def median(self) -> TemporalLiteral | None:
         """
         Return median as python DateTime.
+
+        .. deprecated:: 0.20.32
+            Use `Series.median` instead.
 
         Examples
         --------
         >>> from datetime import date, datetime
         >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2)])
-        >>> s.dt.median()
+        >>> s.dt.median()  # doctest: +SKIP
         datetime.datetime(2001, 1, 1, 12, 0)
         >>> date = pl.datetime_range(
         ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
@@ -175,25 +179,29 @@ class DateTimeNameSpace:
                 2001-01-02 00:00:00
                 2001-01-03 00:00:00
         ]
-        >>> date.dt.median()
+        >>> date.dt.median()  # doctest: +SKIP
         datetime.datetime(2001, 1, 2, 0, 0)
         """
         return self._s.median()
 
+    @deprecate_function("Use `Series.mean` instead.", version="0.20.32")
     def mean(self) -> TemporalLiteral | None:
         """
         Return mean as python DateTime.
+
+        .. deprecated:: 0.20.32
+            Use `Series.mean` instead.
 
         Examples
         --------
         >>> from datetime import date, datetime
         >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2)])
-        >>> s.dt.mean()
+        >>> s.dt.mean()  # doctest: +SKIP
         datetime.datetime(2001, 1, 1, 12, 0)
         >>> s = pl.Series(
         ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
         ... )
-        >>> s.dt.mean()
+        >>> s.dt.mean()  # doctest: +SKIP
         datetime.datetime(2001, 1, 2, 0, 0)
         """
         return self._s.mean()
