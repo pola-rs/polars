@@ -31,9 +31,9 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
+from polars._utils.parse import (
+    parse_into_expression,
+    parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -1280,7 +1280,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 )
             )
 
-        by = parse_as_list_of_expressions(by, *more_by)
+        by = parse_into_list_of_expressions(by, *more_by)
         descending = extend_bool(descending, len(by), "descending", "by")
         nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyldf(
@@ -1444,7 +1444,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   │
         └─────┴─────┘
         """
-        by = parse_as_list_of_expressions(by)
+        by = parse_into_list_of_expressions(by)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyldf(self._ldf.top_k(k, by=by, reverse=reverse))
 
@@ -1519,7 +1519,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 2   │
         └─────┴─────┘
         """
-        by = parse_as_list_of_expressions(by)
+        by = parse_into_list_of_expressions(by)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
@@ -2903,7 +2903,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(msg)
             else:
                 all_predicates.extend(
-                    wrap_expr(x) for x in parse_as_list_of_expressions(p)
+                    wrap_expr(x) for x in parse_into_list_of_expressions(p)
                 )
 
         # unpack equality constraints from kwargs
@@ -3039,7 +3039,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        pyexprs = parse_as_list_of_expressions(
+        pyexprs = parse_into_list_of_expressions(
             *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.select(pyexprs))
@@ -3069,7 +3069,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        pyexprs = parse_as_list_of_expressions(
+        pyexprs = parse_into_list_of_expressions(
             *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
@@ -3168,7 +3168,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
         """
-        exprs = parse_as_list_of_expressions(*by, **named_by)
+        exprs = parse_into_list_of_expressions(*by, **named_by)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
@@ -3295,12 +3295,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
         """
-        index_column = parse_as_expression(index_column)
+        index_column = parse_into_expression(index_column)
         if offset is None:
             offset = negate_duration_string(parse_as_duration_string(period))
 
         pyexprs_by = (
-            parse_as_list_of_expressions(group_by) if group_by is not None else []
+            parse_into_list_of_expressions(group_by) if group_by is not None else []
         )
         period = parse_as_duration_string(period)
         offset = parse_as_duration_string(offset)
@@ -3616,7 +3616,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
         """  # noqa: W505
-        index_column = parse_as_expression(index_column)
+        index_column = parse_into_expression(index_column)
         if offset is None:
             offset = "0ns"
 
@@ -3628,7 +3628,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every = parse_as_duration_string(every)
 
         pyexprs_by = (
-            parse_as_list_of_expressions(group_by) if group_by is not None else []
+            parse_into_list_of_expressions(group_by) if group_by is not None else []
         )
         lgb = self._ldf.group_by_dynamic(
             index_column,
@@ -4013,12 +4013,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
 
         if on is not None:
-            pyexprs = parse_as_list_of_expressions(on)
+            pyexprs = parse_into_list_of_expressions(on)
             pyexprs_left = pyexprs
             pyexprs_right = pyexprs
         elif left_on is not None and right_on is not None:
-            pyexprs_left = parse_as_list_of_expressions(left_on)
-            pyexprs_right = parse_as_list_of_expressions(right_on)
+            pyexprs_left = parse_into_list_of_expressions(left_on)
+            pyexprs_right = parse_into_list_of_expressions(right_on)
         else:
             msg = "must specify `on` OR `left_on` and `right_on`"
             raise ValueError(msg)
@@ -4186,7 +4186,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        pyexprs = parse_as_list_of_expressions(
+        pyexprs = parse_into_list_of_expressions(
             *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
@@ -4225,7 +4225,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        pyexprs = parse_as_list_of_expressions(
+        pyexprs = parse_into_list_of_expressions(
             *exprs, **named_exprs, __structify=structify
         )
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
@@ -4516,8 +4516,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """
         if fill_value is not None:
-            fill_value = parse_as_expression(fill_value, str_as_lit=True)
-        n = parse_as_expression(n)
+            fill_value = parse_into_expression(fill_value, str_as_lit=True)
+        n = parse_into_expression(n)
         return self._from_pyldf(self._ldf.shift(n, fill_value))
 
     def slice(self, offset: int, length: int | None = None) -> Self:
@@ -5379,7 +5379,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 1.0 │
         └─────┴─────┘
         """
-        quantile = parse_as_expression(quantile)
+        quantile = parse_into_expression(quantile)
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
@@ -5423,7 +5423,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
-        columns = parse_as_list_of_expressions(
+        columns = parse_into_list_of_expressions(
             *_expand_selectors(self, columns, *more_columns)
         )
         return self._from_pyldf(self._ldf.explode(columns))

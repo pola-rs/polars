@@ -16,7 +16,65 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, PolarsDataType
 
 
-def parse_as_list_of_expressions(
+def parse_into_expression(
+    input: IntoExpr,
+    *,
+    str_as_lit: bool = False,
+    list_as_series: bool = False,
+    structify: bool = False,
+    dtype: PolarsDataType | None = None,
+) -> PyExpr:
+    """
+    Parse a single input into an expression.
+
+    Parameters
+    ----------
+    input
+        The input to be parsed as an expression.
+    str_as_lit
+        Interpret string input as a string literal. If set to `False` (default),
+        strings are parsed as column names.
+    list_as_series
+        Interpret list input as a Series literal. If set to `False` (default),
+        lists are parsed as list literals.
+    structify
+        Convert multi-column expressions to a single struct expression.
+    dtype
+        If the input is expected to resolve to a literal with a known dtype, pass
+        this to the `lit` constructor.
+
+    Returns
+    -------
+    PyExpr
+    """
+    if isinstance(input, pl.Expr):
+        expr = input
+        if structify:
+            expr = _structify_expression(expr)
+
+    elif isinstance(input, str) and not str_as_lit:
+        expr = F.col(input)
+    elif isinstance(input, list) and list_as_series:
+        expr = F.lit(pl.Series(input), dtype=dtype)
+    else:
+        expr = F.lit(input, dtype=dtype)
+
+    return expr._pyexpr
+
+
+def _structify_expression(expr: Expr) -> Expr:
+    unaliased_expr = expr.meta.undo_aliases()
+    if unaliased_expr.meta.has_multiple_outputs():
+        try:
+            expr_name = expr.meta.output_name()
+        except ComputeError:
+            expr = F.struct(expr)
+        else:
+            expr = F.struct(unaliased_expr).alias(expr_name)
+    return expr
+
+
+def parse_into_list_of_expressions(
     *inputs: IntoExpr | Iterable[IntoExpr],
     __structify: bool = False,
     **named_inputs: IntoExpr,
@@ -52,7 +110,7 @@ def _parse_positional_inputs(
     structify: bool = False,
 ) -> list[PyExpr]:
     inputs_iter = _parse_inputs_as_iterable(inputs)
-    return [parse_as_expression(e, structify=structify) for e in inputs_iter]
+    return [parse_into_expression(e, structify=structify) for e in inputs_iter]
 
 
 def _parse_inputs_as_iterable(
@@ -78,71 +136,10 @@ def _parse_named_inputs(
     named_inputs: dict[str, IntoExpr], *, structify: bool = False
 ) -> Iterable[PyExpr]:
     for name, input in named_inputs.items():
-        yield parse_as_expression(input, structify=structify).alias(name)
+        yield parse_into_expression(input, structify=structify).alias(name)
 
 
-def parse_as_expression(
-    input: IntoExpr,
-    *,
-    str_as_lit: bool = False,
-    list_as_lit: bool = True,
-    structify: bool = False,
-    dtype: PolarsDataType | None = None,
-) -> PyExpr:
-    """
-    Parse a single input into an expression.
-
-    Parameters
-    ----------
-    input
-        The input to be parsed as an expression.
-    str_as_lit
-        Interpret string input as a string literal. If set to `False` (default),
-        strings are parsed as column names.
-    list_as_lit
-        Interpret list input as a lit literal, If set to `False`,
-        lists are parsed as `Series` literals.
-    structify
-        Convert multi-column expressions to a single struct expression.
-    dtype
-        If the input is expected to resolve to a literal with a known dtype, pass
-        this to the `lit` constructor.
-
-    Returns
-    -------
-    PyExpr
-    """
-    if isinstance(input, pl.Expr):
-        expr = input
-    elif isinstance(input, str) and not str_as_lit:
-        expr = F.col(input)
-        structify = False
-    elif isinstance(input, list) and not list_as_lit:
-        expr = F.lit(pl.Series(input), dtype=dtype)
-        structify = False
-    else:
-        expr = F.lit(input, dtype=dtype)
-        structify = False
-
-    if structify:
-        expr = _structify_expression(expr)
-
-    return expr._pyexpr
-
-
-def _structify_expression(expr: Expr) -> Expr:
-    unaliased_expr = expr.meta.undo_aliases()
-    if unaliased_expr.meta.has_multiple_outputs():
-        try:
-            expr_name = expr.meta.output_name()
-        except ComputeError:
-            expr = F.struct(expr)
-        else:
-            expr = F.struct(unaliased_expr).alias(expr_name)
-    return expr
-
-
-def parse_predicates_constraints_as_expression(
+def parse_predicates_constraints_into_expression(
     *predicates: IntoExpr | Iterable[IntoExpr],
     **constraints: Any,
 ) -> PyExpr:

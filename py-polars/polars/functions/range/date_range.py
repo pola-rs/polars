@@ -4,7 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
 
@@ -143,8 +143,8 @@ def date_range(
     """
     interval = parse_interval_argument(interval)
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
     result = wrap_expr(plr.date_range(start_pyexpr, end_pyexpr, interval, closed))
 
     if eager:
@@ -262,8 +262,8 @@ def date_ranges(
     └────────────┴────────────┴──────────────────────────────────────┘
     """
     interval = parse_interval_argument(interval)
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
 
     result = wrap_expr(plr.date_ranges(start_pyexpr, end_pyexpr, interval, closed))
 

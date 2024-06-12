@@ -48,7 +48,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     is_bool_sequence,
@@ -9191,7 +9191,7 @@ class DataFrame:
         elif isinstance(subset, pl.Expr):
             expr = subset
         elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_as_expression(subset[0]))
+            expr = wrap_expr(parse_into_expression(subset[0]))
         else:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]

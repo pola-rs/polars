@@ -31,10 +31,10 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
-    parse_predicates_constraints_as_expression,
+from polars._utils.parse import (
+    parse_into_expression,
+    parse_into_list_of_expressions,
+    parse_predicates_constraints_into_expression,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -159,42 +159,42 @@ class Expr:
 
     # operators
     def __add__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr + other)
 
     def __radd__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(other + self._pyexpr)
 
     def __and__(self, other: IntoExprColumn | int | bool) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.and_(other))
 
     def __rand__(self, other: IntoExprColumn | int | bool) -> Self:
-        other_expr = parse_as_expression(other)
+        other_expr = parse_into_expression(other)
         return self._from_pyexpr(other_expr.and_(self._pyexpr))
 
     def __eq__(self, other: IntoExpr) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.eq(other))
 
     def __floordiv__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr // other)
 
     def __rfloordiv__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(other // self._pyexpr)
 
     def __ge__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.gt_eq(other))
 
     def __gt__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.gt(other))
 
     def __invert__(self) -> Self:
@@ -202,79 +202,79 @@ class Expr:
 
     def __le__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.lt_eq(other))
 
     def __lt__(self, other: IntoExpr) -> Self:
         warn_null_comparison(other)
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.lt(other))
 
     def __mod__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr % other)
 
     def __rmod__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(other % self._pyexpr)
 
     def __mul__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr * other)
 
     def __rmul__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(other * self._pyexpr)
 
     def __ne__(self, other: IntoExpr) -> Self:  # type: ignore[override]
         warn_null_comparison(other)
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq(other))
 
     def __neg__(self) -> Self:
         return self._from_pyexpr(-self._pyexpr)
 
     def __or__(self, other: IntoExprColumn | int | bool) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.or_(other))
 
     def __ror__(self, other: IntoExprColumn | int | bool) -> Self:
-        other_expr = parse_as_expression(other)
+        other_expr = parse_into_expression(other)
         return self._from_pyexpr(other_expr.or_(self._pyexpr))
 
     def __pos__(self) -> Expr:
         return self
 
     def __pow__(self, exponent: IntoExprColumn | int | float) -> Self:
-        exponent = parse_as_expression(exponent)
+        exponent = parse_into_expression(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent))
 
     def __rpow__(self, base: IntoExprColumn | int | float) -> Expr:
-        base = parse_as_expression(base)
+        base = parse_into_expression(base)
         return self._from_pyexpr(base) ** self
 
     def __sub__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr - other)
 
     def __rsub__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(other - self._pyexpr)
 
     def __truediv__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr / other)
 
     def __rtruediv__(self, other: IntoExpr) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(other / self._pyexpr)
 
     def __xor__(self, other: IntoExprColumn | int | bool) -> Self:
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.xor_(other))
 
     def __rxor__(self, other: IntoExprColumn | int | bool) -> Self:
-        other_expr = parse_as_expression(other)
+        other_expr = parse_into_expression(other)
         return self._from_pyexpr(other_expr.xor_(self._pyexpr))
 
     def __getstate__(self) -> bytes:
@@ -1244,7 +1244,7 @@ class Expr:
         │ 10  ┆ 4    │
         └─────┴──────┘
         """
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.append(other, upcast))
 
     def rechunk(self) -> Self:
@@ -1675,7 +1675,7 @@ class Expr:
         │ 44  │
         └─────┘
         """
-        other = parse_as_expression(other)
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.dot(other))
 
     def mode(self) -> Self:
@@ -1875,7 +1875,7 @@ class Expr:
         │ 99    ┆ 4        │
         └───────┴──────────┘
         """
-        k = parse_as_expression(k)
+        k = parse_into_expression(k)
         return self._from_pyexpr(self._pyexpr.top_k(k))
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
@@ -1996,8 +1996,8 @@ class Expr:
         │ Banana ┆ 5   ┆ 2   │
         └────────┴─────┴─────┘
         """  # noqa: W505
-        k = parse_as_expression(k)
-        by = parse_as_list_of_expressions(by)
+        k = parse_into_expression(k)
+        by = parse_into_list_of_expressions(by)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, reverse=reverse))
 
@@ -2048,7 +2048,7 @@ class Expr:
         │ 99    ┆ 4        │
         └───────┴──────────┘
         """
-        k = parse_as_expression(k)
+        k = parse_into_expression(k)
         return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
@@ -2169,8 +2169,8 @@ class Expr:
         │ Banana ┆ 6   ┆ 1   │
         └────────┴─────┴─────┘
         """  # noqa: W505
-        k = parse_as_expression(k)
-        by = parse_as_list_of_expressions(by)
+        k = parse_into_expression(k)
+        by = parse_into_list_of_expressions(by)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyexpr(self._pyexpr.bottom_k_by(by, k=k, reverse=reverse))
 
@@ -2317,7 +2317,7 @@ class Expr:
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
         """
-        element = parse_as_expression(element, list_as_lit=False, str_as_lit=True)  # type: ignore[arg-type]
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
@@ -2453,7 +2453,7 @@ class Expr:
         │ b     ┆ 2      ┆ 5      |
         └───────┴────────┴────────┘
         """
-        by = parse_as_list_of_expressions(by, *more_by)
+        by = parse_into_list_of_expressions(by, *more_by)
         descending = extend_bool(descending, len(by), "descending", "by")
         nulls_last = extend_bool(nulls_last, len(by), "nulls_last", "by")
         return self._from_pyexpr(
@@ -2515,7 +2515,7 @@ class Expr:
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
-            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
+            indices_lit = parse_into_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.gather(indices_lit))
 
     def get(self, index: int | Expr) -> Self:
@@ -2558,7 +2558,7 @@ class Expr:
         │ two   ┆ 99    │
         └───────┴───────┘
         """
-        index_lit = parse_as_expression(index)
+        index_lit = parse_into_expression(index)
         return self._from_pyexpr(self._pyexpr.get(index_lit))
 
     def shift(
@@ -2634,8 +2634,8 @@ class Expr:
         └─────┴───────┘
         """
         if fill_value is not None:
-            fill_value = parse_as_expression(fill_value, str_as_lit=True)
-        n = parse_as_expression(n)
+            fill_value = parse_into_expression(fill_value, str_as_lit=True)
+        n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.shift(n, fill_value))
 
     def fill_null(
@@ -2739,7 +2739,7 @@ class Expr:
             raise ValueError(msg)
 
         if value is not None:
-            value = parse_as_expression(value, str_as_lit=True)
+            value = parse_into_expression(value, str_as_lit=True)
             return self._from_pyexpr(self._pyexpr.fill_null(value))
         else:
             return self._from_pyexpr(
@@ -2784,7 +2784,7 @@ class Expr:
         │ NaN  ┆ 6.0 │
         └──────┴─────┘
         """
-        fill_value = parse_as_expression(value, str_as_lit=True)
+        fill_value = parse_into_expression(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
     def forward_fill(self, limit: int | None = None) -> Self:
@@ -3485,9 +3485,9 @@ class Expr:
         └─────┴─────┴─────┘
 
         """
-        partition_by = parse_as_list_of_expressions(partition_by, *more_exprs)
+        partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
-            order_by = parse_as_list_of_expressions(order_by)
+            order_by = parse_into_list_of_expressions(order_by)
         return self._from_pyexpr(
             self._pyexpr.over(
                 partition_by,
@@ -3818,7 +3818,7 @@ class Expr:
         │ 1.5 │
         └─────┘
         """
-        quantile = parse_as_expression(quantile)
+        quantile = parse_into_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
     @unstable()
@@ -4177,7 +4177,7 @@ class Expr:
         │ b   ┆ 1   ┆ 2   ┆ 9   │
         └─────┴─────┴─────┴─────┘
         """
-        predicate = parse_predicates_constraints_as_expression(
+        predicate = parse_predicates_constraints_into_expression(
             *predicates, **constraints
         )
         return self._from_pyexpr(self._pyexpr.filter(predicate))
@@ -4851,7 +4851,7 @@ class Expr:
         │ 7   │
         └─────┘
         """
-        offset = -self._from_pyexpr(parse_as_expression(n))
+        offset = -self._from_pyexpr(parse_into_expression(n))
         return self.slice(offset, n)
 
     def limit(self, n: int | Expr = 10) -> Self:
@@ -5036,7 +5036,7 @@ class Expr:
         │ null ┆ null ┆ null   ┆ true           │
         └──────┴──────┴────────┴────────────────┘
         """
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.eq_missing(other))
 
     def ge(self, other: Any) -> Self:
@@ -5246,7 +5246,7 @@ class Expr:
         │ null ┆ null ┆ null   ┆ false          │
         └──────┴──────┴────────┴────────────────┘
         """
-        other = parse_as_expression(other, str_as_lit=True)
+        other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq_missing(other))
 
     def add(self, other: Any) -> Self:
@@ -5688,7 +5688,7 @@ class Expr:
                 other = list(other)
             other = F.lit(pl.Series(other))._pyexpr
         else:
-            other = parse_as_expression(other)
+            other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
@@ -5730,7 +5730,7 @@ class Expr:
         │ ["z", "z", "z"] │
         └─────────────────┘
         """
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(self._pyexpr.repeat_by(by))
 
     def is_between(
@@ -5840,8 +5840,8 @@ class Expr:
         │ 5   ┆ 1   ┆ false      │
         └─────┴─────┴────────────┘
         """
-        lower_bound = parse_as_expression(lower_bound)
-        upper_bound = parse_as_expression(upper_bound)
+        lower_bound = parse_into_expression(lower_bound)
+        upper_bound = parse_into_expression(upper_bound)
 
         return self._from_pyexpr(
             self._pyexpr.is_between(lower_bound, upper_bound, closed)
@@ -6079,7 +6079,7 @@ class Expr:
         │ 3    ┆ 8   ┆ 3.0            │
         └──────┴─────┴────────────────┘
         """
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(self._pyexpr.interpolate_by(by))
 
     @unstable()
@@ -6198,7 +6198,7 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_min_by(by, window_size, min_periods, closed)
         )
@@ -6345,7 +6345,7 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_max_by(by, window_size, min_periods, closed)
         )
@@ -6494,7 +6494,7 @@ class Expr:
         └───────┴─────────────────────┴──────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_mean_by(
                 by,
@@ -6646,7 +6646,7 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_sum_by(by, window_size, min_periods, closed)
         )
@@ -6796,7 +6796,7 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_std_by(
                 by,
@@ -6952,7 +6952,7 @@ class Expr:
         └───────┴─────────────────────┴─────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_var_by(
                 by,
@@ -7081,7 +7081,7 @@ class Expr:
         └───────┴─────────────────────┴────────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_median_by(by, window_size, min_periods, closed)
         )
@@ -7210,7 +7210,7 @@ class Expr:
         └───────┴─────────────────────┴──────────────────────┘
         """
         window_size = _prepare_rolling_by_window_args(window_size)
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile_by(
                 by,
@@ -8468,7 +8468,7 @@ class Expr:
         │ 12   ┆ 0.0        │
         └──────┴────────────┘
         """
-        n = parse_as_expression(n)
+        n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
     def skew(self, *, bias: bool = True) -> Self:
@@ -8619,9 +8619,9 @@ class Expr:
         └──────┴──────┘
         """
         if lower_bound is not None:
-            lower_bound = parse_as_expression(lower_bound)
+            lower_bound = parse_into_expression(lower_bound)
         if upper_bound is not None:
-            upper_bound = parse_as_expression(upper_bound)
+            upper_bound = parse_into_expression(upper_bound)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
     def lower_bound(self) -> Self:
@@ -9207,14 +9207,14 @@ class Expr:
             raise ValueError(msg)
 
         if fraction is not None:
-            fraction = parse_as_expression(fraction)
+            fraction = parse_into_expression(fraction)
             return self._from_pyexpr(
                 self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
             n = 1
-        n = parse_as_expression(n)
+        n = parse_into_expression(n)
         return self._from_pyexpr(
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
@@ -9393,7 +9393,7 @@ class Expr:
         │ 4      ┆ 2020-01-17 ┆ 3.254508 │
         └────────┴────────────┴──────────┘
         """
-        by = parse_as_expression(by)
+        by = parse_into_expression(by)
         half_life = parse_as_duration_string(half_life)
         return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life))
 
@@ -9608,8 +9608,8 @@ class Expr:
         │ 99     │
         └────────┘
         """
-        value = parse_as_expression(value, str_as_lit=True)
-        n = parse_as_expression(n)
+        value = parse_into_expression(value, str_as_lit=True)
+        n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
     def value_counts(
@@ -9989,7 +9989,7 @@ class Expr:
         if bins is not None:
             if isinstance(bins, list):
                 bins = pl.Series(bins)
-            bins = parse_as_expression(bins)
+            bins = parse_into_expression(bins)
         return self._from_pyexpr(
             self._pyexpr.hist(bins, bin_count, include_category, include_breakpoint)
         )
@@ -10155,19 +10155,14 @@ class Expr:
         if new is no_default and isinstance(old, Mapping):
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
-        else:
-            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
-                old = pl.Series(old)
-            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
-                new = pl.Series(new)
 
-        old = parse_as_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new = parse_as_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        old = parse_into_expression(old, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
 
         default = (
             None
             if default is no_default
-            else parse_as_expression(default, str_as_lit=True)
+            else parse_into_expression(default, str_as_lit=True)
         )
 
         return self._from_pyexpr(self._pyexpr.replace(old, new, default, return_dtype))
