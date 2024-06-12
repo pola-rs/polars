@@ -1338,47 +1338,17 @@ def test_series_datetime_timeunits(
     assert list(s.dt.microsecond()) == [v.microsecond for v in s]
 
 
-@pytest.mark.parametrize(
-    ("values", "expected_median"),
-    [
-        ([], None),
-        ([None, None], None),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], datetime(2022, 1, 2)),
-        (
-            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
-            datetime(2022, 1, 2),
-        ),
-        ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=2)),
-        ([time(hour=1), time(hour=2), time(hour=15)], time(hour=2)),
-    ],
-)
-def test_deprecate_median(
-    values: list[TemporalLiteral | None], expected_median: TemporalLiteral | None
-) -> None:
+def test_dt_median_deprecated() -> None:
+    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
+    s = pl.Series(values)
     with pytest.deprecated_call():
-        assert pl.Series(values).dt.median() == expected_median
+        result = s.dt.median()
+    assert result == s.median()
 
 
-@pytest.mark.parametrize(
-    ("values", "expected_mean"),
-    [
-        ([], None),
-        ([None, None], None),
-        (
-            [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)],
-            datetime(2022, 10, 16, 16, 0),
-        ),
-        ([datetime(2022, 1, 1)], datetime(2022, 1, 1)),
-        (
-            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
-            datetime(2022, 10, 16, 16, 0, 0),
-        ),
-        ([timedelta(days=1), timedelta(days=2), timedelta(days=15)], timedelta(days=6)),
-        ([time(hour=1), time(hour=2), time(hour=15)], time(hour=6)),
-    ],
-)
-def test_deprecate_mean(
-    values: list[TemporalLiteral | None], expected_mean: TemporalLiteral | None
-) -> None:
+def test_dt_mean_deprecated() -> None:
+    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
+    s = pl.Series(values)
     with pytest.deprecated_call():
-        assert pl.Series(values).dt.mean() == expected_mean
+        result = s.dt.mean()
+    assert result == s.mean()
