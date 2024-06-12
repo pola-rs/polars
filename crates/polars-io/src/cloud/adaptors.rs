@@ -29,8 +29,7 @@ impl CloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let writer = Self::build_writer(&object_store, &path).await?;
-        
+        let writer = object_store.put_multipart(&path).await?;
         Ok(CloudWriter {writer})
     }
 
@@ -42,13 +41,6 @@ impl CloudWriter {
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options).await?;
         Self::new_with_object_store(object_store, cloud_location.prefix.into()).await
-    }
-
-    async fn build_writer(
-        object_store: &Arc<dyn ObjectStore>,
-        path: &Path,
-    ) -> object_store::Result<Box<dyn MultipartUpload>> {
-        Ok(object_store.put_multipart(path).await?)
     }
 
     async fn abort(&mut self) -> PolarsResult<()> {
