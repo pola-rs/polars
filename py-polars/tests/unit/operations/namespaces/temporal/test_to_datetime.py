@@ -10,7 +10,6 @@ from hypothesis import given
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
-from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 if sys.version_info >= (3, 9):
@@ -115,26 +114,23 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
     expected = datetime.strptime(input, fmt)
     try:
         result = pl.Series([input]).str.to_datetime(format=fmt).item()
-    except ComputeError as exc:
-        # If there's an exception, check that it's either:
-        # - something which polars can't parse at all: missing day or month
-        # - something on which polars intentionally raises
-        assert (  # noqa: PT017
-            (
-                (("%H" in fmt) ^ ("%M" in fmt))
-                or (("%I" in fmt) ^ ("%M" in fmt))
-                or ("%S" in fmt and "%H" not in fmt)
-                or ("%S" in fmt and "%I" not in fmt)
-                or (("%I" in fmt) ^ ("%p" in fmt))
-                or (("%H" in fmt) ^ ("%p" in fmt))
-            )
-            and "Invalid format string" in str(exc)
-        ) or (
-            (
-                not any(day in fmt for day in ("%d", "%j"))
-                or not any(month in fmt for month in ("%b", "%B", "%m"))
-            )
-            and "failed in column" in str(exc)
+    # If there's an exception, check that it's either:
+    # - something which polars can't parse at all: missing day or month
+    # - something on which polars intentionally raises
+    except pl.InvalidOperationError as exc:
+        assert "failed in column" in str(exc)  # noqa: PT017
+        assert not any(day in fmt for day in ("%d", "%j")) or not any(
+            month in fmt for month in ("%b", "%B", "%m")
+        )
+    except pl.ComputeError as exc:
+        assert "Invalid format string" in str(exc)  # noqa: PT017
+        assert (
+            (("%H" in fmt) ^ ("%M" in fmt))
+            or (("%I" in fmt) ^ ("%M" in fmt))
+            or ("%S" in fmt and "%H" not in fmt)
+            or ("%S" in fmt and "%I" not in fmt)
+            or (("%I" in fmt) ^ ("%p" in fmt))
+            or (("%H" in fmt) ^ ("%p" in fmt))
         )
     else:
         assert result == expected
