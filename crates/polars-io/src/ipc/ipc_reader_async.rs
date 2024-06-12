@@ -141,7 +141,7 @@ impl IpcReaderAsync {
     ) -> PolarsResult<DataFrame> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let file = self.cache_entry.try_open_check_latest()?;
+        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
         let bytes = unsafe { memmap::Mmap::map(&file) }.unwrap();
 
         let projection = match options.projection.as_deref() {
@@ -187,7 +187,7 @@ impl IpcReaderAsync {
     pub async fn count_rows(&self, _metadata: Option<&FileMetadata>) -> PolarsResult<i64> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let file = self.cache_entry.try_open_check_latest()?;
+        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
         let bytes = unsafe { memmap::Mmap::map(&file) }.unwrap();
         get_row_count(&mut std::io::Cursor::new(bytes.as_ref()))
     }
