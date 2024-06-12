@@ -188,7 +188,7 @@ def test_extend_ints() -> None:
     with pytest.raises(pl.exceptions.SchemaError):
         # This is current behavior. It would be nice to have
         # DataFrame and lit treat ints consistently
-        a.extend(a.select(pl.lit(0).alias("a")))
+        a.extend(a.select(pl.lit(0, dtype=pl.Int32).alias("a")))
 
 
 def test_null_handling_correlation() -> None:
