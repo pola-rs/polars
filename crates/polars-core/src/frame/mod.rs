@@ -987,7 +987,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(left, right)?;
-                left.extend(right).unwrap();
+                left.extend(right)?;
                 Ok(())
             })
     }
