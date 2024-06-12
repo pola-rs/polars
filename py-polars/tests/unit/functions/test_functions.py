@@ -184,7 +184,7 @@ def test_concat_vertical() -> None:
 
 
 def test_extend_ints() -> None:
-    a = pl.DataFrame({"a": [1 for _ in range(1)]})
+    a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
     with pytest.raises(pl.exceptions.SchemaError):
         # This is current behavior. It would be nice to have
         # DataFrame and lit treat ints consistently
