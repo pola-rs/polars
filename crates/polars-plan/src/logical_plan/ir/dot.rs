@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
-use crate::prelude::alp::format::ColumnsDisplay;
+use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
 pub struct IRDotDisplay<'a> {

@@ -1,7 +1,7 @@
 use polars_core::prelude::PolarsResult;
 
 use crate::logical_plan::aexpr::AExpr;
-use crate::logical_plan::alp::IR;
+use crate::logical_plan::ir::IR;
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion

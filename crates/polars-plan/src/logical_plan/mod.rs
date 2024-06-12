@@ -9,7 +9,7 @@ use recursive::recursive;
 use crate::prelude::*;
 
 pub(crate) mod aexpr;
-pub(crate) mod alp;
+pub(crate) mod ir;
 pub(crate) mod anonymous_scan;
 
 mod apply;
@@ -33,7 +33,7 @@ mod schema;
 pub mod visitor;
 
 pub use aexpr::*;
-pub use alp::*;
+pub use ir::*;
 pub use anonymous_scan::*;
 pub use apply::*;
 pub use builder_dsl::*;
