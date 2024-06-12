@@ -249,7 +249,7 @@ def test_comp_incompatible_enum_dtype() -> None:
     df = pl.DataFrame({"a": pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))})
 
     with pytest.raises(
-        pl.ComputeError,
+        pl.InvalidOperationError,
         match="conversion from `str` to `enum` failed in column 'literal'",
     ):
         df.with_columns(

@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -231,7 +231,7 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
     df = pl.DataFrame({"dt": [date(2020, 12, 30)]})
 
     with pytest.raises(
-        ComputeError,
+        pl.InvalidOperationError,
         match="(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")

@@ -187,13 +187,13 @@ fn process_struct_numeric_arithmetic(
 fn err_date_str_compare() -> PolarsResult<()> {
     if cfg!(feature = "python") {
         polars_bail!(
-            ComputeError:
+            InvalidOperation:
             "cannot compare 'date/datetime/time' to a string value \
             (create native python {{ 'date', 'datetime', 'time' }} or compare to a temporal column)"
         );
     } else {
         polars_bail!(
-            ComputeError: "cannot compare 'date/datetime/time' to a string value"
+            InvalidOperation: "cannot compare 'date/datetime/time' to a string value"
         );
     }
 }

@@ -27,7 +27,7 @@ def test_string_date() -> None:
 def test_invalid_string_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-aa"]})
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
 
 
@@ -63,7 +63,7 @@ def test_string_datetime() -> None:
 
 def test_invalid_string_datetime() -> None:
     df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         df.with_columns(
             **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
         )
@@ -232,11 +232,11 @@ def test_strict_cast_int(
         assert _cast_expr(*args) == expected_value  # type: ignore[arg-type]
         assert _cast_lit(*args) == expected_value  # type: ignore[arg-type]
     else:
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_series(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_expr(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_lit(*args)  # type: ignore[arg-type]
 
 
@@ -371,11 +371,11 @@ def test_strict_cast_temporal(
         assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_series_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_expr_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_lit_t(*args)  # type: ignore[arg-type]
 
 
@@ -567,11 +567,11 @@ def test_strict_cast_string_and_binary(
         assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_series_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_expr_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_lit_t(*args)  # type: ignore[arg-type]
 
 

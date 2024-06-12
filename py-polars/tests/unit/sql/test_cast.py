@@ -6,7 +6,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, SQLInterfaceError
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -165,7 +165,7 @@ def test_cast_errors(values: Any, cast_op: str, error: str) -> None:
     df = pl.DataFrame({"values": values})
 
     # invalid CAST should raise an error...
-    with pytest.raises(ComputeError, match=error):
+    with pytest.raises(pl.InvalidOperationError, match=error):
         df.sql(f"SELECT {cast_op} FROM self")
 
     # ... or return `null` values if using TRY_CAST

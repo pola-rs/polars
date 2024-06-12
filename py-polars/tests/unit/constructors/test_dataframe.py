@@ -115,7 +115,7 @@ def test_df_init_strict() -> None:
 def test_df_init_from_series_strict() -> None:
     s = pl.Series("a", [-1, 0, 1])
     schema = {"a": pl.UInt8}
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         pl.DataFrame(s, schema=schema, strict=True)
 
     df = pl.DataFrame(s, schema=schema, strict=False)
