@@ -59,7 +59,17 @@ def s3(s3_base: str, io_files_path: Path) -> str:
 
 @pytest.mark.parametrize(
     ("function", "extension"),
-    [(pl.read_csv, "csv"), (pl.read_ipc, "ipc")],
+    [
+        pytest.param(
+            pl.read_csv,
+            "csv",
+            marks=pytest.mark.skip(
+                reason="Causes intermittent failures in CI. See: "
+                "https://github.com/pola-rs/polars/issues/16910"
+            ),
+        ),
+        (pl.read_ipc, "ipc"),
+    ],
 )
 def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
     storage_options = {"endpoint_url": s3}
