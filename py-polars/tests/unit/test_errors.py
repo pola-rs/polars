@@ -403,7 +403,8 @@ def test_date_string_comparison(e: pl.Expr) -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     with pytest.raises(
-        pl.ComputeError, match=r"cannot compare 'date/datetime/time' to a string value"
+        pl.InvalidOperationError,
+        match=r"cannot compare 'date/datetime/time' to a string value",
     ):
         df.select(e)
 
@@ -493,7 +494,7 @@ def test_skip_nulls_err() -> None:
 def test_cast_err_column_value_highlighting(
     test_df: pl.DataFrame, type: pl.DataType, expected_message: str
 ) -> None:
-    with pytest.raises(pl.ComputeError, match=expected_message):
+    with pytest.raises(pl.InvalidOperationError, match=expected_message):
         test_df.with_columns(pl.all().cast(type))
 
 

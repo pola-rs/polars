@@ -202,7 +202,9 @@ def test_int_range_null_input() -> None:
 
 
 def test_int_range_invalid_conversion() -> None:
-    with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
+    with pytest.raises(
+        pl.InvalidOperationError, match="conversion from `i32` to `u32` failed"
+    ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
 
 

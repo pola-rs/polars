@@ -123,7 +123,9 @@ def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
 def test_replace_invalid_old_dtype() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
     mapping = {"a": 10, "b": 20}
-    with pytest.raises(pl.ComputeError, match="conversion from `str` to `i64` failed"):
+    with pytest.raises(
+        pl.InvalidOperationError, match="conversion from `str` to `i64` failed"
+    ):
         lf.select(pl.col("a").replace(mapping)).collect()
 
 

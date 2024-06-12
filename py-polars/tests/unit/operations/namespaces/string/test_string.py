@@ -42,7 +42,7 @@ def test_str_slice_expr() -> None:
     assert_frame_equal(out, expected)
 
     # negative length is not allowed
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         df.select(pl.col("a").str.slice(0, -1))
 
 

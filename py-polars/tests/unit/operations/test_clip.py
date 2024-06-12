@@ -133,5 +133,7 @@ def test_clip_string_input() -> None:
 
 def test_clip_bound_invalid_for_original_dtype() -> None:
     s = pl.Series([1, 2, 3, 4], dtype=pl.UInt32)
-    with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
+    with pytest.raises(
+        pl.InvalidOperationError, match="conversion from `i32` to `u32` failed"
+    ):
         s.clip(-1, 5)
