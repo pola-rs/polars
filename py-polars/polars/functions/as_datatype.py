@@ -607,7 +607,7 @@ def concat_str(
     ignore_nulls
         Ignore null values (default is ``False``).
 
-        If ``False``, null values will be propagated: 
+        If ``False``, null values will be propagated:
         if the row contains any null values, the output is null.
         If ``True``, null values will be propagated and will appear to be empty strings.
 
