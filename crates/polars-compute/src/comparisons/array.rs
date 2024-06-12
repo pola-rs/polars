@@ -1,4 +1,7 @@
-use arrow::array::{Array, BinaryViewArray, FixedSizeListArray, PrimitiveArray, Utf8ViewArray};
+use arrow::array::{
+    Array, BinaryViewArray, BooleanArray, FixedSizeListArray, NullArray, PrimitiveArray,
+    StructArray, Utf8ViewArray,
+};
 use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
@@ -48,27 +51,54 @@ macro_rules! compare {
             return Bitmap::new_with_value($wrong_width, lhs.len());
         }
 
-        use arrow::datatypes::PhysicalType::*;
-        use arrow::datatypes::PrimitiveType::*;
+        use arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
         let lv = lhs.values();
         let rv = rhs.values();
         match lhs_type.data_type().to_physical_type() {
-            // Boolean => call_binary!(BooleanArray, lhs, rhs, $op),
-            Boolean => todo!(),
-            BinaryView => call_binary!(BinaryViewArray, lv, rv, $op),
-            Utf8View => call_binary!(Utf8ViewArray, lv, rv, $op),
-            Primitive(Int8) => call_binary!(PrimitiveArray<i8>, lv, rv, $op),
-            Primitive(Int16) => call_binary!(PrimitiveArray<i16>, lv, rv, $op),
-            Primitive(Int32) => call_binary!(PrimitiveArray<i32>, lv, rv, $op),
-            Primitive(Int64) => call_binary!(PrimitiveArray<i64>, lv, rv, $op),
-            Primitive(Int128) => call_binary!(PrimitiveArray<i128>, lv, rv, $op),
-            Primitive(UInt8) => call_binary!(PrimitiveArray<u8>, lv, rv, $op),
-            Primitive(UInt16) => call_binary!(PrimitiveArray<u16>, lv, rv, $op),
-            Primitive(UInt32) => call_binary!(PrimitiveArray<u32>, lv, rv, $op),
-            Primitive(UInt64) => call_binary!(PrimitiveArray<i64>, lv, rv, $op),
-            Primitive(Float32) => call_binary!(PrimitiveArray<f32>, lv, rv, $op),
-            Primitive(Float64) => call_binary!(PrimitiveArray<f64>, lv, rv, $op),
-            dt => todo!("Comparison of Arrays with {:?} are not yet supported", dt),
+            PH::Boolean => call_binary!(BooleanArray, lv, rv, $op),
+            PH::BinaryView => call_binary!(BinaryViewArray, lv, rv, $op),
+            PH::Utf8View => call_binary!(Utf8ViewArray, lv, rv, $op),
+            PH::Primitive(PR::Int8) => call_binary!(PrimitiveArray<i8>, lv, rv, $op),
+            PH::Primitive(PR::Int16) => call_binary!(PrimitiveArray<i16>, lv, rv, $op),
+            PH::Primitive(PR::Int32) => call_binary!(PrimitiveArray<i32>, lv, rv, $op),
+            PH::Primitive(PR::Int64) => call_binary!(PrimitiveArray<i64>, lv, rv, $op),
+            PH::Primitive(PR::Int128) => call_binary!(PrimitiveArray<i128>, lv, rv, $op),
+            PH::Primitive(PR::UInt8) => call_binary!(PrimitiveArray<u8>, lv, rv, $op),
+            PH::Primitive(PR::UInt16) => call_binary!(PrimitiveArray<u16>, lv, rv, $op),
+            PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>, lv, rv, $op),
+            PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>, lv, rv, $op),
+            PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>, lv, rv, $op),
+            PH::Primitive(PR::Float16) => {
+                todo!("Comparison of Arrays with Primitive(Float16) are not yet supported")
+            },
+            PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>, lv, rv, $op),
+            PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>, lv, rv, $op),
+            PH::Primitive(PR::Int256) => {
+                todo!("Comparison of Arrays with Primitive(Int256) are not yet supported")
+            },
+            PH::Primitive(PR::DaysMs) => {
+                todo!("Comparison of Arrays with Primitive(DaysMs) are not yet supported")
+            },
+            PH::Primitive(PR::MonthDayNano) => {
+                todo!("Comparison of Arrays with Primitive(MonthDayNano) are not yet supported")
+            },
+            PH::FixedSizeList => call_binary!(FixedSizeListArray, lv, rv, $op),
+            PH::Null => call_binary!(NullArray, lv, rv, $op),
+            PH::Binary => todo!("Comparison of Arrays with Binary are not yet supported"),
+            PH::FixedSizeBinary => {
+                todo!("Comparison of Arrays with FixedSizeBinary are not yet supported")
+            },
+            PH::LargeBinary => todo!("Comparison of Arrays with LargeBinary are not yet supported"),
+            PH::Utf8 => todo!("Comparison of Arrays with Utf8 are not yet supported"),
+            PH::LargeUtf8 => todo!("Comparison of Arrays with LargeUtf8 are not yet supported"),
+            PH::List => todo!("Comparison of Arrays with List are not yet supported"),
+            PH::LargeList => todo!("Comparison of Arrays with LargeList are not yet supported"),
+            PH::Struct => call_binary!(StructArray, lv, rv, $op),
+            PH::Union => todo!("Comparison of Arrays with Union are not yet supported"),
+            PH::Map => todo!("Comparison of Arrays with Map are not yet supported"),
+            PH::Dictionary(_) => {
+                todo!("Comparison of Arrays with Dictionary are not yet supported")
+            },
         }
     }};
 }
