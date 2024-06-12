@@ -174,6 +174,9 @@ where
                 SinkType::Memory => {
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
                 },
+                SinkType::Batch { sender } => {
+                    Box::new(BatchSink::new(sender.sender.clone())?) as Box<dyn SinkTrait>
+                },
                 #[allow(unused_variables)]
                 SinkType::File {
                     path, file_type, ..

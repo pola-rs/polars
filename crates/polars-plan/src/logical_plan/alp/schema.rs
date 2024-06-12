@@ -37,6 +37,7 @@ impl IR {
             Sink { payload, .. } => match payload {
                 SinkType::Memory => "sink (memory)",
                 SinkType::File { .. } => "sink (file)",
+                SinkType::Batch { .. } => "sink (batch)",
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud { .. } => "sink (cloud)",
             },

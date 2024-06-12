@@ -23,6 +23,7 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
+crossbeam-channel = { workspace = true }
 glob = { version = "0.3" }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }

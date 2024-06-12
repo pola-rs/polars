@@ -3084,6 +3084,7 @@ version = "0.40.0"
 dependencies = [
  "ahash",
  "bitflags 2.5.0",
+ "crossbeam-channel",
  "futures",
  "glob",
  "once_cell",
@@ -3205,6 +3206,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "ciborium",
+ "crossbeam-channel",
  "either",
  "futures",
  "hashbrown",
@@ -3397,6 +3399,7 @@ dependencies = [
  "arboard",
  "built",
  "ciborium",
+ "crossbeam-channel",
  "either",
  "itoa",
  "jemallocator",
