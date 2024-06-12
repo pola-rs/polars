@@ -183,6 +183,12 @@ def test_concat_vertical() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_extend_ints() -> None:
+    a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
+    with pytest.raises(pl.exceptions.SchemaError):
+        a.extend(a.select(pl.lit(0, dtype=pl.Int32).alias("a")))
+
+
 def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
 
