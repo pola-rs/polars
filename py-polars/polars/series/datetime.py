@@ -154,12 +154,12 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    @deprecate_function("Use `Series.median` instead.", version="0.20.32")
+    @deprecate_function("Use `Series.median` instead.", version="1.0.0")
     def median(self) -> TemporalLiteral | None:
         """
         Return median as python DateTime.
 
-        .. deprecated:: 0.20.32
+        .. deprecated:: 1.0.0
             Use `Series.median` instead.
 
         Examples
@@ -184,12 +184,12 @@ class DateTimeNameSpace:
         """
         return self._s.median()
 
-    @deprecate_function("Use `Series.mean` instead.", version="0.20.32")
+    @deprecate_function("Use `Series.mean` instead.", version="1.0.0")
     def mean(self) -> TemporalLiteral | None:
         """
         Return mean as python DateTime.
 
-        .. deprecated:: 0.20.32
+        .. deprecated:: 1.0.0
             Use `Series.mean` instead.
 
         Examples
