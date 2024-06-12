@@ -1818,7 +1818,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        new_streaming = _kwargs.get("new_streaming")
+        new_streaming = _kwargs.get("new_streaming", False)
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -2455,6 +2455,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns=False,
             streaming=True,
             _eager=False,
+            new_streaming=False
         )
 
     def fetch(
