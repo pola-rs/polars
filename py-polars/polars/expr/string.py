@@ -2562,6 +2562,10 @@ class ExprStringNameSpace:
         """
         Vertically concatenate the string values in the column to a single string value.
 
+        .. deprecated:: 1.0.0
+            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
+            is an empty string instead of a hyphen.
+
         Parameters
         ----------
         delimiter
