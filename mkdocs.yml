@@ -81,6 +81,7 @@ nav:
     - Misc:
       - user-guide/misc/multiprocessing.md
       - user-guide/misc/visualization.md
+      - user-guide/misc/styling.md
       - user-guide/misc/comparison.md
 
   - API reference: api/index.md
