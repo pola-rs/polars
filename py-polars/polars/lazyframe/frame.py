@@ -195,9 +195,9 @@ class LazyFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Notice that the dtypes are automatically inferred as polars Int64:
+    Notice that the dtypes are automatically inferred as Polars Int64:
 
-    >>> lf.dtypes
+    >>> lf.collect_schema().dtypes()
     [Int64, Int64]
 
     To specify a more detailed/specific frame schema you can supply the `schema`
@@ -419,7 +419,7 @@ class LazyFrame:
         >>> lf.columns
         ['foo', 'bar']
         """
-        # issue_deprecation_warning("noooo", version="1.0.0")
+        issue_deprecation_warning("noooo", version="1.0.0")
         return self.collect_schema().names()
 
     @property
@@ -454,6 +454,7 @@ class LazyFrame:
         >>> lf.dtypes
         [Int64, Float64, String]
         """
+        issue_deprecation_warning("noooo", version="1.0.0")
         return self.collect_schema().dtypes()
 
     @property
@@ -482,6 +483,7 @@ class LazyFrame:
         >>> lf.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
+        issue_deprecation_warning("noooo", version="1.0.0")
         return self.collect_schema()
 
     @property
@@ -514,7 +516,7 @@ class LazyFrame:
         >>> lf.width
         2
         """
-        # issue_deprecation_warning("noooo", version="1.0.0")
+        issue_deprecation_warning("noooo", version="1.0.0")
         return self.collect_schema().len()
 
     def __bool__(self) -> NoReturn:
@@ -678,8 +680,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> def cast_str_to_int(data, col_name):
-        ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
+        >>> def cast_str_to_int(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
+        ...     return lf.with_columns(pl.col(col_name).cast(pl.Int64))
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -715,7 +717,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 3   │
         │ 2   ┆ 4   │
         └─────┴─────┘
-        >>> lf.pipe(lambda tdf: tdf.select(sorted(tdf.columns))).collect()
+        >>> lf.pipe(lambda lf: lf.select(sorted(lf.collect_schema()))).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
