@@ -299,9 +299,11 @@ def _construct_series_with_fallbacks(
         return constructor(name, values, strict)
     except TypeError:
         if dtype is None:
-            return PySeries.new_from_any_values(name, values, strict)
+            return PySeries.new_from_any_values(name, values, strict=strict)
         else:
-            return PySeries.new_from_any_values_and_dtype(name, values, dtype, strict)
+            return PySeries.new_from_any_values_and_dtype(
+                name, values, dtype, strict=strict
+            )
 
 
 def iterable_to_pyseries(
