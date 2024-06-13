@@ -64,7 +64,7 @@ fn scatter(mut s: Series, idx: &Series, values: &Series) -> Result<Series, (Seri
 fn scatter_impl(
     s: &mut Series,
     logical_dtype: DataType,
-    idx: &[u32],
+    idx: &[IdxSize],
     values: &Series,
 ) -> PolarsResult<Series> {
     // Performance invariant: if the refcount is more than 1, the
