@@ -34,13 +34,6 @@ pub struct PyLazyFrame {
     pub ldf: LazyFrame,
 }
 
-impl PyLazyFrame {
-    fn get_schema(&mut self) -> PyResult<SchemaRef> {
-        let schema = self.ldf.schema().map_err(PyPolarsErr::from)?;
-        Ok(schema)
-    }
-}
-
 impl From<LazyFrame> for PyLazyFrame {
     fn from(ldf: LazyFrame) -> Self {
         PyLazyFrame { ldf }
@@ -1176,24 +1169,10 @@ impl PyLazyFrame {
         self.ldf.clone().into()
     }
 
-    fn columns(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.get_schema()?;
-        let iter = schema.iter_names().map(|s| s.as_str());
-        Ok(PyList::new_bound(py, iter).to_object(py))
-    }
+    fn collect_schema(&mut self, py: Python) -> PyResult<PyObject> {
+        let schema = self.ldf.schema().map_err(PyPolarsErr::from)?;
 
-    fn dtypes(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.get_schema()?;
-        let iter = schema
-            .iter_dtypes()
-            .map(|dt| Wrap(dt.clone()).to_object(py));
-        Ok(PyList::new_bound(py, iter).to_object(py))
-    }
-
-    fn schema(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.get_schema()?;
         let schema_dict = PyDict::new_bound(py);
-
         schema.iter_fields().for_each(|fld| {
             schema_dict
                 .set_item(fld.name().as_str(), Wrap(fld.data_type().clone()))
@@ -1204,10 +1183,6 @@ impl PyLazyFrame {
 
     fn unnest(&self, columns: Vec<String>) -> Self {
         self.ldf.clone().unnest(columns).into()
-    }
-
-    fn width(&mut self) -> PyResult<usize> {
-        Ok(self.get_schema()?.len())
     }
 
     fn count(&self) -> Self {

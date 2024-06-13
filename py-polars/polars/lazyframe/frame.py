@@ -403,6 +403,10 @@ class LazyFrame:
         Resolving the schema of a LazyFrame can be an expensive operation.
         Avoid accessing this property repeatedly if possible.
 
+        See Also
+        --------
+        collect_schema
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -415,7 +419,7 @@ class LazyFrame:
         >>> lf.columns
         ['foo', 'bar']
         """
-        return self._ldf.columns()
+        return self.collect_schema().names()
 
     @property
     def dtypes(self) -> list[DataType]:
@@ -435,7 +439,7 @@ class LazyFrame:
 
         See Also
         --------
-        schema
+        collect_schema
 
         Examples
         --------
@@ -449,7 +453,7 @@ class LazyFrame:
         >>> lf.dtypes
         [Int64, Float64, String]
         """
-        return self._ldf.dtypes()
+        return self.collect_schema().dtypes()
 
     @property
     def schema(self) -> Schema:
@@ -460,6 +464,10 @@ class LazyFrame:
         --------
         Resolving the schema of a LazyFrame can be an expensive operation.
         Avoid accessing this property repeatedly if possible.
+
+        See Also
+        --------
+        collect_schema
 
         Examples
         --------
@@ -473,7 +481,7 @@ class LazyFrame:
         >>> lf.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(self._ldf.schema())
+        return self.collect_schema()
 
     @property
     def width(self) -> int:
@@ -490,6 +498,10 @@ class LazyFrame:
         Resolving the schema of a LazyFrame can be an expensive operation.
         Avoid accessing this property repeatedly if possible.
 
+        See Also
+        --------
+        collect_schema
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -501,7 +513,7 @@ class LazyFrame:
         >>> lf.width
         2
         """
-        return self._ldf.width()
+        return self.collect_schema().len()
 
     def __bool__(self) -> NoReturn:
         msg = (
@@ -2020,6 +2032,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
         ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
         return result  # type: ignore[return-value]
+
+    def collect_schema(self) -> Schema:
+        """
+        Resolve the schema of this LazyFrame.
+
+        Examples
+        --------
+        Determine the schema.
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> lf.collect_schema()
+        Schema({'foo': Int64, 'bar': Float64, 'ham': String})
+
+        Access various properties of the schema.
+
+        >>> schema = lf.collect_schema()
+        >>> schema["bar"]
+        Float64
+        >>> schema.names()
+        ['foo', 'bar', 'ham']
+        >>> schema.dtypes()
+        [Int64, Float64, String]
+        >>> schema.len()
+        3
+        """
+        return Schema(self._ldf.collect_schema())
 
     @unstable()
     def sink_parquet(
