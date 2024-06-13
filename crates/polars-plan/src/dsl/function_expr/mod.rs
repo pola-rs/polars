@@ -220,6 +220,7 @@ pub enum FunctionExpr {
         sort: bool,
         parallel: bool,
         name: String,
+        normalize: bool,
     },
     #[cfg(feature = "unique_counts")]
     UniqueCounts,
@@ -464,10 +465,12 @@ impl Hash for FunctionExpr {
                 sort,
                 parallel,
                 name,
+                normalize,
             } => {
                 sort.hash(state);
                 parallel.hash(state);
                 name.hash(state);
+                normalize.hash(state);
             },
             #[cfg(feature = "unique_counts")]
             UniqueCounts => {},
@@ -997,7 +1000,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 sort,
                 parallel,
                 name,
-            } => map!(dispatch::value_counts, sort, parallel, name.clone()),
+                normalize,
+            } => map!(
+                dispatch::value_counts,
+                sort,
+                parallel,
+                name.clone(),
+                normalize
+            ),
             #[cfg(feature = "unique_counts")]
             UniqueCounts => map!(dispatch::unique_counts),
             Reverse => map!(dispatch::reverse),

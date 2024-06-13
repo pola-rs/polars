@@ -15,6 +15,15 @@ def test_value_counts() -> None:
     result_sorted = result.sort("a")
     assert_frame_equal(result_sorted, expected)
 
+    out = pl.Series("a", [12, 3345, 12, 3, 4, 4, 1, 12]).value_counts(
+        normalize=True, sort=True
+    )
+    assert out["proportion"].sum() == 1.0
+    assert out.to_dict(as_series=False) == {
+        "a": [12, 4, 3345, 3, 1],
+        "proportion": [0.375, 0.25, 0.125, 0.125, 0.125],
+    }
+
 
 def test_value_counts_logical_type() -> None:
     # test logical type

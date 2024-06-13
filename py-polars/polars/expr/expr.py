@@ -9613,7 +9613,12 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
     def value_counts(
-        self, *, sort: bool = False, parallel: bool = False, name: str = "count"
+        self,
+        *,
+        sort: bool = False,
+        parallel: bool = False,
+        name: str | None = None,
+        normalize: bool = False,
     ) -> Self:
         """
         Count the occurrences of unique values.
@@ -9630,7 +9635,11 @@ class Expr:
                 This option should likely not be enabled in a group by context,
                 as the computation is already parallelized per group.
         name
-            Give the resulting count field a specific name; defaults to "count".
+            Give the resulting count column a specific name;
+            if `normalize` is True defaults to "count",
+            otherwise defaults to "proportion".
+        normalize
+            If true gives relative frequencies of the unique values
 
         Returns
         -------
@@ -9682,7 +9691,14 @@ class Expr:
         │ green ┆ 1   │
         └───────┴─────┘
         """
-        return self._from_pyexpr(self._pyexpr.value_counts(sort, parallel, name))
+        if name is None:
+            if normalize:
+                name = "proportion"
+            else:
+                name = "count"
+        return self._from_pyexpr(
+            self._pyexpr.value_counts(sort, parallel, name, normalize)
+        )
 
     def unique_counts(self) -> Self:
         """

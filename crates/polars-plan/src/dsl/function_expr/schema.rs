@@ -107,10 +107,16 @@ impl FunctionExpr {
                 sort: _,
                 parallel: _,
                 name,
+                normalize,
             } => mapper.map_dtype(|dt| {
+                let count_dt = if *normalize {
+                    DataType::Float64
+                } else {
+                    IDX_DTYPE
+                };
                 DataType::Struct(vec![
                     Field::new(fields[0].name().as_str(), dt.clone()),
-                    Field::new(name, IDX_DTYPE),
+                    Field::new(name, count_dt),
                 ])
             }),
             #[cfg(feature = "unique_counts")]
