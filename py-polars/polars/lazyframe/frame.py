@@ -2784,7 +2784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
-        return pl.DataFrame(schema=self.schema).clear(n).lazy()
+        return pl.DataFrame(schema=self.collect_schema()).clear(n).lazy()
 
     def clone(self) -> Self:
         """
@@ -5081,7 +5081,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if value is not None:
 
             def infer_dtype(value: Any) -> PolarsDataType:
-                return next(iter(self.select(value).schema.values()))
+                return next(iter(self.select(value).collect_schema().values()))
 
             if isinstance(value, pl.Expr):
                 dtypes = [infer_dtype(value)]
