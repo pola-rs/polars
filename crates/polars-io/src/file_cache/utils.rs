@@ -5,21 +5,25 @@ use std::time::UNIX_EPOCH;
 use once_cell::sync::Lazy;
 use polars_error::{to_compute_err, PolarsError, PolarsResult};
 
-use super::cache::FILE_CACHE;
+use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
 use crate::pl_async;
 use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 
-pub(super) static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
+pub static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
     let path = POLARS_TEMP_DIR_BASE_PATH
         .join("file-cache/")
         .into_boxed_path();
 
     if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
         if !path.is_dir() {
-            panic!("failed to create file cache directory: {}", err);
+            panic!(
+                "failed to create file cache directory: path = {}, err = {}",
+                path.to_str().unwrap(),
+                err
+            );
         }
     }
 
@@ -59,6 +63,10 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
 
     let first_uri = uri_list.first().unwrap().as_ref();
 
+    let file_cache_ttl = cloud_options
+        .map(|x| x.file_cache_ttl)
+        .unwrap_or_else(get_env_file_cache_ttl);
+
     if is_cloud_url(first_uri) {
         let (_, object_store) = pl_async::get_runtime()
             .block_on_potential_spawn(build_object_store(first_uri, cloud_options))?;
@@ -67,25 +75,30 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
         uri_list
             .iter()
             .map(|uri| {
-                FILE_CACHE.init_entry(uri.clone(), || {
-                    let CloudLocation {
-                        prefix, expansion, ..
-                    } = CloudLocation::new(uri.as_ref()).unwrap();
+                FILE_CACHE.init_entry(
+                    uri.clone(),
+                    || {
+                        let CloudLocation {
+                            prefix, expansion, ..
+                        } = CloudLocation::new(uri.as_ref()).unwrap();
 
-                    let cloud_path = {
-                        assert!(expansion.is_none(), "path should not contain wildcards");
-                        object_store::path::Path::from_url_path(prefix).map_err(to_compute_err)?
-                    };
+                        let cloud_path = {
+                            assert!(expansion.is_none(), "path should not contain wildcards");
+                            object_store::path::Path::from_url_path(prefix)
+                                .map_err(to_compute_err)?
+                        };
 
-                    let object_store = object_store.clone();
-                    let uri = uri.clone();
+                        let object_store = object_store.clone();
+                        let uri = uri.clone();
 
-                    Ok(Arc::new(CloudFileFetcher {
-                        uri,
-                        object_store,
-                        cloud_path,
-                    }))
-                })
+                        Ok(Arc::new(CloudFileFetcher {
+                            uri,
+                            object_store,
+                            cloud_path,
+                        }))
+                    },
+                    file_cache_ttl,
+                )
             })
             .collect::<PolarsResult<Vec<_>>>()
     } else {
@@ -101,9 +114,11 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
                 })?;
                 let uri = Arc::<str>::from(uri.to_str().unwrap());
 
-                FILE_CACHE.init_entry(uri.clone(), || {
-                    Ok(Arc::new(LocalFileFetcher::from_uri(uri.clone())))
-                })
+                FILE_CACHE.init_entry(
+                    uri.clone(),
+                    || Ok(Arc::new(LocalFileFetcher::from_uri(uri.clone()))),
+                    file_cache_ttl,
+                )
             })
             .collect::<PolarsResult<Vec<_>>>()
     }

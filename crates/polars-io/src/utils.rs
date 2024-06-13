@@ -21,7 +21,11 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
 
     if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
         if !path.is_dir() {
-            panic!("failed to create temporary directory: {}", err);
+            panic!(
+                "failed to create temporary directory: path = {}, err = {}",
+                path.to_str().unwrap(),
+                err
+            );
         }
     }
 

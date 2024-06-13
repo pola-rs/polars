@@ -3511,6 +3511,7 @@ dependencies = [
  "polars",
  "polars-core",
  "polars-error",
+ "polars-io",
  "polars-lazy",
  "polars-ops",
  "polars-parquet",

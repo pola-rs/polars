@@ -386,6 +386,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::register_plugin_function))
         .unwrap();
 
+    // Temporary storage
+    m.add_wrapped(wrap_pyfunction!(functions::get_file_cache_prefix))
+        .unwrap();
+
     Ok(())
 }
 

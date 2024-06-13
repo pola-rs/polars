@@ -5,7 +5,9 @@ use fs4::FileExt;
 
 /// Note: this creates the file if it does not exist when acquiring locks.
 pub(super) struct FileLock<T: AsRef<Path>>(T);
+#[repr(transparent)]
 pub(super) struct FileLockSharedGuard(File);
+#[repr(transparent)]
 pub(super) struct FileLockExclusiveGuard(File);
 
 /// Trait to specify a file is lock-guarded without needing a particular type of
@@ -13,9 +15,14 @@ pub(super) struct FileLockExclusiveGuard(File);
 pub(super) trait FileLockAnyGuard:
     std::ops::Deref<Target = File> + std::ops::DerefMut<Target = File>
 {
+    const IS_EXCLUSIVE: bool;
 }
-impl FileLockAnyGuard for FileLockSharedGuard {}
-impl FileLockAnyGuard for FileLockExclusiveGuard {}
+impl FileLockAnyGuard for FileLockSharedGuard {
+    const IS_EXCLUSIVE: bool = false;
+}
+impl FileLockAnyGuard for FileLockExclusiveGuard {
+    const IS_EXCLUSIVE: bool = true;
+}
 
 impl<T: AsRef<Path>> From<T> for FileLock<T> {
     fn from(path: T) -> Self {

@@ -1,6 +1,6 @@
 use std::io::{Seek, SeekFrom};
-use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use fs4::FileExt;
@@ -29,12 +29,14 @@ struct Inner {
     path_prefix: Arc<Path>,
     metadata: FileLock<PathBuf>,
     cached_data: Option<CachedData>,
+    ttl: Arc<AtomicU64>,
     file_fetcher: Arc<dyn FileFetcher>,
 }
 
 struct EntryData {
     uri: Arc<str>,
     inner: Mutex<Inner>,
+    ttl: Arc<AtomicU64>,
 }
 
 pub struct FileCacheEntry(EntryData);
@@ -52,18 +54,21 @@ impl Inner {
 
         {
             let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_any();
-            let metadata_file = &mut self.metadata.acquire_shared().unwrap();
+            // We want to use an exclusive lock here to avoid an API call in the case where only the
+            // local TTL was updated.
+            let metadata_file = &mut self.metadata.acquire_exclusive().unwrap();
             update_last_accessed(metadata_file);
 
-            if let Ok(metadata) = self.try_get_metadata(metadata_file, &cache_guard) {
-                let data_file_path = self.get_cached_data_file_path();
+            let metadata = self
+                .try_get_maybe_init_metadata(metadata_file, &cache_guard)
+                .unwrap();
+            let data_file_path = self.get_cached_data_file_path();
 
-                if metadata.compare_local_state(data_file_path).is_ok() {
-                    if verbose {
-                        eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
-                    }
-                    return Ok(finish_open(data_file_path, metadata_file));
+            if metadata.compare_local_state(data_file_path).is_ok() {
+                if verbose {
+                    eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
                 }
+                return Ok(finish_open(data_file_path, metadata_file));
             }
         }
 
@@ -86,7 +91,7 @@ impl Inner {
             let metadata_file = &mut self.metadata.acquire_shared().unwrap();
             update_last_accessed(metadata_file);
 
-            if let Ok(metadata) = self.try_get_metadata(metadata_file, &cache_guard) {
+            if let Ok(metadata) = self.try_get_maybe_init_metadata(metadata_file, &cache_guard) {
                 if metadata.matches_remote_metadata(remote_metadata) {
                     let data_file_path = self.get_cached_data_file_path();
 
@@ -102,8 +107,9 @@ impl Inner {
 
         let metadata_file = &mut self.metadata.acquire_exclusive().unwrap();
         let metadata = self
-            .try_get_metadata(metadata_file, &cache_guard)
-            .unwrap_or_else(|_| Arc::new(EntryMetadata::new_with_uri(self.uri.clone())));
+            .try_get_maybe_init_metadata(metadata_file, &cache_guard)
+            // Safety: `metadata_file` is an exclusive guard.
+            .unwrap();
 
         if metadata.matches_remote_metadata(remote_metadata) {
             let data_file_path = self.get_cached_data_file_path();
@@ -172,7 +178,8 @@ impl Inner {
             polars_bail!(ComputeError: "downloaded file size ({}) does not match expected size ({})", local_size, remote_metadata.size);
         }
 
-        let mut metadata = Arc::unwrap_or_clone(metadata);
+        let mut metadata = metadata;
+        let metadata = Arc::make_mut(&mut metadata);
         metadata.local_last_modified = local_last_modified;
         metadata.local_size = local_size;
         metadata.remote_last_modified = remote_metadata.last_modified;
@@ -183,25 +190,37 @@ impl Inner {
 
         let data_file = finish_open(data_file_path, metadata_file);
 
+        metadata_file.set_len(0).unwrap();
         metadata_file.seek(SeekFrom::Start(0)).unwrap();
         metadata
-            .try_write(metadata_file.deref_mut())
+            .try_write(&mut **metadata_file)
             .map_err(to_compute_err)?;
 
         Ok(data_file)
     }
 
-    /// Try to read the metadata from disk.
-    fn try_get_metadata<F: FileLockAnyGuard>(
+    /// Try to read the metadata from disk. If `F` is an exclusive guard, this will
+    /// initialize the metadata if a valid one cannot be loaded from disk.
+    fn try_get_maybe_init_metadata<F: FileLockAnyGuard>(
         &mut self,
         metadata_file: &mut F,
         _cache_guard: &cache_lock::GlobalFileCacheGuardAny,
     ) -> PolarsResult<Arc<EntryMetadata>> {
-        let mut f = || {
-            let last_modified = super::utils::last_modified_u64(&metadata_file.metadata().unwrap());
+        let last_modified = super::utils::last_modified_u64(&metadata_file.metadata().unwrap());
+        let ttl = self.ttl.load(std::sync::atomic::Ordering::Relaxed);
 
+        for _ in 0..2 {
             if let Some(ref cached) = self.cached_data {
-                if cached.last_modified == last_modified {
+                if cached.last_modified == last_modified && cached.metadata.ttl == ttl {
+                    if cached.metadata.uri != self.uri {
+                        unimplemented!(
+                            "hash collision: uri1 = {}, uri2 = {}, hash = {}",
+                            cached.metadata.uri,
+                            self.uri,
+                            self.uri_hash,
+                        );
+                    }
+
                     return Ok(cached.metadata.clone());
                 }
             }
@@ -209,10 +228,36 @@ impl Inner {
             // Ensure cache is unset if read fails
             self.cached_data = None;
 
-            let metadata = Arc::new(
-                EntryMetadata::try_from_reader(metadata_file.deref_mut())
-                    .map_err(to_compute_err)?,
-            );
+            let mut metadata = match EntryMetadata::try_from_reader(&mut **metadata_file)
+                .map_err(to_compute_err)
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    if F::IS_EXCLUSIVE {
+                        EntryMetadata::new(self.uri.clone(), ttl)
+                    } else {
+                        return Err(e);
+                    }
+                },
+            };
+
+            // Note this means if multiple processes on the same system set a
+            // different TTL for the same path, the metadata file will constantly
+            // get overwritten.
+            if metadata.ttl != ttl {
+                if F::IS_EXCLUSIVE {
+                    metadata.ttl = ttl;
+                    metadata_file.set_len(0).unwrap();
+                    metadata_file.seek(SeekFrom::Start(0)).unwrap();
+                    metadata
+                        .try_write(&mut **metadata_file)
+                        .map_err(to_compute_err)?;
+                } else {
+                    polars_bail!(ComputeError: "TTL mismatch");
+                }
+            }
+
+            let metadata = Arc::new(metadata);
             let data_file_path = get_data_file_path(
                 self.path_prefix.to_str().unwrap().as_bytes(),
                 self.uri_hash.as_bytes(),
@@ -223,23 +268,9 @@ impl Inner {
                 metadata,
                 data_file_path,
             });
+        }
 
-            Ok(self.cached_data.as_ref().unwrap().metadata.clone())
-        };
-
-        f().map(|v| {
-            // "just in case"
-            // but would be cool if we saw this one day :D
-            if v.uri != self.uri {
-                unimplemented!(
-                    "hash collision: uri1 = {}, uri2 = {}, hash = {}",
-                    v.uri,
-                    self.uri,
-                    self.uri_hash,
-                );
-            }
-            v
-        })
+        unreachable!();
     }
 
     /// # Panics
@@ -255,6 +286,7 @@ impl FileCacheEntry {
         uri_hash: String,
         path_prefix: Arc<Path>,
         file_fetcher: Arc<dyn FileFetcher>,
+        file_cache_ttl: u64,
     ) -> Self {
         let metadata = FileLock::from(get_metadata_file_path(
             path_prefix.to_str().unwrap().as_bytes(),
@@ -266,6 +298,8 @@ impl FileCacheEntry {
             "impl error: entry uri != file_fetcher uri"
         );
 
+        let ttl = Arc::new(AtomicU64::from(file_cache_ttl));
+
         Self(EntryData {
             uri: uri.clone(),
             inner: Mutex::new(Inner {
@@ -274,13 +308,15 @@ impl FileCacheEntry {
                 path_prefix,
                 metadata,
                 cached_data: None,
+                ttl: ttl.clone(),
                 file_fetcher,
             }),
+            ttl,
         })
     }
 
-    pub fn uri(&self) -> Arc<str> {
-        self.0.uri.clone()
+    pub fn uri(&self) -> &Arc<str> {
+        &self.0.uri
     }
 
     /// Directly returns the cached file if it finds one without checking if
@@ -294,6 +330,10 @@ impl FileCacheEntry {
     /// This will always perform at least 1 API call for fetching metadata.
     pub fn try_open_check_latest(&self) -> PolarsResult<std::fs::File> {
         self.0.inner.lock().unwrap().try_open_check_latest()
+    }
+
+    pub fn update_ttl(&self, ttl: u64) {
+        self.0.ttl.store(ttl, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

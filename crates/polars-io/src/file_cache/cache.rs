@@ -1,6 +1,6 @@
 use std::path::Path;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::config;
@@ -21,27 +21,34 @@ pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
         eprintln!("file cache prefix: {}", prefix.to_str().unwrap());
     }
 
+    let min_ttl = Arc::new(AtomicU64::from(get_env_file_cache_ttl()));
+    let notify_ttl_updated = Arc::new(tokio::sync::Notify::new());
+
     EvictionManager {
-        prefix: prefix.clone(),
+        data_dir: prefix.join("d/").into_boxed_path(),
+        metadata_dir: prefix.join("m/").into_boxed_path(),
         files_to_remove: None,
-        limit_since_last_access: Duration::from_secs(
-            std::env::var("POLARS_FILE_CACHE_TTL")
-                .map(|x| x.parse::<u64>().expect("integer"))
-                .unwrap_or(60 * 60),
-        ),
+        min_ttl: min_ttl.clone(),
+        notify_ttl_updated: notify_ttl_updated.clone(),
     }
     .run_in_background();
 
-    FileCache::new(prefix)
+    FileCache::new(prefix, min_ttl, notify_ttl_updated)
 });
 
 pub struct FileCache {
     prefix: Arc<Path>,
     entries: Arc<RwLock<PlHashMap<Arc<str>, Arc<FileCacheEntry>>>>,
+    min_ttl: Arc<AtomicU64>,
+    notify_ttl_updated: Arc<tokio::sync::Notify>,
 }
 
 impl FileCache {
-    fn new(prefix: Arc<Path>) -> Self {
+    fn new(
+        prefix: Arc<Path>,
+        min_ttl: Arc<AtomicU64>,
+        notify_ttl_updated: Arc<tokio::sync::Notify>,
+    ) -> Self {
         let path = &prefix
             .as_ref()
             .join(std::str::from_utf8(&[METADATA_PREFIX]).unwrap());
@@ -65,14 +72,18 @@ impl FileCache {
         Self {
             prefix,
             entries: Default::default(),
+            min_ttl,
+            notify_ttl_updated,
         }
     }
 
-    /// If `uri` is a local path, it must be an absolute path.
-    pub fn init_entry<F: Fn() -> PolarsResult<Arc<dyn FileFetcher>>>(
+    /// If `uri` is a local path, it must be an absolute path. This is not exposed
+    /// for now - initialize entries using `init_entries_from_uri_list` instead.
+    pub(super) fn init_entry<F: Fn() -> PolarsResult<Arc<dyn FileFetcher>>>(
         &self,
         uri: Arc<str>,
         get_file_fetcher: F,
+        ttl: u64,
     ) -> PolarsResult<Arc<FileCacheEntry>> {
         let verbose = config::verbose();
 
@@ -85,6 +96,14 @@ impl FileCache {
             }
         }
 
+        if self
+            .min_ttl
+            .fetch_min(ttl, std::sync::atomic::Ordering::Relaxed)
+            < ttl
+        {
+            self.notify_ttl_updated.notify_one();
+        }
+
         {
             let entries = self.entries.read().unwrap();
 
@@ -95,6 +114,7 @@ impl FileCache {
                         uri.clone()
                     );
                 }
+                entry.update_ttl(ttl);
                 return Ok(entry.clone());
             }
         }
@@ -113,6 +133,7 @@ impl FileCache {
                 if verbose {
                     eprintln!("[file_cache] init_entry: return existing entry for uri = {} (lost init race)", uri.clone());
                 }
+                entry.update_ttl(ttl);
                 return Ok(entry.clone());
             }
 
@@ -129,6 +150,7 @@ impl FileCache {
                 uri_hash,
                 self.prefix.clone(),
                 get_file_fetcher()?,
+                ttl,
             ));
             entries.insert_unique_unchecked(uri, entry.clone());
             Ok(entry.clone())
@@ -148,4 +170,10 @@ impl FileCache {
                 .map(Arc::clone)
         }
     }
+}
+
+pub fn get_env_file_cache_ttl() -> u64 {
+    std::env::var("POLARS_FILE_CACHE_TTL")
+        .map(|x| x.parse::<u64>().expect("integer"))
+        .unwrap_or(60 * 60)
 }
