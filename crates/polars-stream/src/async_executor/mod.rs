@@ -1,6 +1,8 @@
 mod park_group;
 mod task;
 
+pub use task::JoinHandle;
+
 use std::cell::{Cell, UnsafeCell};
 use std::future::Future;
 use std::marker::PhantomData;
@@ -15,7 +17,7 @@ use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-use task::{CancelHandle, JoinHandle, Runnable};
+use task::{CancelHandle, Runnable};
 
 static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
 pub fn set_num_threads(t: usize) {

@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 
 use crate::async_executor::{JoinHandle, TaskScope};
@@ -9,24 +7,24 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
 use super::ComputeNode;
 
-pub struct FilterNode {
-    predicate: Arc<dyn PhysicalExpr>,
+pub struct SimpleProjectionNode {
+    schema: SchemaRef,
 }
 
-impl FilterNode {
-    pub fn new(predicate: Arc<dyn PhysicalExpr>) -> Self {
-        Self { predicate }
+impl SimpleProjectionNode {
+    pub fn new(schema: SchemaRef) -> Self {
+        Self { schema }
     }
 }
 
-impl ComputeNode for FilterNode {
+impl ComputeNode for SimpleProjectionNode {
     fn spawn<'env, 's>(
         &'env self,
         scope: &'s TaskScope<'s, 'env>,
         _pipeline: usize,
         recv: Vec<Receiver<Morsel>>,
         send: Vec<Sender<Morsel>>,
-        state: &'s ExecutionState,
+        _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
         let [mut recv] = <[_; 1]>::try_from(recv).ok().unwrap();
         let [mut send] = <[_; 1]>::try_from(send).ok().unwrap();
@@ -34,13 +32,9 @@ impl ComputeNode for FilterNode {
         scope.spawn_task(true, async move {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.try_map(|df| {
-                    let mask = self.predicate.evaluate(&df, state)?;
-                    df.filter(mask.bool().unwrap())
+                    // TODO: can this be unchecked?
+                    df.select_with_schema(self.schema.iter_names(), &self.schema)
                 })?;
-
-                if morsel.df().is_empty() {
-                    continue;
-                }
 
                 if let Err(_) = send.send(morsel).await {
                     break;

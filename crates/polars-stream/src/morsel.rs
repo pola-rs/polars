@@ -32,9 +32,17 @@ impl Morsel {
     pub fn new(df: DataFrame, seq: MorselSeq) -> Self {
         Self { df, seq, consume_token: None }
     }
+    
+    pub fn into_df(self) -> DataFrame {
+        self.df
+    }
 
     pub fn df(&self) -> &DataFrame {
         &self.df
+    }
+    
+    pub fn seq(&self) -> MorselSeq {
+        self.seq
     }
     
     pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {
@@ -49,5 +57,9 @@ impl Morsel {
     
     pub fn set_consume_token(&mut self, token: WaitToken) {
         self.consume_token = Some(token);
+    }
+    
+    pub fn take_consume_token(&mut self) -> Option<WaitToken> {
+        self.consume_token.take()
     }
 }

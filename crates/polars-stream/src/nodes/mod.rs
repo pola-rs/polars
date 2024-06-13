@@ -1,22 +1,30 @@
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 
+use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
 
-mod filter;
-mod in_memory_source;
+pub mod filter;
+pub mod simple_projection;
+pub mod in_memory_source;
+pub mod in_memory_sink;
 
 pub trait ComputeNode {
     /// Initialize for processing using the given amount of pipelines.
     fn initialize(&mut self, _num_pipelines: usize) { }
 
-    /// A task that should receive input(s), process it and send to its output(s).
-    /// Called once for each pipeline.
-    async fn process(
-        &self,
+    /// Spawn a task that should receive input(s), process it and send to its
+    /// output(s). Called once for each pipeline.
+    fn spawn<'env, 's>(
+        &'env self,
+        scope: &'s TaskScope<'s, 'env>,
+        _pipeline: usize,
         recv: Vec<Receiver<Morsel>>,
         send: Vec<Sender<Morsel>>,
-        state: &ExecutionState,
-    ) -> PolarsResult<()>;
+        state: &'s ExecutionState,
+    ) -> JoinHandle<PolarsResult<()>>;
+    
+    /// Called after this computation is complete.
+    fn finalize(&mut self) { }
 }
