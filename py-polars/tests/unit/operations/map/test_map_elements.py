@@ -363,4 +363,4 @@ def test_unknown_map_elements() -> None:
         "Amount": [10, 1, 1, 5],
         "Flour": [10.0, 100.0, 100.0, 20.0],
     }
-    assert q.dtypes == [pl.Int64, pl.Unknown]
+    assert q.collect_schema().dtypes() == [pl.Int64, pl.Unknown]

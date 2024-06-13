@@ -76,12 +76,12 @@ def test_custom_expr_namespace() -> None:
 def test_custom_lazy_namespace() -> None:
     @pl.api.register_lazyframe_namespace("split")
     class SplitFrame:
-        def __init__(self, ldf: pl.LazyFrame):
-            self._ldf = ldf
+        def __init__(self, lf: pl.LazyFrame):
+            self._lf = lf
 
         def by_column_dtypes(self) -> list[pl.LazyFrame]:
             return [
-                self._ldf.select(pl.col(tp)) for tp in dict.fromkeys(self._ldf.dtypes)
+                self._lf.select(pl.col(dt)) for dt in self._lf.collect_schema().dtypes()
             ]
 
     ldf = pl.DataFrame(

@@ -1171,4 +1171,4 @@ def test_join_as_of_by_schema() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
     q = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
-    assert q.collect().columns == q.columns
+    assert q.collect_schema().names() == q.collect().columns

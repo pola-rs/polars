@@ -1271,6 +1271,10 @@ class DataFrame:
 
         This is an alias for the :attr:`schema` property.
 
+        See Also
+        --------
+        schema
+
         Notes
         -----
         This method is included to facilitate writing code that is generic for both

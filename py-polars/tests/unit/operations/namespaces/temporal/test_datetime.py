@@ -720,25 +720,21 @@ def test_combine_lazy_schema_datetime(
 ) -> None:
     df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1)])})
     df = df.with_columns(pl.col("ts").dt.replace_time_zone(time_zone))
-    result = (
-        df.lazy()
-        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
-        .dtypes
+    result = df.lazy().select(
+        pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit)
     )
-    expected = [pl.Datetime(time_unit, time_zone)]
-    assert result == expected
+    expected_dtypes = [pl.Datetime(time_unit, time_zone)]
+    assert result.collect_schema().dtypes() == expected_dtypes
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
     df = pl.DataFrame({"ts": pl.Series([date(2020, 1, 1)])})
-    result = (
-        df.lazy()
-        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
-        .dtypes
+    result = df.lazy().select(
+        pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit)
     )
-    expected = [pl.Datetime(time_unit, None)]
-    assert result == expected
+    expected_dtypes = [pl.Datetime(time_unit, None)]
+    assert result.collect_schema().dtypes() == expected_dtypes
 
 
 def test_is_leap_year() -> None:

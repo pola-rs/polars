@@ -89,12 +89,12 @@ def test_apply() -> None:
 
 
 def test_add_eager_column() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    assert ldf.width == 2
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    assert lf.collect_schema().len() == 2
 
-    out = ldf.with_columns(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
+    out = lf.with_columns(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
     assert out["c"].sum() == 6
-    assert out.width == 3
+    assert out.collect_schema().len() == 3
 
 
 def test_set_null() -> None:
@@ -297,7 +297,7 @@ def test_arg_sort() -> None:
 
 
 def test_window_function() -> None:
-    ldf = pl.LazyFrame(
+    lf = pl.LazyFrame(
         {
             "A": [1, 2, 3, 4, 5],
             "fruits": ["banana", "banana", "apple", "apple", "banana"],
@@ -305,18 +305,18 @@ def test_window_function() -> None:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         }
     )
-    assert ldf.width == 4
+    assert lf.collect_schema().len() == 4
 
-    q = ldf.with_columns(
+    q = lf.with_columns(
         pl.sum("A").over("fruits").alias("fruit_sum_A"),
         pl.first("B").over("fruits").alias("fruit_first_B"),
         pl.max("B").over("cars").alias("cars_max_B"),
     )
-    assert q.width == 7
+    assert q.collect_schema().len() == 7
 
     assert q.collect()["cars_max_B"].to_list() == [5, 4, 5, 5, 5]
 
-    out = ldf.select([pl.first("B").over(["fruits", "cars"]).alias("B_first")])
+    out = lf.select([pl.first("B").over(["fruits", "cars"]).alias("B_first")])
     assert out.collect()["B_first"].to_list() == [5, 4, 3, 3, 5]
 
 
@@ -354,24 +354,24 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_fold_filter() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
-    out = ldf.filter(
+    out = lf.filter(
         pl.fold(
             acc=pl.lit(True),
             function=lambda a, b: a & b,
-            exprs=[pl.col(c) > 1 for c in ldf.columns],
+            exprs=[pl.col(c) > 1 for c in lf.collect_schema()],
         )
     ).collect()
 
     assert out.shape == (1, 2)
     assert out.rows() == [(3, 2)]
 
-    out = ldf.filter(
+    out = lf.filter(
         pl.fold(
             acc=pl.lit(True),
             function=lambda a, b: a | b,
-            exprs=[pl.col(c) > 1 for c in ldf.columns],
+            exprs=[pl.col(c) > 1 for c in lf.collect_schema()],
         )
     ).collect()
 
@@ -553,14 +553,14 @@ def test_custom_group_by() -> None:
 
 
 def test_lazy_columns() -> None:
-    ldf = pl.LazyFrame(
+    lf = pl.LazyFrame(
         {
             "a": [1],
             "b": [1],
             "c": [1],
         }
     )
-    assert ldf.select(["a", "c"]).columns == ["a", "c"]
+    assert lf.select("a", "c").collect_schema().names() == ["a", "c"]
 
 
 def test_cast_frame() -> None:
@@ -1052,19 +1052,6 @@ def test_quantile_filtered_agg() -> None:
     ) == [1.0, 1.0]
 
 
-def test_lazy_schema() -> None:
-    lf = pl.LazyFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6.0, 7.0, 8.0],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
-
-    assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
-
-
 def test_predicate_count_vstack() -> None:
     l1 = pl.LazyFrame(
         {
@@ -1194,8 +1181,8 @@ def test_lazy_cache_nested_parallel() -> None:
 
 def test_quadratic_behavior_4736() -> None:
     # no assert; if this function does not stall our tests it has passed!
-    ldf = pl.LazyFrame(schema=list(ascii_letters))
-    ldf.select(reduce(add, (pl.col(fld) for fld in ldf.columns)))
+    lf = pl.LazyFrame(schema=list(ascii_letters))
+    lf.select(reduce(add, (pl.col(c) for c in lf.collect_schema())))
 
 
 @pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64])
@@ -1380,3 +1367,17 @@ def test_lazy_comparison_operators(
         match=f'"{comparators[0]!r}" comparison not supported for LazyFrame objects',
     ):
         comparators[1](pl.LazyFrame(), pl.LazyFrame())
+
+
+def test_lf_properties() -> None:
+    lf = pl.LazyFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
+    assert lf.columns == ["foo", "bar", "ham"]
+    assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
+    assert lf.width == 3
