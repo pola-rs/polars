@@ -6,13 +6,13 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
 
 pub mod filter;
-pub mod simple_projection;
-pub mod in_memory_source;
 pub mod in_memory_sink;
+pub mod in_memory_source;
+pub mod simple_projection;
 
 pub trait ComputeNode {
     /// Initialize for processing using the given amount of pipelines.
-    fn initialize(&mut self, _num_pipelines: usize) { }
+    fn initialize(&mut self, _num_pipelines: usize) {}
 
     /// Spawn a task that should receive input(s), process it and send to its
     /// output(s). Called once for each pipeline.
@@ -24,7 +24,7 @@ pub trait ComputeNode {
         send: Vec<Sender<Morsel>>,
         state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>>;
-    
+
     /// Called after this computation is complete.
-    fn finalize(&mut self) { }
+    fn finalize(&mut self) {}
 }

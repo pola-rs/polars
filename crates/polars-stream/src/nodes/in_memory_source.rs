@@ -19,7 +19,11 @@ pub struct InMemorySource {
 
 impl InMemorySource {
     pub fn new(source: Arc<DataFrame>) -> Self {
-        InMemorySource { source, morsel_size: 0, seq: AtomicU64::new(0) }
+        InMemorySource {
+            source,
+            morsel_size: 0,
+            seq: AtomicU64::new(0),
+        }
     }
 }
 

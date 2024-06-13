@@ -4,10 +4,10 @@ use polars_error::PolarsResult;
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 
+use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
-use super::ComputeNode;
 
 pub struct FilterNode {
     predicate: Arc<dyn PhysicalExpr>,

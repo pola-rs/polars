@@ -2,10 +2,10 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 
+use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
-use super::ComputeNode;
 
 pub struct SimpleProjectionNode {
     schema: SchemaRef,

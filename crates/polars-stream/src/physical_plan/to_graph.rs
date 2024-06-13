@@ -29,11 +29,11 @@ pub fn physical_plan_to_graph(
         phys_to_g: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
     };
-    
+
     for key in phys_sm.keys() {
         to_graph_rec(key, &mut ctx)?;
     }
-    
+
     Ok((ctx.graph, ctx.phys_to_g))
 }
 
@@ -48,12 +48,9 @@ fn to_graph_rec<'a>(
 
     use PhysNode::*;
     let graph_key = match &ctx.phys_sm[phys_node_key] {
-        DataFrameScan { df } => {
-            ctx.graph.add_node(
-                nodes::in_memory_source::InMemorySource::new(df.clone()),
-                [],
-            )
-        },
+        DataFrameScan { df } => ctx
+            .graph
+            .add_node(nodes::in_memory_source::InMemorySource::new(df.clone()), []),
 
         Filter { predicate, input } => {
             let phys_predicate_expr = create_physical_expr(
@@ -69,11 +66,14 @@ fn to_graph_rec<'a>(
                 [input_key],
             )
         },
-        
+
         SimpleProjection { schema, input } => {
             let input_key = to_graph_rec(*input, ctx)?;
-            ctx.graph.add_node(nodes::simple_projection::SimpleProjectionNode::new(schema.clone()), [input_key])
-        }
+            ctx.graph.add_node(
+                nodes::simple_projection::SimpleProjectionNode::new(schema.clone()),
+                [input_key],
+            )
+        },
 
         // Fallback to the in-memory engine.
         Fallback(node) => {

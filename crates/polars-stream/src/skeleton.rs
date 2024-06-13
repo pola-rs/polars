@@ -6,8 +6,7 @@ use polars_plan::logical_plan::{Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
 use polars_utils::arena::{Arena, Node};
-use slotmap::SecondaryMap;
-use slotmap::SlotMap;
+use slotmap::{SecondaryMap, SlotMap};
 
 fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
     polars_plan::logical_plan::is_streamable(node, arena, Context::Default)
@@ -23,7 +22,6 @@ pub fn run_query(
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut expr_conversion_state = ExpressionConversionState::new(false, expr_depth_limit);
     let max_threads = POOL.current_num_threads();
-    
 
     // match phys_sm.take(root) {
     //     LogicalPlan::Filter { input, predicate } => {

@@ -4,7 +4,6 @@ use crate::async_primitives::wait_group::WaitToken;
 
 pub const IDEAL_MORSEL_SIZE: usize = 10_000;
 
-
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct MorselSeq(u64);
 
@@ -23,16 +22,20 @@ pub struct Morsel {
     /// The sequence number of this morsel. May only stay equal or increase
     /// within a pipeline.
     seq: MorselSeq,
-    
+
     /// Used to notify someone when this morsel is consumed, to provide backpressure.
     consume_token: Option<WaitToken>,
 }
 
 impl Morsel {
     pub fn new(df: DataFrame, seq: MorselSeq) -> Self {
-        Self { df, seq, consume_token: None }
+        Self {
+            df,
+            seq,
+            consume_token: None,
+        }
     }
-    
+
     pub fn into_df(self) -> DataFrame {
         self.df
     }
@@ -40,25 +43,28 @@ impl Morsel {
     pub fn df(&self) -> &DataFrame {
         &self.df
     }
-    
+
     pub fn seq(&self) -> MorselSeq {
         self.seq
     }
-    
+
     pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {
         self.df = f(self.df);
         self
     }
-    
-    pub fn try_map<E, F: FnOnce(DataFrame) -> Result<DataFrame, E>>(mut self, f: F) -> Result<Self, E> {
+
+    pub fn try_map<E, F: FnOnce(DataFrame) -> Result<DataFrame, E>>(
+        mut self,
+        f: F,
+    ) -> Result<Self, E> {
         self.df = f(self.df)?;
         Ok(self)
     }
-    
+
     pub fn set_consume_token(&mut self, token: WaitToken) {
         self.consume_token = Some(token);
     }
-    
+
     pub fn take_consume_token(&mut self) -> Option<WaitToken> {
         self.consume_token.take()
     }

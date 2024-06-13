@@ -1,8 +1,7 @@
 use polars_error::PolarsResult;
-use slotmap::SlotMap;
-
 use polars_plan::logical_plan::{AExpr, Context, IR};
 use polars_utils::arena::{Arena, Node};
+use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey};
 
@@ -36,21 +35,25 @@ pub fn lower_ir(
                     return Ok(phys_sm.insert(PhysNode::Fallback(node)));
                 }
             }
-            
-            let mut phys_node = phys_sm.insert(PhysNode::DataFrameScan {
-                df: df.clone(),
-            });
+
+            let mut phys_node = phys_sm.insert(PhysNode::DataFrameScan { df: df.clone() });
 
             if projection.is_some() {
                 // TODO: normalize output_schema <-> projection so we don't have to unwrap here.
                 let schema = output_schema.clone().unwrap();
-                phys_node = phys_sm.insert(PhysNode::SimpleProjection { input: phys_node, schema })
+                phys_node = phys_sm.insert(PhysNode::SimpleProjection {
+                    input: phys_node,
+                    schema,
+                })
             }
-            
+
             if let Some(predicate) = filter.clone() {
-                phys_node = phys_sm.insert(PhysNode::Filter { input: phys_node, predicate })
+                phys_node = phys_sm.insert(PhysNode::Filter {
+                    input: phys_node,
+                    predicate,
+                })
             }
-            
+
             Ok(phys_node)
         },
 
