@@ -561,13 +561,6 @@ def test_assert_series_equal_full_null_nested_list() -> None:
     assert_series_equal(s, s)
 
 
-def test_assert_series_equal_full_null_nested_not_nested() -> None:
-    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
-    s2 = pl.Series([None, None], dtype=pl.Float64)
-
-    assert_series_equal(s1, s2, check_dtypes=False)
-
-
 def test_assert_series_equal_nested_list_nan() -> None:
     s = pl.Series([[1.0, 2.0], [3.0, nan]], dtype=pl.List(pl.Float64))
     assert_series_equal(s, s)

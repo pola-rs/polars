@@ -242,15 +242,6 @@ def test_concat() -> None:
     assert s.len() == 3
 
 
-@pytest.mark.parametrize("dtype", [pl.Int64, pl.Float64, pl.String, pl.Boolean])
-def test_eq_missing_list_and_primitive(dtype: PolarsDataType) -> None:
-    s1 = pl.Series([None, None], dtype=dtype)
-    s2 = pl.Series([None, None], dtype=pl.List(dtype))
-
-    expected = pl.Series([True, True])
-    assert_series_equal(s1.eq_missing(s2), expected)
-
-
 def test_to_frame() -> None:
     s1 = pl.Series([1, 2])
     s2 = pl.Series("s", [1, 2])

@@ -238,6 +238,10 @@ impl DataType {
         }
     }
 
+    pub fn implode(self) -> DataType {
+        DataType::List(Box::new(self))
+    }
+
     /// Convert to the physical data type
     #[must_use]
     pub fn to_physical(&self) -> DataType {
