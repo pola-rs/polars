@@ -8,7 +8,7 @@ pub use encoder::encode;
 use polars_utils::iter::FallibleIterator;
 
 use super::bitpacked;
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// The two possible states of an RLE-encoded run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,11 +36,11 @@ pub struct HybridRleDecoder<'a> {
     decoder: Decoder<'a>,
     state: State<'a>,
     remaining: usize,
-    result: Result<(), Error>,
+    result: Result<(), ParquetError>,
 }
 
 #[inline]
-fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
+fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, ParquetError> {
     Ok(match decoder.next() {
         Some(HybridEncoded::Bitpacked(packed)) => {
             let num_bits = decoder.num_bits();
@@ -66,7 +66,7 @@ fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a
 
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
-    pub fn try_new(data: &'a [u8], num_bits: u32, num_values: usize) -> Result<Self, Error> {
+    pub fn try_new(data: &'a [u8], num_bits: u32, num_values: usize) -> Result<Self, ParquetError> {
         let num_bits = num_bits as usize;
         let mut decoder = Decoder::new(data, num_bits);
         let state = read_next(&mut decoder, num_values)?;
@@ -117,9 +117,9 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
     }
 }
 
-impl<'a> FallibleIterator<Error> for HybridRleDecoder<'a> {
+impl<'a> FallibleIterator<ParquetError> for HybridRleDecoder<'a> {
     #[inline]
-    fn get_result(&mut self) -> Result<(), Error> {
+    fn get_result(&mut self) -> Result<(), ParquetError> {
         std::mem::replace(&mut self.result, Ok(()))
     }
 }
@@ -131,7 +131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn roundtrip() -> Result<(), Error> {
+    fn roundtrip() -> Result<(), ParquetError> {
         let mut buffer = vec![];
         let num_bits = 10u32;
 
@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn pyarrow_integration() -> Result<(), Error> {
+    fn pyarrow_integration() -> Result<(), ParquetError> {
         // data encoded from pyarrow representing (0..1000)
         let data = vec![
             127, 0, 4, 32, 192, 0, 4, 20, 96, 192, 1, 8, 36, 160, 192, 2, 12, 52, 224, 192, 3, 16,
@@ -232,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn small() -> Result<(), Error> {
+    fn small() -> Result<(), ParquetError> {
         let data = vec![3, 2];
 
         let num_bits = 3;
@@ -246,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_bit_width() -> Result<(), Error> {
+    fn zero_bit_width() -> Result<(), ParquetError> {
         let data = vec![3];
 
         let num_bits = 0;
@@ -260,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_values() -> Result<(), Error> {
+    fn empty_values() -> Result<(), ParquetError> {
         let data = [];
 
         let num_bits = 1;

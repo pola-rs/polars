@@ -26,6 +26,7 @@ pub mod unwrap;
 pub use functions::*;
 
 pub mod aliases;
+pub mod fixedringbuffer;
 pub mod fmt;
 pub mod iter;
 pub mod macros;

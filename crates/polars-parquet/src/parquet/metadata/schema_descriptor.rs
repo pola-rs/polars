@@ -3,7 +3,7 @@ use parquet_format_safe::SchemaElement;
 use serde::{Deserialize, Serialize};
 
 use super::column_descriptor::{ColumnDescriptor, Descriptor};
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::io_message::from_message;
 use crate::parquet::schema::types::{FieldInfo, ParquetType};
 use crate::parquet::schema::Repetition;
@@ -70,22 +70,22 @@ impl SchemaDescriptor {
         .to_thrift()
     }
 
-    fn try_from_type(type_: ParquetType) -> Result<Self> {
+    fn try_from_type(type_: ParquetType) -> ParquetResult<Self> {
         match type_ {
             ParquetType::GroupType {
                 field_info, fields, ..
             } => Ok(Self::new(field_info.name, fields)),
-            _ => Err(Error::oos("The parquet schema MUST be a group type")),
+            _ => Err(ParquetError::oos("The parquet schema MUST be a group type")),
         }
     }
 
-    pub(crate) fn try_from_thrift(elements: &[SchemaElement]) -> Result<Self> {
+    pub(crate) fn try_from_thrift(elements: &[SchemaElement]) -> ParquetResult<Self> {
         let schema = ParquetType::try_from_thrift(elements)?;
         Self::try_from_type(schema)
     }
 
     /// Creates a schema from
-    pub fn try_from_message(message: &str) -> Result<Self> {
+    pub fn try_from_message(message: &str) -> ParquetResult<Self> {
         let schema = from_message(message)?;
         Self::try_from_type(schema)
     }

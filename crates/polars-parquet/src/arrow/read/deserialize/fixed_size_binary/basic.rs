@@ -29,7 +29,7 @@ pub(super) struct Optional<'a> {
 
 impl<'a> Optional<'a> {
     pub(super) fn try_new(page: &'a DataPage, size: usize) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
 
         let values = values.chunks_exact(size);
 
@@ -186,7 +186,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                 FilteredRequired::new(page, self.size),
             )),
             (Encoding::Plain, _, true, true) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
 
                 Ok(State::FilteredOptional(
                     FilteredOptionalPageValidity::try_new(page)?,

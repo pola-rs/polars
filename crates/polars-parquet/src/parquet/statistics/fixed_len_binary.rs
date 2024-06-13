@@ -1,6 +1,6 @@
 use parquet_format_safe::Statistics as ParquetStatistics;
 
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PrimitiveType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,17 +17,17 @@ impl FixedLenStatistics {
         v: &ParquetStatistics,
         size: usize,
         primitive_type: PrimitiveType,
-    ) -> Result<Self> {
+    ) -> ParquetResult<Self> {
         if let Some(ref v) = v.max_value {
             if v.len() != size {
-                return Err(Error::oos(
+                return Err(ParquetError::oos(
                     "The max_value of statistics MUST be plain encoded",
                 ));
             }
         };
         if let Some(ref v) = v.min_value {
             if v.len() != size {
-                return Err(Error::oos(
+                return Err(ParquetError::oos(
                     "The min_value of statistics MUST be plain encoded",
                 ));
             }

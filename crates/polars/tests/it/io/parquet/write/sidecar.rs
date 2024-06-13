@@ -1,10 +1,10 @@
-use polars_parquet::parquet::error::Error;
+use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
 use polars_parquet::parquet::write::{write_metadata_sidecar, FileWriter, Version, WriteOptions};
 
 #[test]
-fn basic() -> Result<(), Error> {
+fn basic() -> Result<(), ParquetError> {
     let schema = SchemaDescriptor::new(
         "schema".to_string(),
         vec![ParquetType::from_physical(

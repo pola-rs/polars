@@ -1,6 +1,6 @@
 use parquet_format_safe::Statistics as ParquetStatistics;
 
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::types;
 
@@ -14,12 +14,15 @@ pub struct PrimitiveStatistics<T: types::NativeType> {
 }
 
 impl<T: types::NativeType> PrimitiveStatistics<T> {
-    pub fn deserialize(v: &ParquetStatistics, primitive_type: PrimitiveType) -> Result<Self> {
+    pub fn deserialize(
+        v: &ParquetStatistics,
+        primitive_type: PrimitiveType,
+    ) -> ParquetResult<Self> {
         if v.max_value
             .as_ref()
             .is_some_and(|v| v.len() != std::mem::size_of::<T>())
         {
-            return Err(Error::oos(
+            return Err(ParquetError::oos(
                 "The max_value of statistics MUST be plain encoded",
             ));
         };
@@ -27,7 +30,7 @@ impl<T: types::NativeType> PrimitiveStatistics<T> {
             .as_ref()
             .is_some_and(|v| v.len() != std::mem::size_of::<T>())
         {
-            return Err(Error::oos(
+            return Err(ParquetError::oos(
                 "The min_value of statistics MUST be plain encoded",
             ));
         };

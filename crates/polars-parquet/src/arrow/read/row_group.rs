@@ -135,7 +135,7 @@ type Pages = Box<
     dyn Iterator<
             Item = std::result::Result<
                 crate::parquet::page::CompressedPage,
-                crate::parquet::error::Error,
+                crate::parquet::error::ParquetError,
             >,
         > + Sync
         + Send,

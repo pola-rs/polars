@@ -6,7 +6,7 @@ use parquet_format_safe::{
     Uncompressed,
 };
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::ColumnChunkMetaData;
 
 /// Reads the bloom filter associated to [`ColumnChunkMetaData`] into `bitset`.
@@ -17,7 +17,7 @@ pub fn read<R: Read + Seek>(
     column_metadata: &ColumnChunkMetaData,
     mut reader: &mut R,
     bitset: &mut Vec<u8>,
-) -> Result<(), Error> {
+) -> ParquetResult<()> {
     let offset = column_metadata.metadata().bloom_filter_offset;
 
     let offset = if let Some(offset) = offset {

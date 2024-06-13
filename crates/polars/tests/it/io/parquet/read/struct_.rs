@@ -1,10 +1,14 @@
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
-use polars_parquet::parquet::error::Error;
-use polars_parquet::parquet::page::{split_buffer, DataPage};
+use polars_parquet::parquet::error::ParquetError;
+use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 
-pub fn extend_validity(val: &mut Vec<bool>, page: &DataPage) -> Result<(), Error> {
-    let (_, def_levels, _) = split_buffer(page)?;
+pub fn extend_validity(val: &mut Vec<bool>, page: &DataPage) -> Result<(), ParquetError> {
+    let EncodedSplitBuffer {
+        rep: _,
+        def: def_levels,
+        values: _,
+    } = split_buffer(page)?;
     let length = page.num_values();
 
     if page.descriptor.max_def_level == 0 {

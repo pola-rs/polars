@@ -7,18 +7,21 @@ use super::indexes::{write_column_index, write_offset_index};
 use super::page::PageWriteSpec;
 use super::row_group::write_row_group;
 use super::{RowGroupIterColumns, WriteOptions};
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::metadata::{SchemaDescriptor, ThriftFileMetaData};
 use crate::parquet::write::State;
 use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
 
-pub(super) fn start_file<W: Write>(writer: &mut W) -> Result<u64> {
+pub(super) fn start_file<W: Write>(writer: &mut W) -> ParquetResult<u64> {
     writer.write_all(&PARQUET_MAGIC)?;
     Ok(PARQUET_MAGIC.len() as u64)
 }
 
-pub(super) fn end_file<W: Write>(mut writer: &mut W, metadata: &ThriftFileMetaData) -> Result<u64> {
+pub(super) fn end_file<W: Write>(
+    mut writer: &mut W,
+    metadata: &ThriftFileMetaData,
+) -> ParquetResult<u64> {
     // Write metadata
     let mut protocol = TCompactOutputProtocol::new(&mut writer);
     let metadata_len = metadata.write_to_out_protocol(&mut protocol)? as i32;
@@ -77,7 +80,7 @@ pub struct FileWriter<W: Write> {
 pub fn write_metadata_sidecar<W: Write>(
     writer: &mut W,
     metadata: &ThriftFileMetaData,
-) -> Result<u64> {
+) -> ParquetResult<u64> {
     let mut len = start_file(writer)?;
     len += end_file(writer, metadata)?;
     Ok(len)
@@ -131,13 +134,13 @@ impl<W: Write> FileWriter<W> {
     ///
     /// # Errors
     /// Returns an error if data has been written to the file.
-    fn start(&mut self) -> Result<()> {
+    fn start(&mut self) -> ParquetResult<()> {
         if self.offset == 0 {
             self.offset = start_file(&mut self.writer)?;
             self.state = State::Started;
             Ok(())
         } else {
-            Err(Error::InvalidParameter(
+            Err(ParquetError::InvalidParameter(
                 "Start cannot be called twice".to_string(),
             ))
         }
@@ -146,9 +149,9 @@ impl<W: Write> FileWriter<W> {
     /// Writes a row group to the file.
     ///
     /// This call is IO-bounded
-    pub fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> Result<()>
+    pub fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> ParquetResult<()>
     where
-        Error: From<E>,
+        ParquetError: From<E>,
         E: std::error::Error,
     {
         if self.offset == 0 {
@@ -170,13 +173,13 @@ impl<W: Write> FileWriter<W> {
 
     /// Writes the footer of the parquet file. Returns the total size of the file and the
     /// underlying writer.
-    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> Result<u64> {
+    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> ParquetResult<u64> {
         if self.offset == 0 {
             self.start()?;
         }
 
         if self.state != State::Started {
-            return Err(Error::InvalidParameter(
+            return Err(ParquetError::InvalidParameter(
                 "End cannot be called twice".to_string(),
             ));
         }
@@ -196,10 +199,10 @@ impl<W: Write> FileWriter<W> {
                             self.offset += write_column_index(&mut self.writer, pages)?;
                             let length = self.offset - offset;
                             column.column_index_length = Some(length as i32);
-                            Result::Ok(())
+                            ParquetResult::Ok(())
                         },
                     )?;
-                    Result::Ok(())
+                    ParquetResult::Ok(())
                 })?;
         };
 
@@ -217,9 +220,9 @@ impl<W: Write> FileWriter<W> {
                         column.offset_index_offset = Some(offset as i64);
                         self.offset += write_offset_index(&mut self.writer, pages)?;
                         column.offset_index_length = Some((self.offset - offset) as i32);
-                        Result::Ok(())
+                        ParquetResult::Ok(())
                     })?;
-                Result::Ok(())
+                ParquetResult::Ok(())
             })?;
 
         let metadata = ThriftFileMetaData::new(

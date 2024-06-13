@@ -47,7 +47,7 @@ use types::PrimitiveLogicalType;
 
 use super::super::types::{ParquetType, TimeUnit};
 use super::super::*;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::{GroupConvertedType, PrimitiveConvertedType};
 
 fn is_logical_type(s: &str) -> bool {
@@ -95,12 +95,17 @@ fn is_converted_type(s: &str) -> bool {
     )
 }
 
-fn converted_group_from_str(s: &str) -> Result<GroupConvertedType> {
+fn converted_group_from_str(s: &str) -> ParquetResult<GroupConvertedType> {
     Ok(match s {
         "MAP" => GroupConvertedType::Map,
         "MAP_KEY_VALUE" => GroupConvertedType::MapKeyValue,
         "LIST" => GroupConvertedType::List,
-        other => return Err(Error::oos(format!("Invalid converted type {}", other))),
+        other => {
+            return Err(ParquetError::oos(format!(
+                "Invalid converted type {}",
+                other
+            )))
+        },
     })
 }
 
@@ -130,16 +135,16 @@ fn converted_primitive_from_str(s: &str) -> Option<PrimitiveConvertedType> {
     })
 }
 
-fn repetition_from_str(s: &str) -> Result<Repetition> {
+fn repetition_from_str(s: &str) -> ParquetResult<Repetition> {
     Ok(match s {
         "REQUIRED" => Repetition::Required,
         "OPTIONAL" => Repetition::Optional,
         "REPEATED" => Repetition::Repeated,
-        other => return Err(Error::oos(format!("Invalid repetition {}", other))),
+        other => return Err(ParquetError::oos(format!("Invalid repetition {}", other))),
     })
 }
 
-fn type_from_str(s: &str) -> Result<Type> {
+fn type_from_str(s: &str) -> ParquetResult<Type> {
     match s {
         "BOOLEAN" => Ok(Type::BOOLEAN),
         "INT32" => Ok(Type::INT32),
@@ -149,14 +154,14 @@ fn type_from_str(s: &str) -> Result<Type> {
         "DOUBLE" => Ok(Type::DOUBLE),
         "BYTE_ARRAY" | "BINARY" => Ok(Type::BYTE_ARRAY),
         "FIXED_LEN_BYTE_ARRAY" => Ok(Type::FIXED_LEN_BYTE_ARRAY),
-        other => Err(Error::oos(format!("Invalid type {}", other))),
+        other => Err(ParquetError::oos(format!("Invalid type {}", other))),
     }
 }
 
 /// Parses message type as string into a Parquet [`ParquetType`](crate::parquet::schema::types::ParquetType)
 /// which, for example, could be used to extract individual columns. Returns Parquet
 /// general error when parsing or validation fails.
-pub fn from_message(message_type: &str) -> Result<ParquetType> {
+pub fn from_message(message_type: &str) -> ParquetResult<ParquetType> {
     let mut parser = Parser {
         tokenizer: &mut Tokenizer::from_str(message_type),
     };
@@ -239,14 +244,14 @@ struct Parser<'a> {
 }
 
 // Utility function to assert token on validity.
-fn assert_token(token: Option<&str>, expected: &str) -> Result<()> {
+fn assert_token(token: Option<&str>, expected: &str) -> ParquetResult<()> {
     match token {
         Some(value) if value == expected => Ok(()),
-        Some(other) => Err(Error::oos(format!(
+        Some(other) => Err(ParquetError::oos(format!(
             "Expected '{}', found token '{}'",
             expected, other
         ))),
-        None => Err(Error::oos(format!(
+        None => Err(ParquetError::oos(format!(
             "Expected '{}', but no token found (None)",
             expected
         ))),
@@ -254,21 +259,28 @@ fn assert_token(token: Option<&str>, expected: &str) -> Result<()> {
 }
 
 // Utility function to parse i32 or return general error.
-fn parse_i32(value: Option<&str>, not_found_msg: &str, parse_fail_msg: &str) -> Result<i32> {
+fn parse_i32(value: Option<&str>, not_found_msg: &str, parse_fail_msg: &str) -> ParquetResult<i32> {
     value
-        .ok_or_else(|| Error::oos(not_found_msg))
-        .and_then(|v| v.parse::<i32>().map_err(|_| Error::oos(parse_fail_msg)))
+        .ok_or_else(|| ParquetError::oos(not_found_msg))
+        .and_then(|v| {
+            v.parse::<i32>()
+                .map_err(|_| ParquetError::oos(parse_fail_msg))
+        })
 }
 
 // Utility function to parse boolean or return general error.
 #[inline]
-fn parse_bool(value: Option<&str>, not_found_msg: &str, parse_fail_msg: &str) -> Result<bool> {
+fn parse_bool(
+    value: Option<&str>,
+    not_found_msg: &str,
+    parse_fail_msg: &str,
+) -> ParquetResult<bool> {
     value
-        .ok_or_else(|| Error::oos(not_found_msg))
+        .ok_or_else(|| ParquetError::oos(not_found_msg))
         .and_then(|v| {
             v.to_lowercase()
                 .parse::<bool>()
-                .map_err(|_| Error::oos(parse_fail_msg))
+                .map_err(|_| ParquetError::oos(parse_fail_msg))
         })
 }
 
@@ -277,37 +289,39 @@ fn parse_timeunit(
     value: Option<&str>,
     not_found_msg: &str,
     parse_fail_msg: &str,
-) -> Result<TimeUnit> {
+) -> ParquetResult<TimeUnit> {
     value
-        .ok_or_else(|| Error::oos(not_found_msg))
+        .ok_or_else(|| ParquetError::oos(not_found_msg))
         .and_then(|v| match v.to_uppercase().as_str() {
             "MILLIS" => Ok(TimeUnit::Milliseconds),
             "MICROS" => Ok(TimeUnit::Microseconds),
             "NANOS" => Ok(TimeUnit::Nanoseconds),
-            _ => Err(Error::oos(parse_fail_msg)),
+            _ => Err(ParquetError::oos(parse_fail_msg)),
         })
 }
 
 impl<'a> Parser<'a> {
     // Entry function to parse message type, uses internal tokenizer.
-    fn parse_message_type(&mut self) -> Result<ParquetType> {
+    fn parse_message_type(&mut self) -> ParquetResult<ParquetType> {
         // Check that message type starts with "message".
         match self.tokenizer.next() {
             Some("message") => {
                 let name = self
                     .tokenizer
                     .next()
-                    .ok_or_else(|| Error::oos("Expected name, found None"))?;
+                    .ok_or_else(|| ParquetError::oos("Expected name, found None"))?;
                 let fields = self.parse_child_types()?;
                 Ok(ParquetType::new_root(name.to_string(), fields))
             },
-            _ => Err(Error::oos("Message type does not start with 'message'")),
+            _ => Err(ParquetError::oos(
+                "Message type does not start with 'message'",
+            )),
         }
     }
 
     // Parses child types for a current group type.
     // This is only invoked on root and group types.
-    fn parse_child_types(&mut self) -> Result<Vec<ParquetType>> {
+    fn parse_child_types(&mut self) -> ParquetResult<Vec<ParquetType>> {
         assert_token(self.tokenizer.next(), "{")?;
         let mut vec = Vec::new();
         while let Some(value) = self.tokenizer.next() {
@@ -321,12 +335,12 @@ impl<'a> Parser<'a> {
         Ok(vec)
     }
 
-    fn add_type(&mut self) -> Result<ParquetType> {
+    fn add_type(&mut self) -> ParquetResult<ParquetType> {
         // Parse repetition
         let repetition = self
             .tokenizer
             .next()
-            .ok_or_else(|| Error::oos("Expected repetition, found None"))
+            .ok_or_else(|| ParquetError::oos("Expected repetition, found None"))
             .and_then(|v| repetition_from_str(&v.to_uppercase()))?;
 
         match self.tokenizer.next() {
@@ -335,23 +349,25 @@ impl<'a> Parser<'a> {
                 let physical_type = type_from_str(&type_string.to_uppercase())?;
                 self.add_primitive_type(repetition, physical_type)
             },
-            None => Err(Error::oos("Invalid type, could not extract next token")),
+            None => Err(ParquetError::oos(
+                "Invalid type, could not extract next token",
+            )),
         }
     }
 
-    fn add_group_type(&mut self, repetition: Repetition) -> Result<ParquetType> {
+    fn add_group_type(&mut self, repetition: Repetition) -> ParquetResult<ParquetType> {
         // Parse name of the group type
         let name = self
             .tokenizer
             .next()
-            .ok_or_else(|| Error::oos("Expected name, found None"))?;
+            .ok_or_else(|| ParquetError::oos("Expected name, found None"))?;
 
         // Parse converted type if exists
         let converted_type = if let Some("(") = self.tokenizer.next() {
             let converted_type = self
                 .tokenizer
                 .next()
-                .ok_or_else(|| Error::oos("Expected converted type, found None"))
+                .ok_or_else(|| ParquetError::oos("Expected converted type, found None"))
                 .and_then(|v| converted_group_from_str(&v.to_uppercase()))?;
             assert_token(self.tokenizer.next(), ")")?;
             Some(converted_type)
@@ -383,7 +399,7 @@ impl<'a> Parser<'a> {
         &mut self,
         repetition: Repetition,
         physical_type: Type,
-    ) -> Result<ParquetType> {
+    ) -> ParquetResult<ParquetType> {
         // Read type length if the type is FIXED_LEN_BYTE_ARRAY.
         let length = if physical_type == Type::FIXED_LEN_BYTE_ARRAY {
             assert_token(self.tokenizer.next(), "(")?;
@@ -402,14 +418,14 @@ impl<'a> Parser<'a> {
         let name = self
             .tokenizer
             .next()
-            .ok_or_else(|| Error::oos("Expected name, found None"))?;
+            .ok_or_else(|| ParquetError::oos("Expected name, found None"))?;
 
         // Parse logical types
         let (converted_type, logical_type) = if let Some("(") = self.tokenizer.next() {
             let (is_logical_type, converted_type, token) = self
                 .tokenizer
                 .next()
-                .ok_or_else(|| Error::oos("Expected converted or logical type, found None"))
+                .ok_or_else(|| ParquetError::oos("Expected converted or logical type, found None"))
                 .and_then(|v| {
                     let string = v.to_uppercase();
                     Ok(if is_logical_type(&string) {
@@ -417,7 +433,7 @@ impl<'a> Parser<'a> {
                     } else if is_converted_type(&string) {
                         (false, converted_primitive_from_str(&string), string)
                     } else {
-                        return Err(Error::oos(format!(
+                        return Err(ParquetError::oos(format!(
                             "Expected converted or logical type, found {}",
                             string
                         )));
@@ -464,7 +480,7 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn parse_converted_decimal(&mut self) -> Result<PrimitiveConvertedType> {
+    fn parse_converted_decimal(&mut self) -> ParquetResult<PrimitiveConvertedType> {
         assert_token(self.tokenizer.next(), "(")?;
         // Parse precision
         let precision = parse_i32(
@@ -493,7 +509,7 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_logical_type(&mut self, tpe: &str) -> Result<PrimitiveLogicalType> {
+    fn parse_logical_type(&mut self, tpe: &str) -> ParquetResult<PrimitiveLogicalType> {
         Ok(match tpe {
             "ENUM" => PrimitiveLogicalType::Enum,
             "DATE" => PrimitiveLogicalType::Date,
@@ -595,14 +611,14 @@ impl<'a> Parser<'a> {
                     } else {
                         // Invalid token for unit
                         self.tokenizer.backtrack();
-                        return Err(Error::oos("INTEGER requires sign"));
+                        return Err(ParquetError::oos("INTEGER requires sign"));
                     };
                     assert_token(self.tokenizer.next(), ")")?;
                     (bit_width, is_signed)
                 } else {
                     // Invalid token for unit
                     self.tokenizer.backtrack();
-                    return Err(Error::oos("INTEGER requires width and sign"));
+                    return Err(ParquetError::oos("INTEGER requires width and sign"));
                 };
                 PrimitiveLogicalType::Integer((bit_width, is_signed).into())
             },
@@ -611,7 +627,7 @@ impl<'a> Parser<'a> {
             "BSON" => PrimitiveLogicalType::Bson,
             "UUID" => PrimitiveLogicalType::Uuid,
             "UNKNOWN" => PrimitiveLogicalType::Unknown,
-            "INTERVAL" => return Err(Error::oos("Interval logical type not yet supported")),
+            "INTERVAL" => return Err(ParquetError::oos("Interval logical type not yet supported")),
             _ => unreachable!(),
         })
     }
@@ -849,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_message_type_compare_1() -> Result<()> {
+    fn test_parse_message_type_compare_1() -> ParquetResult<()> {
         let schema = "
     message root {
       optional fixed_len_byte_array(5) f1 (DECIMAL(9, 3));
@@ -889,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_message_type_compare_2() -> Result<()> {
+    fn test_parse_message_type_compare_2() -> ParquetResult<()> {
         let schema = "
     message root {
       required group a0 {
@@ -960,7 +976,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_message_type_compare_3() -> Result<()> {
+    fn test_parse_message_type_compare_3() -> ParquetResult<()> {
         let schema = "
     message root {
       required int32 _1 (INT_8);
@@ -1035,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_message_type_compare_4() -> Result<()> {
+    fn test_parse_message_type_compare_4() -> ParquetResult<()> {
         let schema = "
     message root {
       required int32 _1 (INTEGER(8,true));

@@ -1,5 +1,5 @@
 use crate::parquet::compression::CompressionOptions;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
     Page,
@@ -11,7 +11,7 @@ fn compress_data(
     page: DataPage,
     mut compressed_buffer: Vec<u8>,
     compression: CompressionOptions,
-) -> Result<CompressedDataPage> {
+) -> ParquetResult<CompressedDataPage> {
     let DataPage {
         mut buffer,
         header,
@@ -53,7 +53,7 @@ fn compress_dict(
     page: DictPage,
     mut compressed_buffer: Vec<u8>,
     compression: CompressionOptions,
-) -> Result<CompressedDictPage> {
+) -> ParquetResult<CompressedDictPage> {
     let DictPage {
         mut buffer,
         num_values,
@@ -85,7 +85,7 @@ pub fn compress(
     page: Page,
     compressed_buffer: Vec<u8>,
     compression: CompressionOptions,
-) -> Result<CompressedPage> {
+) -> ParquetResult<CompressedPage> {
     match page {
         Page::Data(page) => {
             compress_data(page, compressed_buffer, compression).map(CompressedPage::Data)
@@ -98,14 +98,14 @@ pub fn compress(
 
 /// A [`FallibleStreamingIterator`] that consumes [`Page`] and yields [`CompressedPage`]
 /// holding a reusable buffer ([`Vec<u8>`]) for compression.
-pub struct Compressor<I: Iterator<Item = Result<Page>>> {
+pub struct Compressor<I: Iterator<Item = ParquetResult<Page>>> {
     iter: I,
     compression: CompressionOptions,
     buffer: Vec<u8>,
     current: Option<CompressedPage>,
 }
 
-impl<I: Iterator<Item = Result<Page>>> Compressor<I> {
+impl<I: Iterator<Item = ParquetResult<Page>>> Compressor<I> {
     /// Creates a new [`Compressor`]
     pub fn new(iter: I, compression: CompressionOptions, buffer: Vec<u8>) -> Self {
         Self {
@@ -133,9 +133,9 @@ impl<I: Iterator<Item = Result<Page>>> Compressor<I> {
     }
 }
 
-impl<I: Iterator<Item = Result<Page>>> FallibleStreamingIterator for Compressor<I> {
+impl<I: Iterator<Item = ParquetResult<Page>>> FallibleStreamingIterator for Compressor<I> {
     type Item = CompressedPage;
-    type Error = Error;
+    type Error = ParquetError;
 
     fn advance(&mut self) -> std::result::Result<(), Self::Error> {
         let mut compressed_buffer = if let Some(page) = self.current.as_mut() {
