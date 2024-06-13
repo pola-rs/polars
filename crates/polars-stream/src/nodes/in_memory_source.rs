@@ -1,0 +1,55 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use polars_core::frame::DataFrame;
+use polars_error::PolarsResult;
+use polars_expr::state::ExecutionState;
+
+use super::ComputeNode;
+use crate::async_primitives::pipe::{Receiver, Sender};
+use crate::async_primitives::wait_group::WaitGroup;
+use crate::morsel::{Morsel, MorselSeq, IDEAL_MORSEL_SIZE};
+
+pub struct InMemorySource {
+    source: DataFrame,
+    morsel_size: usize,
+    seq: AtomicU64,
+}
+
+impl ComputeNode for InMemorySource {
+    fn initialize(&mut self, num_pipelines: usize) {
+        let len = self.source.height();
+        let ideal_block_count = len / IDEAL_MORSEL_SIZE;
+        let block_count = ideal_block_count.next_multiple_of(num_pipelines);
+        self.morsel_size = len.div_ceil(block_count).max(1);
+        self.seq = AtomicU64::new(0);
+    }
+
+    async fn process(
+        &self,
+        recv: Vec<Receiver<Morsel>>,
+        send: Vec<Sender<Morsel>>,
+        _state: &ExecutionState,
+    ) -> PolarsResult<()> {
+        assert!(recv.is_empty());
+        let [mut send] = <[_; 1]>::try_from(send).ok().unwrap();
+
+        let wait_group = WaitGroup::default();
+        loop {
+            let seq = self.seq.fetch_add(1, Ordering::Relaxed);
+            let offset = (seq as usize * self.morsel_size) as i64;
+            let df = self.source.slice(offset, self.morsel_size);
+            if df.is_empty() {
+                break;
+            }
+
+            let mut morsel = Morsel::new(df, MorselSeq::new(seq));
+            morsel.set_consume_token(wait_group.token());
+            if let Err(_) = send.send(morsel).await {
+                break;
+            }
+            wait_group.wait().await;
+        }
+
+        Ok(())
+    }
+}
