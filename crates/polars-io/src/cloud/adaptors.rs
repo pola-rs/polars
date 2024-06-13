@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use object_store::path::Path;
-use object_store::{MultipartUpload, ObjectStore};
+use object_store::{MultipartUpload, ObjectStore, PutPayload};
 use polars_error::{to_compute_err, PolarsResult};
 
 use super::CloudOptions;
@@ -50,8 +50,14 @@ impl CloudWriter {
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // SAFETY:
+        // we extend the lifetime for the duration of this function. This is save as wel block the
+        // async runtime here
+        let buf = unsafe {
+            std::mem::transmute::<&[u8], &'static [u8]>(buf)
+        };
         get_runtime().block_on(async {
-            let res = self.writer.put_part(buf.to_owned().into()).await;
+            let res = self.writer.put_part(PutPayload::from_static(buf)).await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
