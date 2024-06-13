@@ -8,8 +8,8 @@ use crate::PySeries;
 #[pymethods]
 impl PySeries {
     fn scatter(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
-        // we take the value because we want a ref count
-        // of 1 so that we can have mutable access
+        // we take the value because we want a ref count of 1 so that we can
+        // have mutable access cheaply via _get_inner_mut().
         let s = std::mem::take(&mut self.series);
         match scatter(s, &idx.series, &values.series) {
             Ok(out) => {
@@ -67,11 +67,6 @@ fn scatter_impl(
     idx: &[IdxSize],
     values: &Series,
 ) -> PolarsResult<Series> {
-    // Performance invariant: if the refcount is more than 1, the
-    // _get_inner_mut() operation copies the data, making it vastly more
-    // expensive.
-    debug_assert_eq!(Arc::strong_count(&s.0), 1);
-
     let mutable_s = s._get_inner_mut();
 
     let s = match logical_dtype.to_physical() {
