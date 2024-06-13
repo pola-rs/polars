@@ -59,16 +59,15 @@ impl Inner {
             let metadata_file = &mut self.metadata.acquire_exclusive().unwrap();
             update_last_accessed(metadata_file);
 
-            let metadata = self
-                .try_get_maybe_init_metadata(metadata_file, &cache_guard)
-                .unwrap();
-            let data_file_path = self.get_cached_data_file_path();
+            if let Ok(metadata) = self.try_get_metadata(metadata_file, &cache_guard) {
+                let data_file_path = self.get_cached_data_file_path();
 
-            if metadata.compare_local_state(data_file_path).is_ok() {
-                if verbose {
-                    eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
+                if metadata.compare_local_state(data_file_path).is_ok() {
+                    if verbose {
+                        eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
+                    }
+                    return Ok(finish_open(data_file_path, metadata_file));
                 }
-                return Ok(finish_open(data_file_path, metadata_file));
             }
         }
 
@@ -91,7 +90,7 @@ impl Inner {
             let metadata_file = &mut self.metadata.acquire_shared().unwrap();
             update_last_accessed(metadata_file);
 
-            if let Ok(metadata) = self.try_get_maybe_init_metadata(metadata_file, &cache_guard) {
+            if let Ok(metadata) = self.try_get_metadata(metadata_file, &cache_guard) {
                 if metadata.matches_remote_metadata(remote_metadata) {
                     let data_file_path = self.get_cached_data_file_path();
 
@@ -107,9 +106,14 @@ impl Inner {
 
         let metadata_file = &mut self.metadata.acquire_exclusive().unwrap();
         let metadata = self
-            .try_get_maybe_init_metadata(metadata_file, &cache_guard)
+            .try_get_metadata(metadata_file, &cache_guard)
             // Safety: `metadata_file` is an exclusive guard.
-            .unwrap();
+            .unwrap_or_else(|_| {
+                Arc::new(EntryMetadata::new(
+                    self.uri.clone(),
+                    self.ttl.load(std::sync::atomic::Ordering::Relaxed),
+                ))
+            });
 
         if metadata.matches_remote_metadata(remote_metadata) {
             let data_file_path = self.get_cached_data_file_path();
@@ -199,9 +203,9 @@ impl Inner {
         Ok(data_file)
     }
 
-    /// Try to read the metadata from disk. If `F` is an exclusive guard, this will
-    /// initialize the metadata if a valid one cannot be loaded from disk.
-    fn try_get_maybe_init_metadata<F: FileLockAnyGuard>(
+    /// Try to read the metadata from disk. If `F` is an exclusive guard, this
+    /// will update the TTL stored in the metadata file if it does not match.
+    fn try_get_metadata<F: FileLockAnyGuard>(
         &mut self,
         metadata_file: &mut F,
         _cache_guard: &cache_lock::GlobalFileCacheGuardAny,
@@ -211,7 +215,11 @@ impl Inner {
 
         for _ in 0..2 {
             if let Some(ref cached) = self.cached_data {
-                if cached.last_modified == last_modified && cached.metadata.ttl == ttl {
+                if cached.last_modified == last_modified {
+                    if cached.metadata.ttl != ttl {
+                        polars_bail!(ComputeError: "TTL mismatch");
+                    }
+
                     if cached.metadata.uri != self.uri {
                         unimplemented!(
                             "hash collision: uri1 = {}, uri2 = {}, hash = {}",
@@ -228,18 +236,8 @@ impl Inner {
             // Ensure cache is unset if read fails
             self.cached_data = None;
 
-            let mut metadata = match EntryMetadata::try_from_reader(&mut **metadata_file)
-                .map_err(to_compute_err)
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    if F::IS_EXCLUSIVE {
-                        EntryMetadata::new(self.uri.clone(), ttl)
-                    } else {
-                        return Err(e);
-                    }
-                },
-            };
+            let mut metadata =
+                EntryMetadata::try_from_reader(&mut **metadata_file).map_err(to_compute_err)?;
 
             // Note this means if multiple processes on the same system set a
             // different TTL for the same path, the metadata file will constantly

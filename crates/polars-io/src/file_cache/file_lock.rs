@@ -5,9 +5,7 @@ use fs4::FileExt;
 
 /// Note: this creates the file if it does not exist when acquiring locks.
 pub(super) struct FileLock<T: AsRef<Path>>(T);
-#[repr(transparent)]
 pub(super) struct FileLockSharedGuard(File);
-#[repr(transparent)]
 pub(super) struct FileLockExclusiveGuard(File);
 
 /// Trait to specify a file is lock-guarded without needing a particular type of
