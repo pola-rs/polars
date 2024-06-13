@@ -184,11 +184,11 @@ TEST_CASES = [
     # ---------------------------------------------
     # replace
     # ---------------------------------------------
-    ("a", "lambda x: MY_DICT[x]", 'pl.col("a").replace(MY_DICT)'),
+    ("a", "lambda x: MY_DICT[x]", 'pl.col("a").replace_strict(MY_DICT)'),
     (
         "a",
         "lambda x: MY_DICT[x - 1] + MY_DICT[1 + x]",
-        '(pl.col("a") - 1).replace(MY_DICT) + (1 + pl.col("a")).replace(MY_DICT)',
+        '(pl.col("a") - 1).replace_strict(MY_DICT) + (1 + pl.col("a")).replace_strict(MY_DICT)',
     ),
     # ---------------------------------------------
     # standard library datetime parsing
