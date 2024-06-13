@@ -632,3 +632,29 @@ def test_duration_division_schema() -> None:
 
     assert q.schema == {"a": pl.Float64}
     assert q.collect().to_dict(as_series=False) == {"a": [1.0]}
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "op"),
+    [
+        (pl.Duration, pl.Int32, "+"),
+        (pl.Int32, pl.Duration, "+"),
+        (pl.Time, pl.Int32, "+"),
+        (pl.Int32, pl.Time, "+"),
+        (pl.Date, pl.Int32, "+"),
+        (pl.Int32, pl.Date, "+"),
+        (pl.Datetime, pl.Duration, "*"),
+        (pl.Duration, pl.Datetime, "*"),
+        (pl.Date, pl.Duration, "*"),
+        (pl.Duration, pl.Date, "*"),
+        (pl.Time, pl.Duration, "*"),
+        (pl.Duration, pl.Time, "*"),
+     ]
+)
+def test_raise_invalid_temporal(a: pl.DataType, b: pl.DataType, op: str) -> None:
+    a = pl.Series("a", [], dtype=a)
+    b = pl.Series("b", [], dtype=b)
+    df = pl.DataFrame([a, b])
+
+    with pytest.raises(pl.InvalidOperationError):
+        eval(f"df.select(pl.col('a') {op} pl.col('b'))")

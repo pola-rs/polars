@@ -338,6 +338,9 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (_, Time) | (Time, _) => {
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -350,7 +353,7 @@ fn get_arithmetic_field(
                 | (Date, Duration(_))
                 | (Duration(_), Time)
                 | (Time, Duration(_)) => try_get_supertype(left_field.data_type(), &right_type)?,
-                (_, Datetime(_, _)) | (Datetime(_, _), _) | (_, Date) | (Date, _) => {
+                (_, Datetime(_, _)) | (Datetime(_, _), _) | (_, Date) | (Date, _) | (Time, _) | (_, Time) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
                 (Duration(tul), Duration(tur)) => Duration(get_time_units(tul, tur)),
