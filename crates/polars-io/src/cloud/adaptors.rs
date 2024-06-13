@@ -3,9 +3,8 @@
 use std::sync::Arc;
 
 use object_store::path::Path;
-use object_store::{MultipartId, ObjectStore};
+use object_store::{MultipartUpload, ObjectStore, PutPayload};
 use polars_error::{to_compute_err, PolarsResult};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use super::CloudOptions;
 use crate::pl_async::get_runtime;
@@ -16,14 +15,8 @@ use crate::pl_async::get_runtime;
 /// This allows it to be used in sync code which would otherwise write to a simple File or byte stream,
 /// such as with `polars::prelude::CsvWriter`.
 pub struct CloudWriter {
-    // Hold a reference to the store
-    object_store: Arc<dyn ObjectStore>,
-    // The path in the object_store which we want to write to
-    path: Path,
-    // ID of a partially-done upload, used to abort the upload on error
-    multipart_id: MultipartId,
     // Internal writer, constructed at creation
-    writer: Box<dyn AsyncWrite + Send + Unpin>,
+    writer: Box<dyn MultipartUpload>,
 }
 
 impl CloudWriter {
@@ -36,13 +29,8 @@ impl CloudWriter {
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let (multipart_id, writer) = Self::build_writer(&object_store, &path).await?;
-        Ok(CloudWriter {
-            object_store,
-            path,
-            multipart_id,
-            writer,
-        })
+        let writer = object_store.put_multipart(&path).await?;
+        Ok(CloudWriter { writer })
     }
 
     /// Constructs a new CloudWriter from a path and an optional set of CloudOptions.
@@ -55,47 +43,40 @@ impl CloudWriter {
         Self::new_with_object_store(object_store, cloud_location.prefix.into()).await
     }
 
-    async fn build_writer(
-        object_store: &Arc<dyn ObjectStore>,
-        path: &Path,
-    ) -> object_store::Result<(MultipartId, Box<dyn AsyncWrite + Send + Unpin>)> {
-        let (multipart_id, s3_writer) = object_store.put_multipart(path).await?;
-        Ok((multipart_id, s3_writer))
-    }
-
-    async fn abort(&self) -> PolarsResult<()> {
-        self.object_store
-            .abort_multipart(&self.path, &self.multipart_id)
-            .await
-            .map_err(to_compute_err)
+    async fn abort(&mut self) -> PolarsResult<()> {
+        self.writer.abort().await.map_err(to_compute_err)
     }
 }
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // SAFETY:
+        // We extend the lifetime for the duration of this function. This is safe as well block the
+        // async runtime here
+        let buf = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(buf) };
         get_runtime().block_on(async {
-            let res = self.writer.write(buf).await;
+            let res = self.writer.put_part(PutPayload::from_static(buf)).await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
-            res
+            Ok(buf.len())
         })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         get_runtime().block_on(async {
-            let res = self.writer.flush().await;
+            let res = self.writer.complete().await;
             if res.is_err() {
                 let _ = self.abort().await;
             }
-            res
+            Ok(())
         })
     }
 }
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let _ = get_runtime().block_on(self.writer.shutdown());
+        let _ = get_runtime().block_on(self.writer.complete());
     }
 }
 
