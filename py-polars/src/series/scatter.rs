@@ -67,6 +67,11 @@ fn scatter_impl(
     idx: &[u32],
     values: &Series,
 ) -> PolarsResult<Series> {
+    // Performance invariant: if the refcount is more than 1, the
+    // _get_inner_mut() operation copies the data, making it vastly more
+    // expensive.
+    debug_assert_eq!(Arc::strong_count(&s.0), 1);
+
     let mutable_s = s._get_inner_mut();
 
     let s = match logical_dtype.to_physical() {
