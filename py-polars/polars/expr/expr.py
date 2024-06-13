@@ -4851,7 +4851,11 @@ class Expr:
         │ 7   │
         └─────┘
         """
-        offset = -self._from_pyexpr(parse_into_expression(n))
+        # This cast enables tail with expressions that return unsigned integers,
+        # for which negate otherwise raises InvalidOperationError.
+        offset = -self._from_pyexpr(
+            parse_into_expression(n).cast(Int64, strict=False, wrap_numerical=True)
+        )
         return self.slice(offset, n)
 
     def limit(self, n: int | Expr = 10) -> Self:
