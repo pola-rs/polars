@@ -9487,7 +9487,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": ["foo", "bar", 2],
+        ...         "a": ["foo", "bar", None],
         ...         "b": [1, 2, 3],
         ...         "c": [1.0, 2.0, 3.0],
         ...     }

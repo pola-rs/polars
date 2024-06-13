@@ -430,7 +430,7 @@ def test_schema_mean_horizontal_single_column(
     in_dtype: pl.PolarsDataType,
     out_dtype: pl.PolarsDataType,
 ) -> None:
-    lf = pl.LazyFrame({"a": pl.Series([1, 0], dtype=in_dtype)}).select(
+    lf = pl.LazyFrame({"a": pl.Series([1, 0]).cast(in_dtype)}).select(
         pl.mean_horizontal(pl.all())
     )
 
