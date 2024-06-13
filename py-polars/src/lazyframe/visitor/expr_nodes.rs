@@ -1126,6 +1126,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     sort: _,
                     parallel: _,
                     name: _,
+                    normalize: _,
                 } => return Err(PyNotImplementedError::new_err("value counts")),
                 FunctionExpr::UniqueCounts => ("unique_counts",).to_object(py),
                 FunctionExpr::ApproxNUnique => {

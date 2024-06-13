@@ -2399,7 +2399,12 @@ class Series:
             return out.struct.unnest()
 
     def value_counts(
-        self, *, sort: bool = False, parallel: bool = False, name: str = "count"
+        self,
+        *,
+        sort: bool = False,
+        parallel: bool = False,
+        name: str | None = None,
+        normalize: bool = False,
     ) -> DataFrame:
         """
         Count the occurrences of unique values.
@@ -2416,7 +2421,11 @@ class Series:
                 This option should likely not be enabled in a group by context,
                 as the computation is already parallelized per group.
         name
-            Give the resulting count column a specific name; defaults to "count".
+            Give the resulting count column a specific name;
+            if `normalize` is True defaults to "count",
+            otherwise defaults to "proportion".
+        normalize
+            If true gives relative frequencies of the unique values
 
         Returns
         -------
@@ -2452,8 +2461,15 @@ class Series:
         │ green ┆ 1   │
         └───────┴─────┘
         """
+        if name is None:
+            if normalize:
+                name = "proportion"
+            else:
+                name = "count"
         return pl.DataFrame._from_pydf(
-            self._s.value_counts(sort=sort, parallel=parallel, name=name)
+            self._s.value_counts(
+                sort=sort, parallel=parallel, name=name, normalize=normalize
+            )
         )
 
     def unique_counts(self) -> Series:
