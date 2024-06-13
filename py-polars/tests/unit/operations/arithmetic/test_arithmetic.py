@@ -649,12 +649,12 @@ def test_duration_division_schema() -> None:
         (pl.Duration, pl.Date, "*"),
         (pl.Time, pl.Duration, "*"),
         (pl.Duration, pl.Time, "*"),
-     ]
+    ],
 )
 def test_raise_invalid_temporal(a: pl.DataType, b: pl.DataType, op: str) -> None:
-    a = pl.Series("a", [], dtype=a)
-    b = pl.Series("b", [], dtype=b)
-    df = pl.DataFrame([a, b])
+    a = pl.Series("a", [], dtype=a)  # type: ignore[assignment]
+    b = pl.Series("b", [], dtype=b)  # type: ignore[assignment]
+    _df = pl.DataFrame([a, b])
 
     with pytest.raises(pl.InvalidOperationError):
-        eval(f"df.select(pl.col('a') {op} pl.col('b'))")
+        eval(f"_df.select(pl.col('a') {op} pl.col('b'))")
