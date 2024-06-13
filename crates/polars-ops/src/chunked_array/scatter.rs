@@ -7,7 +7,7 @@ use polars_utils::index::check_bounds;
 
 pub trait ChunkedSet<T: Copy> {
     /// Invariant for implementations: if the scatter() fails, typically because
-    /// of bad indexes, the passed in values should remain unchanged.
+    /// of bad indexes, then self should remain unmodified.
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T>>;
