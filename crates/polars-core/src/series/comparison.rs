@@ -77,7 +77,7 @@ macro_rules! impl_compare {
                 lhs.0.$method(&rhs.0)
             },
 
-            dt => polars_bail!(InvalidOperation: "could apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
+            dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
         out.rename(lhs.name());
         PolarsResult::Ok(out)
