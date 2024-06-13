@@ -563,7 +563,7 @@ def struct(
     Use keyword arguments to easily name each struct field.
 
     >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
-    OrderedDict({'my_struct': Struct({'p': Int64, 'q': Boolean})})
+    Schema({'my_struct': Struct({'p': Int64, 'q': Boolean})})
     """
     pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))

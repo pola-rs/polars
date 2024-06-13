@@ -191,3 +191,11 @@ def test_list_null_constructor_schema() -> None:
     expected = pl.List(pl.Null)
     assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
     assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
+
+
+def test_df_init_schema_object() -> None:
+    schema = pl.Schema({"a": pl.Int8(), "b": pl.String()})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}, schema=schema)
+
+    assert df.columns == schema.names()
+    assert df.dtypes == schema.dtypes()

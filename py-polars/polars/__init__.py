@@ -209,6 +209,7 @@ from polars.meta import (
     thread_pool_size,
     threadpool_size,
 )
+from polars.schema import Schema
 from polars.series import Series
 from polars.sql import SQLContext, sql
 from polars.string_cache import (
@@ -252,7 +253,9 @@ __all__ = [
     "Expr",
     "LazyFrame",
     "Series",
+    # other classes
     "InProcessQuery",
+    "Schema",
     # polars.datatypes
     "Array",
     "Binary",
