@@ -15,7 +15,8 @@ use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
-use task::{CancelHandle, JoinHandle, Runnable};
+pub use task::JoinHandle;
+use task::{CancelHandle, Runnable};
 
 static NUM_EXECUTOR_THREADS: AtomicUsize = AtomicUsize::new(0);
 pub fn set_num_threads(t: usize) {
