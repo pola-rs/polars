@@ -691,11 +691,16 @@ impl LazyFrame {
         {
             if self.opt_state.new_streaming {
                 let alp_plan = self.to_alp_optimized()?;
-                return polars_stream::run_query(
-                    alp_plan.lp_top,
-                    alp_plan.lp_arena,
-                    alp_plan.expr_arena,
-                );
+                let lp_top = alp_plan.lp_top;
+                let mut ir_arena = alp_plan.lp_arena;
+                let expr_arena = alp_plan.expr_arena;
+
+                let lp_top = ir_arena.add(IR::Sink {
+                    input: lp_top,
+                    payload: SinkType::Memory,
+                });
+
+                return polars_stream::run_query(lp_top, ir_arena, expr_arena);
             }
         }
         self._collect_post_opt(|_, _, _| Ok(()))
