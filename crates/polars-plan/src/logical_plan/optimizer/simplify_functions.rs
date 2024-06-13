@@ -1,3 +1,5 @@
+use polars_core::chunked_array::cast::CastOptions;
+
 use super::*;
 
 pub(super) fn optimize_functions(
@@ -70,7 +72,7 @@ pub(super) fn optimize_functions(
                 Some(AExpr::Cast {
                     expr: input[0].node(),
                     data_type: DataType::Boolean,
-                    strict: false,
+                    options: CastOptions::NonStrict,
                 })
             } else {
                 None

@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
@@ -7,11 +8,18 @@ use crate::constants::{get_len_name, LITERAL_NAME};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 pub enum OutputName {
+    /// No not yet set.
     #[default]
     None,
+    /// The most left-hand-side literal will be the output name.
     LiteralLhs(ColumnName),
+    /// The most left-hand-side column will be the output name.
     ColumnLhs(ColumnName),
+    /// Rename the output as `ColumnName`.
     Alias(ColumnName),
+    #[cfg(feature = "dtype-struct")]
+    /// A struct field.
+    Field(ColumnName),
 }
 
 impl OutputName {
@@ -20,6 +28,8 @@ impl OutputName {
             OutputName::Alias(name) => name,
             OutputName::ColumnLhs(name) => name,
             OutputName::LiteralLhs(name) => name,
+            #[cfg(feature = "dtype-struct")]
+            OutputName::Field(name) => name,
             OutputName::None => panic!("no output name set"),
         }
     }
@@ -36,6 +46,12 @@ pub struct ExprIR {
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
+}
+
+impl Borrow<Node> for ExprIR {
+    fn borrow(&self) -> &Node {
+        &self.node
+    }
 }
 
 impl ExprIR {
@@ -67,11 +83,20 @@ impl ExprIR {
                 AExpr::Function {
                     input, function, ..
                 } => {
-                    if input.is_empty() {
-                        out.output_name =
-                            OutputName::LiteralLhs(ColumnName::from(format!("{}", function)));
-                    } else {
-                        out.output_name = input[0].output_name.clone();
+                    match function {
+                        #[cfg(feature = "dtype-struct")]
+                        FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
+                            out.output_name = OutputName::Field(name.clone());
+                        },
+                        _ => {
+                            if input.is_empty() {
+                                out.output_name = OutputName::LiteralLhs(ColumnName::from(
+                                    format!("{}", function),
+                                ));
+                            } else {
+                                out.output_name = input[0].output_name.clone();
+                            }
+                        },
                     }
                     break;
                 },
@@ -101,6 +126,15 @@ impl ExprIR {
     #[inline]
     pub fn node(&self) -> Node {
         self.node
+    }
+
+    /// Create a `ExprIR` structure that implements display
+    pub fn display<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> ExprIRDisplay<'a> {
+        ExprIRDisplay {
+            node: self.node(),
+            output_name: self.output_name_inner(),
+            expr_arena,
+        }
     }
 
     pub(crate) fn set_node(&mut self, node: Node) {
@@ -136,6 +170,15 @@ impl ExprIR {
     pub fn get_alias(&self) -> Option<&ColumnName> {
         match &self.output_name {
             OutputName::Alias(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    pub fn get_alias_or_field(&self) -> Option<&ColumnName> {
+        match &self.output_name {
+            OutputName::Alias(name) => Some(name),
+            #[cfg(feature = "dtype-struct")]
+            OutputName::Field(name) => Some(name),
             _ => None,
         }
     }

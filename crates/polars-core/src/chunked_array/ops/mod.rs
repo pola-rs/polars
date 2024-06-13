@@ -23,8 +23,6 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
-#[cfg(feature = "interpolate")]
-mod interpolate;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 pub(crate) mod nulls;
@@ -44,15 +42,8 @@ pub mod zip;
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::series::IsSorted;
-
-#[cfg(feature = "to_list")]
-pub trait ToList<T: PolarsDataType> {
-    fn to_list(&self) -> PolarsResult<ListChunked> {
-        polars_bail!(opq = to_list, T::get_dtype());
-    }
-}
-
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
     fn reinterpret_signed(&self) -> Series {
@@ -192,7 +183,13 @@ pub trait ChunkSet<'a, A, B> {
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
     /// Cast a [`ChunkedArray`] to [`DataType`]
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series>;
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast_with_options(data_type, CastOptions::NonStrict)
+    }
+
+    /// Cast a [`ChunkedArray`] to [`DataType`]
+    fn cast_with_options(&self, data_type: &DataType, options: CastOptions)
+        -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
     ///
@@ -343,10 +340,12 @@ pub trait ChunkCompare<Rhs> {
 }
 
 /// Get unique values in a `ChunkedArray`
-pub trait ChunkUnique<T: PolarsDataType> {
+pub trait ChunkUnique {
     // We don't return Self to be able to use AutoRef specialization
     /// Get unique values of a ChunkedArray
-    fn unique(&self) -> PolarsResult<ChunkedArray<T>>;
+    fn unique(&self) -> PolarsResult<Self>
+    where
+        Self: Sized;
 
     /// Get first index of the unique values in a `ChunkedArray`.
     /// This Vec is sorted.
@@ -517,10 +516,10 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                unsafe { ca.to_logical(self.inner_dtype()) };
+                unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
-            None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
+            None => ListChunked::full_null_with_dtype(self.name(), length, self.inner_dtype()),
         }
     }
 }
@@ -532,13 +531,13 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);
-                unsafe { ca.to_logical(self.inner_dtype()) };
+                unsafe { ca.to_logical(self.inner_dtype().clone()) };
                 ca
             },
             None => ArrayChunked::full_null_with_dtype(
                 self.name(),
                 length,
-                &self.inner_dtype(),
+                self.inner_dtype(),
                 self.width(),
             ),
         }

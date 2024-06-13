@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         # string types
         ("UTF16", pl.String),
         ("char(8)", pl.String),
+        ("BPCHAR", pl.String),
         ("nchar[128]", pl.String),
         ("varchar", pl.String),
         ("CHARACTER VARYING(64)", pl.String),
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
         ("ROWID", pl.UInt64),
         ("mediumint", pl.Int32),
         ("unsigned mediumint", pl.UInt32),
+        ("cardinal_number", pl.UInt64),
         ("smallserial", pl.Int16),
         ("serial", pl.Int32),
         ("bigserial", pl.Int64),
@@ -58,6 +60,8 @@ if TYPE_CHECKING:
         ("timestamp(5)", pl.Datetime("us")),
         ("timestamp(7)", pl.Datetime("ns")),
         ("datetime without tz", pl.Datetime("us")),
+        ("duration(2)", pl.Duration("ms")),
+        ("interval", pl.Duration("us")),
         ("date", pl.Date),
         ("time", pl.Time),
         ("date32", pl.Date),
@@ -65,6 +69,8 @@ if TYPE_CHECKING:
         # binary types
         ("BYTEA", pl.Binary),
         ("BLOB", pl.Binary),
+        # miscellaneous
+        ("NULL", pl.Null),
     ],
 )
 def test_dtype_inference_from_string(

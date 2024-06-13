@@ -8,24 +8,21 @@ from polars.testing import assert_frame_equal
 
 def test_arctan2() -> None:
     twoRootTwo = math.sqrt(2) / 2.0
-    df = pl.DataFrame(
+    df = pl.DataFrame(  # noqa: F841
         {
             "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
             "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
         }
     )
-
-    sql = pl.SQLContext(df=df)
-    res = sql.execute(
+    res = pl.sql(
         """
         SELECT
-        ATAN2D(y,x) as "atan2d",
-        ATAN2(y,x) as "atan2"
+          ATAN2D(y,x) as "atan2d",
+          ATAN2(y,x) as "atan2"
         FROM df
         """,
         eager=True,
     )
-
     df_result = pl.DataFrame({"atan2d": [45.0, -45.0, 135.0, -135.0]})
     df_result = df_result.with_columns(pl.col("atan2d").cast(pl.Float64))
     df_result = df_result.with_columns(pl.col("atan2d").radians().alias("atan2"))
@@ -44,25 +41,25 @@ def test_trig() -> None:
     res = ctx.execute(
         """
         SELECT
-        asin(1.0)/a as "pi values",
-        cos(asin(1.0)/a) AS "cos",
-        cot(asin(1.0)/a) AS "cot",
-        sin(asin(1.0)/a) AS "sin",
-        tan(asin(1.0)/a) AS "tan",
+          asin(1.0)/a as "pi values",
+          cos(asin(1.0)/a) AS "cos",
+          cot(asin(1.0)/a) AS "cot",
+          sin(asin(1.0)/a) AS "sin",
+          tan(asin(1.0)/a) AS "tan",
 
-        cosd(asind(1.0)/a) AS "cosd",
-        cotd(asind(1.0)/a) AS "cotd",
-        sind(asind(1.0)/a) AS "sind",
-        tand(asind(1.0)/a) AS "tand",
+          cosd(asind(1.0)/a) AS "cosd",
+          cotd(asind(1.0)/a) AS "cotd",
+          sind(asind(1.0)/a) AS "sind",
+          tand(asind(1.0)/a) AS "tand",
 
-        1.0/a as "inverse pi values",
-        acos(1.0/a) AS "acos",
-        asin(1.0/a) AS "asin",
-        atan(1.0/a) AS "atan",
+          1.0/a as "inverse pi values",
+          acos(1.0/a) AS "acos",
+          asin(1.0/a) AS "asin",
+          atan(1.0/a) AS "atan",
 
-        acosd(1.0/a) AS "acosd",
-        asind(1.0/a) AS "asind",
-        atand(1.0/a) AS "atand"
+          acosd(1.0/a) AS "acosd",
+          asind(1.0/a) AS "asind",
+          atand(1.0/a) AS "atand"
         FROM df
         """,
         eager=True,

@@ -15,10 +15,9 @@ use super::statistics::reduce;
 use super::DynStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
-use crate::parquet::statistics::serialize_statistics;
 use crate::parquet::FallibleStreamingIterator;
 
 pub fn write_column_chunk<W, E>(
@@ -26,10 +25,10 @@ pub fn write_column_chunk<W, E>(
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
-) -> Result<(ColumnChunk, Vec<PageWriteSpec>, u64)>
+) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
-    Error: From<E>,
+    ParquetError: From<E>,
     E: std::error::Error,
 {
     // write every page
@@ -64,10 +63,10 @@ pub async fn write_column_chunk_async<W, E>(
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
-) -> Result<(ColumnChunk, Vec<PageWriteSpec>, u64)>
+) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: AsyncWrite + Unpin + Send,
-    Error: From<E>,
+    ParquetError: From<E>,
     E: std::error::Error,
 {
     let initial = offset;
@@ -97,7 +96,7 @@ where
 fn build_column_chunk(
     specs: &[PageWriteSpec],
     descriptor: &ColumnDescriptor,
-) -> Result<ColumnChunk> {
+) -> ParquetResult<ColumnChunk> {
     // compute stats to build header at the end of the chunk
 
     let compression = specs
@@ -105,7 +104,7 @@ fn build_column_chunk(
         .map(|spec| spec.compression)
         .collect::<PlHashSet<_>>();
     if compression.len() > 1 {
-        return Err(crate::parquet::error::Error::oos(
+        return Err(crate::parquet::error::ParquetError::oos(
             "All pages within a column chunk must be compressed with the same codec",
         ));
     }
@@ -173,7 +172,7 @@ fn build_column_chunk(
 
     let statistics = specs.iter().map(|x| &x.statistics).collect::<Vec<_>>();
     let statistics = reduce(&statistics)?;
-    let statistics = statistics.map(|x| serialize_statistics(x.as_ref()));
+    let statistics = statistics.map(|x| x.serialize());
 
     let (type_, _): (Type, Option<i32>) = descriptor.descriptor.primitive_type.physical_type.into();
 

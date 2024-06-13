@@ -166,12 +166,12 @@ pub(super) fn predicate_to_pa(
             } else {
                 let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
                 let left_cmp_op = match closed {
-                    ClosedInterval::Both | ClosedInterval::Left => Operator::Lt,
-                    ClosedInterval::None | ClosedInterval::Right => Operator::LtEq,
+                    ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
+                    ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
                 };
                 let right_cmp_op = match closed {
-                    ClosedInterval::Both | ClosedInterval::Right => Operator::Gt,
-                    ClosedInterval::None | ClosedInterval::Left => Operator::GtEq,
+                    ClosedInterval::None | ClosedInterval::Left => Operator::Lt,
+                    ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
                 };
 
                 let lower = predicate_to_pa(input.get(1)?.node(), expr_arena, args)?;

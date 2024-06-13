@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 import io
+import os
+import sys
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import HealthCheck, given, settings
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,10 +46,12 @@ COMPRESSIONS = [
 
 
 @pytest.mark.write_disk()
-def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
+def test_write_parquet_using_pyarrow_9753(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
-        tmpdir / "test.parquet",
+        tmp_path / "test.parquet",
         compression="zstd",
         statistics=True,
         use_pyarrow=True,
@@ -88,15 +95,29 @@ def small_parquet_path(io_files_path: Path) -> Path:
 def test_to_from_buffer(
     df: pl.DataFrame, compression: ParquetCompression, use_pyarrow: bool
 ) -> None:
-    print(df)
     df = df[["list_str"]]
-    print(df)
     buf = io.BytesIO()
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
-    print(read_df)
     assert_frame_equal(df, read_df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+def test_read_parquet_respects_rechunk_16416(
+    use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
+) -> None:
+    # Create a dataframe with 3 chunks:
+    df = pl.DataFrame({"a": [1]})
+    df = pl.concat([df, df, df])
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=1)
+    buf.seek(0)
+
+    rechunk, expected_chunks = rechunk_and_expected_chunks
+    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow, rechunk=rechunk)
+    assert result.n_chunks() == expected_chunks
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
@@ -553,7 +574,6 @@ def test_nested_struct_read_12610() -> None:
     assert_frame_equal(expect, actual)
 
 
-@pl.Config(activate_decimals=True)
 @pytest.mark.write_disk()
 def test_decimal_parquet(tmp_path: Path) -> None:
     path = tmp_path / "foo.parquet"
@@ -680,6 +700,20 @@ def test_read_parquet_binary_file_io(tmp_path: Path) -> None:
     assert_frame_equal(out, df)
 
 
+# https://github.com/pola-rs/polars/issues/15760
+@pytest.mark.write_disk()
+def test_read_parquet_binary_fsspec(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    file_path = tmp_path / "test.parquet"
+    df.write_parquet(file_path)
+
+    with fsspec.open(file_path) as f:
+        out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+
 def test_read_parquet_binary_bytes_io() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     f = io.BytesIO()
@@ -770,9 +804,142 @@ def test_sliced_dict_with_nulls_14904() -> None:
 
 
 def test_parquet_array_dtype() -> None:
-    df = pl.DataFrame({"x": [[1, 2, 3]]})
-    df = df.cast({"x": pl.Array(pl.Int64, width=3)})
+    df = pl.DataFrame({"x": []})
+    df = df.cast({"x": pl.Array(pl.Int64, shape=3)})
     test_round_trip(df)
+
+
+def test_parquet_array_dtype_nulls() -> None:
+    df = pl.DataFrame({"x": [[1, 2], None, [None, 3]]})
+    df = df.cast({"x": pl.Array(pl.Int64, shape=2)})
+    test_round_trip(df)
+
+
+@pytest.mark.parametrize(
+    ("series", "dtype"),
+    [
+        ([[1, 2, 3]], pl.List(pl.Int64)),
+        ([[1, None, 3]], pl.List(pl.Int64)),
+        (
+            [{"a": []}, {"a": [1]}, {"a": [1, 2, 3]}],
+            pl.Struct({"a": pl.List(pl.Int64)}),
+        ),
+        ([{"a": None}, None, {"a": [1, 2, None]}], pl.Struct({"a": pl.List(pl.Int64)})),
+        (
+            [[{"a": []}, {"a": [1]}, {"a": [1, 2, 3]}], None, [{"a": []}, {"a": [42]}]],
+            pl.List(pl.Struct({"a": pl.List(pl.Int64)})),
+        ),
+        (
+            [
+                [1, None, 3],
+                None,
+                [1, 3, 4],
+                None,
+                [9, None, 4],
+                [None, 42, 13],
+                [37, 511, None],
+            ],
+            pl.List(pl.Int64),
+        ),
+        ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
+        ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
+        ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
+        # @TODO: Enable when zero-width arrays are enabled
+        # ([[], [], []],                       pl.Array(pl.Int64, 0)),
+        # ([[], None, []],                     pl.Array(pl.Int64, 0)),
+        (
+            [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
+            pl.Array(pl.Array(pl.Int8, 3), 2),
+        ),
+        (
+            [[[1, 5, 2], [42, 13, 37]], None, [None, [3, 1, 3]]],
+            pl.Array(pl.Array(pl.Int8, 3), 2),
+        ),
+        (
+            [
+                [[[2, 1], None, [4, 1], None], []],
+                None,
+                [None, [[4, 4], None, [1, 2]]],
+            ],
+            pl.Array(pl.List(pl.Array(pl.Int8, 2)), 2),
+        ),
+        ([[[], []]], pl.Array(pl.List(pl.Array(pl.Int8, 2)), 2)),
+        (
+            [
+                [
+                    [[[42, 13, 37, 15, 9, 20, 0, 0, 5, 10], None]],
+                    [None, [None, [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]], None],
+                ]
+            ],
+            pl.Array(pl.List(pl.Array(pl.Array(pl.Int8, 10), 2)), 2),
+        ),
+        (
+            [
+                None,
+                [None],
+                [[None]],
+                [[[None]]],
+                [[[[None]]]],
+                [[[[[None]]]]],
+                [[[[[1]]]]],
+            ],
+            pl.Array(pl.Array(pl.Array(pl.Array(pl.Array(pl.Int8, 1), 1), 1), 1), 1),
+        ),
+        (
+            [
+                None,
+                [None],
+                [[]],
+                [[None]],
+                [[[None], None]],
+                [[[None], []]],
+                [[[[None]], [[[1]]]]],
+                [[[[[None]]]]],
+                [[[[[1]]]]],
+            ],
+            pl.Array(pl.List(pl.Array(pl.List(pl.Array(pl.Int8, 1)), 1)), 1),
+        ),
+    ],
+)
+@pytest.mark.write_disk()
+def test_complex_types(tmp_path: Path, series: list[Any], dtype: pl.DataType) -> None:
+    xs = pl.Series(series, dtype=dtype)
+    df = pl.DataFrame({"x": xs})
+
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "complex-types.parquet"
+
+    df.write_parquet(file_path)
+    after = pl.read_parquet(file_path)
+
+    assert str(after) == str(df)
+
+
+@pytest.mark.xfail()
+def test_placeholder_zero_array() -> None:
+    # @TODO: if this does not fail anymore please enable the upper test-cases
+    pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
+
+
+@pytest.mark.xfail()
+def test_placeholder_no_array_equals() -> None:
+    # @TODO: if this does not fail anymore please just call
+    # `test_round_trip` instead of comparing the strings.
+    test_round_trip(
+        pl.DataFrame(
+            {
+                "x": pl.Series(
+                    [
+                        [
+                            [1, 2],
+                            [3, 4],
+                        ]
+                    ],
+                    dtype=pl.Array(pl.List(pl.Int8), 2),
+                )
+            }
+        )
+    )
 
 
 @pytest.mark.write_disk()
@@ -820,3 +987,155 @@ def test_read_parquet_only_loads_selected_columns_15098(
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+
+
+@pytest.mark.release()
+@pytest.mark.write_disk()
+def test_max_statistic_parquet_writer(tmp_path: Path) -> None:
+    # this hits the maximal page size
+    # so the row group will be split into multiple pages
+    # the page statistics need to be correctly reduced
+    # for this query to make sense
+    n = 150_000
+
+    tmp_path.mkdir(exist_ok=True)
+
+    # int64 is important to hit the page size
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).alias("int").to_frame()
+    f = tmp_path / "tmp.parquet"
+    df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
+    result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()
+    expected = pl.DataFrame({"int": [149998, 149999]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows filenames cannot contain an asterisk"
+)
+def test_no_glob(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"foo": 1})
+
+    p1 = tmp_path / "*.parquet"
+    df.write_parquet(str(p1))
+    p2 = tmp_path / "*1.parquet"
+    df.write_parquet(str(p2))
+
+    assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(os.environ.get("POLARS_FORCE_ASYNC") == "1", reason="only local")
+def test_no_glob_windows(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"foo": 1})
+
+    p1 = tmp_path / "hello[.parquet"
+    df.write_parquet(str(p1))
+    p2 = tmp_path / "hello[2.parquet"
+    df.write_parquet(str(p2))
+
+    assert_frame_equal(pl.scan_parquet(str(p1), glob=False).collect(), df)
+
+
+@pytest.mark.slow()
+def test_hybrid_rle() -> None:
+    # 10_007 elements to test if not a nice multiple of 8
+    n = 10_007
+    literal_literal = []
+    literal_rle = []
+    for i in range(500):
+        literal_literal.append(np.repeat(i, 5))
+        literal_literal.append(np.repeat(i + 2, 11))
+        literal_rle.append(np.repeat(i, 5))
+        literal_rle.append(np.repeat(i + 2, 15))
+    literal_literal.append(np.random.randint(0, 10, size=2007))
+    literal_rle.append(np.random.randint(0, 10, size=7))
+    literal_literal = np.concatenate(literal_literal)
+    literal_rle = np.concatenate(literal_rle)
+    df = pl.DataFrame(
+        {
+            # Primitive types
+            "i64": pl.Series([1, 2], dtype=pl.Int64).sample(n, with_replacement=True),
+            "u64": pl.Series([1, 2], dtype=pl.UInt64).sample(n, with_replacement=True),
+            "i8": pl.Series([1, 2], dtype=pl.Int8).sample(n, with_replacement=True),
+            "u8": pl.Series([1, 2], dtype=pl.UInt8).sample(n, with_replacement=True),
+            "string": pl.Series(["abc", "def"], dtype=pl.String).sample(
+                n, with_replacement=True
+            ),
+            "categorical": pl.Series(["aaa", "bbb"], dtype=pl.Categorical).sample(
+                n, with_replacement=True
+            ),
+            # Fill up bit-packing buffer in middle of consecutive run
+            "large_bit_pack": np.concatenate(
+                [np.repeat(i, 5) for i in range(2000)]
+                + [np.random.randint(0, 10, size=7)]
+            ),
+            # Literal run that is not a multiple of 8 followed by consecutive
+            # run initially long enough to RLE but not after padding literal
+            "literal_literal": literal_literal,
+            # Literal run that is not a multiple of 8 followed by consecutive
+            # run long enough to RLE even after padding literal
+            "literal_rle": literal_rle,
+            # Final run not long enough to RLE
+            "final_literal": np.concatenate(
+                [np.random.randint(0, 100, 10_000), np.repeat(-1, 7)]
+            ),
+            # Final run long enough to RLE
+            "final_rle": np.concatenate(
+                [np.random.randint(0, 100, 9_998), np.repeat(-1, 9)]
+            ),
+            # Test filling up bit-packing buffer for encode_bool,
+            # which is only used to encode validities
+            "large_bit_pack_validity": [0, None] * 4092
+            + [0] * 9
+            + [1] * 9
+            + [2] * 10
+            + [0] * 1795,
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    for column in pq.ParquetFile(f).metadata.to_dict()["row_groups"][0]["columns"]:
+        assert "RLE_DICTIONARY" in column["encodings"]
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+@pytest.mark.skip(
+    reason="This test causes too many panics in other parts of the code base"
+)
+@given(
+    df=dataframes(
+        include_dtypes=[pl.List, pl.Array, pl.Int8, pl.Struct],
+        min_size=90,
+        max_size=110,
+    )
+)
+@pytest.mark.slow()
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
+    # delete if exists
+    path = tmp_path / "data.parquet"
+
+    df.write_parquet(path)
+    result = pl.read_parquet(path)
+
+    assert str(df) == str(result)
+
+
+def test_parquet_statistics_uint64_16683() -> None:
+    u64_max = (1 << 64) - 1
+    df = pl.Series("a", [u64_max, 0], dtype=pl.UInt64).to_frame()
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min == 0
+    assert statistics.max == u64_max

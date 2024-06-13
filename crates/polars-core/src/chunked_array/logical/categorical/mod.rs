@@ -13,8 +13,10 @@ use polars_utils::sync::SyncPtr;
 pub use revmap::*;
 
 use super::*;
-use crate::chunked_array::Settings;
+use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::metadata::MetadataFlags;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::using_string_cache;
 
 bitflags! {
@@ -29,7 +31,6 @@ pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
-    /// 2nd bit: use lexical sorting
     bit_settings: BitSettings,
 }
 
@@ -173,12 +174,16 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn get_flags(&self) -> Settings {
+    pub(crate) fn get_flags(&self) -> MetadataFlags {
         self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
+    pub(crate) fn set_flags(&mut self, mut flags: MetadataFlags) {
+        // We should not set the sorted flag if we are sorting in lexical order
+        if self.uses_lexical_ordering() {
+            flags.set_sorted_flag(IsSorted::Not)
+        }
         self.physical_mut().set_flags(flags)
     }
 
@@ -279,6 +284,10 @@ impl CategoricalChunked {
         self
     }
 
+    pub fn _with_fast_unique(self, toggle: bool) -> Self {
+        self.with_fast_unique(toggle)
+    }
+
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
         if let DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _) =
@@ -323,7 +332,7 @@ impl LogicalType for CategoricalChunked {
         }
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+    fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             DataType::String => {
                 let mapping = &**self.get_rev_map();
@@ -387,11 +396,13 @@ impl LogicalType for CategoricalChunked {
                     self.physical.name(),
                     self.get_rev_map().get_categories().clone(),
                 );
-                let casted_series = categories.cast(dtype)?;
+                let casted_series = categories.cast_with_options(dtype, options)?;
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self.physical.cast(&DataType::UInt64)?;
+                    let s = self
+                        .physical
+                        .cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
@@ -400,7 +411,7 @@ impl LogicalType for CategoricalChunked {
                     Ok(unsafe { casted_series.take_unchecked(&self.physical) })
                 }
             },
-            _ => self.physical.cast(dtype),
+            _ => self.physical.cast_with_options(dtype, options),
         }
     }
 }

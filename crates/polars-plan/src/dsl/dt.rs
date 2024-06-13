@@ -203,9 +203,9 @@ impl DateLikeNameSpace {
     }
 
     /// Truncate the Datetime/Date range into buckets.
-    pub fn truncate(self, every: Expr, offset: String) -> Expr {
+    pub fn truncate(self, every: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate),
             &[every],
             false,
             false,
@@ -213,14 +213,14 @@ impl DateLikeNameSpace {
     }
 
     /// Roll backward to the first day of the month.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_start")]
     pub fn month_start(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
     }
 
     /// Roll forward to the last day of the month.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "month_end")]
     pub fn month_end(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
@@ -241,21 +241,25 @@ impl DateLikeNameSpace {
     }
 
     /// Round the Datetime/Date range into buckets.
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
-        let every = every.as_ref().into();
-        let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+    pub fn round(self, every: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round),
+            &[every],
+            false,
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
-    #[cfg(feature = "date_offset")]
+    #[cfg(feature = "offset_by")]
     pub fn offset_by(self, by: Expr) -> Expr {
-        self.0
-            .map_many_private(FunctionExpr::DateOffset, &[by], false, false)
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::OffsetBy),
+            &[by],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "timezones")]

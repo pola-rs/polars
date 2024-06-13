@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
 from hypothesis import given
-from hypothesis.strategies import just, lists, one_of
 
 import polars as pl
 
@@ -33,10 +33,8 @@ def test_to_pandas() -> None:
         },
         schema_overrides={"a": pl.UInt8},
     ).with_columns(
-        [
-            pl.col("e").cast(pl.Categorical).alias("h"),
-            pl.col("f").cast(pl.Categorical).alias("i"),
-        ]
+        pl.col("e").cast(pl.Categorical).alias("h"),
+        pl.col("f").cast(pl.Categorical).alias("i"),
     )
 
     pd_out = df.to_pandas()
@@ -89,8 +87,8 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
 
 
 @given(
-    column_type_names=lists(
-        one_of(just("Object"), just("Int32")), min_size=1, max_size=8
+    column_type_names=st.lists(
+        st.one_of(st.just("Object"), st.just("Int32")), min_size=1, max_size=8
     )
 )
 def test_object_to_pandas(column_type_names: list[Literal["Object", "Int32"]]) -> None:

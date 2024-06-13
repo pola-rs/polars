@@ -71,7 +71,7 @@ unsafe impl<A: TrustedLen> TrustedLen for std::iter::StepBy<A> {}
 unsafe impl<I, St, F, B> TrustedLen for Scan<I, St, F>
 where
     F: FnMut(&mut St, I::Item) -> Option<B>,
-    I: TrustedLen + Iterator<Item = B>,
+    I: TrustedLen,
 {
 }
 

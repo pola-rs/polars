@@ -124,14 +124,15 @@ fn update_groups_and_bounds(
     }
 }
 
-/// Based on the given `Window`, which has an
+/// Window boundaries are created based on the given `Window`, which is defined by:
 /// - every
 /// - period
 /// - offset
-/// window boundaries are created. And every window boundary we search for the values
-/// that fit that window by the given `ClosedWindow`. The groups are return as `GroupTuples`
-/// together with the lower bound and upper bound timestamps. These timestamps indicate the start (lower)
-/// and end (upper) of the window of that group.
+///
+/// And every window boundary we search for the values that fit that window by the given
+/// `ClosedWindow`. The groups are return as `GroupTuples` together with the lower bound and upper
+/// bound timestamps. These timestamps indicate the start (lower) and end (upper) of the window of
+/// that group.
 ///
 /// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
 #[allow(clippy::too_many_arguments)]
@@ -443,7 +444,7 @@ pub(crate) fn group_by_values_iter_lookahead(
     })
 }
 
-#[cfg(feature = "rolling_window")]
+#[cfg(feature = "rolling_window_by")]
 #[inline]
 pub(crate) fn group_by_values_iter(
     period: Duration,
@@ -576,7 +577,7 @@ pub fn group_by_values(
     let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
 
     // we have a (partial) lookbehind window
-    if offset.negative {
+    if offset.negative && !offset.is_zero() {
         // lookbehind
         if offset.duration_ns() == period.duration_ns() {
             // t is right at the end of the window
@@ -647,7 +648,7 @@ pub fn group_by_values(
             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                 .collect::<PolarsResult<_>>()
         }
-    } else if offset != Duration::parse("0ns")
+    } else if !offset.is_zero()
         || closed_window == ClosedWindow::Right
         || closed_window == ClosedWindow::None
     {

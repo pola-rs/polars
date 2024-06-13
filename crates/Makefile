@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-SHELL=/bin/bash
+SHELL=bash
 BASE ?= main
 
 .PHONY: fmt
@@ -115,6 +115,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
 	cargo publish --allow-dirty -p polars-plan
+	cargo publish --allow-dirty -p polars-expr
 	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql

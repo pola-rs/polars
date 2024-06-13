@@ -28,7 +28,7 @@ fn check_double_projection(
     ) {
         acc_projections.retain(|node| column_node_to_name(*node, expr_arena).as_ref() != name);
     }
-    if let Some(name) = expr.get_alias() {
+    if let Some(name) = expr.get_alias_or_field() {
         if projected_names.remove(name) {
             prune_projections_by_name(acc_projections, name.as_ref(), expr_arena)
         }
@@ -62,8 +62,9 @@ pub(super) fn process_projection(
     // the whole file while we only want the count
     if exprs.len() == 1 && is_count(exprs[0].node(), expr_arena) {
         let input_schema = lp_arena.get(input).schema(lp_arena);
-        // simply select the first column
-        let (first_name, _) = input_schema.try_get_at_index(0)?;
+        // simply select the last column
+        // NOTE: the first can be the inserted index column, so that might not work
+        let (first_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
         let expr = expr_arena.add(AExpr::Column(ColumnName::from(first_name.as_str())));
         if !acc_projections.is_empty() {
             check_double_projection(
@@ -95,17 +96,21 @@ pub(super) fn process_projection(
 
                 check_double_projection(&e, expr_arena, &mut acc_projections, &mut projected_names);
             }
+            // do local as we still need the effect of the projection
+            // e.g. a projection is more than selecting a column, it can
+            // also be a function/ complicated expression
+            local_projection.push(e);
+        }
+
+        // After we have checked double projections, we add the projections to the accumulated state.
+        // We do this in two passes, otherwise we mutate while checking.
+        for e in &local_projection {
             add_expr_to_accumulated(
                 e.node(),
                 &mut acc_projections,
                 &mut projected_names,
                 expr_arena,
             );
-
-            // do local as we still need the effect of the projection
-            // e.g. a projection is more than selecting a column, it can
-            // also be a function/ complicated expression
-            local_projection.push(e);
         }
     }
     proj_pd.pushdown_and_assign(

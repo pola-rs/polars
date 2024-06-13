@@ -149,7 +149,7 @@ where
     fn push_null(&self, decoded: &mut Self::DecodedState) {
         let (values, validity) = decoded;
         values.push(T::default());
-        validity.push(false)
+        validity.push(false);
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary {

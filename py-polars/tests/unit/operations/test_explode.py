@@ -8,14 +8,6 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_explode_string() -> None:
-    df = pl.Series("a", ["Hello", "World"])
-    result = df.to_frame().select(pl.col("a").str.explode()).to_series()
-
-    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
-    assert_series_equal(result, expected)
-
-
 def test_explode_multiple() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [[5, 6], [7, 8]]})
 
@@ -30,21 +22,6 @@ def test_group_by_flatten_list() -> None:
     result = df.group_by("group", maintain_order=True).agg(pl.col("values").flatten())
 
     expected = pl.DataFrame({"group": ["a", "b"], "values": [[1, 2], [2, 3, 4]]})
-    assert_frame_equal(result, expected)
-
-
-def test_group_by_flatten_string() -> None:
-    df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
-    result = df.group_by("group", maintain_order=True).agg(
-        pl.col("values").str.explode()
-    )
-
-    expected = pl.DataFrame(
-        {
-            "group": ["a", "b"],
-            "values": [["f", "o", "o"], ["b", "a", "r", "b", "a", "z"]],
-        }
-    )
     assert_frame_equal(result, expected)
 
 
@@ -143,70 +120,6 @@ def test_sliced_null_explode() -> None:
     s = pl.Series("", [[False], [False], [True], [False], [], [True]])
     assert s.slice(2, 2).list.explode().to_list() == [True, False]
     assert s.slice(2, 4).list.explode().to_list() == [True, False, None, True]
-
-
-def test_string_explode() -> None:
-    assert pl.Series(["foobar", None]).str.explode().to_list() == [
-        "f",
-        "o",
-        "o",
-        "b",
-        "a",
-        "r",
-        None,
-    ]
-    assert pl.Series([None, "foo", "bar"]).str.explode().to_list() == [
-        None,
-        "f",
-        "o",
-        "o",
-        "b",
-        "a",
-        "r",
-    ]
-    assert pl.Series([None, "foo", "bar", None, "ham"]).str.explode().to_list() == [
-        None,
-        "f",
-        "o",
-        "o",
-        "b",
-        "a",
-        "r",
-        None,
-        "h",
-        "a",
-        "m",
-    ]
-    assert pl.Series(["foo", "bar", "ham"]).str.explode().to_list() == [
-        "f",
-        "o",
-        "o",
-        "b",
-        "a",
-        "r",
-        "h",
-        "a",
-        "m",
-    ]
-    assert pl.Series(["", None, "foo", "bar"]).str.explode().to_list() == [
-        "",
-        None,
-        "f",
-        "o",
-        "o",
-        "b",
-        "a",
-        "r",
-    ]
-    assert pl.Series(["", "foo", "bar"]).str.explode().to_list() == [
-        "",
-        "f",
-        "o",
-        "o",
-        "b",
-        "a",
-        "r",
-    ]
 
 
 def test_explode_in_agg_context() -> None:
@@ -444,3 +357,50 @@ def test_explode_nullable_list() -> None:
         }
     )
     assert_frame_equal(explode_expr, expected_df)
+
+
+def test_group_by_flatten_string() -> None:
+    df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
+
+    result = df.group_by("group", maintain_order=True).agg(
+        pl.col("values").str.split("").explode()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "group": ["a", "b"],
+            "values": [["f", "o", "o"], ["b", "a", "r", "b", "a", "z"]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("values", "exploded"),
+    [
+        (["foobar", None], ["f", "o", "o", "b", "a", "r", None]),
+        ([None, "foo", "bar"], [None, "f", "o", "o", "b", "a", "r"]),
+        (
+            [None, "foo", "bar", None, "ham"],
+            [None, "f", "o", "o", "b", "a", "r", None, "h", "a", "m"],
+        ),
+        (["foo", "bar", "ham"], ["f", "o", "o", "b", "a", "r", "h", "a", "m"]),
+        (["", None, "foo", "bar"], ["", None, "f", "o", "o", "b", "a", "r"]),
+        (["", "foo", "bar"], ["", "f", "o", "o", "b", "a", "r"]),
+    ],
+)
+def test_series_str_explode_deprecated(
+    values: list[str | None], exploded: list[str | None]
+) -> None:
+    with pytest.deprecated_call():
+        result = pl.Series(values).str.explode()
+    assert result.to_list() == exploded
+
+
+def test_expr_str_explode_deprecated() -> None:
+    df = pl.Series("a", ["Hello", "World"])
+    with pytest.deprecated_call():
+        result = df.to_frame().select(pl.col("a").str.explode()).to_series()
+
+    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
+    assert_series_equal(result, expected)

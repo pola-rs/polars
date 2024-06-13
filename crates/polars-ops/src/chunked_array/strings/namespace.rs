@@ -457,21 +457,21 @@ pub trait StringNameSpaceImpl: AsString {
     fn split_exact(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, |s, by| s.split(by))
+        split_to_struct(ca, by, n + 1, str::split, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn split_exact_inclusive(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, |s, by| s.split_inclusive(by))
+        split_to_struct(ca, by, n + 1, str::split_inclusive, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn splitn(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n, |s, by| s.splitn(n, by))
+        split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
     }
 
     fn split(&self, by: &StringChunked) -> ListChunked {

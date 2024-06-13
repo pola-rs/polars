@@ -55,7 +55,7 @@ def test_union(
     with pl.SQLContext(
         frame1=pl.DataFrame({"c1": [1, 2], "c2": ["zz", "yy"]}),
         frame2=pl.DataFrame({"c1": [2, 3], "c2": ["yy", "xx"]}),
-        eager_execution=True,
+        eager=True,
     ) as ctx:
         query = f"""
             SELECT {', '.join(cols1)} FROM frame1

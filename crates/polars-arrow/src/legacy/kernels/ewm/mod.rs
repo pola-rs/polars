@@ -57,7 +57,7 @@ impl EWMOptions {
     }
     pub fn and_half_life(mut self, half_life: f64) -> Self {
         assert!(half_life > 0.0);
-        self.alpha = 1.0 - ((-2.0f64).ln() / half_life).exp();
+        self.alpha = 1.0 - (-(2.0f64.ln()) / half_life).exp();
         self
     }
     pub fn and_com(mut self, com: f64) -> Self {

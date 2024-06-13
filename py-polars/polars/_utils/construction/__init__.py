@@ -10,7 +10,6 @@ from polars._utils.construction.dataframe import (
 )
 from polars._utils.construction.other import (
     coerce_arrow,
-    numpy_to_idxs,
     pandas_series_to_arrow,
 )
 from polars._utils.construction.series import (
@@ -43,6 +42,5 @@ __all__ = [
     "series_to_pyseries",
     # other
     "coerce_arrow",
-    "numpy_to_idxs",
     "pandas_series_to_arrow",
 ]

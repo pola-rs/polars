@@ -1,4 +1,6 @@
 mod any_value;
+use arrow::compute::concatenate::concatenate_validities;
+use arrow::compute::utils::combine_validities_and;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -79,36 +81,6 @@ pub(crate) fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     }
 }
 
-macro_rules! split_array {
-    ($ca: expr, $n: expr, $ty : ty) => {{
-        if $n == 1 {
-            return Ok(vec![$ca.clone()]);
-        }
-        let total_len = $ca.len();
-        let chunk_size = total_len / $n;
-
-        let v = (0..$n)
-            .map(|i| {
-                let offset = i * chunk_size;
-                let len = if i == ($n - 1) {
-                    total_len - offset
-                } else {
-                    chunk_size
-                };
-                $ca.slice((i * chunk_size) as $ty, len)
-            })
-            .collect();
-        Ok(v)
-    }};
-}
-
-pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
-where
-    T: PolarsDataType,
-{
-    split_array!(ca, n, i64)
-}
-
 // prefer this one over split_ca, as this can push the null_count into the thread pool
 // returns an `(offset, length)` tuple
 #[doc(hidden)]
@@ -132,62 +104,212 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
     }
 }
 
-#[doc(hidden)]
-pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
-    split_array!(s, n, i64)
+#[allow(clippy::len_without_is_empty)]
+pub trait Container: Clone {
+    fn slice(&self, offset: i64, len: usize) -> Self;
+
+    fn split_at(&self, offset: i64) -> (Self, Self);
+
+    fn len(&self) -> usize;
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self>;
+
+    fn n_chunks(&self) -> usize;
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize>;
 }
 
-pub fn split_df_as_ref(
-    df: &DataFrame,
-    n: usize,
-    extend_sub_chunks: bool,
-) -> PolarsResult<Vec<DataFrame>> {
-    let total_len = df.height();
-    if total_len == 0 {
-        return Ok(vec![df.clone()]);
+impl Container for DataFrame {
+    fn slice(&self, offset: i64, len: usize) -> Self {
+        DataFrame::slice(self, offset, len)
     }
 
-    let chunk_size = std::cmp::max(total_len / n, 1);
+    fn split_at(&self, offset: i64) -> (Self, Self) {
+        DataFrame::split_at(self, offset)
+    }
 
-    if df.n_chunks() == n
-        && df.get_columns()[0]
+    fn len(&self) -> usize {
+        self.height()
+    }
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        flatten_df_iter(self)
+    }
+
+    fn n_chunks(&self) -> usize {
+        DataFrame::n_chunks(self)
+    }
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
+        self.get_columns()[0].chunk_lengths()
+    }
+}
+
+impl<T: PolarsDataType> Container for ChunkedArray<T> {
+    fn slice(&self, offset: i64, len: usize) -> Self {
+        ChunkedArray::slice(self, offset, len)
+    }
+
+    fn split_at(&self, offset: i64) -> (Self, Self) {
+        ChunkedArray::split_at(self, offset)
+    }
+
+    fn len(&self) -> usize {
+        ChunkedArray::len(self)
+    }
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        self.downcast_iter()
+            .map(|arr| Self::with_chunk(self.name(), arr.clone()))
+    }
+
+    fn n_chunks(&self) -> usize {
+        self.chunks().len()
+    }
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
+        ChunkedArray::chunk_lengths(self)
+    }
+}
+
+impl Container for Series {
+    fn slice(&self, offset: i64, len: usize) -> Self {
+        self.0.slice(offset, len)
+    }
+
+    fn split_at(&self, offset: i64) -> (Self, Self) {
+        self.0.split_at(offset)
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        (0..self.0.n_chunks()).map(|i| self.select_chunk(i))
+    }
+
+    fn n_chunks(&self) -> usize {
+        self.chunks().len()
+    }
+
+    fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
+        self.0.chunk_lengths()
+    }
+}
+
+fn split_impl<C: Container>(container: &C, target: usize, chunk_size: usize) -> Vec<C> {
+    if target == 1 {
+        return vec![container.clone()];
+    }
+    let mut out = Vec::with_capacity(target);
+    let chunk_size = chunk_size as i64;
+
+    // First split
+    let (chunk, mut remainder) = container.split_at(chunk_size);
+    out.push(chunk);
+
+    // Take the rest of the splits of exactly chunk size, but skip the last remainder as we won't split that.
+    for _ in 1..target - 1 {
+        let (a, b) = remainder.split_at(chunk_size);
+        out.push(a);
+        remainder = b
+    }
+    // This can be slightly larger than `chunk_size`, but is smaller than `2 * chunk_size`.
+    out.push(remainder);
+    out
+}
+
+/// Splits, but doesn't flatten chunks. E.g. a container can still have multiple chunks.
+pub fn split<C: Container>(container: &C, target: usize) -> Vec<C> {
+    let total_len = container.len();
+    if total_len == 0 {
+        return vec![container.clone()];
+    }
+
+    let chunk_size = std::cmp::max(total_len / target, 1);
+
+    if container.n_chunks() == target
+        && container
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return Ok(flatten_df_iter(df).collect());
+        return container.iter_chunks().collect();
+    }
+    split_impl(container, target, chunk_size)
+}
+
+/// Split a [`Container`] in `target` elements. The target doesn't have to be respected if not
+/// Deviation of the target might be done to create more equal size chunks.
+pub fn split_and_flatten<C: Container>(container: &C, target: usize) -> Vec<C> {
+    let total_len = container.len();
+    if total_len == 0 {
+        return vec![container.clone()];
     }
 
-    let mut out = Vec::with_capacity(n);
+    let chunk_size = std::cmp::max(total_len / target, 1);
 
-    for i in 0..n {
-        let offset = i * chunk_size;
-        let len = if i == (n - 1) {
-            total_len.saturating_sub(offset)
-        } else {
-            chunk_size
-        };
-        let df = df.slice((i * chunk_size) as i64, len);
-        if extend_sub_chunks && df.n_chunks() > 1 {
-            // we add every chunk as separate dataframe. This make sure that every partition
-            // deals with it.
-            out.extend(flatten_df_iter(&df))
-        } else {
-            out.push(df)
+    if container.n_chunks() == target
+        && container
+            .chunk_lengths()
+            .all(|len| len.abs_diff(chunk_size) < 100)
+    {
+        return container.iter_chunks().collect();
+    }
+
+    if container.n_chunks() == 1 {
+        split_impl(container, target, chunk_size)
+    } else {
+        let mut out = Vec::with_capacity(target);
+        let chunks = container.iter_chunks();
+
+        'new_chunk: for mut chunk in chunks {
+            loop {
+                let h = chunk.len();
+                if h < chunk_size {
+                    // TODO if the chunk is much smaller than chunk size, we should try to merge it with the next one.
+                    out.push(chunk);
+                    continue 'new_chunk;
+                }
+
+                // If a split leads to the next chunk being smaller than 30% take the whole chunk
+                if ((h - chunk_size) as f64 / chunk_size as f64) < 0.3 {
+                    out.push(chunk);
+                    continue 'new_chunk;
+                }
+
+                let (a, b) = chunk.split_at(chunk_size as i64);
+                out.push(a);
+                chunk = b;
+            }
         }
+        out
     }
+}
 
-    Ok(out)
+/// Split a [`DataFrame`] in `target` elements. The target doesn't have to be respected if not
+/// strict. Deviation of the target might be done to create more equal size chunks.
+///
+/// # Panics
+/// if chunks are not aligned
+pub fn split_df_as_ref(df: &DataFrame, target: usize, strict: bool) -> Vec<DataFrame> {
+    if strict {
+        split(df, target)
+    } else {
+        split_and_flatten(df, target)
+    }
 }
 
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
-pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
-    if n == 0 || df.height() == 0 {
-        return Ok(vec![df.clone()]);
+/// `strict` in that it respects `n` even if the chunks are suboptimal.
+pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFrame> {
+    if target == 0 || df.is_empty() {
+        return vec![df.clone()];
     }
     // make sure that chunks are aligned.
     df.align_chunks();
-    split_df_as_ref(df, n, true)
+    split_df_as_ref(df, target, strict)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
@@ -681,18 +803,29 @@ where
         )
     };
     match (left.chunks.len(), right.chunks.len()) {
+        // All chunks are equal length
         (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            (Cow::Borrowed(left), Cow::Borrowed(right))
+        },
         (_, 1) => {
             assert();
             (
                 Cow::Borrowed(left),
-                Cow::Owned(right.match_chunks(left.chunk_id())),
+                Cow::Owned(right.match_chunks(left.chunk_lengths())),
             )
         },
         (1, _) => {
             assert();
             (
-                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Owned(left.match_chunks(right.chunk_lengths())),
                 Cow::Borrowed(right),
             )
         },
@@ -701,7 +834,7 @@ where
             // could optimize to choose to rechunk a primitive and not a string or list type
             let left = left.rechunk();
             (
-                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Owned(left.match_chunks(right.chunk_lengths())),
                 Cow::Borrowed(right),
             )
         },
@@ -763,32 +896,32 @@ where
     match (a.chunks.len(), b.chunks.len(), c.chunks.len()) {
         (_, 1, 1) => (
             Cow::Borrowed(a),
-            Cow::Owned(b.match_chunks(a.chunk_id())),
-            Cow::Owned(c.match_chunks(a.chunk_id())),
+            Cow::Owned(b.match_chunks(a.chunk_lengths())),
+            Cow::Owned(c.match_chunks(a.chunk_lengths())),
         ),
         (1, 1, _) => (
-            Cow::Owned(a.match_chunks(c.chunk_id())),
-            Cow::Owned(b.match_chunks(c.chunk_id())),
+            Cow::Owned(a.match_chunks(c.chunk_lengths())),
+            Cow::Owned(b.match_chunks(c.chunk_lengths())),
             Cow::Borrowed(c),
         ),
         (1, _, 1) => (
-            Cow::Owned(a.match_chunks(b.chunk_id())),
+            Cow::Owned(a.match_chunks(b.chunk_lengths())),
             Cow::Borrowed(b),
-            Cow::Owned(c.match_chunks(b.chunk_id())),
+            Cow::Owned(c.match_chunks(b.chunk_lengths())),
         ),
         (1, _, _) => {
             let b = b.rechunk();
             (
-                Cow::Owned(a.match_chunks(c.chunk_id())),
-                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Owned(a.match_chunks(c.chunk_lengths())),
+                Cow::Owned(b.match_chunks(c.chunk_lengths())),
                 Cow::Borrowed(c),
             )
         },
         (_, 1, _) => {
             let a = a.rechunk();
             (
-                Cow::Owned(a.match_chunks(c.chunk_id())),
-                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Owned(a.match_chunks(c.chunk_lengths())),
+                Cow::Owned(b.match_chunks(c.chunk_lengths())),
                 Cow::Borrowed(c),
             )
         },
@@ -796,21 +929,47 @@ where
             let b = b.rechunk();
             (
                 Cow::Borrowed(a),
-                Cow::Owned(b.match_chunks(a.chunk_id())),
-                Cow::Owned(c.match_chunks(a.chunk_id())),
+                Cow::Owned(b.match_chunks(a.chunk_lengths())),
+                Cow::Owned(c.match_chunks(a.chunk_lengths())),
             )
+        },
+        (len_a, len_b, len_c)
+            if len_a == len_b
+                && len_b == len_c
+                && a.chunk_lengths()
+                    .zip(b.chunk_lengths())
+                    .zip(c.chunk_lengths())
+                    .all(|((a, b), c)| a == b && b == c) =>
+        {
+            (Cow::Borrowed(a), Cow::Borrowed(b), Cow::Borrowed(c))
         },
         _ => {
             // could optimize to choose to rechunk a primitive and not a string or list type
             let a = a.rechunk();
             let b = b.rechunk();
             (
-                Cow::Owned(a.match_chunks(c.chunk_id())),
-                Cow::Owned(b.match_chunks(c.chunk_id())),
+                Cow::Owned(a.match_chunks(c.chunk_lengths())),
+                Cow::Owned(b.match_chunks(c.chunk_lengths())),
                 Cow::Borrowed(c),
             )
         },
     }
+}
+
+pub fn binary_concatenate_validities<'a, T, B>(
+    left: &'a ChunkedArray<T>,
+    right: &'a ChunkedArray<B>,
+) -> Option<Bitmap>
+where
+    B: PolarsDataType,
+    T: PolarsDataType,
+{
+    let (left, right) = align_chunks_binary(left, right);
+    let left_chunk_refs: Vec<_> = left.chunks().iter().map(|c| &**c).collect();
+    let left_validity = concatenate_validities(&left_chunk_refs);
+    let right_chunk_refs: Vec<_> = right.chunks().iter().map(|c| &**c).collect();
+    let right_validity = concatenate_validities(&right_chunk_refs);
+    combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 
 pub trait IntoVec<T> {
@@ -876,6 +1035,41 @@ pub(crate) fn index_to_chunked_index<
         }
     }
     (current_chunk_idx, index_remainder)
+}
+
+pub(crate) fn index_to_chunked_index_rev<
+    I: Iterator<Item = Idx>,
+    Idx: PartialOrd
+        + std::ops::AddAssign
+        + std::ops::SubAssign
+        + std::ops::Sub<Output = Idx>
+        + Zero
+        + One
+        + Copy
+        + std::fmt::Debug,
+>(
+    chunk_lens_rev: I,
+    index_from_back: Idx,
+    total_chunks: Idx,
+) -> (Idx, Idx) {
+    debug_assert!(index_from_back > Zero::zero(), "at least -1");
+    let mut index_remainder = index_from_back;
+    let mut current_chunk_idx = One::one();
+    let mut current_chunk_len = Zero::zero();
+
+    for chunk_len in chunk_lens_rev {
+        current_chunk_len = chunk_len;
+        if chunk_len >= index_remainder {
+            break;
+        } else {
+            index_remainder -= chunk_len;
+            current_chunk_idx += One::one();
+        }
+    }
+    (
+        total_chunks - current_chunk_idx,
+        current_chunk_len - index_remainder,
+    )
 }
 
 pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
@@ -969,6 +1163,16 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_split() {
+        let ca: Int32Chunked = (0..10).collect_ca("a");
+
+        let out = split(&ca, 3);
+        assert_eq!(out[0].len(), 3);
+        assert_eq!(out[1].len(), 3);
+        assert_eq!(out[2].len(), 4);
+    }
+
+    #[test]
     fn test_align_chunks() {
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
         let mut b = Int32Chunked::new("", &[1]);
@@ -977,8 +1181,8 @@ mod test {
         b.append(&b2);
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
-            a.chunk_id().collect::<Vec<_>>(),
-            b.chunk_id().collect::<Vec<_>>()
+            a.chunk_lengths().collect::<Vec<_>>(),
+            b.chunk_lengths().collect::<Vec<_>>()
         );
 
         let a = Int32Chunked::new("", &[1, 2, 3, 4]);
@@ -989,8 +1193,8 @@ mod test {
         b.append(&b1);
         let (a, b) = align_chunks_binary(&a, &b);
         assert_eq!(
-            a.chunk_id().collect::<Vec<_>>(),
-            b.chunk_id().collect::<Vec<_>>()
+            a.chunk_lengths().collect::<Vec<_>>(),
+            b.chunk_lengths().collect::<Vec<_>>()
         );
     }
 }

@@ -10,7 +10,7 @@ use super::{default_ipc_fields, schema, schema_to_bytes};
 use crate::array::Array;
 use crate::datatypes::*;
 use crate::io::ipc::write::common::encode_chunk_amortized;
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum State {
@@ -126,10 +126,10 @@ impl<W: Write> FileWriter<W> {
         Ok(())
     }
 
-    /// Writes [`RecordBatch`] to the file
+    /// Writes [`RecordBatchT`] to the file
     pub fn write(
         &mut self,
-        chunk: &RecordBatch<Box<dyn Array>>,
+        chunk: &RecordBatchT<Box<dyn Array>>,
         ipc_fields: Option<&[IpcField]>,
     ) -> PolarsResult<()> {
         if self.state != State::Started {

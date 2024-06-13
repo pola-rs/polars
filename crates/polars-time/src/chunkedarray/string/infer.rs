@@ -15,9 +15,9 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         ^
         ['"]?                        # optional quotes
         (?:\d{1,2})                  # day
-        [-/]                         # separator
+        [-/\.]                       # separator
         (?P<month>[01]?\d{1})        # month
-        [-/]                         # separator
+        [-/\.]                       # separator
         (?:\d{4,})                   # year
         (?:
             [T\ ]                    # separator
@@ -41,9 +41,9 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ^
         ['"]?                      # optional quotes
         (?:\d{4,})                 # year
-        [-/]                       # separator
+        [-/\.]                     # separator
         (?P<month>[01]?\d{1})      # month
-        [-/]                       # separator
+        [-/\.]                     # separator
         (?:\d{1,2})                # day
         (?:
             [T\ ]                  # separator
@@ -66,9 +66,9 @@ const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ^
         ['"]?                  # optional quotes
         (?:\d{4,})             # year
-        [-/]                   # separator
+        [-/\.]                 # separator
         (?P<month>[01]?\d{1})  # month
-        [-/]                   # separator
+        [-/\.]                 # separator
         (?:\d{1,2})            # year
         [T\ ]                  # separator
         (?:\d{2})              # hour
@@ -452,25 +452,16 @@ pub(crate) fn to_datetime(
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
-            if pattern == Pattern::DatetimeYMDZ
-                && tz.is_some()
-                && tz.map(|x| x.as_str()) != Some("UTC")
-            {
-                polars_bail!(ComputeError: "offset-aware datetimes are converted to UTC. \
-                    Please either drop the time zone from the function call, or set it to UTC. \
-                    To convert to a different time zone, please use `convert_time_zone`.")
-            }
             match pattern {
                 #[cfg(feature = "timezones")]
                 Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
-                    ca.set_time_unit(tu);
-                    polars_ops::prelude::replace_time_zone(
-                        &ca,
-                        Some("UTC"),
-                        _ambiguous,
-                        NonExistent::Raise,
-                    )
+                    // `tz` has already been validated.
+                    ca.set_time_unit_and_time_zone(
+                        tu,
+                        tz.cloned().unwrap_or_else(|| "UTC".to_string()),
+                    )?;
+                    Ok(ca)
                 })?,
                 _ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();

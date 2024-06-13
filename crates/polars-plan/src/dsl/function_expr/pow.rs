@@ -158,7 +158,11 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series
                 }
             } else {
                 let ca = base.$native_type().unwrap();
-                let exponent = exponent.strict_cast(&DataType::UInt32)?;
+                let exponent = exponent.strict_cast(&DataType::UInt32).map_err(|err| polars_err!(
+                    InvalidOperation:
+                    "{}\n\nHint: if you were trying to raise an integer to a negative integer power, please cast your base or exponent to float first.",
+                    err
+                ))?;
                 pow_to_uint_dtype(ca, exponent.u32().unwrap())
             }
         })

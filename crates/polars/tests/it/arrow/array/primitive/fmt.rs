@@ -137,7 +137,7 @@ fn debug_timestamp_tz_not_parsable() {
     );
 }
 
-#[cfg(feature = "chrono-tz")]
+#[cfg(feature = "timezones")]
 #[test]
 fn debug_timestamp_tz1_ns() {
     let array = Int64Array::from(&[Some(1), None, Some(2)]).to(ArrowDataType::Timestamp(

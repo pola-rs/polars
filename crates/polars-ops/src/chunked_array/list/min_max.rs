@@ -95,7 +95,11 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })
             },
             _ => Ok(ca
-                .try_apply_amortized(|s| s.as_ref().min_as_series())?
+                .try_apply_amortized(|s| {
+                    let s = s.as_ref();
+                    let sc = s.min_reduce()?;
+                    Ok(sc.into_series(s.name()))
+                })?
                 .explode()
                 .unwrap()
                 .into_series()),
@@ -107,7 +111,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => Ok(min_list_numerical(ca, &dt)),
+        dt if dt.is_numeric() => Ok(min_list_numerical(ca, dt)),
         _ => inner(ca),
     }
 }
@@ -201,7 +205,11 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })
             },
             _ => Ok(ca
-                .try_apply_amortized(|s| s.as_ref().max_as_series())?
+                .try_apply_amortized(|s| {
+                    let s = s.as_ref();
+                    let sc = s.max_reduce()?;
+                    Ok(sc.into_series(s.name()))
+                })?
                 .explode()
                 .unwrap()
                 .into_series()),
@@ -213,7 +221,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => Ok(max_list_numerical(ca, &dt)),
+        dt if dt.is_numeric() => Ok(max_list_numerical(ca, dt)),
         _ => inner(ca),
     }
 }

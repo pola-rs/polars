@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 
 use arrow::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 
-use crate::chunked_array::upstream_traits::PolarsAsRef;
+use crate::chunked_array::from_iterator::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{FromTrustedLenIterator, NoNull};
 

@@ -2,6 +2,7 @@ use std::any::Any;
 
 use polars_error::{polars_bail, PolarsResult};
 
+use super::Splitable;
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -168,6 +169,25 @@ unsafe impl ToFfi for NullArray {
 
     fn to_ffi_aligned(&self) -> Self {
         self.clone()
+    }
+}
+
+impl Splitable for NullArray {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                length: offset,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                length: self.len() - offset,
+            },
+        )
     }
 }
 

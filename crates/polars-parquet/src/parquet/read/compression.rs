@@ -2,11 +2,15 @@ use parquet_format_safe::DataPageHeaderV2;
 
 use super::page::PageIterator;
 use crate::parquet::compression::{self, Compression};
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
 use crate::parquet::FallibleStreamingIterator;
 
-fn decompress_v1(compressed: &[u8], compression: Compression, buffer: &mut [u8]) -> Result<()> {
+fn decompress_v1(
+    compressed: &[u8],
+    compression: Compression,
+    buffer: &mut [u8],
+) -> ParquetResult<()> {
     compression::decompress(compression, compressed, buffer)
 }
 
@@ -15,7 +19,7 @@ fn decompress_v2(
     page_header: &DataPageHeaderV2,
     compression: Compression,
     buffer: &mut [u8],
-) -> Result<()> {
+) -> ParquetResult<()> {
     // When processing data page v2, depending on enabled compression for the
     // page, we should account for uncompressed data ('offset') of
     // repetition and definition levels.
@@ -29,7 +33,7 @@ fn decompress_v2(
 
     if can_decompress {
         if offset > buffer.len() || offset > compressed.len() {
-            return Err(Error::OutOfSpec(
+            return Err(ParquetError::OutOfSpec(
                 "V2 Page Header reported incorrect offset to compressed data".to_string(),
             ));
         }
@@ -39,7 +43,7 @@ fn decompress_v2(
         compression::decompress(compression, &compressed[offset..], &mut buffer[offset..])?;
     } else {
         if buffer.len() != compressed.len() {
-            return Err(Error::OutOfSpec(
+            return Err(ParquetError::OutOfSpec(
                 "V2 Page Header reported incorrect decompressed size".to_string(),
             ));
         }
@@ -54,7 +58,7 @@ fn decompress_v2(
 pub fn decompress_buffer(
     compressed_page: &mut CompressedPage,
     buffer: &mut Vec<u8>,
-) -> Result<bool> {
+) -> ParquetResult<bool> {
     if compressed_page.compression() != Compression::Uncompressed {
         // prepare the compression buffer
         let read_size = compressed_page.uncompressed_size();
@@ -112,7 +116,10 @@ fn create_page(compressed_page: CompressedPage, buffer: Vec<u8>) -> Page {
 /// Decompresses the page, using `buffer` for decompression.
 /// If `page.buffer.len() == 0`, there was no decompression and the buffer was moved.
 /// Else, decompression took place.
-pub fn decompress(mut compressed_page: CompressedPage, buffer: &mut Vec<u8>) -> Result<Page> {
+pub fn decompress(
+    mut compressed_page: CompressedPage,
+    buffer: &mut Vec<u8>,
+) -> ParquetResult<Page> {
     decompress_buffer(&mut compressed_page, buffer)?;
     Ok(create_page(compressed_page, std::mem::take(buffer)))
 }
@@ -121,7 +128,7 @@ fn decompress_reuse<P: PageIterator>(
     mut compressed_page: CompressedPage,
     iterator: &mut P,
     buffer: &mut Vec<u8>,
-) -> Result<(Page, bool)> {
+) -> ParquetResult<(Page, bool)> {
     let was_decompressed = decompress_buffer(&mut compressed_page, buffer)?;
 
     if was_decompressed {
@@ -134,27 +141,37 @@ fn decompress_reuse<P: PageIterator>(
 }
 
 /// Decompressor that allows re-using the page buffer of [`PageIterator`].
+///
 /// # Implementation
+///
 /// The implementation depends on whether a page is compressed or not.
+///
 /// > `PageReader(a)`, `CompressedPage(b)`, `Decompressor(c)`, `DecompressedPage(d)`
+///
 /// ### un-compressed pages:
+///
 /// > page iter: `a` is swapped with `b`
 /// > decompress iter: `b` is swapped with `d`, `b` is swapped with `a`
+///
 /// therefore:
 /// * `PageReader` has its buffer back
 /// * `Decompressor`'s buffer is un-used
 /// * `DecompressedPage` has the same data as `CompressedPage` had
+///
 /// ### compressed pages:
+///
 /// > page iter: `a` is swapped with `b`
 /// > decompress iter:
 /// > * `b` is decompressed into `c`
 /// > * `b` is swapped with `a`
 /// > * `c` is moved to `d`
 /// > * (next iteration): `d` is moved to `c`
+///
 /// therefore, while the page is available:
 /// * `PageReader` has its buffer back
 /// * `Decompressor`'s buffer empty
 /// * `DecompressedPage` has the decompressed buffer
+///
 /// after the page is used:
 /// * `PageReader` has its buffer back
 /// * `Decompressor` has its buffer back
@@ -188,9 +205,9 @@ impl<P: PageIterator> Decompressor<P> {
 
 impl<P: PageIterator> FallibleStreamingIterator for Decompressor<P> {
     type Item = Page;
-    type Error = Error;
+    type Error = ParquetError;
 
-    fn advance(&mut self) -> Result<()> {
+    fn advance(&mut self) -> ParquetResult<()> {
         if let Some(page) = self.current.as_mut() {
             if self.was_decompressed {
                 self.buffer = std::mem::take(page.buffer());
@@ -223,8 +240,8 @@ impl<P: PageIterator> FallibleStreamingIterator for Decompressor<P> {
 type _Decompressor<I> = streaming_decompression::Decompressor<
     CompressedPage,
     Page,
-    fn(CompressedPage, &mut Vec<u8>) -> Result<Page>,
-    Error,
+    fn(CompressedPage, &mut Vec<u8>) -> ParquetResult<Page>,
+    ParquetError,
     I,
 >;
 
@@ -247,13 +264,13 @@ impl streaming_decompression::Decompressed for Page {
 /// This decompressor uses an internal [`Vec<u8>`] to perform decompressions which
 /// is reused across pages, so that a single allocation is required.
 /// If the pages are not compressed, the internal buffer is not used.
-pub struct BasicDecompressor<I: Iterator<Item = Result<CompressedPage>>> {
+pub struct BasicDecompressor<I: Iterator<Item = ParquetResult<CompressedPage>>> {
     iter: _Decompressor<I>,
 }
 
 impl<I> BasicDecompressor<I>
 where
-    I: Iterator<Item = Result<CompressedPage>>,
+    I: Iterator<Item = ParquetResult<CompressedPage>>,
 {
     /// Returns a new [`BasicDecompressor`].
     pub fn new(iter: I, buffer: Vec<u8>) -> Self {
@@ -270,12 +287,12 @@ where
 
 impl<I> FallibleStreamingIterator for BasicDecompressor<I>
 where
-    I: Iterator<Item = Result<CompressedPage>>,
+    I: Iterator<Item = ParquetResult<CompressedPage>>,
 {
     type Item = Page;
-    type Error = Error;
+    type Error = ParquetError;
 
-    fn advance(&mut self) -> Result<()> {
+    fn advance(&mut self) -> ParquetResult<()> {
         self.iter.advance()
     }
 

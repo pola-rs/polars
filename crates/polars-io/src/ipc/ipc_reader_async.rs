@@ -9,20 +9,23 @@ use polars_core::schema::Schema;
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
+use crate::file_cache::{init_entries_from_uri_list, FileCacheEntry};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::{materialize_projection, IpcReader};
+use crate::shared::SerReader;
 use crate::RowIndex;
 
 /// An Arrow IPC reader implemented on top of PolarsObjectStore.
 pub struct IpcReaderAsync {
     store: PolarsObjectStore,
+    cache_entry: Arc<FileCacheEntry>,
     path: Path,
 }
 
 #[derive(Default, Clone)]
 pub struct IpcReadOptions {
     // Names of the columns to include in the output.
-    projection: Option<Vec<String>>,
+    projection: Option<Arc<[String]>>,
 
     // The maximum number of rows to include in the output.
     row_limit: Option<usize>,
@@ -35,8 +38,8 @@ pub struct IpcReadOptions {
 }
 
 impl IpcReadOptions {
-    pub fn with_projection(mut self, indices: impl Into<Option<Vec<String>>>) -> Self {
-        self.projection = indices.into();
+    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+        self.projection = projection;
         self
     }
 
@@ -61,6 +64,7 @@ impl IpcReaderAsync {
         uri: &str,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<IpcReaderAsync> {
+        let cache_entry = init_entries_from_uri_list(&[Arc::from(uri)], cloud_options)?[0].clone();
         let (
             CloudLocation {
                 prefix, expansion, ..
@@ -77,6 +81,7 @@ impl IpcReaderAsync {
 
         Ok(Self {
             store: PolarsObjectStore::new(store),
+            cache_entry,
             path,
         })
     }
@@ -136,13 +141,14 @@ impl IpcReaderAsync {
     ) -> PolarsResult<DataFrame> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let bytes = self.store.get(&self.path).await?;
+        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
+        let bytes = unsafe { memmap::Mmap::map(&file) }.unwrap();
 
         let projection = match options.projection.as_deref() {
             Some(projection) => {
                 fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> Schema {
                     if let Some(rc) = row_index {
-                        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+                        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
                     }
                     schema
                 }
@@ -171,18 +177,18 @@ impl IpcReaderAsync {
             None => None,
         };
 
-        let reader =
-            <IpcReader<_> as crate::SerReader<_>>::new(std::io::Cursor::new(bytes.as_ref()))
-                .with_row_index(options.row_index)
-                .with_n_rows(options.row_limit)
-                .with_projection(projection);
+        let reader = <IpcReader<_> as SerReader<_>>::new(std::io::Cursor::new(bytes.as_ref()))
+            .with_row_index(options.row_index)
+            .with_n_rows(options.row_limit)
+            .with_projection(projection);
         reader.finish_with_scan_ops(options.predicate, verbose)
     }
 
     pub async fn count_rows(&self, _metadata: Option<&FileMetadata>) -> PolarsResult<i64> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let bytes = self.store.get(&self.path).await?;
+        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
+        let bytes = unsafe { memmap::Mmap::map(&file) }.unwrap();
         get_row_count(&mut std::io::Cursor::new(bytes.as_ref()))
     }
 }

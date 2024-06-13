@@ -72,11 +72,9 @@ def test_issue_2529() -> None:
     )
 
     out = df.select(
-        [
-            "*",
-            stdize_out("val1", "cat").alias("out1"),
-            stdize_out("val2", "cat").alias("out2"),
-        ]
+        "*",
+        stdize_out("val1", "cat").alias("out1"),
+        stdize_out("val2", "cat").alias("out2"),
     )
     assert out["out1"].to_list() == out["out2"].to_list()
 
@@ -91,18 +89,16 @@ def test_window_function_cache() -> None:
             "values": range(5),
         }
     ).with_columns(
-        [
-            pl.col("values")
-            .over("groups", mapping_strategy="join")
-            .alias("values_list"),  # aggregation to list + join
-            pl.col("values")
-            .over("groups", mapping_strategy="explode")
-            .alias("values_flat"),  # aggregation to list + explode and concat back
-            pl.col("values")
-            .reverse()
-            .over("groups", mapping_strategy="explode")
-            .alias("values_rev"),  # use flatten to reverse within a group
-        ]
+        pl.col("values")
+        .over("groups", mapping_strategy="join")
+        .alias("values_list"),  # aggregation to list + join
+        pl.col("values")
+        .over("groups", mapping_strategy="explode")
+        .alias("values_flat"),  # aggregation to list + explode and concat back
+        pl.col("values")
+        .reverse()
+        .over("groups", mapping_strategy="explode")
+        .alias("values_rev"),  # use flatten to reverse within a group
     )
 
     assert out["values_list"].to_list() == [
@@ -213,13 +209,8 @@ def test_window_cached_keys_sorted_update_4183() -> None:
         }
     )
     result = df.sort(by=["customer_ID", "date"]).select(
-        [
-            pl.count("date").over(pl.col("customer_ID")).alias("count"),
-            pl.col("date")
-            .rank(method="ordinal")
-            .over(pl.col("customer_ID"))
-            .alias("rank"),
-        ]
+        pl.count("date").over(pl.col("customer_ID")).alias("count"),
+        pl.col("date").rank(method="ordinal").over(pl.col("customer_ID")).alias("rank"),
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
@@ -334,14 +325,8 @@ def test_window_function_implode_contention_8536() -> None:
     )
 
     assert df.select(
-        [
-            (pl.lit("LE").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
-            | (
-                pl.lit("RM").is_in(
-                    pl.col("memo").over("policy", mapping_strategy="join")
-                )
-            )
-        ]
+        (pl.lit("LE").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
+        | (pl.lit("RM").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
     ).to_series().to_list() == [
         True,
         True,
@@ -439,10 +424,8 @@ def test_window_10417() -> None:
     df = pl.DataFrame({"a": [1], "b": [1.2], "c": [2.1]})
 
     assert df.lazy().with_columns(
-        [
-            pl.col("b") - pl.col("b").mean().over("a"),
-            pl.col("c") - pl.col("c").mean().over("a"),
-        ]
+        pl.col("b") - pl.col("b").mean().over("a"),
+        pl.col("c") - pl.col("c").mean().over("a"),
     ).collect().to_dict(as_series=False) == {"a": [1], "b": [0.0], "c": [0.0]}
 
 
@@ -469,3 +452,45 @@ def test_window_agg_list_null_15437() -> None:
     output = df.select(pl.concat_list("a").over(1))
     expected = pl.DataFrame({"a": [[None]]})
     assert_frame_equal(output, expected)
+
+
+@pytest.mark.release()
+def test_windows_not_cached() -> None:
+    ldf = (
+        pl.DataFrame(
+            [
+                pl.Series("key", ["a", "a", "b", "b"]),
+                pl.Series("val", [2, 2, 1, 3]),
+            ]
+        )
+        .lazy()
+        .filter(
+            (pl.col("key").cum_count().over("key") == 1)
+            | (pl.col("val").shift(1).over("key").is_not_null())
+            | (pl.col("val") != pl.col("val").shift(1).over("key"))
+        )
+    )
+    # this might fail if they are cached
+    for _ in range(1000):
+        ldf.collect()
+
+
+def test_window_order_by_8662() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 2, 2, 2, 2],
+            "t": [1, 2, 3, 4, 4, 1, 2, 3],
+            "x": [10, 20, 30, 40, 10, 20, 30, 40],
+        }
+    )
+
+    assert df.with_columns(
+        x_lag0=pl.col("x").shift(1).over("g"),
+        x_lag1=pl.col("x").shift(1).over("g", order_by="t"),
+    ).to_dict(as_series=False) == {
+        "g": [1, 1, 1, 1, 2, 2, 2, 2],
+        "t": [1, 2, 3, 4, 4, 1, 2, 3],
+        "x": [10, 20, 30, 40, 10, 20, 30, 40],
+        "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
+        "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
+    }

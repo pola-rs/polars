@@ -54,12 +54,29 @@ impl PyExpr {
         self.inner.clone().meta().is_regex_projection()
     }
 
+    fn meta_is_column_selection(&self, allow_aliasing: bool) -> bool {
+        self.inner
+            .clone()
+            .meta()
+            .is_column_selection(allow_aliasing)
+    }
+
     fn _meta_selector_add(&self, other: PyExpr) -> PyResult<PyExpr> {
         let out = self
             .inner
             .clone()
             .meta()
             ._selector_add(other.inner)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    fn _meta_selector_and(&self, other: PyExpr) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._selector_and(other.inner)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
@@ -74,12 +91,12 @@ impl PyExpr {
         Ok(out.into())
     }
 
-    fn _meta_selector_and(&self, other: PyExpr) -> PyResult<PyExpr> {
+    fn _meta_selector_xor(&self, other: PyExpr) -> PyResult<PyExpr> {
         let out = self
             .inner
             .clone()
             .meta()
-            ._selector_and(other.inner)
+            ._selector_xor(other.inner)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

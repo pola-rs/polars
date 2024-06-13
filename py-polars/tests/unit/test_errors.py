@@ -99,7 +99,7 @@ def test_not_found_error() -> None:
 
 def test_string_numeric_comp_err() -> None:
     with pytest.raises(
-        pl.ComputeError, match="cannot compare string with numeric data"
+        pl.ComputeError, match="cannot compare string with numeric type"
     ):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
@@ -170,13 +170,13 @@ def test_getitem_errs() -> None:
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
+        match=r"cannot select columns using key of type 'set': {'some'}",
     ):
         df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
         TypeError,
-        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
+        match=r"cannot select elements using key of type 'set': {'strange'}",
     ):
         df["a"][{"strange"}]  # type: ignore[call-overload]
 
@@ -237,7 +237,7 @@ def test_is_nan_on_non_boolean() -> None:
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
-            [pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")]
+            pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")
         )
     except pl.ComputeError as exc:
         msg = str(exc)
@@ -310,7 +310,7 @@ def test_duplicate_columns_arg_csv() -> None:
 
 
 def test_datetime_time_add_err() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.SchemaError, match="failed to determine supertype"):
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
 
 
@@ -403,7 +403,8 @@ def test_date_string_comparison(e: pl.Expr) -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     with pytest.raises(
-        pl.ComputeError, match=r"cannot compare 'date/datetime/time' to a string value"
+        pl.InvalidOperationError,
+        match=r"cannot compare 'date/datetime/time' to a string value",
     ):
         df.select(e)
 
@@ -493,48 +494,13 @@ def test_skip_nulls_err() -> None:
 def test_cast_err_column_value_highlighting(
     test_df: pl.DataFrame, type: pl.DataType, expected_message: str
 ) -> None:
-    with pytest.raises(pl.ComputeError, match=expected_message):
+    with pytest.raises(pl.InvalidOperationError, match=expected_message):
         test_df.with_columns(pl.all().cast(type))
-
-
-def test_err_on_time_datetime_cast() -> None:
-    s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
-    with pytest.raises(pl.ComputeError, match=r"cannot cast `Time` to `Datetime`"):
-        s.cast(pl.Datetime)
-
-
-def test_err_on_invalid_time_zone_cast() -> None:
-    s = pl.Series([datetime(2021, 1, 1)])
-    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
-        s.cast(pl.Datetime("us", "qwerty"))
-
-
-def test_invalid_inner_type_cast_list() -> None:
-    s = pl.Series([[-1, 1]])
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"cannot cast List inner type: 'Int64' to Categorical",
-    ):
-        s.cast(pl.List(pl.Categorical))
 
 
 def test_lit_agg_err() -> None:
     with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
-
-
-def test_window_size_validation() -> None:
-    df = pl.DataFrame({"x": [1.0]})
-
-    with pytest.raises(ValueError, match=r"`window_size` must be positive"):
-        df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
-
-
-def test_invalid_getitem_key_err() -> None:
-    df = pl.DataFrame({"x": [1.0], "y": [1.0]})
-
-    with pytest.raises(KeyError, match=r"('x', 'y')"):
-        df["x", "y"]  # type: ignore[index]
 
 
 def test_invalid_group_by_arg() -> None:
@@ -543,37 +509,6 @@ def test_invalid_group_by_arg() -> None:
         TypeError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.group_by(1).agg({"a": "sum"})
-
-
-def test_serde_validation() -> None:
-    f = io.StringIO(
-        """
-    {
-      "columns": [
-        {
-          "name": "a",
-          "datatype": "Int64",
-          "values": [
-            1,
-            2
-          ]
-        },
-        {
-          "name": "b",
-          "datatype": "Int64",
-          "values": [
-            1
-          ]
-        }
-      ]
-    }
-    """
-    )
-    with pytest.raises(
-        pl.ComputeError,
-        match=r"lengths don't match",
-    ):
-        pl.read_json(f)
 
 
 def test_overflow_msg() -> None:
@@ -692,16 +627,6 @@ def test_error_list_to_array() -> None:
         ).with_columns(array=pl.col("a").list.to_array(2))
 
 
-# https://github.com/pola-rs/polars/issues/8079
-def test_error_lazyframe_not_repeating() -> None:
-    lf = pl.LazyFrame({"a": 1, "b": range(2)})
-    with pytest.raises(pl.ColumnNotFoundError) as exc_info:
-        lf.select("c").select("d").select("e").collect()
-
-    match = "Error originated just after this operation:"
-    assert str(exc_info).count(match) == 1
-
-
 def test_raise_not_found_in_simplify_14974() -> None:
     df = pl.DataFrame()
     with pytest.raises(pl.ColumnNotFoundError):
@@ -714,3 +639,44 @@ def test_invalid_product_type() -> None:
         match="`product` operation not supported for dtype",
     ):
         pl.Series([[1, 2, 3]]).product()
+
+
+def test_fill_null_invalid_supertype() -> None:
+    df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
+    with pytest.raises(
+        pl.InvalidOperationError, match="could not determine supertype of"
+    ):
+        df.select(pl.col("date").fill_null(1.0))
+
+
+def test_raise_array_of_cats() -> None:
+    with pytest.raises(pl.InvalidOperationError, match="is not yet supported"):
+        pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
+
+
+def test_raise_invalid_arithmetic() -> None:
+    df = pl.Series("a", [object()]).to_frame()
+
+    with pytest.raises(pl.InvalidOperationError):
+        df.select(pl.col("a") - pl.col("a"))
+
+
+def test_raise_on_sorted_multi_args() -> None:
+    with pytest.raises(TypeError):
+        pl.DataFrame({"a": [1], "b": [1]}).set_sorted(
+            ["a", "b"]  # type: ignore[arg-type]
+        )
+
+
+def test_err_invalid_comparison() -> None:
+    with pytest.raises(
+        pl.SchemaError,
+        match="could not evalulate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
+    ):
+        _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="could apply comparison on series of dtype 'object; operand names: 'a', 'b'",
+    ):
+        _ = pl.Series("a", [object()]) == pl.Series("b", [object])

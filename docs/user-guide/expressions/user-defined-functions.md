@@ -25,7 +25,7 @@ Use cases for `map_batches` are for instance passing the `Series` in an expressi
 we could use `map_batches` to pass an expression column to a neural network model.
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `map_batches`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html)
+[:material-api: `map_batches`](https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_batches.html)
 
 ```python
 df.with_columns([
@@ -74,7 +74,7 @@ Let's try that out and see what we get:
 
 Ouch.. we clearly get the wrong results here. Group `"b"` even got a value from group `"a"` 😵.
 
-This went horribly wrong, because the `map_batches` applies the function before we aggregate! So that means the whole column `[10, 7, 1`\] got shifted to `[null, 10, 7]` and was then aggregated.
+This went horribly wrong because `map_batches` applied the function before aggregation, due to the `is_elementwise=True` parameter being provided. So that means the whole column `[10, 7, 1]` got shifted to `[null, 10, 7]` and was then aggregated.
 
 So my advice is to never use `map_batches` in the `group_by` context unless you know you need it and know what you are doing.
 
@@ -90,7 +90,7 @@ That is:
 So with `map_elements` we should be able to fix our example:
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `map_elements`](https://docs.pola.rs/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html)
+[:material-api: `map_elements`](https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_elements.html)
 
 {{code_block('user-guide/expressions/user-defined-functions','map_elements',[])}}
 

@@ -6,7 +6,8 @@ use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::apply_predicate;
-use polars_io::{is_cloud_url, RowIndex};
+use polars_io::utils::is_cloud_url;
+use polars_io::RowIndex;
 use rayon::prelude::*;
 
 use super::*;
@@ -61,10 +62,7 @@ impl IpcExec {
         }
 
         let projection = materialize_projection(
-            self.file_options
-                .with_columns
-                .as_deref()
-                .map(|cols| cols.deref()),
+            self.file_options.with_columns.as_deref(),
             &self.schema,
             None,
             self.file_options.row_index.is_some(),
@@ -94,6 +92,12 @@ impl IpcExec {
 
                 let file = std::fs::File::open(path)?;
 
+                let memory_mapped = if self.options.memory_map {
+                    Some(path.clone())
+                } else {
+                    None
+                };
+
                 let df = IpcReader::new(file)
                     .with_n_rows(
                         // NOTE: If there is any file that by itself exceeds the
@@ -107,7 +111,7 @@ impl IpcExec {
                     )
                     .with_row_index(self.file_options.row_index.clone())
                     .with_projection(projection.clone())
-                    .memory_mapped(self.options.memmap)
+                    .memory_mapped(memory_mapped)
                     .finish()?;
 
                 row_counter
@@ -186,9 +190,7 @@ impl IpcExec {
                                     }),
                                 )
                                 .with_row_index(this.file_options.row_index.clone())
-                                .with_projection(
-                                    this.file_options.with_columns.as_deref().cloned(),
-                                ),
+                                .with_projection(this.file_options.with_columns.as_ref().cloned()),
                             verbose,
                         )
                         .await?;

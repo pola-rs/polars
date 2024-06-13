@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::column_chunk_metadata::ColumnChunkMetaData;
 use super::schema_descriptor::SchemaDescriptor;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::write::ColumnOffsetsMetadata;
 
 /// Metadata for a row group.
@@ -57,9 +57,9 @@ impl RowGroupMetaData {
     pub(crate) fn try_from_thrift(
         schema_descr: &SchemaDescriptor,
         rg: RowGroup,
-    ) -> Result<RowGroupMetaData> {
+    ) -> ParquetResult<RowGroupMetaData> {
         if schema_descr.columns().len() != rg.columns.len() {
-            return Err(Error::oos(format!("The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})", rg.columns.len(), schema_descr.columns().len())));
+            return Err(ParquetError::oos(format!("The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})", rg.columns.len(), schema_descr.columns().len())));
         }
         let total_byte_size = rg.total_byte_size.try_into()?;
         let num_rows = rg.num_rows.try_into()?;
@@ -70,7 +70,7 @@ impl RowGroupMetaData {
             .map(|(column_chunk, descriptor)| {
                 ColumnChunkMetaData::try_from_thrift(descriptor.clone(), column_chunk)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<ParquetResult<Vec<_>>>()?;
 
         Ok(RowGroupMetaData {
             columns,

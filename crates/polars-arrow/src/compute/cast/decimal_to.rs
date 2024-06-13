@@ -12,15 +12,13 @@ fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(
     to_precision: usize,
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
-    let min_for_precision = 9_i128
-        .saturating_pow(1 + to_precision as u32)
-        .saturating_neg();
-    let max_for_precision = 9_i128.saturating_pow(1 + to_precision as u32);
+    let upper_bound_for_precision = 10_i128.saturating_pow(to_precision as u32);
+    let lower_bound_for_precision = upper_bound_for_precision.saturating_neg();
 
     let values = from.iter().map(|x| {
         x.and_then(|x| {
             op(*x).and_then(|x| {
-                if x > max_for_precision || x < min_for_precision {
+                if x >= upper_bound_for_precision || x <= lower_bound_for_precision {
                     None
                 } else {
                     Some(x)

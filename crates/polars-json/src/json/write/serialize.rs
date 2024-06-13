@@ -5,7 +5,7 @@ use arrow::bitmap::utils::ZipValidity;
 use arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
 use arrow::io::iterator::BufStreamingIterator;
 use arrow::offset::Offset;
-#[cfg(feature = "chrono-tz")]
+#[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
     date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_s_to_duration,
@@ -355,7 +355,7 @@ fn timestamp_tz_serializer<'a>(
 
             materialize_serializer(f, array.iter(), offset, take)
         },
-        #[cfg(feature = "chrono-tz")]
+        #[cfg(feature = "timezones")]
         _ => match parse_offset_tz(tz) {
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
@@ -373,9 +373,9 @@ fn timestamp_tz_serializer<'a>(
                 panic!("Timezone {} is invalid or not supported", tz);
             },
         },
-        #[cfg(not(feature = "chrono-tz"))]
+        #[cfg(not(feature = "timezones"))]
         _ => {
-            panic!("Invalid Offset format (must be [-]00:00) or chrono-tz feature not active");
+            panic!("Invalid Offset format (must be [-]00:00) or timezones feature not active");
         },
     }
 }

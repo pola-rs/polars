@@ -17,9 +17,9 @@ pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -
 /// Eager version of `int_range` to avoid overhead from the expression engine.
 #[pyfunction]
 pub fn eager_int_range(
-    lower: &PyAny,
-    upper: &PyAny,
-    step: &PyAny,
+    lower: &Bound<'_, PyAny>,
+    upper: &Bound<'_, PyAny>,
+    step: &Bound<'_, PyAny>,
     dtype: Wrap<DataType>,
 ) -> PyResult<PySeries> {
     let dtype = dtype.0;
@@ -69,34 +69,28 @@ pub fn int_ranges(
 pub fn date_range(
     start: PyExpr,
     end: PyExpr,
-    every: &str,
+    interval: &str,
     closed: Wrap<ClosedWindow>,
-    time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
-    let every = Duration::parse(every);
+    let interval = Duration::parse(interval);
     let closed = closed.0;
-    let time_unit = time_unit.map(|x| x.0);
-    dsl::date_range(start, end, every, closed, time_unit, time_zone).into()
+    dsl::date_range(start, end, interval, closed).into()
 }
 
 #[pyfunction]
 pub fn date_ranges(
     start: PyExpr,
     end: PyExpr,
-    every: &str,
+    interval: &str,
     closed: Wrap<ClosedWindow>,
-    time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
-    let every = Duration::parse(every);
+    let interval = Duration::parse(interval);
     let closed = closed.0;
-    let time_unit = time_unit.map(|x| x.0);
-    dsl::date_ranges(start, end, every, closed, time_unit, time_zone).into()
+    dsl::date_ranges(start, end, interval, closed).into()
 }
 
 #[pyfunction]

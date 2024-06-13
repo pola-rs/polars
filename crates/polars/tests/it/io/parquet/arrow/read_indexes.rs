@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use arrow::array::*;
 use arrow::datatypes::*;
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::RecordBatchT;
 use polars_error::{PolarsError, PolarsResult};
 use polars_parquet::read::*;
 use polars_parquet::write::*;
@@ -29,7 +29,7 @@ fn pages(
     let parquet_schema = to_parquet_schema(&schema)?;
 
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: StatisticsOptions::full(),
         compression: CompressionOptions::Uncompressed,
         version: Version::V1,
         data_pagesize_limit: None,
@@ -44,7 +44,7 @@ fn pages(
                     .descriptor
                     .primitive_type
                     .clone(),
-                &[Nested::Primitive(None, true, array.len())],
+                &[Nested::primitive(None, true, array.len())],
                 options,
                 Encoding::Plain,
             )
@@ -60,7 +60,7 @@ fn pages(
                     .descriptor
                     .primitive_type
                     .clone(),
-                &[Nested::Primitive(None, true, array.len())],
+                &[Nested::primitive(None, true, array.len())],
                 options,
                 encoding,
             )
@@ -79,7 +79,7 @@ fn read_with_indexes(
     expected: Box<dyn Array>,
 ) -> PolarsResult<()> {
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: StatisticsOptions::full(),
         compression: CompressionOptions::Uncompressed,
         version: Version::V1,
         data_pagesize_limit: None,
@@ -146,7 +146,7 @@ fn read_with_indexes(
         })
         .collect::<Vec<_>>();
 
-    let expected = RecordBatch::new(vec![expected]);
+    let expected = RecordBatchT::new(vec![expected]);
 
     let chunks = FileReader::new(
         reader,

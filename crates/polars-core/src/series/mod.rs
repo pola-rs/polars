@@ -2,6 +2,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 
+pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
 mod comparison;
@@ -11,7 +12,6 @@ mod into;
 pub(crate) mod iterator;
 pub mod ops;
 mod series_trait;
-pub mod unstable;
 
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
@@ -23,13 +23,13 @@ use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
-use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
-use crate::chunked_array::Settings;
+use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::metadata::{Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, handle_casting_failures, split_ca, split_series, Wrap};
+use crate::utils::{handle_casting_failures, materialize_dyn_int, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -144,9 +144,14 @@ impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
         let mut h = vec![];
-        self.0.vec_hash(rs, &mut h).unwrap();
-        let h = UInt64Chunked::from_vec("", h).sum();
-        h.hash(state)
+        if self.0.vec_hash(rs, &mut h).is_ok() {
+            let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
+            h.hash(state)
+        } else {
+            self.len().hash(state);
+            self.null_count().hash(state);
+            self.dtype().hash(state);
+        }
     }
 }
 
@@ -187,14 +192,39 @@ impl Series {
         ca.chunks_mut()
     }
 
+    pub fn select_chunk(&self, i: usize) -> Self {
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let mut ca = self.struct_().unwrap().clone();
+                for field in ca.fields_mut().iter_mut() {
+                    *field = field.select_chunk(i)
+                }
+                ca.update_chunks(0);
+                ca.into_series()
+            },
+            _ => {
+                let mut new = self.clear();
+                // Assign mut so we go through arc only once.
+                let mut_new = new._get_inner_mut();
+                let chunks = unsafe { mut_new.chunks_mut() };
+                let chunk = self.chunks()[i].clone();
+                chunks.clear();
+                chunks.push(chunk);
+                mut_new.compute_len();
+                new
+            },
+        }
+    }
+
     pub fn is_sorted_flag(&self) -> IsSorted {
         if self.len() <= 1 {
             return IsSorted::Ascending;
         }
         let flags = self.get_flags();
-        if flags.contains(Settings::SORTED_DSC) {
+        if flags.contains(MetadataFlags::SORTED_DSC) {
             IsSorted::Descending
-        } else if flags.contains(Settings::SORTED_ASC) {
+        } else if flags.contains(MetadataFlags::SORTED_ASC) {
             IsSorted::Ascending
         } else {
             IsSorted::Not
@@ -207,15 +237,15 @@ impl Series {
         self.set_flags(flags);
     }
 
-    pub(crate) fn clear_settings(&mut self) {
-        self.set_flags(Settings::empty());
+    pub(crate) fn clear_flags(&mut self) {
+        self.set_flags(MetadataFlags::empty());
     }
     #[allow(dead_code)]
-    pub fn get_flags(&self) -> Settings {
+    pub fn get_flags(&self) -> MetadataFlags {
         self.0._get_flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: Settings) {
+    pub(crate) fn set_flags(&mut self, flags: MetadataFlags) {
         self._get_inner_mut()._set_flags(flags)
     }
 
@@ -236,6 +266,28 @@ impl Series {
         self
     }
 
+    /// Try to set the [`Metadata`] for the underlying [`ChunkedArray`]
+    ///
+    /// This does not guarantee that the [`Metadata`] is always set. It returns whether it was
+    /// successful.
+    pub fn try_set_metadata<T: PolarsDataType + 'static>(&mut self, metadata: Metadata<T>) -> bool {
+        let inner = self._get_inner_mut();
+
+        // @NOTE: These types are not the same if they are logical for example. For now, we just
+        // say: do not set the metadata when you get into this situation. This can be a @TODO for
+        // later.
+        if &T::get_dtype() != inner.dtype() {
+            return false;
+        }
+
+        inner.as_mut().md = Some(Arc::new(metadata));
+        true
+    }
+
+    pub fn from_arrow_chunks(name: &str, arrays: Vec<ArrayRef>) -> PolarsResult<Series> {
+        Self::try_from((name, arrays))
+    }
+
     pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
         Self::try_from((name, array))
     }
@@ -254,8 +306,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
-
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
             self._get_inner_mut().append(&other)?;
@@ -274,8 +325,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
-
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
             self._get_inner_mut().extend(&other)?;
@@ -309,18 +359,101 @@ impl Series {
         self._get_inner_mut().as_single_ptr()
     }
 
-    /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        // Best leave as is.
-        if !dtype.is_known() || (dtype.is_primitive() && dtype == self.dtype()) {
+        self.cast_with_options(dtype, CastOptions::NonStrict)
+    }
+
+    /// Cast `[Series]` to another `[DataType]`.
+    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        use DataType as D;
+
+        let do_clone = match dtype {
+            D::Unknown(UnknownKind::Any) => true,
+            D::Unknown(UnknownKind::Int(_)) if self.dtype().is_integer() => true,
+            D::Unknown(UnknownKind::Float) if self.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Str)
+                if self.dtype().is_string() | self.dtype().is_categorical() =>
+            {
+                true
+            },
+            dt if dt.is_primitive() && dt == self.dtype() => true,
+            _ => false,
+        };
+
+        if do_clone {
             return Ok(self.clone());
         }
-        let ret = self.0.cast(dtype);
+
+        pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
+            match dtype {
+                D::Unknown(UnknownKind::Int(v)) => Some(materialize_dyn_int(*v).dtype()),
+                D::Unknown(UnknownKind::Float) => Some(DataType::Float64),
+                D::Unknown(UnknownKind::Str) => Some(DataType::String),
+                // Best leave as is.
+                D::List(inner) => cast_dtype(inner.as_ref()).map(Box::new).map(D::List),
+                #[cfg(feature = "dtype-struct")]
+                D::Struct(fields) => {
+                    // @NOTE: We only allocate if we really need to.
+
+                    let mut field_iter = fields.iter().enumerate();
+                    let mut new_fields = loop {
+                        let (i, field) = field_iter.next()?;
+
+                        if let Some(dtype) = cast_dtype(&field.dtype) {
+                            let mut new_fields = Vec::with_capacity(fields.len());
+                            new_fields.extend(fields.iter().take(i).cloned());
+                            new_fields.push(Field {
+                                name: field.name.clone(),
+                                dtype,
+                            });
+                            break new_fields;
+                        }
+                    };
+
+                    new_fields.extend(fields.iter().skip(new_fields.len()).cloned().map(|field| {
+                        let dtype = cast_dtype(&field.dtype).unwrap_or(field.dtype);
+                        Field {
+                            name: field.name.clone(),
+                            dtype,
+                        }
+                    }));
+
+                    Some(D::Struct(new_fields))
+                },
+                _ => None,
+            }
+        }
+
+        let casted = cast_dtype(dtype);
+        let dtype = match casted {
+            None => dtype,
+            Some(ref dtype) => dtype,
+        };
+
+        // Always allow casting all nulls to other all nulls.
         let len = self.len();
         if self.null_count() == len {
             return Ok(Series::full_null(self.name(), len, dtype));
         }
-        ret
+
+        let new_options = match options {
+            // Strictness is handled on this level to improve error messages.
+            CastOptions::Strict => CastOptions::NonStrict,
+            opt => opt,
+        };
+
+        let ret = self.0.cast(dtype, new_options);
+
+        match options {
+            CastOptions::NonStrict | CastOptions::Overflowing => ret,
+            CastOptions::Strict => {
+                let ret = ret?;
+                if self.null_count() != ret.null_count() {
+                    handle_casting_failures(self, &ret)?;
+                }
+                Ok(ret)
+            },
+        }
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.
@@ -339,7 +472,7 @@ impl Series {
                 })
             },
             DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
-            _ => self.cast(dtype),
+            _ => self.cast_with_options(dtype, CastOptions::Overflowing),
         }
     }
 
@@ -347,7 +480,7 @@ impl Series {
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => Ok(self.clone()),
-            _ => self.cast(&DataType::Float64),
+            _ => self.cast_with_options(&DataType::Float64, CastOptions::Overflowing),
         }
     }
 
@@ -361,8 +494,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
-        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
+        let sum = self.sum_reduce()?;
+        let sum = sum.value().extract().unwrap();
+        Ok(sum)
     }
 
     /// Returns the minimum value in the array, according to the natural order.
@@ -371,8 +505,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let min = self.min_as_series()?.cast(&DataType::Float64)?;
-        Ok(min.f64().unwrap().get(0).and_then(T::from))
+        let min = self.min_reduce()?;
+        let min = min.value().extract::<T>();
+        Ok(min)
     }
 
     /// Returns the maximum value in the array, according to the natural order.
@@ -381,8 +516,9 @@ impl Series {
     where
         T: NumCast,
     {
-        let max = self.max_as_series()?.cast(&DataType::Float64)?;
-        Ok(max.f64().unwrap().get(0).and_then(T::from))
+        let max = self.max_reduce()?;
+        let max = max.value().extract::<T>();
+        Ok(max)
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -479,81 +615,12 @@ impl Series {
         }
     }
 
-    fn finish_take_threaded(&self, s: Vec<Series>, rechunk: bool) -> Series {
-        let s = s
-            .into_iter()
-            .reduce(|mut s, s1| {
-                s.append(&s1).unwrap();
-                s
-            })
-            .unwrap();
-        if rechunk {
-            s.rechunk()
-        } else {
-            s
-        }
-    }
-
-    // Take a function pointer to reduce bloat.
-    fn threaded_op(
-        &self,
-        rechunk: bool,
-        len: usize,
-        func: &(dyn Fn(usize, usize) -> PolarsResult<Series> + Send + Sync),
-    ) -> PolarsResult<Series> {
-        let n_threads = POOL.current_num_threads();
-        let offsets = _split_offsets(len, n_threads);
-
-        let series: PolarsResult<Vec<_>> = POOL.install(|| {
-            offsets
-                .into_par_iter()
-                .map(|(offset, len)| func(offset, len))
-                .collect()
-        });
-
-        Ok(self.finish_take_threaded(series?, rechunk))
-    }
-
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
     pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
         self.take_slice_unchecked(idx)
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
-        self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            let idx = idx.slice(offset as i64, len);
-            Ok(self.take_unchecked(&idx))
-        })
-        .unwrap()
-    }
-
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
-        self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
-        })
-        .unwrap()
-    }
-
-    /// Take by index. This operation is clone.
-    ///
-    /// # Notes
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> PolarsResult<Series> {
-        self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            let idx = idx.slice(offset as i64, len);
-            self.take(&idx)
-        })
     }
 
     /// Traverse and collect every nth element in a new array.
@@ -563,29 +630,6 @@ impl Series {
             .collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
-    }
-
-    /// Filter by boolean mask. This operation clones data.
-    pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> PolarsResult<Series> {
-        // This would fail if there is a broadcasting filter, because we cannot
-        // split that filter over threads besides they are a no-op, so we do the
-        // standard filter.
-        if filter.len() == 1 {
-            return self.filter(filter);
-        }
-        let n_threads = POOL.current_num_threads();
-        let filters = split_ca(filter, n_threads).unwrap();
-        let series = split_series(self, n_threads).unwrap();
-
-        let series: PolarsResult<Vec<_>> = POOL.install(|| {
-            filters
-                .par_iter()
-                .zip(series)
-                .map(|(filter, s)| s.filter(filter))
-                .collect()
-        });
-
-        Ok(self.finish_take_threaded(series?, rechunk))
     }
 
     #[cfg(feature = "dot_product")]
@@ -598,11 +642,11 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> PolarsResult<Series> {
+    pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
-            _ => self._sum_as_series(),
+            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
+            _ => self.0.sum_reduce(),
         }
     }
 
@@ -610,7 +654,7 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn product(&self) -> PolarsResult<Series> {
+    pub fn product(&self) -> PolarsResult<Scalar> {
         #[cfg(feature = "product")]
         {
             use DataType::*;
@@ -620,10 +664,10 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => Ok(self.i64().unwrap().prod_as_series()),
-                UInt64 => Ok(self.u64().unwrap().prod_as_series()),
-                Float32 => Ok(self.f32().unwrap().prod_as_series()),
-                Float64 => Ok(self.f64().unwrap().prod_as_series()),
+                Int64 => Ok(self.i64().unwrap().prod_reduce()),
+                UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                Float32 => Ok(self.f32().unwrap().prod_reduce()),
+                Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },
@@ -637,11 +681,7 @@ impl Series {
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        let s = self.cast(dtype)?;
-        if self.null_count() != s.null_count() {
-            handle_casting_failures(self, &s)?;
-        }
-        Ok(s)
+        self.cast_with_options(dtype, CastOptions::Strict)
     }
 
     #[cfg(feature = "dtype-time")]
@@ -767,33 +807,41 @@ impl Series {
         self.slice(-(len as i64), len)
     }
 
-    pub fn mean_as_series(&self) -> Series {
+    pub fn mean_reduce(&self) -> Scalar {
         match self.dtype() {
             DataType::Float32 => {
-                let val = &[self.mean().map(|m| m as f32)];
-                Series::new(self.name(), val)
+                let val = self.mean().map(|m| m as f32);
+                Scalar::new(self.dtype().clone(), val.into())
             },
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
-                let val = &[self.mean()];
-                Series::new(self.name(), val)
+                let val = self.mean();
+                Scalar::new(DataType::Float64, val.into())
+            },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let val = self.mean().map(|v| (v * MS_IN_DAY as f64) as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(DataType::Datetime(TimeUnit::Milliseconds, None), av)
             },
             #[cfg(feature = "dtype-datetime")]
             dt @ DataType::Datetime(_, _) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
             },
             #[cfg(feature = "dtype-duration")]
             dt @ DataType::Duration(_) => {
-                Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                    .cast(dt)
-                    .unwrap()
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
             },
             #[cfg(feature = "dtype-time")]
-            dt @ DataType::Time => Series::new(self.name(), &[self.mean().map(|v| v as i64)])
-                .cast(dt)
-                .unwrap(),
-            _ => return Series::full_null(self.name(), 1, self.dtype()),
+            dt @ DataType::Time => {
+                let val = self.mean().map(|v| v as i64);
+                let av: AnyValue = val.into();
+                Scalar::new(dt.clone(), av)
+            },
+            dt => Scalar::new(dt.clone(), AnyValue::Null),
         }
     }
 
@@ -1000,18 +1048,12 @@ mod test {
             let mut s1 = s1.clone();
             s1.append(&s2).unwrap();
             assert_eq!(s1.len(), 3);
-            #[cfg(feature = "python")]
-            assert_eq!(s1.get(2).unwrap(), AnyValue::Float64(3.0));
-            #[cfg(not(feature = "python"))]
             assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
         }
 
         {
             let mut s2 = s2.clone();
             s2.extend(&s1).unwrap();
-            #[cfg(feature = "python")]
-            assert_eq!(s2.get(2).unwrap(), AnyValue::Float64(2.29)); // 2.3 == 2.2999999999999998
-            #[cfg(not(feature = "python"))]
             assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
         }
     }

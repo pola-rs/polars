@@ -46,7 +46,7 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: target/doc
-          target-folder: docs/rust/dev
+          target-folder: api/rust/dev
           single-commit: true
 
       # Make sure documentation artifacts are not cached

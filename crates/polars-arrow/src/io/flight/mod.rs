@@ -13,14 +13,14 @@ use crate::datatypes::*;
 pub use crate::io::ipc::write::common::WriteOptions;
 use crate::io::ipc::write::common::{encode_chunk, DictionaryTracker, EncodedData};
 use crate::io::ipc::{read, write};
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
-/// Serializes [`RecordBatch`] to a vector of [`FlightData`] representing the serialized dictionaries
+/// Serializes [`RecordBatchT`] to a vector of [`FlightData`] representing the serialized dictionaries
 /// and a [`FlightData`] representing the batch.
 /// # Errors
 /// This function errors iff `fields` is not consistent with `columns`
 pub fn serialize_batch(
-    chunk: &RecordBatch<Box<dyn Array>>,
+    chunk: &RecordBatchT<Box<dyn Array>>,
     fields: &[IpcField],
     options: &WriteOptions,
 ) -> PolarsResult<(Vec<FlightData>, FlightData)> {
@@ -110,13 +110,13 @@ pub fn deserialize_schemas(bytes: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema
     read::deserialize_schema(bytes)
 }
 
-/// Deserializes [`FlightData`] representing a record batch message to [`RecordBatch`].
+/// Deserializes [`FlightData`] representing a record batch message to [`RecordBatchT`].
 pub fn deserialize_batch(
     data: &FlightData,
     fields: &[Field],
     ipc_schema: &IpcSchema,
     dictionaries: &read::Dictionaries,
-) -> PolarsResult<RecordBatch<Box<dyn Array>>> {
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     // check that the data_header is a record batch message
     let message = arrow_format::ipc::MessageRef::read_as_root(&data.data_header)
         .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
@@ -178,14 +178,14 @@ pub fn deserialize_dictionary(
     Ok(())
 }
 
-/// Deserializes [`FlightData`] into either a [`RecordBatch`] (when the message is a record batch)
+/// Deserializes [`FlightData`] into either a [`RecordBatchT`] (when the message is a record batch)
 /// or by upserting into `dictionaries` (when the message is a dictionary)
 pub fn deserialize_message(
     data: &FlightData,
     fields: &[Field],
     ipc_schema: &IpcSchema,
     dictionaries: &mut Dictionaries,
-) -> PolarsResult<Option<RecordBatch<Box<dyn Array>>>> {
+) -> PolarsResult<Option<RecordBatchT<Box<dyn Array>>>> {
     let FlightData {
         data_header,
         data_body,

@@ -22,6 +22,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Null,
     String,
     Time,
     UInt8,
@@ -140,6 +141,10 @@ def _infer_dtype_from_database_typename(
         else:
             dtype = _integer_dtype_from_nbits(sz, unsigned=False, default=Int64)
 
+    # number types (note: 'number' alone is not that helpful and requires refinement)
+    elif "NUMBER" in value and "CARDINAL" in value:
+        dtype = UInt64
+
     # decimal dtypes
     elif (is_dec := ("DECIMAL" in value)) or ("NUMERIC" in value):
         if "," in modifier:
@@ -151,7 +156,7 @@ def _infer_dtype_from_database_typename(
     # string dtypes
     elif (
         any(tp in value for tp in ("VARCHAR", "STRING", "TEXT", "UNICODE"))
-        or value.startswith(("STR", "CHAR", "NCHAR", "UTF"))
+        or value.startswith(("STR", "CHAR", "BPCHAR", "NCHAR", "UTF"))
         or value.endswith(("_UTF8", "_UTF16", "_UTF32"))
     ):
         dtype = String
@@ -164,6 +169,10 @@ def _infer_dtype_from_database_typename(
     elif value.startswith("BOOL"):
         dtype = Boolean
 
+    # null dtype; odd, but valid
+    elif value == "NULL":
+        dtype = Null
+
     # temporal dtypes
     elif value.startswith(("DATETIME", "TIMESTAMP")) and not (value.endswith("[D]")):
         if any((tz in value.replace(" ", "")) for tz in ("TZ", "TIMEZONE")):
@@ -173,7 +182,7 @@ def _infer_dtype_from_database_typename(
         dtype = Datetime(time_unit=(unit or "us"))  # type: ignore[arg-type]
     else:
         value = re.sub(r"\d", "", value)
-        if value in ("INTERVAL", "TIMEDELTA"):
+        if value in ("INTERVAL", "TIMEDELTA", "DURATION"):
             dtype = Duration
         elif value == "DATE":
             dtype = Date

@@ -174,21 +174,37 @@ impl LpIdentifierVisitor<'_> {
     }
 }
 
+fn skip_children(lp: &IR) -> bool {
+    match lp {
+        // Don't visit all the files in a `scan *` operation.
+        // Put an arbitrary limit to 20 files now.
+        IR::Union {
+            options, inputs, ..
+        } => options.from_partitioned_ds && inputs.len() > 20,
+        _ => false,
+    }
+}
+
 impl<'a> Visitor for LpIdentifierVisitor<'a> {
     type Node = IRNode;
     type Arena = IRNodeArena;
 
     fn pre_visit(
         &mut self,
-        _node: &Self::Node,
-        _arena: &Self::Arena,
+        node: &Self::Node,
+        arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         self.visit_stack
             .push(VisitRecord::Entered(self.pre_visit_idx));
         self.pre_visit_idx += 1;
 
         self.identifier_array.push((0, Identifier::new()));
-        Ok(VisitRecursion::Continue)
+
+        if skip_children(node.to_alp(&arena.0)) {
+            Ok(VisitRecursion::Skip)
+        } else {
+            Ok(VisitRecursion::Continue)
+        }
     }
 
     fn post_visit(
@@ -256,7 +272,7 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
 
     fn pre_visit(
         &mut self,
-        _lp_node: &Self::Node,
+        lp_node: &Self::Node,
         arena: &mut Self::Arena,
     ) -> PolarsResult<RewriteRecursion> {
         if self.visited_idx >= self.identifier_array.len()
@@ -270,7 +286,7 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
         // Id placeholder not overwritten, so we can skip this sub-expression.
         if !id.is_valid() {
             self.visited_idx += 1;
-            return Ok(RewriteRecursion::MutateAndContinue);
+            return Ok(RewriteRecursion::NoMutateAndContinue);
         }
 
         let Some((_, count)) = self.sp_count.get(id, &arena.0, &arena.1) else {
@@ -281,7 +297,13 @@ impl<'a> RewritingVisitor for CommonSubPlanRewriter<'a> {
         if *count > 1 {
             // Rewrite this sub-plan, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)
-        } else {
+        }
+        // Never mutate if count <= 1. The post-visit will search for the node, and not be able to find it
+        else {
+            // Don't traverse the children.
+            if skip_children(lp_node.to_alp(&arena.0)) {
+                return Ok(RewriteRecursion::Stop);
+            }
             // This is a unique plan
             // visit its children to see if they are cse
             self.visited_idx += 1;

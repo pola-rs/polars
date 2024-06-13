@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
@@ -26,11 +26,11 @@ def test_drop_table(test_frame: pl.LazyFrame) -> None:
     # 'drop' completely removes the table from sql context
     expected = pl.DataFrame()
 
-    with pl.SQLContext(frame=test_frame, eager_execution=True) as ctx:
+    with pl.SQLContext(frame=test_frame, eager=True) as ctx:
         res = ctx.execute("DROP TABLE frame")
         assert_frame_equal(res, expected)
 
-        with pytest.raises(ComputeError, match="'frame' was not found"):
+        with pytest.raises(SQLInterfaceError, match="'frame' was not found"):
             ctx.execute("SELECT * FROM frame")
 
 
@@ -39,7 +39,7 @@ def test_explain_query(test_frame: pl.LazyFrame) -> None:
     with pl.SQLContext(frame=test_frame) as ctx:
         plan = (
             ctx.execute("EXPLAIN SELECT * FROM frame")
-            .select(pl.col("Logical Plan").str.concat(""))
+            .select(pl.col("Logical Plan").str.join())
             .collect()
             .item()
         )
@@ -75,7 +75,7 @@ def test_truncate_table(truncate_sql: str, test_frame: pl.LazyFrame) -> None:
     # 'truncate' preserves the table, but optimally drops all rows within it
     expected = pl.DataFrame(schema=test_frame.schema)
 
-    with pl.SQLContext(frame=test_frame, eager_execution=True) as ctx:
+    with pl.SQLContext(frame=test_frame, eager=True) as ctx:
         res = ctx.execute(truncate_sql)
         assert_frame_equal(res, expected)
 

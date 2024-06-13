@@ -8,7 +8,7 @@ Polars is a library and installation is as simple as invoking the package manage
     pip install polars
 
     # Or for legacy CPUs without AVX2 support
-    pip install polars-ltc-cpu
+    pip install polars-lts-cpu
     ```
 
 === ":fontawesome-brands-rust: Rust"
@@ -89,6 +89,7 @@ pip install 'polars[numpy,fsspec]'
 | xlsx2csv   | Support for reading from Excel files                                                                                                  |
 | deltalake  | Support for reading from Delta Lake Tables                                                                                            |
 | plot       | Support for plotting Dataframes                                                                                                       |
+| style      | Support for styling Dataframes                                                                                                        |
 | timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
 
 ### Rust
@@ -197,7 +198,7 @@ The opt-in features are:
     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
     - `arg_where` - Get indices where condition holds.
     - `search_sorted` - Find indices where elements should be inserted to maintain order.
-    - `date_offset` Add an offset to dates that take months and leap years into account.
+    - `offset_by` Add an offset to dates that take months and leap years into account.
     - `trigonometry` Trigonometric functions.
     - `sign` Compute the element-wise sign of a Series.
     - `propagate_nans` NaN propagating min/max aggregations.

@@ -38,7 +38,7 @@ fn get_scan_columns(
     acc_projections: &mut Vec<ColumnNode>,
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
-) -> Option<Arc<Vec<String>>> {
+) -> Option<Arc<[String]>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
@@ -47,7 +47,7 @@ fn get_scan_columns(
             // we shouldn't project the row-count column, as that is generated
             // in the scan
             let push = match row_index {
-                Some(rc) if name.as_ref() != rc.name.as_str() => true,
+                Some(rc) if name != rc.name => true,
                 None => true,
                 _ => false,
             };
@@ -55,7 +55,7 @@ fn get_scan_columns(
                 columns.push((*name).to_owned())
             }
         }
-        with_columns = Some(Arc::new(columns));
+        with_columns = Some(Arc::from(columns));
     }
     with_columns
 }
@@ -325,10 +325,12 @@ impl ProjectionPushDown {
         use IR::*;
 
         match logical_plan {
+            // Should not yet be here
+            Reduce { .. } => unreachable!(),
             Select { expr, input, .. } => process_projection(
                 self,
                 input,
-                expr.exprs(),
+                expr,
                 acc_projections,
                 projected_names,
                 projections_seen,
@@ -352,7 +354,7 @@ impl ProjectionPushDown {
                 df,
                 schema,
                 mut output_schema,
-                selection,
+                filter: selection,
                 ..
             } => {
                 let mut projection = None;
@@ -370,7 +372,7 @@ impl ProjectionPushDown {
                     schema,
                     output_schema,
                     projection,
-                    selection,
+                    filter: selection,
                 };
                 Ok(lp)
             },
@@ -605,7 +607,7 @@ impl ProjectionPushDown {
             } => process_hstack(
                 self,
                 input,
-                exprs.exprs(),
+                exprs,
                 options,
                 acc_projections,
                 projected_names,
@@ -649,10 +651,7 @@ impl ProjectionPushDown {
                     schema: Arc::new(new_schema),
                 })
             },
-            MapFunction {
-                input,
-                ref function,
-            } => functions::process_functions(
+            MapFunction { input, function } => functions::process_functions(
                 self,
                 input,
                 function,

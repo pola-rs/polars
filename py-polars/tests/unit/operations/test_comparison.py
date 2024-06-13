@@ -366,3 +366,25 @@ def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
     )
     with context:
         verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean)
+
+
+def test_cat_compare_with_bool() -> None:
+    data = pl.DataFrame([pl.Series("col1", ["a", "b"], dtype=pl.Categorical)])
+
+    with pytest.raises(pl.ComputeError, match="cannot compare categorical with bool"):
+        data.filter(pl.col("col1") == True)  # noqa: E712
+
+
+def test_schema_ne_missing_9256() -> None:
+    df = pl.DataFrame({"a": [0, 1, None], "b": [True, False, True]})
+
+    assert df.select(pl.col("a").ne_missing(0).or_(pl.col("b")))["a"].all()
+
+
+def test_nested_binary_literal_super_type_12227() -> None:
+    # The `.alias` is important here to trigger the bug.
+    result = pl.select(x=1).select((pl.lit(0) + ((pl.col("x") > 0) * 0.1)).alias("x"))
+    assert result.item() == 0.1
+
+    result = pl.select((pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0))
+    assert result.item() == 0.1

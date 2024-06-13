@@ -1,4 +1,5 @@
 import operator
+from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -6,6 +7,18 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars import (
+    Date,
+    Float64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+)
 from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -293,3 +306,329 @@ def test_null_column_arithmetic(op: Any) -> None:
     # test broadcast left
     output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
     assert_frame_equal(expected_df, output_df)
+
+
+def test_bool_floordiv() -> None:
+    df = pl.DataFrame({"x": [True]})
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="floor_div operation not supported for dtype `bool`",
+    ):
+        df.with_columns(pl.col("x").floordiv(2))
+
+
+def test_arithmetic_in_aggregation_3739() -> None:
+    def demean_dot() -> pl.Expr:
+        x = pl.col("x")
+        y = pl.col("y")
+        x1 = x - x.mean()
+        y1 = y - y.mean()
+        return (x1 * y1).sum().alias("demean_dot")
+
+    assert (
+        pl.DataFrame(
+            {
+                "key": ["a", "a", "a", "a"],
+                "x": [4, 2, 2, 4],
+                "y": [2, 0, 2, 0],
+            }
+        )
+        .group_by("key")
+        .agg(
+            [
+                demean_dot(),
+            ]
+        )
+    ).to_dict(as_series=False) == {"key": ["a"], "demean_dot": [0.0]}
+
+
+def test_arithmetic_on_df() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
+
+    for df_mul in (df * 2, 2 * df):
+        expected = pl.DataFrame({"a": [2.0, 4.0], "b": [6.0, 8.0]})
+        assert_frame_equal(df_mul, expected)
+
+    for df_plus in (df + 2, 2 + df):
+        expected = pl.DataFrame({"a": [3.0, 4.0], "b": [5.0, 6.0]})
+        assert_frame_equal(df_plus, expected)
+
+    df_div = df / 2
+    expected = pl.DataFrame({"a": [0.5, 1.0], "b": [1.5, 2.0]})
+    assert_frame_equal(df_div, expected)
+
+    df_minus = df - 2
+    expected = pl.DataFrame({"a": [-1.0, 0.0], "b": [1.0, 2.0]})
+    assert_frame_equal(df_minus, expected)
+
+    df_mod = df % 2
+    expected = pl.DataFrame({"a": [1.0, 0.0], "b": [1.0, 0.0]})
+    assert_frame_equal(df_mod, expected)
+
+    df2 = pl.DataFrame({"c": [10]})
+
+    out = df + df2
+    expected = pl.DataFrame({"a": [11.0, None], "b": [None, None]}).with_columns(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert_frame_equal(out, expected)
+
+    out = df - df2
+    expected = pl.DataFrame({"a": [-9.0, None], "b": [None, None]}).with_columns(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert_frame_equal(out, expected)
+
+    out = df / df2
+    expected = pl.DataFrame({"a": [0.1, None], "b": [None, None]}).with_columns(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert_frame_equal(out, expected)
+
+    out = df * df2
+    expected = pl.DataFrame({"a": [10.0, None], "b": [None, None]}).with_columns(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert_frame_equal(out, expected)
+
+    out = df % df2
+    expected = pl.DataFrame({"a": [1.0, None], "b": [None, None]}).with_columns(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert_frame_equal(out, expected)
+
+    # cannot do arithmetic with a sequence
+    with pytest.raises(TypeError, match="operation not supported"):
+        _ = df + [1]  # type: ignore[operator]
+
+
+def test_df_series_division() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [2, 2, 4, 4, 6, 6],
+            "b": [2, 2, 10, 5, 6, 6],
+        }
+    )
+    s = pl.Series([2, 2, 2, 2, 2, 2])
+    assert (df / s).to_dict(as_series=False) == {
+        "a": [1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+        "b": [1.0, 1.0, 5.0, 2.5, 3.0, 3.0],
+    }
+    assert (df // s).to_dict(as_series=False) == {
+        "a": [1, 1, 2, 2, 3, 3],
+        "b": [1, 1, 5, 2, 3, 3],
+    }
+
+
+@pytest.mark.parametrize(
+    "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
+)
+def test_arithmetic_series(s: pl.Series) -> None:
+    a = s
+    b = s
+
+    assert ((a * b) == [1, 4]).sum() == 2
+    assert ((a / b) == [1.0, 1.0]).sum() == 2
+    assert ((a + b) == [2, 4]).sum() == 2
+    assert ((a - b) == [0, 0]).sum() == 2
+    assert ((a + 1) == [2, 3]).sum() == 2
+    assert ((a - 1) == [0, 1]).sum() == 2
+    assert ((a / 1) == [1.0, 2.0]).sum() == 2
+    assert ((a // 2) == [0, 1]).sum() == 2
+    assert ((a * 2) == [2, 4]).sum() == 2
+    assert ((2 + a) == [3, 4]).sum() == 2
+    assert ((1 - a) == [0, -1]).sum() == 2
+    assert ((2 * a) == [2, 4]).sum() == 2
+
+    # integer division
+    assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
+    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.5])
+    assert_series_equal(1 // a, expected)
+    # modulo
+    assert ((1 % a) == [0, 1]).sum() == 2
+    assert ((a % 1) == [0, 0]).sum() == 2
+    # negate
+    assert (-a == [-1, -2]).sum() == 2
+    # unary plus
+    assert (+a == a).all()
+    # wrong dtypes in rhs operands
+    assert ((1.0 - a) == [0.0, -1.0]).sum() == 2
+    assert ((1.0 / a) == [1.0, 0.5]).sum() == 2
+    assert ((1.0 * a) == [1, 2]).sum() == 2
+    assert ((1.0 + a) == [2, 3]).sum() == 2
+    assert ((1.0 % a) == [0, 1]).sum() == 2
+
+
+def test_arithmetic_datetime() -> None:
+    a = pl.Series("a", [datetime(2021, 1, 1)])
+    with pytest.raises(TypeError):
+        a // 2
+    with pytest.raises(TypeError):
+        a / 2
+    with pytest.raises(TypeError):
+        a * 2
+    with pytest.raises(TypeError):
+        a % 2
+    with pytest.raises(
+        pl.InvalidOperationError,
+    ):
+        a**2
+    with pytest.raises(TypeError):
+        2 / a
+    with pytest.raises(TypeError):
+        2 // a
+    with pytest.raises(TypeError):
+        2 * a
+    with pytest.raises(TypeError):
+        2 % a
+    with pytest.raises(
+        pl.InvalidOperationError,
+    ):
+        2**a
+
+
+def test_power_series() -> None:
+    a = pl.Series([1, 2], dtype=Int64)
+    b = pl.Series([None, 2.0], dtype=Float64)
+    c = pl.Series([date(2020, 2, 28), date(2020, 3, 1)], dtype=Date)
+    d = pl.Series([1, 2], dtype=UInt8)
+    e = pl.Series([1, 2], dtype=Int8)
+    f = pl.Series([1, 2], dtype=UInt16)
+    g = pl.Series([1, 2], dtype=Int16)
+    h = pl.Series([1, 2], dtype=UInt32)
+    i = pl.Series([1, 2], dtype=Int32)
+    j = pl.Series([1, 2], dtype=UInt64)
+    k = pl.Series([1, 2], dtype=Int64)
+    m = pl.Series([2**33, 2**33], dtype=UInt64)
+
+    # pow
+    assert_series_equal(a**2, pl.Series([1, 4], dtype=Int64))
+    assert_series_equal(b**3, pl.Series([None, 8.0], dtype=Float64))
+    assert_series_equal(a**a, pl.Series([1, 4], dtype=Int64))
+    assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
+    assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
+    assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
+    assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
+    assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
+    assert_series_equal(g**d, pl.Series([1, 4], dtype=Int16))
+    assert_series_equal(h**d, pl.Series([1, 4], dtype=UInt32))
+    assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
+    assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
+    assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`pow` operation not supported for dtype `null` as exponent",
+    ):
+        a ** pl.lit(None)
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`pow` operation not supported for dtype `date` as base",
+    ):
+        c**2
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`pow` operation not supported for dtype `date` as exponent",
+    ):
+        2**c
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        a ** "hi"  # type: ignore[operator]
+
+    # Raising to UInt64: raises if can't be downcast safely to UInt32...
+    with pytest.raises(
+        pl.InvalidOperationError, match="conversion from `u64` to `u32` failed"
+    ):
+        a**m
+    # ... but succeeds otherwise.
+    assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
+
+    # rpow
+    assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
+    assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        "hi" ** a
+
+    # Series.pow() method
+    assert_series_equal(a.pow(2), pl.Series([1, 4], dtype=Int64))
+
+
+@pytest.mark.parametrize(
+    ("expected", "expr"),
+    [
+        (
+            np.array([[2, 4], [6, 8]]),
+            pl.col("a") + pl.col("a"),
+        ),
+        (
+            np.array([[0, 0], [0, 0]]),
+            pl.col("a") - pl.col("a"),
+        ),
+        (
+            np.array([[1, 4], [9, 16]]),
+            pl.col("a") * pl.col("a"),
+        ),
+        (
+            np.array([[1.0, 1.0], [1.0, 1.0]]),
+            pl.col("a") / pl.col("a"),
+        ),
+    ],
+)
+def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
+    df = pl.Series("a", np.array([[1, 2], [3, 4]])).to_frame()
+
+    assert_frame_equal(
+        df.select(expr),
+        pl.Series("a", expected).to_frame(),
+    )
+
+
+def test_schema_owned_arithmetic_5669() -> None:
+    df = (
+        pl.LazyFrame({"A": [1, 2, 3]})
+        .filter(pl.col("A") >= 3)
+        .with_columns(-pl.col("A").alias("B"))
+        .collect()
+    )
+    assert df.columns == ["A", "B"]
+    assert df.rows() == [(3, -3)]
+
+
+def test_schema_true_divide_6643() -> None:
+    df = pl.DataFrame({"a": [1]})
+    a = pl.col("a")
+    assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
+
+
+def test_literal_subtract_schema_13284() -> None:
+    assert (
+        pl.LazyFrame({"a": [23, 30]}, schema={"a": pl.UInt8})
+        .with_columns(pl.col("a") - pl.lit(1))
+        .group_by("a")
+        .len()
+    ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+def test_int_operator_stability() -> None:
+    for dt in pl.datatypes.INTEGER_DTYPES:
+        s = pl.Series(values=[10], dtype=dt)
+        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+
+
+def test_duration_division_schema() -> None:
+    df = pl.DataFrame({"a": [1]})
+    q = (
+        df.lazy()
+        .with_columns(pl.col("a").cast(pl.Duration))
+        .select(pl.col("a") / pl.col("a"))
+    )
+
+    assert q.schema == {"a": pl.Float64}
+    assert q.collect().to_dict(as_series=False) == {"a": [1.0]}

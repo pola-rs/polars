@@ -5,13 +5,31 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal as D
 from typing import Any
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_series_equal, assert_series_not_equal
+from polars.testing.parametric import dtypes, series
 
 nan = float("nan")
 pytest_plugins = ["pytester"]
+
+
+@given(s=series())
+def test_assert_series_equal_parametric(s: pl.Series) -> None:
+    assert_series_equal(s, s)
+
+
+@given(data=st.data())
+def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
+    inner = data.draw(dtypes(excluded_dtypes=[pl.Struct, pl.Categorical]))
+    shape = data.draw(st.integers(min_value=1, max_value=3))
+    dtype = pl.Array(inner, shape=shape)
+    s = data.draw(series(dtype=dtype))
+
+    assert_series_equal(s, s)
 
 
 def test_compare_series_value_mismatch() -> None:
@@ -32,6 +50,15 @@ def test_compare_series_empty_equal() -> None:
     assert_series_equal(srs1, srs2)
     with pytest.raises(AssertionError):
         assert_series_not_equal(srs1, srs2)
+
+
+def test_assert_series_equal_check_order() -> None:
+    srs1 = pl.Series([1, 2, 3, None])
+    srs2 = pl.Series([2, None, 3, 1])
+
+    assert_series_equal(srs1, srs2, check_order=False)
+    with pytest.raises(AssertionError):
+        assert_series_not_equal(srs1, srs2, check_order=False)
 
 
 def test_compare_series_nans_assert_equal() -> None:
@@ -58,10 +85,10 @@ def test_compare_series_nans_assert_equal() -> None:
     srs5 = pl.Series([1.0, 2.0, 3.0, 4.0, nan, 6.0])
     srs6 = pl.Series([1, 2, 3, 4, None, 6])
 
-    assert_series_equal(srs4, srs6, check_dtype=False)
+    assert_series_equal(srs4, srs6, check_dtypes=False)
     with pytest.raises(AssertionError):
-        assert_series_equal(srs5, srs6, check_dtype=False)
-    assert_series_not_equal(srs5, srs6, check_dtype=True)
+        assert_series_equal(srs5, srs6, check_dtypes=False)
+    assert_series_not_equal(srs5, srs6, check_dtypes=True)
 
     # nested
     for float_type in (pl.Float32, pl.Float64):
@@ -218,13 +245,13 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
         pytest.param(
             pl.Series([0.0, 1.0, 2.0], dtype=pl.Float64),
             pl.Series([0, 1, 2], dtype=pl.Int64),
-            {"check_dtype": False},
+            {"check_dtypes": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
             pl.Series([0, 1, 2], dtype=pl.Float64),
             pl.Series([0, 1, 2], dtype=pl.Float32),
-            {"check_dtype": False},
+            {"check_dtypes": False},
             id="equal_int_float_integer_no_check_dtype",
         ),
         pytest.param(
@@ -290,7 +317,7 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
         pytest.param(
             pl.Series([[2.0, 3.0]]),
             pl.Series([[2, 3]]),
-            {"check_exact": False, "check_dtype": False},
+            {"check_exact": False, "check_dtypes": False},
             id="list_of_float_list_of_int_check_dtype_false",
         ),
         pytest.param(
@@ -383,13 +410,13 @@ def test_assert_series_equal_passes_assertion(
         pytest.param(
             pl.Series([0, 1, 2], dtype=pl.Float64),
             pl.Series([0, 1, 2], dtype=pl.Int64),
-            {"check_dtype": True},
+            {"check_dtypes": True},
             id="equal_int_float_integer_check_dtype",
         ),
         pytest.param(
             pl.Series([0, 1, 2], dtype=pl.Float64),
             pl.Series([0, 1, 2], dtype=pl.Float32),
-            {"check_dtype": True},
+            {"check_dtypes": True},
             id="equal_int_float_integer_check_dtype",
         ),
         pytest.param(
@@ -443,19 +470,19 @@ def test_assert_series_equal_passes_assertion(
         pytest.param(
             pl.Series([[2.0, 3.0]]),
             pl.Series([[2, 3]]),
-            {"check_exact": False, "check_dtype": True},
+            {"check_exact": False, "check_dtypes": True},
             id="list_of_float_list_of_int_check_dtype_true",
         ),
         pytest.param(
             pl.struct(a=0, b=1.1, eager=True),
             pl.struct(a=0, b=1, eager=True),
-            {"atol": 0.1, "rtol": 0, "check_dtype": True},
+            {"atol": 0.1, "rtol": 0, "check_dtypes": True},
             id="struct_approx_equal_different_type",
         ),
         pytest.param(
             pl.struct(a=0, b=1.09, eager=True),
             pl.struct(a=0, b=1, eager=True),
-            {"atol": 0.1, "rtol": 0, "check_dtype": False},
+            {"atol": 0.1, "rtol": 0, "check_dtypes": False},
             id="struct_approx_equal_different_type",
         ),
     ],
@@ -477,8 +504,8 @@ def test_assert_series_equal_categorical_vs_str() -> None:
     with pytest.raises(AssertionError, match="dtype mismatch"):
         assert_series_equal(s1, s2, categorical_as_str=True)
 
-    assert_series_equal(s1, s2, check_dtype=False, categorical_as_str=True)
-    assert_series_equal(s2, s1, check_dtype=False, categorical_as_str=True)
+    assert_series_equal(s1, s2, check_dtypes=False, categorical_as_str=True)
+    assert_series_equal(s2, s1, check_dtypes=False, categorical_as_str=True)
 
 
 def test_assert_series_equal_incompatible_data_types() -> None:
@@ -486,7 +513,7 @@ def test_assert_series_equal_incompatible_data_types() -> None:
     s2 = pl.Series([0, 1, 0], dtype=pl.Int8)
 
     with pytest.raises(AssertionError, match="incompatible data types"):
-        assert_series_equal(s1, s2, check_dtype=False)
+        assert_series_equal(s1, s2, check_dtypes=False)
 
 
 def test_assert_series_equal_full_series() -> None:
@@ -537,7 +564,7 @@ def test_assert_series_equal_full_null_incompatible_dtypes_raises() -> None:
     # You could argue this should pass, but it's rare enough not to warrant the
     # additional check
     with pytest.raises(AssertionError, match="incompatible data types"):
-        assert_series_equal(s1, s2, check_dtype=False)
+        assert_series_equal(s1, s2, check_dtypes=False)
 
 
 def test_assert_series_equal_full_null_nested_list() -> None:
@@ -549,7 +576,7 @@ def test_assert_series_equal_full_null_nested_not_nested() -> None:
     s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
     s2 = pl.Series([None, None], dtype=pl.Float64)
 
-    assert_series_equal(s1, s2, check_dtype=False)
+    assert_series_equal(s1, s2, check_dtypes=False)
 
 
 def test_assert_series_equal_nested_list_nan() -> None:
@@ -590,7 +617,7 @@ def test_assert_series_equal_uint_always_checked_exactly() -> None:
     s2 = pl.Series([2, 4], dtype=pl.Int64)
 
     with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2, atol=1, check_dtype=False)
+        assert_series_equal(s1, s2, atol=1, check_dtypes=False)
 
 
 def test_assert_series_equal_nested_int_always_checked_exactly() -> None:
@@ -637,6 +664,47 @@ def test_assert_series_equal_w_large_integers_12328() -> None:
     right = pl.Series([1577840521123543])
     with pytest.raises(AssertionError):
         assert_series_equal(left, right)
+
+
+def test_assert_series_equal_check_dtype_deprecated() -> None:
+    s1 = pl.Series("a", [1, 2])
+    s2 = pl.Series("a", [1.0, 2.0])
+    s3 = pl.Series("a", [2, 1])
+
+    with pytest.deprecated_call():
+        assert_series_equal(s1, s2, check_dtype=False)  # type: ignore[call-arg]
+
+    with pytest.deprecated_call():
+        assert_series_not_equal(s1, s3, check_dtype=False)  # type: ignore[call-arg]
+
+
+def test_assert_series_equal_nested_categorical_as_str_global() -> None:
+    # https://github.com/pola-rs/polars/issues/16196
+
+    # Global
+    with pl.StringCache():
+        s1 = pl.Series(["c0"], dtype=pl.Categorical)
+        s2 = pl.Series(["c1"], dtype=pl.Categorical)
+        s_global = pl.DataFrame([s1, s2]).to_struct("col0")
+
+    # Local
+    s1 = pl.Series(["c0"], dtype=pl.Categorical)
+    s2 = pl.Series(["c1"], dtype=pl.Categorical)
+    s_local = pl.DataFrame([s1, s2]).to_struct("col0")
+
+    assert_series_equal(s_global, s_local, categorical_as_str=True)
+    assert_series_not_equal(s_global, s_local, categorical_as_str=False)
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series([["a", "b"], ["a"]], dtype=pl.List(pl.Categorical)),
+        pl.Series([{"a": "x"}, {"a": "y"}], dtype=pl.Struct({"a": pl.Categorical})),
+    ],
+)
+def test_assert_series_equal_nested_categorical_as_str(s: pl.Series) -> None:
+    assert_series_equal(s, s, categorical_as_str=True)
 
 
 def test_tracebackhide(testdir: pytest.Testdir) -> None:

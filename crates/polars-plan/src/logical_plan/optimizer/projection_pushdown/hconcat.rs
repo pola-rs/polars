@@ -49,8 +49,8 @@ pub(super) fn process_hconcat(
 
         let mut schemas = Vec::with_capacity(inputs.len());
         for input in inputs.iter() {
-            let schema = lp_arena.get(*input).schema(lp_arena);
-            schemas.push(schema.as_ref().clone());
+            let schema = lp_arena.get(*input).schema(lp_arena).into_owned();
+            schemas.push(schema);
         }
         let new_schema = merge_schemas(&schemas)?;
         Arc::new(new_schema)

@@ -2,6 +2,7 @@ import datetime
 from datetime import timedelta
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -124,6 +125,13 @@ def test_array_data_type_equality() -> None:
     assert pl.Array(pl.Int64, 2) != pl.Array(pl.String, 2)
     assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)
 
+    assert pl.Array(pl.Int64, (4, 2)) == pl.Array
+    assert pl.Array(pl.Array(pl.Int64, 2), 4) == pl.Array(pl.Int64, (4, 2))
+    assert pl.Array(pl.Int64, (4, 2)) == pl.Array(pl.Int64, (4, 2))
+    assert pl.Array(pl.Int64, (4, 2)) != pl.Array(pl.String, (4, 2))
+    assert pl.Array(pl.Int64, (4, 2)) != pl.Array(pl.Int64, 4)
+    assert pl.Array(pl.Int64, (4,)) != pl.Array(pl.Int64, (4, 2))
+
 
 @pytest.mark.parametrize(
     ("data", "inner_type"),
@@ -165,7 +173,7 @@ def test_array_data_type_equality() -> None:
 def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = pl.Series(data, dtype=pl.List(inner_type))
     s = s.cast(pl.Array(inner_type, 2))
-    assert s.dtype == pl.Array(inner_type, width=2)
+    assert s.dtype == pl.Array(inner_type, shape=2)
     assert s.to_list() == data
 
 
@@ -258,7 +266,7 @@ def test_arr_median(data_dispersion: pl.DataFrame) -> None:
 
 
 def test_array_repeat() -> None:
-    dtype = pl.Array(pl.UInt8, width=1)
+    dtype = pl.Array(pl.UInt8, shape=1)
     s = pl.repeat([42], n=3, dtype=dtype, eager=True)
     expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
     assert s.dtype == dtype
@@ -275,3 +283,44 @@ def test_create_nested_array() -> None:
         dtype=pl.Array(pl.Array(pl.Int64, 2), 2),
     )
     assert s2.to_list() == data
+
+
+def test_recursive_array_dtype() -> None:
+    assert str(pl.Array(pl.Int64, (2, 3))) == "Array(Int64, shape=(2, 3))"
+    assert str(pl.Array(pl.Int64, 3)) == "Array(Int64, shape=(3,))"
+    dtype = pl.Array(pl.Int64, 3)
+    s = pl.Series(np.arange(6).reshape((2, 3)), dtype=dtype)
+    assert s.dtype == dtype
+    assert s.len() == 2
+
+
+def test_ndarray_construction() -> None:
+    a = np.arange(16, dtype=np.int64).reshape((2, 4, -1))
+    s = pl.Series(a)
+    assert s.dtype == pl.Array(pl.Int64, (4, 2))
+    assert (s.to_numpy() == a).all()
+
+
+def test_array_width_deprecated() -> None:
+    with pytest.deprecated_call():
+        dtype = pl.Array(pl.Int8, width=2)
+    with pytest.deprecated_call():
+        assert dtype.width == 2
+
+
+def test_array_inner_recursive() -> None:
+    shape = (2, 3, 4, 5)
+    dtype = pl.Array(int, shape=shape)
+    for dim in shape:
+        assert dtype.size == dim
+        dtype = dtype.inner  # type: ignore[assignment]
+
+
+def test_array_inner_recursive_python_dtype() -> None:
+    dtype = pl.Array(int, shape=(2, 3))
+    assert dtype.inner.inner == pl.Int64  # type: ignore[union-attr]
+
+
+def test_array_missing_shape() -> None:
+    with pytest.raises(TypeError):
+        pl.Array(pl.Int8)

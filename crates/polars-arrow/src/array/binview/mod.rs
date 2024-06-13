@@ -36,6 +36,8 @@ pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
 pub use view::{View, INLINE_VIEW_SIZE};
 
+use super::Splitable;
+
 pub type MutablePlString = MutableBinaryViewArray<str>;
 pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
 
@@ -203,6 +205,32 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         &self.views
     }
 
+    pub fn into_views(self) -> Vec<View> {
+        self.views.make_mut()
+    }
+
+    pub fn into_inner(
+        self,
+    ) -> (
+        Buffer<View>,
+        Arc<[Buffer<u8>]>,
+        Option<Bitmap>,
+        usize,
+        usize,
+    ) {
+        let views = self.views;
+        let buffers = self.buffers;
+        let validity = self.validity;
+
+        (
+            views,
+            buffers,
+            validity,
+            self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            self.total_buffer_len,
+        )
+    }
+
     pub fn try_new(
         data_type: ArrowDataType,
         views: Buffer<View>,
@@ -263,28 +291,8 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = *self.views.get_unchecked_release(i);
-        let len = v.length;
-
-        // view layout:
-        // length: 4 bytes
-        // prefix: 4 bytes
-        // buffer_index: 4 bytes
-        // offset: 4 bytes
-
-        // inlined layout:
-        // length: 4 bytes
-        // data: 12 bytes
-
-        let bytes = if len <= 12 {
-            let ptr = self.views.as_ptr() as *const u8;
-            std::slice::from_raw_parts(ptr.add(i * 16 + 4), len as usize)
-        } else {
-            let data = self.buffers.get_unchecked_release(v.buffer_idx as usize);
-            let offset = v.offset as usize;
-            data.get_unchecked_release(offset..offset + len as usize)
-        };
-        T::from_bytes_unchecked(bytes)
+        let v = self.views.get_unchecked_release(i);
+        T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
@@ -476,6 +484,16 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         self.validity.as_ref()
     }
 
+    fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = Splitable::split_at(self, offset);
+        (Box::new(lhs), Box::new(rhs))
+    }
+
+    unsafe fn split_at_boxed_unchecked(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
+        let (lhs, rhs) = unsafe { Splitable::split_at_unchecked(self, offset) };
+        (Box::new(lhs), Box::new(rhs))
+    }
+
     fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
@@ -503,5 +521,41 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(self.clone())
+    }
+}
+
+impl<T: ViewType + ?Sized> Splitable for BinaryViewArrayGeneric<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_views, rhs_views) = unsafe { self.views.split_at_unchecked(offset) };
+        let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+
+        unsafe {
+            (
+                Self::new_unchecked(
+                    self.data_type.clone(),
+                    lhs_views,
+                    self.buffers.clone(),
+                    lhs_validity,
+                    if offset == 0 { 0 } else { UNKNOWN_LEN as _ },
+                    self.total_buffer_len(),
+                ),
+                Self::new_unchecked(
+                    self.data_type.clone(),
+                    rhs_views,
+                    self.buffers.clone(),
+                    rhs_validity,
+                    if offset == self.len() {
+                        0
+                    } else {
+                        UNKNOWN_LEN as _
+                    },
+                    self.total_buffer_len(),
+                ),
+            )
+        }
     }
 }

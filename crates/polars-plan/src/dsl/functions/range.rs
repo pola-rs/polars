@@ -37,27 +37,14 @@ pub fn int_ranges(start: Expr, end: Expr, step: Expr) -> Expr {
 
 /// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
-pub fn date_range(
-    start: Expr,
-    end: Expr,
-    interval: Duration,
-    closed: ClosedWindow,
-    time_unit: Option<TimeUnit>,
-    time_zone: Option<TimeZone>,
-) -> Expr {
+pub fn date_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::DateRange {
-            interval,
-            closed,
-            time_unit,
-            time_zone,
-        }),
+        function: FunctionExpr::Range(RangeFunction::DateRange { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
         },
@@ -66,27 +53,14 @@ pub fn date_range(
 
 /// Create a column of date ranges from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
-pub fn date_ranges(
-    start: Expr,
-    end: Expr,
-    interval: Duration,
-    closed: ClosedWindow,
-    time_unit: Option<TimeUnit>,
-    time_zone: Option<TimeZone>,
-) -> Expr {
+pub fn date_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::DateRanges {
-            interval,
-            closed,
-            time_unit,
-            time_zone,
-        }),
+        function: FunctionExpr::Range(RangeFunction::DateRanges { interval, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
         },

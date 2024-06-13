@@ -34,7 +34,7 @@ impl CategoricalChunkedBuilder {
         }
     }
 
-    fn push_impl(&mut self, s: &str, h: u64) {
+    fn get_cat_idx(&mut self, s: &str, h: u64) -> (u32, bool) {
         let len = self.local_mapping.len() as u32;
 
         // Custom hashing / equality functions for comparing the &str to the idx
@@ -50,10 +50,10 @@ impl CategoricalChunkedBuilder {
             )
         };
 
-        let idx = match r {
+        match r {
             Ok(v) => {
                 // SAFETY: Bucket is initialized
-                unsafe { v.as_ref().0 .0 }
+                (unsafe { v.as_ref().0 .0 }, false)
             },
             Err(e) => {
                 self.categories.push(Some(s));
@@ -63,15 +63,24 @@ impl CategoricalChunkedBuilder {
                         .raw_table_mut()
                         .insert_in_slot(h, e, (KeyWrapper(len), ()))
                 };
-                len
+                (len, true)
             },
-        };
-        self.cat_builder.push(Some(idx));
+        }
+    }
+
+    /// Registers a value to a categorical index without pushing it.
+    /// Returns the index and if the value was new.
+    #[inline]
+    pub fn register_value(&mut self, s: &str) -> (u32, bool) {
+        let h = self.local_mapping.hasher().hash_one(s);
+        self.get_cat_idx(s, h)
     }
 
     #[inline]
     pub fn append_value(&mut self, s: &str) {
-        self.push_impl(s, self.local_mapping.hasher().hash_one(s))
+        let h = self.local_mapping.hasher().hash_one(s);
+        let idx = self.get_cat_idx(s, h).0;
+        self.cat_builder.push(Some(idx));
     }
 
     #[inline]
@@ -97,27 +106,27 @@ impl CategoricalChunkedBuilder {
     }
 
     /// Fast path for global categorical which preserves hashes and saves an allocation by
-    /// altering the keys in place
+    /// altering the keys in place.
     fn drain_iter_global_and_finish<'a, I>(&mut self, i: I) -> CategoricalChunked
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
         let iter = i.into_iter();
-        // Save hashes for later when inserting into the global hashmap
+        // Save hashes for later when inserting into the global hashmap.
         let mut hashes = Vec::with_capacity(_HASHMAP_INIT_SIZE);
         for s in self.categories.values_iter() {
             hashes.push(self.local_mapping.hasher().hash_one(s));
         }
 
         for opt_s in iter {
-            let prev_len = self.local_mapping.len();
             match opt_s {
                 None => self.append_null(),
                 Some(s) => {
                     let hash = self.local_mapping.hasher().hash_one(s);
-                    self.push_impl(s, hash);
-                    // We appended a value to the map
-                    if prev_len != self.local_mapping.len() {
+                    let (cat_idx, new) = self.get_cat_idx(s, hash);
+                    self.cat_builder.push(Some(cat_idx));
+                    if new {
+                        // We appended a value to the map.
                         hashes.push(hash);
                     }
                 },
@@ -126,18 +135,18 @@ impl CategoricalChunkedBuilder {
 
         let categories = std::mem::take(&mut self.categories).freeze();
 
-        // we will create a mapping from our local categoricals to global categoricals
-        // and a mapping from global categoricals to our local categoricals
+        // We will create a mapping from our local categoricals to global categoricals
+        // and a mapping from global categoricals to our local categoricals.
         let mut local_to_global: Vec<u32> = Vec::with_capacity(categories.len());
         let (id, local_to_global) = crate::STRING_CACHE.apply(|cache| {
             for (s, h) in categories.values_iter().zip(hashes) {
-                // SAFETY: we allocated enough
+                // SAFETY: we allocated enough.
                 unsafe { local_to_global.push_unchecked(cache.insert_from_hash(h, s)) }
             }
             local_to_global
         });
 
-        // Change local indices inplace to their global counterparts
+        // Change local indices inplace to their global counterparts.
         let update_cats = || {
             if !local_to_global.is_empty() {
                 // when all categorical are null, `local_to_global` is empty and all cats physical values are 0.

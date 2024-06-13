@@ -78,7 +78,7 @@ impl<'a> PredicatePushDown<'a> {
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
     ) -> PolarsResult<IR> {
-        let inputs = lp.get_inputs();
+        let inputs = lp.get_inputs_vec();
         let exprs = lp.get_exprs();
 
         if has_projections {
@@ -308,7 +308,7 @@ impl<'a> PredicatePushDown<'a> {
                 schema,
                 output_schema,
                 projection,
-                selection,
+                filter: selection,
             } => {
                 let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
                 let lp = DataFrameScan {
@@ -316,7 +316,7 @@ impl<'a> PredicatePushDown<'a> {
                     schema,
                     output_schema,
                     projection,
-                    selection,
+                    filter: selection,
                 };
                 Ok(lp)
             },
@@ -342,12 +342,9 @@ impl<'a> PredicatePushDown<'a> {
                         // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
                         if let Some(ref row_index) = options.row_index {
-                            let row_index_predicates = transfer_to_local_by_name(
-                                expr_arena,
-                                &mut acc_predicates,
-                                |name| name.as_ref() == row_index.name,
-                            );
-                            row_index_predicates
+                            transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
+                                name == row_index.name
+                            })
                         } else {
                             vec![]
                         }
@@ -394,7 +391,7 @@ impl<'a> PredicatePushDown<'a> {
                                     schema: schema.clone(),
                                     output_schema: None,
                                     projection: None,
-                                    selection: None,
+                                    filter: None,
                                 });
                             } else {
                                 paths = Arc::from(new_paths)
@@ -625,6 +622,7 @@ impl<'a> PredicatePushDown<'a> {
             },
             lp @ HStack { .. }
             | lp @ Select { .. }
+            | lp @ Reduce { .. }
             | lp @ SimpleProjection { .. }
             | lp @ ExtContext { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)

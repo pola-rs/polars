@@ -100,6 +100,7 @@ fn replace_by_multiple(
         ["__POLARS_REPLACE_OLD"],
         JoinArgs {
             how: JoinType::Left,
+            coalesce: JoinCoalesce::CoalesceColumns,
             join_nulls: true,
             ..Default::default()
         },

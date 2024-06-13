@@ -10,12 +10,15 @@ description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 
 [dependencies]
 arrow = { workspace = true }
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["rows"] }
 polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cross_join", "cum_agg", "dtype-date", "dtype-decimal", "is_in", "list_eval", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "timezones", "trigonometry"] }
+polars-ops = { workspace = true }
 polars-plan = { workspace = true }
+polars-time = { workspace = true }
 
 hex = { workspace = true }
+once_cell = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -29,13 +32,14 @@ polars-core = { workspace = true, features = ["fmt"] }
 [features]
 default = []
 nightly = []
-csv = ["polars-lazy/csv"]
-ipc = ["polars-lazy/ipc"]
-json = ["polars-lazy/json", "polars-plan/extract_jsonpath"]
 binary_encoding = ["polars-lazy/binary_encoding"]
+csv = ["polars-lazy/csv"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
+ipc = ["polars-lazy/ipc"]
+json = ["polars-lazy/json", "polars-plan/extract_jsonpath"]
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
+serde = []
 timezones = ["polars-lazy/timezones"]

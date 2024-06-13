@@ -104,6 +104,14 @@ where
         unsafe { Self::from_chunks(name, vec![Box::new(arr)]) }
     }
 
+    pub fn with_chunk_like<A>(ca: &Self, arr: A) -> Self
+    where
+        A: Array,
+        T: PolarsDataType<Array = A>,
+    {
+        Self::from_chunk_iter_like(ca, std::iter::once(arr))
+    }
+
     pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
     where
         I: IntoIterator,
@@ -165,13 +173,13 @@ where
             })
             .collect();
 
-        ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: length.try_into().expect(LENGTH_LIMIT_MSG),
-            null_count: null_count as IdxSize,
+        unsafe {
+            ChunkedArray::new_with_dims(
+                field,
+                chunks,
+                length.try_into().expect(LENGTH_LIMIT_MSG),
+                null_count as IdxSize,
+            )
         }
     }
 
@@ -192,17 +200,7 @@ where
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        let field = self.field.clone();
-        let mut out = ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        out.compute_len();
-        out
+        ChunkedArray::new_with_compute_len(self.field.clone(), chunks)
     }
 
     /// Create a new [`ChunkedArray`] from existing chunks.
@@ -218,50 +216,12 @@ where
         // that check if the data types in the arrays are as expected
         #[cfg(debug_assertions)]
         {
-            if !chunks.is_empty() && dtype.is_primitive() {
-                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow(true))
+            if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
+                assert_eq!(chunks[0].data_type(), &dtype.to_arrow(true))
             }
         }
         let field = Arc::new(Field::new(name, dtype));
-        let mut out = ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        out.compute_len();
-        out
-    }
-
-    /// Create a new ChunkedArray from self, where the chunks are replaced.
-    ///
-    /// # Safety
-    /// The caller must ensure the dtypes of the chunks are correct
-    pub(crate) unsafe fn from_chunks_and_metadata(
-        chunks: Vec<ArrayRef>,
-        field: Arc<Field>,
-        bit_settings: Settings,
-        keep_sorted: bool,
-        keep_fast_explode: bool,
-    ) -> Self {
-        let mut out = ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings,
-            length: 0,
-            null_count: 0,
-        };
-        out.compute_len();
-        if !keep_sorted {
-            out.set_sorted_flag(IsSorted::Not);
-        }
-        if !keep_fast_explode {
-            out.unset_fast_explode_list()
-        }
-        out
+        ChunkedArray::new_with_compute_len(field, chunks)
     }
 
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
@@ -270,16 +230,7 @@ where
         dtype: DataType,
     ) -> Self {
         let field = Arc::new(Field::new(name, dtype));
-        let mut out = ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
-        };
-        out.compute_len();
-        out
+        ChunkedArray::new_with_compute_len(field, chunks)
     }
 
     pub fn full_null_like(ca: &Self, length: usize) -> Self {
@@ -300,14 +251,7 @@ where
     /// Create a new ChunkedArray from a Vec and a validity mask.
     pub fn from_vec_validity(name: &str, values: Vec<T::Native>, buffer: Option<Bitmap>) -> Self {
         let arr = to_array::<T>(values, buffer);
-        let mut out = ChunkedArray {
-            field: Arc::new(Field::new(name, T::get_dtype())),
-            chunks: vec![arr],
-            phantom: PhantomData,
-            ..Default::default()
-        };
-        out.compute_len();
-        out
+        ChunkedArray::new_with_compute_len(Arc::new(Field::new(name, T::get_dtype())), vec![arr])
     }
 
     /// Create a temporary [`ChunkedArray`] from a slice.
@@ -329,5 +273,33 @@ impl BooleanChunked {
     pub unsafe fn mmap_slice(name: &str, values: &[u8], offset: usize, len: usize) -> Self {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
         Self::with_chunk(name, arr)
+    }
+}
+
+impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Physical<'a>>>
+where
+    T: PolarsDataType,
+{
+    fn from(ca: &'a ChunkedArray<T>) -> Self {
+        let mut out = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            out.extend(arr.iter())
+        }
+        out
+    }
+}
+impl From<StringChunked> for Vec<Option<String>> {
+    fn from(ca: StringChunked) -> Self {
+        ca.iter().map(|opt| opt.map(|s| s.to_string())).collect()
+    }
+}
+
+impl From<BooleanChunked> for Vec<Option<bool>> {
+    fn from(ca: BooleanChunked) -> Self {
+        let mut out = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            out.extend(arr.iter())
+        }
+        out
     }
 }

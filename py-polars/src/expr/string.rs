@@ -7,11 +7,11 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_concat(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+    fn str_join(&self, delimiter: &str, ignore_nulls: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .concat(delimiter, ignore_nulls)
+            .join(delimiter, ignore_nulls)
             .into()
     }
 
@@ -108,10 +108,6 @@ impl PyExpr {
 
     fn str_tail(&self, n: Self) -> Self {
         self.inner.clone().str().tail(n.inner).into()
-    }
-
-    fn str_explode(&self) -> Self {
-        self.inner.clone().str().explode().into()
     }
 
     fn str_to_uppercase(&self) -> Self {
@@ -237,19 +233,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_path_match(&self, pat: String) -> Self {
-        let function = move |s: Series| {
-            let ca = s.str()?;
-            match ca.json_path_match(&pat) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-        self.inner
-            .clone()
-            .map(function, GetOutput::from_type(DataType::String))
-            .with_fmt("str.json_path_match")
-            .into()
+    fn str_json_path_match(&self, pat: Self) -> Self {
+        self.inner.clone().str().json_path_match(pat.inner).into()
     }
 
     fn str_extract(&self, pat: Self, group_index: usize) -> Self {

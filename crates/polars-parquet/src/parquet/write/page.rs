@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
@@ -9,7 +8,7 @@ use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
 use parquet_format_safe::{DictionaryPageHeader, Encoding, PageType};
 
 use crate::parquet::compression::Compression;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, ParquetPageHeader,
 };
@@ -19,16 +18,16 @@ pub(crate) fn is_data_page(page: &PageWriteSpec) -> bool {
     page.header.type_ == PageType::DATA_PAGE || page.header.type_ == PageType::DATA_PAGE_V2
 }
 
-fn maybe_bytes(uncompressed: usize, compressed: usize) -> Result<(i32, i32)> {
+fn maybe_bytes(uncompressed: usize, compressed: usize) -> ParquetResult<(i32, i32)> {
     let uncompressed_page_size: i32 = uncompressed.try_into().map_err(|_| {
-        Error::oos(format!(
+        ParquetError::oos(format!(
             "A page can only contain i32::MAX uncompressed bytes. This one contains {}",
             uncompressed
         ))
     })?;
 
     let compressed_page_size: i32 = compressed.try_into().map_err(|_| {
-        Error::oos(format!(
+        ParquetError::oos(format!(
             "A page can only contain i32::MAX compressed bytes. This one contains {}",
             compressed
         ))
@@ -47,14 +46,14 @@ pub struct PageWriteSpec {
     pub offset: u64,
     pub bytes_written: u64,
     pub compression: Compression,
-    pub statistics: Option<Arc<dyn Statistics>>,
+    pub statistics: Option<Statistics>,
 }
 
 pub fn write_page<W: Write>(
     writer: &mut W,
     offset: u64,
     compressed_page: &CompressedPage,
-) -> Result<PageWriteSpec> {
+) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
     let selected_rows = compressed_page.selected_rows();
 
@@ -100,7 +99,7 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
     writer: &mut W,
     offset: u64,
     compressed_page: &CompressedPage,
-) -> Result<PageWriteSpec> {
+) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
     let selected_rows = compressed_page.selected_rows();
 
@@ -140,7 +139,7 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
     })
 }
 
-fn assemble_data_page_header(page: &CompressedDataPage) -> Result<ParquetPageHeader> {
+fn assemble_data_page_header(page: &CompressedDataPage) -> ParquetResult<ParquetPageHeader> {
     let (uncompressed_page_size, compressed_page_size) =
         maybe_bytes(page.uncompressed_size(), page.compressed_size())?;
 
@@ -169,12 +168,12 @@ fn assemble_data_page_header(page: &CompressedDataPage) -> Result<ParquetPageHea
     Ok(page_header)
 }
 
-fn assemble_dict_page_header(page: &CompressedDictPage) -> Result<ParquetPageHeader> {
+fn assemble_dict_page_header(page: &CompressedDictPage) -> ParquetResult<ParquetPageHeader> {
     let (uncompressed_page_size, compressed_page_size) =
         maybe_bytes(page.uncompressed_page_size, page.buffer.len())?;
 
     let num_values: i32 = page.num_values.try_into().map_err(|_| {
-        Error::oos(format!(
+        ParquetError::oos(format!(
             "A dictionary page can only contain i32::MAX items. This one contains {}",
             page.num_values
         ))
@@ -197,7 +196,10 @@ fn assemble_dict_page_header(page: &CompressedDictPage) -> Result<ParquetPageHea
 }
 
 /// writes the page header into `writer`, returning the number of bytes used in the process.
-fn write_page_header<W: Write>(mut writer: &mut W, header: &ParquetPageHeader) -> Result<u64> {
+fn write_page_header<W: Write>(
+    mut writer: &mut W,
+    header: &ParquetPageHeader,
+) -> ParquetResult<u64> {
     let mut protocol = TCompactOutputProtocol::new(&mut writer);
     Ok(header.write_to_out_protocol(&mut protocol)? as u64)
 }
@@ -208,7 +210,7 @@ fn write_page_header<W: Write>(mut writer: &mut W, header: &ParquetPageHeader) -
 async fn write_page_header_async<W: AsyncWrite + Unpin + Send>(
     mut writer: &mut W,
     header: &ParquetPageHeader,
-) -> Result<u64> {
+) -> ParquetResult<u64> {
     let mut protocol = TCompactOutputStreamProtocol::new(&mut writer);
     Ok(header.write_to_out_stream_protocol(&mut protocol).await? as u64)
 }

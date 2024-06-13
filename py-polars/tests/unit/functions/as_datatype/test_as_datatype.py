@@ -60,7 +60,7 @@ def test_datetime_ambiguous_time_zone() -> None:
         pl.select(expr)
 
 
-def test_datetime_ambiguous_time_zone_use_earliest() -> None:
+def test_datetime_ambiguous_time_zone_earliest() -> None:
     expr = pl.datetime(
         2018, 10, 28, 2, 30, time_zone="Europe/Brussels", ambiguous="earliest"
     )
@@ -201,10 +201,8 @@ def test_list_concat_rolling_window() -> None:
         }
     )
     out = df.with_columns(
-        [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
-    ).select(
-        [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
-    )
+        pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)
+    ).select(pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling"))
     assert out.shape == (5, 1)
 
     s = out.to_series()
@@ -219,20 +217,16 @@ def test_list_concat_rolling_window() -> None:
 
     # this test proper null behavior of concat list
     out = (
-        df.with_columns(pl.col("A").reshape((-1, 1)))  # first turn into a list
+        df.with_columns(
+            pl.col("A").reshape((-1, 1)).arr.to_list()  # first turn into a list
+        )
         .with_columns(
-            [
-                pl.col("A").shift(i).alias(f"A_lag_{i}")
-                for i in range(3)  # slice the lists to a lag
-            ]
+            pl.col("A").shift(i).alias(f"A_lag_{i}")
+            for i in range(3)  # slice the lists to a lag
         )
         .select(
-            [
-                pl.all(),
-                pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
-                    "A_rolling"
-                ),
-            ]
+            pl.all(),
+            pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling"),
         )
     )
     assert out.shape == (5, 5)
@@ -249,11 +243,9 @@ def test_list_concat_rolling_window() -> None:
 
 def test_concat_list_reverse_struct_fields() -> None:
     df = pl.DataFrame({"nums": [1, 2, 3, 4], "letters": ["a", "b", "c", "d"]}).select(
-        [
-            pl.col("nums"),
-            pl.struct(["letters", "nums"]).alias("combo"),
-            pl.struct(["nums", "letters"]).alias("reverse_combo"),
-        ]
+        pl.col("nums"),
+        pl.struct(["letters", "nums"]).alias("combo"),
+        pl.struct(["nums", "letters"]).alias("reverse_combo"),
     )
     result1 = df.select(pl.concat_list(["combo", "reverse_combo"]))
     result2 = df.select(pl.concat_list(["combo", "combo"]))

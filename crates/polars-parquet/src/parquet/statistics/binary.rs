@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
 use parquet_format_safe::Statistics as ParquetStatistics;
 
-use super::Statistics;
-use crate::parquet::error::Result;
-use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
+use crate::parquet::error::ParquetResult;
+use crate::parquet::schema::types::PrimitiveType;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BinaryStatistics {
     pub primitive_type: PrimitiveType,
     pub null_count: Option<i64>,
@@ -15,37 +12,28 @@ pub struct BinaryStatistics {
     pub min_value: Option<Vec<u8>>,
 }
 
-impl Statistics for BinaryStatistics {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+impl BinaryStatistics {
+    pub fn deserialize(
+        v: &ParquetStatistics,
+        primitive_type: PrimitiveType,
+    ) -> ParquetResult<Self> {
+        Ok(BinaryStatistics {
+            primitive_type,
+            null_count: v.null_count,
+            distinct_count: v.distinct_count,
+            max_value: v.max_value.clone(),
+            min_value: v.min_value.clone(),
+        })
     }
 
-    fn physical_type(&self) -> &PhysicalType {
-        &PhysicalType::ByteArray
-    }
-
-    fn null_count(&self) -> Option<i64> {
-        self.null_count
-    }
-}
-
-pub fn read(v: &ParquetStatistics, primitive_type: PrimitiveType) -> Result<Arc<dyn Statistics>> {
-    Ok(Arc::new(BinaryStatistics {
-        primitive_type,
-        null_count: v.null_count,
-        distinct_count: v.distinct_count,
-        max_value: v.max_value.clone(),
-        min_value: v.min_value.clone(),
-    }))
-}
-
-pub fn write(v: &BinaryStatistics) -> ParquetStatistics {
-    ParquetStatistics {
-        null_count: v.null_count,
-        distinct_count: v.distinct_count,
-        max_value: v.max_value.clone(),
-        min_value: v.min_value.clone(),
-        min: None,
-        max: None,
+    pub fn serialize(&self) -> ParquetStatistics {
+        ParquetStatistics {
+            null_count: self.null_count,
+            distinct_count: self.distinct_count,
+            max_value: self.max_value.clone(),
+            min_value: self.min_value.clone(),
+            min: None,
+            max: None,
+        }
     }
 }

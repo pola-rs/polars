@@ -15,15 +15,13 @@ if TYPE_CHECKING:
 
 def helper_dataset_test(
     file_path: Path,
-    query: Callable[[pl.LazyFrame], pl.DataFrame],
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
     batch_size: int | None = None,
     n_expected: int | None = None,
 ) -> None:
     dset = ds.dataset(file_path, format="ipc")
-    expected = query(pl.scan_ipc(file_path))
-    out = query(
-        pl.scan_pyarrow_dataset(dset, batch_size=batch_size),
-    )
+    expected = pl.scan_ipc(file_path).pipe(query).collect()
+    out = pl.scan_pyarrow_dataset(dset, batch_size=batch_size).pipe(query).collect()
     assert_frame_equal(out, expected)
     if n_expected is not None:
         assert len(out) == n_expected
@@ -36,107 +34,105 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
 
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter("bools").select(["bools", "floats", "date"]).collect(),
+        lambda lf: lf.filter("bools").select("bools", "floats", "date"),
         n_expected=1,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(~pl.col("bools"))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(~pl.col("bools")).select("bools", "floats", "date"),
         n_expected=2,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int_nulls").is_null())
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("int_nulls").is_null()).select(
+            "bools", "floats", "date"
+        ),
         n_expected=1,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int_nulls").is_not_null())
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("int_nulls").is_not_null()).select(
+            "bools", "floats", "date"
+        ),
         n_expected=2,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int_nulls").is_not_null() == pl.col("bools"))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(
+            pl.col("int_nulls").is_not_null() == pl.col("bools")
+        ).select("bools", "floats", "date"),
         n_expected=0,
     )
     # this equality on a column with nulls fails as pyarrow has different
     # handling kleene logic. We leave it for now and document it in the function.
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int") == 10)
-        .select(["bools", "floats", "int_nulls"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("int") == 10).select(
+            "bools", "floats", "int_nulls"
+        ),
         n_expected=0,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int") != 10)
-        .select(["bools", "floats", "int_nulls"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("int") != 10).select(
+            "bools", "floats", "int_nulls"
+        ),
         n_expected=3,
     )
-    helper_dataset_test(
-        file_path,
-        lambda lf: lf.filter(pl.col("int").is_between(9, 11))
-        .select(["bools", "floats", "date"])
-        .collect(),
-        n_expected=0,
-    )
+
+    for closed, n_expected in zip(["both", "left", "right", "none"], [3, 2, 2, 1]):
+        helper_dataset_test(
+            file_path,
+            lambda lf, closed=closed: lf.filter(  # type: ignore[misc]
+                pl.col("int").is_between(1, 3, closed=closed)
+            ).select("bools", "floats", "date"),
+            n_expected=n_expected,
+        )
     # this predicate is not supported by pyarrow
     # check if we still do it on our side
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("floats").sum().over("date") == 10)
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("floats").sum().over("date") == 10).select(
+            "bools", "floats", "date"
+        ),
         n_expected=0,
     )
     # temporal types
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("date") < date(1972, 1, 1))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("date") < date(1972, 1, 1)).select(
+            "bools", "floats", "date"
+        ),
         n_expected=1,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("datetime") > datetime(1970, 1, 1, second=13))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(
+            pl.col("datetime") > datetime(1970, 1, 1, second=13)
+        ).select("bools", "floats", "date"),
         n_expected=1,
     )
     # not yet supported in pyarrow
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("time") >= time(microsecond=100))
-        .select(["bools", "time", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("time") >= time(microsecond=100)).select(
+            "bools", "time", "date"
+        ),
         n_expected=3,
     )
     # pushdown is_in
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int").is_in([1, 3, 20]))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("int").is_in([1, 3, 20])).select(
+            "bools", "floats", "date"
+        ),
         n_expected=2,
     )
     helper_dataset_test(
         file_path,
         lambda lf: lf.filter(
             pl.col("date").is_in([date(1973, 8, 17), date(1973, 5, 19)])
-        )
-        .select(["bools", "floats", "date"])
-        .collect(),
+        ).select("bools", "floats", "date"),
         n_expected=2,
     )
     helper_dataset_test(
@@ -148,30 +144,28 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
                     datetime(1970, 1, 1, 0, 0, 13, 241324),
                 ]
             )
-        )
-        .select(["bools", "floats", "date"])
-        .collect(),
+        ).select("bools", "floats", "date"),
         n_expected=2,
     )
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.col("int").is_in(list(range(120))))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.col("int").is_in(list(range(120)))).select(
+            "bools", "floats", "date"
+        ),
         n_expected=3,
     )
     # TODO: remove string cache
     with pl.StringCache():
         helper_dataset_test(
             file_path,
-            lambda lf: lf.filter(pl.col("cat").is_in([]))
-            .select(["bools", "floats", "date"])
-            .collect(),
+            lambda lf: lf.filter(pl.col("cat").is_in([])).select(
+                "bools", "floats", "date"
+            ),
             n_expected=0,
         )
         helper_dataset_test(
             file_path,
-            lambda lf: lf.select(pl.exclude("enum")).collect(),
+            lambda lf: lf.select(pl.exclude("enum")),
             batch_size=2,
             n_expected=3,
         )
@@ -179,9 +173,9 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
     # direct filter
     helper_dataset_test(
         file_path,
-        lambda lf: lf.filter(pl.Series([True, False, True]))
-        .select(["bools", "floats", "date"])
-        .collect(),
+        lambda lf: lf.filter(pl.Series([True, False, True])).select(
+            "bools", "floats", "date"
+        ),
         n_expected=2,
     )
 

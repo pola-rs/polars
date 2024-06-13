@@ -14,6 +14,8 @@ try:
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
+        SQLInterfaceError,
+        SQLSyntaxError,
         StringCacheMismatchError,
         StructFieldNotFoundError,
     )
@@ -27,8 +29,8 @@ except ImportError:
         """
         Exception raised when a specified column is not found.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select("b")
         polars.exceptions.ColumnNotFoundError: b
@@ -41,8 +43,8 @@ except ImportError:
         """
         Exception raised when a column name is duplicated.
 
-        Example
-        -------
+        Examples
+        --------
         >>> df = pl.DataFrame({"a": [1, 1, 1]})
         >>> pl.concat([df, df], how="horizontal")
         polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
@@ -52,8 +54,8 @@ except ImportError:
         """
         Exception raised when an operation is not allowed (or possible) against a given object or data structure.
 
-        Example
-        -------
+        Examples
+        --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.is_in(["x", "y"])
         polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
@@ -76,6 +78,12 @@ except ImportError:
 
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
+
+    class SQLInterfaceError(PolarsError):  # type: ignore[no-redef, misc]
+        """Exception raised when an error occurs in the SQL interface."""
+
+    class SQLSyntaxError(PolarsError):  # type: ignore[no-redef, misc]
+        """Exception raised from the SQL interface when encountering invalid syntax."""
 
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when string caches come from different sources."""
@@ -137,16 +145,8 @@ class PolarsInefficientMapWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
-class TimeZoneAwareConstructorWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning issued when constructing Series from non-UTC time-zone-aware inputs."""
-
-
 class UnstableWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when unstable functionality is used."""
-
-
-class ArrowError(Exception):
-    """Deprecated: will be removed."""
 
 
 class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
@@ -154,10 +154,10 @@ class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
 
 
 __all__ = [
-    "ArrowError",
+    "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
-    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "MapWithoutReturnDtypeWarning",
@@ -165,12 +165,13 @@ __all__ = [
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
-    "PolarsInefficientMapWarning",
-    "CategoricalRemappingWarning",
     "PolarsError",
+    "PolarsInefficientMapWarning",
     "PolarsPanicError",
     "PolarsWarning",
     "RowsError",
+    "SQLInterfaceError",
+    "SQLSyntaxError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",

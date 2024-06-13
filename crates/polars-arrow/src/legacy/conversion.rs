@@ -1,9 +1,9 @@
 use crate::array::{ArrayRef, PrimitiveArray, StructArray};
 use crate::datatypes::{ArrowDataType, Field};
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 use crate::types::NativeType;
 
-pub fn chunk_to_struct(chunk: RecordBatch<ArrayRef>, fields: Vec<Field>) -> StructArray {
+pub fn chunk_to_struct(chunk: RecordBatchT<ArrayRef>, fields: Vec<Field>) -> StructArray {
     let dtype = ArrowDataType::Struct(fields);
     StructArray::new(dtype, chunk.into_arrays(), None)
 }

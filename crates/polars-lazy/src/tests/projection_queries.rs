@@ -1,3 +1,5 @@
+use polars_ops::frame::JoinCoalesce;
+
 use super::*;
 
 #[test]
@@ -47,7 +49,7 @@ fn test_cross_join_pd() -> PolarsResult<()> {
         "price" => [5, 4]
     ]?;
 
-    let q = food.lazy().cross_join(drink.lazy()).select([
+    let q = food.lazy().cross_join(drink.lazy(), None).select([
         col("name").alias("food"),
         col("name_right").alias("beverage"),
         (col("price") + col("price_right")).alias("total"),
@@ -127,6 +129,44 @@ fn concat_str_regex_expansion() -> PolarsResult<()> {
         .collect()?;
     let s = out.column("concatenated")?;
     assert_eq!(s, &Series::new("concatenated", ["a--;;", ";b--;", ";;c--"]));
+
+    Ok(())
+}
+
+#[test]
+fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
+    // Test that the optimizer toggle coalesce to true if the non-coalesced column isn't used.
+    let q1 = df!["a" => [1],
+        "b" => [2]
+    ]?
+    .lazy();
+
+    let q2 = df!["a" => [1],
+        "c" => [2]
+    ]?
+    .lazy();
+
+    let plan = q1
+        .join(
+            q2,
+            [col("a")],
+            [col("a")],
+            JoinArgs {
+                how: JoinType::Left,
+                coalesce: JoinCoalesce::KeepColumns,
+                ..Default::default()
+            },
+        )
+        .select([col("a"), col("b")])
+        .to_alp_optimized()?;
+
+    let node = plan.lp_top;
+    let lp_arena = plan.lp_arena;
+
+    assert!((&lp_arena).iter(node).all(|(_, plan)| match plan {
+        IR::Join { options, .. } => options.args.should_coalesce(),
+        _ => true,
+    }));
 
     Ok(())
 }

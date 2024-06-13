@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import OrderedDict
-from typing import Any
+from typing import Any, Iterator, Mapping
 
 import pytest
 
@@ -115,7 +115,7 @@ def test_df_init_strict() -> None:
 def test_df_init_from_series_strict() -> None:
     s = pl.Series("a", [-1, 0, 1])
     schema = {"a": pl.UInt8}
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         pl.DataFrame(s, schema=schema, strict=True)
 
     df = pl.DataFrame(s, schema=schema, strict=False)
@@ -147,3 +147,55 @@ def test_df_init_nested_mixed_types() -> None:
 
     assert df.schema == {"key": pl.List(pl.Struct({"value": pl.Float64}))}
     assert df.to_dicts() == [{"key": [{"value": 1.0}, {"value": 1.0}]}]
+
+
+def test_unit_and_empty_construction_15896() -> None:
+    # This is still incorrect.
+    # We should raise, but currently for len 1 dfs,
+    # we cannot tell if they come from a literal or expression.
+    assert "shape: (0, 2)" in str(
+        pl.DataFrame({"A": [0]}).select(
+            C="A",
+            A=pl.int_range("A"),  # creates empty series
+        )
+    )
+
+
+class CustomSchema(Mapping[str, Any]):
+    """Dummy schema object for testing compatibility with Mapping."""
+
+    _entries: dict[str, Any]
+
+    def __init__(self, **named_entries: Any) -> None:
+        self._items = OrderedDict(named_entries.items())
+
+    def __getitem__(self, key: str) -> Any:
+        return self._items[key]
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._items
+
+
+def test_custom_schema() -> None:
+    df = pl.DataFrame(schema=CustomSchema(bool=pl.Boolean, misc=pl.UInt8))
+    assert df.schema == OrderedDict([("bool", pl.Boolean), ("misc", pl.UInt8)])
+
+    with pytest.raises(ValueError):
+        pl.DataFrame(schema=CustomSchema(bool="boolean", misc="unsigned int"))
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
+    assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
+
+
+def test_df_init_schema_object() -> None:
+    schema = pl.Schema({"a": pl.Int8(), "b": pl.String()})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}, schema=schema)
+
+    assert df.columns == schema.names()
+    assert df.dtypes == schema.dtypes()

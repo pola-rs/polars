@@ -103,6 +103,22 @@ where
     }
 }
 
+/// Apply a bitwise binary operation to a [`MutableBitmap`].
+///
+/// This function can be used for operations like `&=` to a [`MutableBitmap`].
+/// # Panics
+/// This function panics iff `lhs.len() != `rhs.len()`
+pub fn binary_assign_mut<T: BitChunk, F>(lhs: &mut MutableBitmap, rhs: &MutableBitmap, op: F)
+where
+    F: Fn(T, T) -> T,
+{
+    assert_eq!(lhs.len(), rhs.len());
+
+    let slice = rhs.as_slice();
+    let iter = BitChunksExact::<T>::new(slice, rhs.len());
+    binary_assign_impl(lhs, iter, op)
+}
+
 #[inline]
 /// Compute bitwise OR operation in-place
 fn or_assign<T: BitChunk>(lhs: &mut MutableBitmap, rhs: &Bitmap) {
@@ -114,6 +130,27 @@ fn or_assign<T: BitChunk>(lhs: &mut MutableBitmap, rhs: &Bitmap) {
         // bitmap remains
     } else {
         binary_assign(lhs, rhs, |x: T, y| x | y)
+    }
+}
+
+#[inline]
+/// Compute bitwise OR operation in-place
+fn or_assign_mut<T: BitChunk>(lhs: &mut MutableBitmap, rhs: &MutableBitmap) {
+    if rhs.unset_bits() == 0 {
+        assert_eq!(lhs.len(), rhs.len());
+        lhs.clear();
+        lhs.extend_constant(rhs.len(), true);
+    } else if rhs.unset_bits() == rhs.len() {
+        // bitmap remains
+    } else {
+        binary_assign_mut(lhs, rhs, |x: T, y| x | y)
+    }
+}
+
+impl<'a> std::ops::BitOrAssign<&'a MutableBitmap> for &mut MutableBitmap {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: &'a MutableBitmap) {
+        or_assign_mut::<u64>(self, rhs)
     }
 }
 

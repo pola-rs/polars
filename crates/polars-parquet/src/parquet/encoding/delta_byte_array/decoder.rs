@@ -1,5 +1,5 @@
 use super::super::{delta_bitpacked, delta_length_byte_array};
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// Decodes according to [Delta strings](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-strings-delta_byte_array--7),
 /// prefixes, lengths and values
@@ -12,7 +12,7 @@ pub struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    pub fn try_new(values: &'a [u8]) -> Result<Self, Error> {
+    pub fn try_new(values: &'a [u8]) -> Result<Self, ParquetError> {
         let prefix_lengths = delta_bitpacked::Decoder::try_new(values)?;
         Ok(Self {
             values,
@@ -20,7 +20,7 @@ impl<'a> Decoder<'a> {
         })
     }
 
-    pub fn into_lengths(self) -> Result<delta_length_byte_array::Decoder<'a>, Error> {
+    pub fn into_lengths(self) -> Result<delta_length_byte_array::Decoder<'a>, ParquetError> {
         assert_eq!(self.prefix_lengths.size_hint().0, 0);
         delta_length_byte_array::Decoder::try_new(
             &self.values[self.prefix_lengths.consumed_bytes()..],
@@ -29,7 +29,7 @@ impl<'a> Decoder<'a> {
 }
 
 impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<u32, Error>;
+    type Item = Result<u32, ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.prefix_lengths.next().map(|x| x.map(|x| x as u32))
@@ -41,7 +41,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_bla() -> Result<(), Error> {
+    fn test_bla() -> Result<(), ParquetError> {
         // VALIDATED from spark==3.1.1
         let data = &[
             128, 1, 4, 2, 0, 0, 0, 0, 0, 0, 128, 1, 4, 2, 10, 0, 0, 0, 0, 0, 72, 101, 108, 108,
@@ -74,7 +74,7 @@ mod tests {
     }
 
     #[test]
-    fn test_with_prefix() -> Result<(), Error> {
+    fn test_with_prefix() -> Result<(), ParquetError> {
         // VALIDATED from spark==3.1.1
         let data = &[
             128, 1, 4, 2, 0, 6, 0, 0, 0, 0, 128, 1, 4, 2, 10, 4, 0, 0, 0, 0, 72, 101, 108, 108,

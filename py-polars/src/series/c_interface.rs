@@ -1,4 +1,4 @@
-use polars_rs::export::arrow;
+use polars::export::arrow;
 use pyo3::ffi::Py_uintptr_t;
 
 use super::*;

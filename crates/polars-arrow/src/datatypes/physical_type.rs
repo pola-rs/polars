@@ -7,7 +7,7 @@ pub use crate::types::PrimitiveType;
 /// A physical type has a one-to-many relationship with a [`crate::datatypes::ArrowDataType`] and
 /// a one-to-one mapping to each struct in this crate that implements [`crate::array::Array`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum PhysicalType {
     /// A Null with no allocation.
     Null,

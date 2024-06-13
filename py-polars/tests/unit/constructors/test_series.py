@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import re
+from datetime import date, datetime, timedelta
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing.asserts.series import assert_series_equal
 
 
 def test_series_mixed_dtypes_list() -> None:
@@ -76,3 +80,77 @@ def test_preserve_decimal_precision() -> None:
     dtype = pl.Decimal(None, 1)
     s = pl.Series(dtype=dtype)
     assert s.dtype == dtype
+
+
+@pytest.mark.parametrize("dtype", [None, pl.Duration("ms")])
+def test_large_timedelta(dtype: pl.DataType | None) -> None:
+    values = [timedelta.min, timedelta.max]
+    s = pl.Series(values, dtype=dtype)
+    assert s.dtype == pl.Duration("ms")
+
+    # Microsecond precision is lost
+    expected = [timedelta.min, timedelta.max - timedelta(microseconds=999)]
+    assert s.to_list() == expected
+
+
+def test_array_large_u64() -> None:
+    u64_max = 2**64 - 1
+    values = [[u64_max]]
+    dtype = pl.Array(pl.UInt64, 1)
+    s = pl.Series(values, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+
+def test_series_init_ambiguous_datetime() -> None:
+    value = datetime(2001, 10, 28, 2)
+    dtype = pl.Datetime(time_zone="Europe/Belgrade")
+
+    result = pl.Series([value], dtype=dtype, strict=True)
+    expected = pl.Series([datetime(2001, 10, 28, 3)]).dt.replace_time_zone(
+        "Europe/Belgrade"
+    )
+    assert_series_equal(result, expected)
+
+    result = pl.Series([value], dtype=dtype, strict=False)
+    assert_series_equal(result, expected)
+
+
+def test_series_init_nonexistent_datetime() -> None:
+    value = datetime(2024, 3, 31, 2, 30)
+    dtype = pl.Datetime(time_zone="Europe/Amsterdam")
+
+    result = pl.Series([value], dtype=dtype, strict=True)
+    expected = pl.Series([datetime(2024, 3, 31, 4, 30)]).dt.replace_time_zone(
+        "Europe/Amsterdam"
+    )
+    assert_series_equal(result, expected)
+
+    result = pl.Series([value], dtype=dtype, strict=False)
+    assert_series_equal(result, expected)
+
+
+# https://github.com/pola-rs/polars/issues/15518
+def test_series_init_np_temporal_with_nat_15518() -> None:
+    arr = np.array(["2020-01-01", "2020-01-02", "2020-01-03"], "datetime64[D]")
+    arr[1] = np.datetime64("NaT")
+
+    result = pl.Series(arr)
+
+    expected = pl.Series([date(2020, 1, 1), None, date(2020, 1, 3)])
+    assert_series_equal(result, expected)
+
+
+def test_series_init_np_2d_zero_zero_shape() -> None:
+    arr = np.array([]).reshape(0, 0)
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=re.escape("cannot reshape empty array into shape (0, 0)"),
+    ):
+        pl.Series(arr)
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.Series([[]]).dtype == expected
+    assert pl.Series([[]], dtype=pl.List).dtype == expected

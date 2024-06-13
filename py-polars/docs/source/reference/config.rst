@@ -9,7 +9,6 @@ Config options
 .. autosummary::
    :toctree: api/
 
-    Config.activate_decimals
     Config.set_ascii_tables
     Config.set_auto_structify
     Config.set_decimal_separator

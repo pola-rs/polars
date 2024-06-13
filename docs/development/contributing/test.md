@@ -25,10 +25,13 @@ This will compile the Rust bindings and then run the unit tests.
 
 If you're working in the Python code only, you can avoid recompiling every time by simply running `pytest` instead from your virtual environment.
 
-By default, slow tests are skipped.
-Slow tests are marked as such using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
-If you wish to run slow tests, run `pytest -m slow`.
-Or run `pytest -m ""` to run _all_ tests, regardless of marker.
+By default, "slow" tests and "ci-only" tests are skipped for local test runs.
+Such tests are marked using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
+To run these tests specifically, you can run `pytest -m slow`, `pytest -m ci_only`, `pytest -m slow ci_only`
+or run `pytest -m ""` to run _all_ tests, regardless of marker.
+
+Note that the "ci-only" tests may require you to run `make requirements-all` to get additional dependencies
+(such as `torch`) that are otherwise not installed as part of the default Polars development environment.
 
 Tests can be run in parallel by running `pytest -n auto`.
 The parallelization is handled by [`pytest-xdist`](https://pytest-xdist.readthedocs.io/en/latest/).
@@ -102,12 +105,10 @@ Polars uses [CodSpeed](https://codspeed.io/pola-rs/polars) for tracking the perf
 
 ### Generating data
 
-For many tests, a relatively large dataset must be generated first.
-We use an [R](https://www.r-project.org/) script to generate this data.
-The script was taken from the [H2O AI database benchmark](https://github.com/h2oai/db-benchmark), which is the foundation for many of the benchmark tests.
+For most tests, a relatively large dataset must be generated first.
+This is done as part of the `pytest` setup process.
 
-For the exact steps to generate the data, please refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml).
-It involves [installing R](https://cran.r-project.org/), installing the [data.table](https://cran.r-project.org/web/packages/data.table/) dependency, and executing a data generation script.
+The data generation logic was taken from the [H2O.ai database benchmark](https://github.com/h2oai/db-benchmark), which is the foundation for many of the benchmark tests.
 
 ### Running the benchmark tests
 

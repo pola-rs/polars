@@ -35,7 +35,7 @@ class BatchedCsvReader:
         comment_prefix: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
-        dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
+        schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -55,20 +55,21 @@ class BatchedCsvReader:
         new_columns: Sequence[str] | None = None,
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
+        decimal_comma: bool = False,
     ):
         path = normalize_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
-        if dtypes is not None:
-            if isinstance(dtypes, dict):
+        if schema_overrides is not None:
+            if isinstance(schema_overrides, dict):
                 dtype_list = []
-                for k, v in dtypes.items():
+                for k, v in schema_overrides.items():
                     dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtypes, Sequence):
-                dtype_slice = dtypes
+            elif isinstance(schema_overrides, Sequence):
+                dtype_slice = schema_overrides
             else:
-                msg = "`dtypes` arg should be list or dict"
+                msg = "`schema_overrides` arg should be list or dict"
                 raise TypeError(msg)
 
         processed_null_values = _process_null_values(null_values)
@@ -102,6 +103,7 @@ class BatchedCsvReader:
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
         )
         self.new_columns = new_columns
 

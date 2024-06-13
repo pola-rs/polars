@@ -91,9 +91,14 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
     # Ensure the CSE can work with hive partitions.
     q = q.filter(pl.col("a").gt(2))
-    assert q.join(q, on="a", how="left").collect(comm_subplan_elim=True).to_dict(
-        as_series=False
-    ) == {"d": [3, 4], "a": [3, 4], "d_right": [3, 4]}
+    result = q.join(q, on="a", how="left").collect(comm_subplan_elim=True)
+    expected = {
+        "a": [3, 4],
+        "d": [3, 4],
+        "a_right": [3, 4],
+        "d_right": [3, 4],
+    }
+    assert result.to_dict(as_series=False) == expected
 
 
 @pytest.mark.skip(
@@ -182,7 +187,7 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     df.write_parquet(root / "file.parquet")
 
     with pytest.raises(pl.DuplicateError, match="invalid Hive partition schema"):
-        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True).collect()
 
 
 @pytest.mark.write_disk()

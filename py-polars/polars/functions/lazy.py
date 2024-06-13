@@ -6,22 +6,18 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import (
-    deprecate_parameter_as_positional,
-    deprecate_renamed_function,
-    issue_deprecation_warning,
-)
-from polars._utils.parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
+from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.parse import (
+    parse_into_expression,
+    parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.various import extend_bool
 from polars._utils.wrap import wrap_df, wrap_expr
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64, UInt32
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
-
 
 if TYPE_CHECKING:
     from typing import Awaitable, Collection, Literal
@@ -34,6 +30,18 @@ if TYPE_CHECKING:
         PolarsDataType,
         RollingInterpolationMethod,
     )
+
+
+def field(name: str | list[str]) -> Expr:
+    """
+    Select a field in the current `struct.with_fields` scope.
+
+    name
+        Name of the field(s) to select.
+    """
+    if isinstance(name, str):
+        name = [name]
+    return wrap_expr(plr.field(name))
 
 
 def element() -> Expr:
@@ -89,7 +97,6 @@ def element() -> Expr:
     return F.col("")
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def count(*columns: str) -> Expr:
     """
     Return the number of non-null values in the column.
@@ -198,21 +205,9 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     │ 2   │
     └─────┘
     """
-    if not columns:
-        issue_deprecation_warning(
-            "`pl.cum_count()` is deprecated. The same result can be achieved using"
-            " `pl.int_range(1, pl.len() + 1, dtype=pl.UInt32)`,"
-            " or `int_range(pl.len(), 0, -1, dtype=pl.UInt32)` when `reverse=True`.",
-            version="0.20.5",
-        )
-        if reverse:
-            return F.int_range(F.len(), 0, step=-1, dtype=UInt32).alias("cum_count")
-        else:
-            return F.int_range(1, F.len() + 1, dtype=UInt32).alias("cum_count")
     return F.col(*columns).cum_count(reverse=reverse)
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def implode(*columns: str) -> Expr:
     """
     Aggregate all column values into a list.
@@ -334,7 +329,6 @@ def var(column: str, ddof: int = 1) -> Expr:
     return F.col(column).var(ddof)
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def mean(*columns: str) -> Expr:
     """
     Get the mean value.
@@ -382,7 +376,6 @@ def mean(*columns: str) -> Expr:
     return F.col(*columns).mean()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def median(*columns: str) -> Expr:
     """
     Get the median value.
@@ -426,7 +419,6 @@ def median(*columns: str) -> Expr:
     return F.col(*columns).median()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def n_unique(*columns: str) -> Expr:
     """
     Count unique values.
@@ -470,7 +462,6 @@ def n_unique(*columns: str) -> Expr:
     return F.col(*columns).n_unique()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def approx_n_unique(*columns: str) -> Expr:
     """
     Approximate count of unique values.
@@ -515,21 +506,18 @@ def approx_n_unique(*columns: str) -> Expr:
     return F.col(*columns).approx_n_unique()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def first(*columns: str) -> Expr:
     """
-    Get the first value.
+    Get the first column or value.
 
-    This function has different behavior depending on the input type:
-
-    - `None` -> Takes first column of a context (equivalent to `cs.first()`).
-    - `str` or `[str,]` -> Syntactic sugar for `pl.col(columns).first()`.
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the first
+    column of the context; otherwise, takes the first value of the given column(s).
 
     Parameters
     ----------
     *columns
-        One or more column names. If not provided (default), returns an expression
-        to take the first column of the context instead.
+        One or more column names.
 
     Examples
     --------
@@ -540,6 +528,9 @@ def first(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
+
+    Return the first column:
+
     >>> df.select(pl.first())
     shape: (3, 1)
     ┌─────┐
@@ -551,6 +542,9 @@ def first(*columns: str) -> Expr:
     │ 8   │
     │ 3   │
     └─────┘
+
+    Return the first value for the given column(s):
+
     >>> df.select(pl.first("b"))
     shape: (1, 1)
     ┌─────┐
@@ -577,21 +571,18 @@ def first(*columns: str) -> Expr:
     return F.col(*columns).first()
 
 
-@deprecate_parameter_as_positional("column", version="0.20.4")
 def last(*columns: str) -> Expr:
     """
-    Get the last value.
+    Get the last column or value.
 
-    This function has different behavior depending on the input type:
-
-    - `None` -> Takes last column of a context (equivalent to `cs.last()`).
-    - `str` or `[str,]` -> Syntactic sugar for `pl.col(columns).last()`.
+    This function has different behavior depending on the presence of `columns`
+    values. If none given (the default), returns an expression that takes the last
+    column of the context; otherwise, takes the last value of the given column(s).
 
     Parameters
     ----------
     *columns
-        One or more column names. If set to `None` (default), returns an expression
-        to take the last column of the context instead.
+        One or more column names.
 
     Examples
     --------
@@ -602,6 +593,9 @@ def last(*columns: str) -> Expr:
     ...         "c": ["foo", "bar", "baz"],
     ...     }
     ... )
+
+    Return the last column:
+
     >>> df.select(pl.last())
     shape: (3, 1)
     ┌─────┐
@@ -613,6 +607,9 @@ def last(*columns: str) -> Expr:
     │ bar │
     │ baz │
     └─────┘
+
+    Return the last value for the given column(s):
+
     >>> df.select(pl.last("a"))
     shape: (1, 1)
     ┌─────┐
@@ -637,6 +634,53 @@ def last(*columns: str) -> Expr:
         return wrap_expr(plr.last())
 
     return F.col(*columns).last()
+
+
+def nth(*indices: int | Sequence[int]) -> Expr:
+    """
+    Get the nth column(s) of the context.
+
+    Parameters
+    ----------
+    indices
+        One or more indices representing the columns to retrieve.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, 2],
+    ...         "c": ["foo", "bar", "baz"],
+    ...     }
+    ... )
+    >>> df.select(pl.nth(1))
+    shape: (3, 1)
+    ┌─────┐
+    │ b   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 4   │
+    │ 5   │
+    │ 2   │
+    └─────┘
+    >>> df.select(pl.nth(2, 0))
+    shape: (3, 2)
+    ┌─────┬─────┐
+    │ c   ┆ a   │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ foo ┆ 1   │
+    │ bar ┆ 8   │
+    │ baz ┆ 3   │
+    └─────┴─────┘
+    """
+    if len(indices) == 1 and isinstance(indices[0], Sequence):
+        indices = indices[0]  # type: ignore[assignment]
+
+    return wrap_expr(plr.index_cols(indices))
 
 
 def head(column: str, n: int = 10) -> Expr:
@@ -801,8 +845,8 @@ def corr(
     │ 0.5 │
     └─────┘
     """
-    a = parse_as_expression(a)
-    b = parse_as_expression(b)
+    a = parse_into_expression(a)
+    b = parse_into_expression(b)
 
     if method == "pearson":
         return wrap_expr(plr.pearson_corr(a, b, ddof))
@@ -847,8 +891,8 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     │ 3.0 │
     └─────┘
     """
-    a = parse_as_expression(a)
-    b = parse_as_expression(b)
+    a = parse_into_expression(a)
+    b = parse_into_expression(b)
     return wrap_expr(plr.cov(a, b, ddof))
 
 
@@ -906,41 +950,12 @@ def map_batches(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs, function, return_dtype, map_groups=False, returns_scalar=False
         )
     )
-
-
-@deprecate_renamed_function("map_batches", version="0.19.0")
-def map(
-    exprs: Sequence[str] | Sequence[Expr],
-    function: Callable[[Sequence[Series]], Series],
-    return_dtype: PolarsDataType | None = None,
-) -> Expr:
-    """
-    Map a custom function over multiple columns/expressions.
-
-    .. deprecated:: 0.19.0
-        This function has been renamed to :func:`map_batches`.
-
-    Parameters
-    ----------
-    exprs
-        Input Series to f
-    function
-        Function to apply over the input
-    return_dtype
-        dtype of the output Series
-
-    Returns
-    -------
-    Expr
-        Expression with the data type given by `return_dtype`.
-    """
-    return map_batches(exprs, function, return_dtype)
 
 
 def map_groups(
@@ -1019,7 +1034,7 @@ def map_groups(
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs,
@@ -1029,39 +1044,6 @@ def map_groups(
             returns_scalar=returns_scalar,
         )
     )
-
-
-@deprecate_renamed_function("map_groups", version="0.19.0")
-def apply(
-    exprs: Sequence[str | Expr],
-    function: Callable[[Sequence[Series]], Series | Any],
-    return_dtype: PolarsDataType | None = None,
-    *,
-    returns_scalar: bool = True,
-) -> Expr:
-    """
-    Apply a custom/user-defined function (UDF) in a GroupBy context.
-
-    .. deprecated:: 0.19.0
-        This function has been renamed to :func:`map_groups`.
-
-    Parameters
-    ----------
-    exprs
-        Input Series to f
-    function
-        Function to apply over the input
-    return_dtype
-        dtype of the output Series
-    returns_scalar
-        If the function returns a single scalar as output.
-
-    Returns
-    -------
-    Expr
-        Expression with the data type given by `return_dtype`.
-    """
-    return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
 
 def fold(
@@ -1164,11 +1146,11 @@ def fold(
     └─────┴─────┘
     """
     # in case of col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
+    acc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.fold(acc, function, exprs))
 
 
@@ -1231,7 +1213,7 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.reduce(function, exprs))
 
 
@@ -1289,11 +1271,11 @@ def cum_fold(
     └─────┴─────┴─────┴───────────┘
     """
     # in case of col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
+    acc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
 
 
@@ -1339,7 +1321,7 @@ def cum_reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
 
 
@@ -1359,28 +1341,25 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
 
     Examples
     --------
-    >>> import math
-    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> c = (2**0.5) / 2
     >>> df = pl.DataFrame(
     ...     {
-    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
-    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...         "y": [c, -c, c, -c],
+    ...         "x": [c, c, -c, -c],
     ...     }
     ... )
-    >>> df.select(
-    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
-    ... )
-    shape: (4, 2)
-    ┌────────┬───────────┐
-    │ atan2d ┆ atan2     │
-    │ ---    ┆ ---       │
-    │ f64    ┆ f64       │
-    ╞════════╪═══════════╡
-    │ 45.0   ┆ 0.785398  │
-    │ -45.0  ┆ -0.785398 │
-    │ 135.0  ┆ 2.356194  │
-    │ -135.0 ┆ -2.356194 │
-    └────────┴───────────┘
+    >>> df.with_columns(pl.arctan2("y", "x").alias("atan2"))
+    shape: (4, 3)
+    ┌───────────┬───────────┬───────────┐
+    │ y         ┆ x         ┆ atan2     │
+    │ ---       ┆ ---       ┆ ---       │
+    │ f64       ┆ f64       ┆ f64       │
+    ╞═══════════╪═══════════╪═══════════╡
+    │ 0.707107  ┆ 0.707107  ┆ 0.785398  │
+    │ -0.707107 ┆ 0.707107  ┆ -0.785398 │
+    │ 0.707107  ┆ -0.707107 ┆ 2.356194  │
+    │ -0.707107 ┆ -0.707107 ┆ -2.356194 │
+    └───────────┴───────────┴───────────┘
     """
     if isinstance(y, str):
         y = F.col(y)
@@ -1389,9 +1368,13 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
+@deprecate_function("Use `arctan2` followed by `.degrees()` instead.", version="1.0.0")
 def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
     Compute two argument arctan in degrees.
+
+    .. deprecated:: 1.0.0
+        Use `arctan2` followed by :meth:`Expr.degrees` instead.
 
     Returns the angle (in degrees) in the plane between the positive x-axis
     and the ray from the origin to (x,y).
@@ -1405,16 +1388,16 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
     Examples
     --------
-    >>> import math
-    >>> twoRootTwo = math.sqrt(2) / 2
+    >>> c = (2**0.5) / 2
     >>> df = pl.DataFrame(
     ...     {
-    ...         "y": [twoRootTwo, -twoRootTwo, twoRootTwo, -twoRootTwo],
-    ...         "x": [twoRootTwo, twoRootTwo, -twoRootTwo, -twoRootTwo],
+    ...         "y": [c, -c, c, -c],
+    ...         "x": [c, c, -c, -c],
     ...     }
     ... )
-    >>> df.select(
-    ...     pl.arctan2d("y", "x").alias("atan2d"), pl.arctan2("y", "x").alias("atan2")
+    >>> df.select(  # doctest: +SKIP
+    ...     pl.arctan2d("y", "x").alias("atan2d"),
+    ...     pl.arctan2("y", "x").alias("atan2"),
     ... )
     shape: (4, 2)
     ┌────────┬───────────┐
@@ -1428,11 +1411,7 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     │ -135.0 ┆ -2.356194 │
     └────────┴───────────┘
     """
-    if isinstance(y, str):
-        y = F.col(y)
-    if isinstance(x, str):
-        x = F.col(x)
-    return wrap_expr(plr.arctan2d(y._pyexpr, x._pyexpr))
+    return arctan2(y, x).degrees()
 
 
 def exclude(
@@ -1537,7 +1516,7 @@ def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
-    nulls_last: bool = False,
+    nulls_last: bool | Sequence[bool] = False,
     multithreaded: bool = True,
     maintain_order: bool = False,
 ) -> Expr:
@@ -1621,13 +1600,9 @@ def arg_sort_by(
     │ 3   │
     └─────┘
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
-
-    if isinstance(descending, bool):
-        descending = [descending] * len(exprs)
-    elif len(exprs) != len(descending):
-        msg = f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
-        raise ValueError(msg)
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+    descending = extend_bool(descending, len(exprs), "descending", "exprs")
+    nulls_last = extend_bool(nulls_last, len(exprs), "nulls_last", "exprs")
     return wrap_expr(
         plr.arg_sort_by(exprs, descending, nulls_last, multithreaded, maintain_order)
     )
@@ -1644,6 +1619,7 @@ def collect_all(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> list[DataFrame]:
     """
@@ -1671,6 +1647,8 @@ def collect_all(
         Will try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1695,6 +1673,7 @@ def collect_all(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+        cluster_with_columns = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1711,8 +1690,10 @@ def collect_all(
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False,
         )
         prepared.append(ldf)
 
@@ -1737,6 +1718,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = True,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
@@ -1754,6 +1736,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]]: ...
 
@@ -1771,6 +1754,7 @@ def collect_all_async(
     slice_pushdown: bool = True,
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
@@ -1809,6 +1793,8 @@ def collect_all_async(
         Will try to cache branching subplans that occur on self-joins or unions.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1845,6 +1831,7 @@ def collect_all_async(
         slice_pushdown = False
         comm_subplan_elim = False
         comm_subexpr_elim = False
+        cluster_with_columns = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1861,8 +1848,10 @@ def collect_all_async(
             slice_pushdown,
             comm_subplan_elim,
             comm_subexpr_elim,
+            cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False,
         )
         prepared.append(ldf)
 
@@ -1962,7 +1951,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             raise ValueError(msg)
         return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
-        condition = parse_as_expression(condition)
+        condition = parse_into_expression(condition)
         return wrap_expr(plr.arg_where(condition))
 
 
@@ -2012,7 +2001,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
 
 
@@ -2231,64 +2220,3 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
-
-
-@deprecate_renamed_function("cum_fold", version="0.19.14")
-def cumfold(
-    acc: IntoExpr,
-    function: Callable[[Series, Series], Series],
-    exprs: Sequence[Expr | str] | Expr,
-    *,
-    include_init: bool = False,
-) -> Expr:
-    """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
-
-    Every cumulative result is added as a separate field in a Struct column.
-
-    Parameters
-    ----------
-    acc
-        Accumulator Expression. This is the value that will be initialized when the fold
-        starts. For a sum this could for instance be lit(0).
-    function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
-    exprs
-        Expressions to aggregate over. May also be a wildcard expression.
-    include_init
-        Include the initial accumulator state as struct field.
-    """  # noqa: W505
-    # in case of col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
-    if isinstance(exprs, pl.Expr):
-        exprs = [exprs]
-
-    exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init))
-
-
-@deprecate_renamed_function("cum_reduce", version="0.19.14")
-def cumreduce(
-    function: Callable[[Series, Series], Series],
-    exprs: Sequence[Expr | str] | Expr,
-) -> Expr:
-    """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
-
-    Every cumulative result is added as a separate field in a Struct column.
-
-    Parameters
-    ----------
-    function
-        Function to apply over the accumulator and the value.
-        Fn(acc, value) -> new_value
-    exprs
-        Expressions to aggregate over. May also be a wildcard expression.
-    """  # noqa: W505
-    # in case of col("*")
-    if isinstance(exprs, pl.Expr):
-        exprs = [exprs]
-
-    exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cum_reduce(function, exprs))

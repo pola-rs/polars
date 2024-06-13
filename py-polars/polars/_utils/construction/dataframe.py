@@ -23,6 +23,7 @@ from polars._utils.construction.utils import (
     contains_nested,
     is_namedtuple,
     is_pydantic_model,
+    is_simple_numpy_backed_pandas_series,
     nt_unpack,
     try_get_type_hints,
 )
@@ -44,6 +45,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import (
     _NUMPY_AVAILABLE,
+    _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
     dataclasses,
@@ -67,6 +69,8 @@ if TYPE_CHECKING:
         SchemaDict,
     )
 
+_MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
+
 
 def dict_to_pydf(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
@@ -75,6 +79,7 @@ def dict_to_pydf(
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
     nan_to_null: bool = False,
+    allow_multithreaded: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
     if isinstance(schema, Mapping) and data:
@@ -93,9 +98,13 @@ def dict_to_pydf(
         # if there are 3 or more numpy arrays of sufficient size, we multi-thread:
         count_numpy = sum(
             int(
-                _check_for_numpy(val)
+                allow_multithreaded
+                and _check_for_numpy(val)
                 and isinstance(val, np.ndarray)
-                and len(val) > 1000
+                and len(val) > _MIN_NUMPY_SIZE_FOR_MULTITHREADING
+                # integers and non-nan floats are zero-copy
+                and nan_to_null
+                and val.dtype in (np.float32, np.float64)
             )
             for val in data.values()
         )
@@ -104,20 +113,31 @@ def dict_to_pydf(
             # threads running python and release the gil in pyo3 (it will deadlock).
 
             # (note: 'dummy' is threaded)
-            import multiprocessing.dummy
+            # We catch FileNotFoundError: see 16675
+            try:
+                import multiprocessing.dummy
 
-            pool_size = thread_pool_size()
-            with multiprocessing.dummy.Pool(pool_size) as pool:
-                data = dict(
-                    zip(
-                        column_names,
-                        pool.map(
-                            lambda t: pl.Series(t[0], t[1])
-                            if isinstance(t[1], np.ndarray)
-                            else t[1],
-                            list(data.items()),
-                        ),
+                pool_size = thread_pool_size()
+                with multiprocessing.dummy.Pool(pool_size) as pool:
+                    data = dict(
+                        zip(
+                            column_names,
+                            pool.map(
+                                lambda t: pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                if isinstance(t[1], np.ndarray)
+                                else t[1],
+                                list(data.items()),
+                            ),
+                        )
                     )
+            except FileNotFoundError:
+                return dict_to_pydf(
+                    data=data,
+                    schema=schema,
+                    schema_overrides=schema_overrides,
+                    strict=strict,
+                    nan_to_null=nan_to_null,
+                    allow_multithreaded=False,
                 )
 
     if not data and schema_overrides:
@@ -609,7 +629,7 @@ def _sequence_of_series_to_pydf(
             s = s.alias(column_names[i])
         new_dtype = schema_overrides.get(column_names[i])
         if new_dtype and new_dtype != s.dtype:
-            s = s.cast(new_dtype, strict=strict)
+            s = s.cast(new_dtype, strict=strict, wrap_numerical=False)
         data_series.append(s._s)
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
@@ -746,7 +766,7 @@ def _sequence_of_pandas_to_pydf(
         pyseries = plc.pandas_to_pyseries(name=name, values=s)
         dtype = schema_overrides.get(name)
         if dtype is not None and dtype != pyseries.dtype():
-            pyseries = pyseries.cast(dtype, strict=strict)
+            pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         data_series.append(pyseries)
 
     return PyDataFrame(data_series)
@@ -1017,10 +1037,30 @@ def pandas_to_pydf(
     include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
+    convert_index = include_index and not _pandas_has_default_index(data)
+    if not convert_index and all(
+        is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
+    ):
+        # Convert via NumPy directly, no PyArrow needed.
+        return pl.DataFrame(
+            {str(col): data[col].to_numpy() for col in data.columns},
+            schema=schema,
+            strict=strict,
+            schema_overrides=schema_overrides,
+            nan_to_null=nan_to_null,
+        )._df
+
+    if not _PYARROW_AVAILABLE:
+        msg = (
+            "pyarrow is required for converting a pandas dataframe to Polars, "
+            "unless each of its columns is a simple numpy-backed one "
+            "(e.g. 'int64', 'bool', 'float32' - not 'Int64')"
+        )
+        raise ImportError(msg)
     arrow_dict = {}
     length = data.shape[0]
 
-    if include_index and not _pandas_has_default_index(data):
+    if convert_index:
         for idxcol in data.index.names:
             arrow_dict[str(idxcol)] = plc.pandas_series_to_arrow(
                 data.index.get_level_values(idxcol),
@@ -1313,7 +1353,9 @@ def series_to_pydf(
     if schema_overrides:
         new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
-            data_series[0] = data_series[0].cast(new_dtype, strict=strict)
+            data_series[0] = data_series[0].cast(
+                new_dtype, strict=strict, wrap_numerical=False
+            )
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
@@ -1338,7 +1380,9 @@ def dataframe_to_pydf(
         existing_schema = data.schema
         for name, new_dtype in schema_overrides.items():
             if new_dtype != existing_schema[name]:
-                data_series[name] = data_series[name].cast(new_dtype, strict=strict)
+                data_series[name] = data_series[name].cast(
+                    new_dtype, strict=strict, wrap_numerical=False
+                )
 
     series_cols = _handle_columns_arg(list(data_series.values()), columns=column_names)
     return PyDataFrame(series_cols)

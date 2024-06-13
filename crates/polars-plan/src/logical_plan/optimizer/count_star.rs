@@ -26,7 +26,7 @@ impl OptimizationRule for CountStar {
                     schema: Arc::new(Default::default()),
                     output_schema: None,
                     projection: None,
-                    selection: None,
+                    filter: None,
                 };
                 let placeholder_node = lp_arena.add(placeholder);
 

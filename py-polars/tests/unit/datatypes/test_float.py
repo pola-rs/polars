@@ -142,7 +142,7 @@ def test_hash() -> None:
     assert s.item(2) == s.item(3)  # hash(float('-nan')) == hash(float('nan'))
 
 
-def test_group_by() -> None:
+def test_group_by_float() -> None:
     # Test num_groups_proxy
     # * -0.0 and 0.0 in same groups
     # * -nan and nan in same groups
@@ -232,7 +232,7 @@ def test_joins() -> None:
         )
         assert_series_equal(expect, out)
 
-        how = "outer"
+        how = "full"
         expect = pl.Series("rhs", [True, True, True, True, None, None, True])
         out = (
             df.join(rhs, on=join_on, how=how)  # type: ignore[arg-type]

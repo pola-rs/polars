@@ -44,11 +44,14 @@ impl TreeWalker for Expr {
             Column(_) => self,
             Columns(_) => self,
             DtypeColumn(_) => self,
+            IndexColumn(_) => self,
             Literal(_) => self,
+            #[cfg(feature = "dtype-struct")]
+            Field(_) => self,
             BinaryExpr { left, op, right } => {
                 BinaryExpr { left: am(left, &mut f)? , op, right: am(right, f)?}
             },
-            Cast { expr, data_type, strict } => Cast { expr: am(expr, f)?, data_type, strict },
+            Cast { expr, data_type, options: strict } => Cast { expr: am(expr, f)?, data_type, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
             Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
@@ -72,9 +75,9 @@ impl TreeWalker for Expr {
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
             Explode(expr) => Explode(am(expr, f)?),
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, options } => {
+            Window { function, partition_by, order_by, options } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, options }
+                Window { function: am(function, f)?, partition_by, order_by, options }
             },
             Wildcard => Wildcard,
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
@@ -162,12 +165,12 @@ impl AExpr {
             (Window { options: l, .. }, Window { options: r, .. }) => l == r,
             (
                 Cast {
-                    strict: strict_l,
+                    options: strict_l,
                     data_type: dtl,
                     ..
                 },
                 Cast {
-                    strict: strict_r,
+                    options: strict_r,
                     data_type: dtr,
                     ..
                 },
@@ -195,7 +198,6 @@ impl AExpr {
                     input: il,
                     function: fl,
                     options: ol,
-                    ..
                 },
                 Function {
                     input: ir,
@@ -228,7 +230,7 @@ impl<'a> AExprArena<'a> {
     }
 
     // Check single node on equality
-    fn is_equal(&self, other: &Self) -> bool {
+    fn is_equal_single(&self, other: &Self) -> bool {
         let self_ae = self.to_aexpr();
         let other_ae = other.to_aexpr();
         self_ae.is_equal_node(other_ae)
@@ -249,7 +251,7 @@ impl PartialEq for AExprArena<'_> {
                     let l = Self::new(l, self.arena);
                     let r = Self::new(r, self.arena);
 
-                    if !l.is_equal(&r) {
+                    if !l.is_equal_single(&r) {
                         return false;
                     }
 

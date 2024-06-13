@@ -60,9 +60,12 @@ jobs:
         run: |
           python -m venv .venv
           echo "$GITHUB_WORKSPACE/py-polars/.venv/$BIN" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+      - name: Install Python dependencies
+        run: |
+          pip install uv
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
 
       - name: Set up Rust
         run: rustup show
@@ -82,20 +85,15 @@ jobs:
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
-      - name: Run tests and report coverage
+      - name: Run tests
         if: github.ref_name != 'main'
-        env:
-          # TODO: Re-enable coverage for for Ubuntu + Python 3.12 tests
-          # Currently skipped due to performance issues in coverage:
-          # https://github.com/nedbat/coveragepy/issues/1665
-          COV: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && '--cov' || '--no-cov' }}
-        run: pytest $COV -n auto --dist loadgroup -m "not benchmark and not docs"
+        run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
 
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest -m "not benchmark and not docs" tests/unit/io/
+        run: pytest -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'

@@ -6,8 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -75,34 +74,54 @@ def test_sort_by() -> None:
 
 
 def test_expr_sort_by_nulls_last() -> None:
+    df = pl.DataFrame({"a": [1, 2, None, None, 5], "b": [None, 1, 1, 2, None]})
+
     # nulls last
-    df = pl.DataFrame(
-        {"a": [1, 2, None, None, 5], "b": [None, 1, 1, 2, None], "c": [2, 3, 1, 2, 1]}
-    )
+    expected = pl.DataFrame({"a": [1, 2, 5, None, None], "b": [None, 1, None, 1, 2]})
+    out = df.select(pl.all().sort_by("a", nulls_last=True))
+    assert_frame_equal(out, expected)
 
-    out = df.select(pl.all().sort_by("a", nulls_last=True, maintain_order=True))
+    # nulls first (default)
+    expected = pl.DataFrame({"a": [None, None, 1, 2, 5], "b": [1, 2, None, 1, None]})
+    for out in (
+        df.select(pl.all().sort_by("a", nulls_last=False)),
+        df.select(pl.all().sort_by("a")),
+    ):
+        assert_frame_equal(out, expected)
 
-    excepted = pl.DataFrame(
-        {
-            "a": [1, 2, 5, None, None],
-            "b": [None, 1, None, 1, 2],
-            "c": [2, 3, 1, 1, 2],
-        }
-    )
 
-    assert_frame_equal(out, excepted)
+def test_expr_sort_by_multi_nulls_last() -> None:
+    df = pl.DataFrame({"x": [None, 1, None, 3], "y": [3, 2, None, 1]})
 
-    # nulls first
+    res = df.sort("x", "y", nulls_last=[False, True])
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 1, 3],
+        "y": [3, None, 2, 1],
+    }
 
-    out = df.select(pl.all().sort_by("a", nulls_last=False, maintain_order=True))
+    res = df.sort("x", "y", nulls_last=[True, False])
+    assert res.to_dict(as_series=False) == {
+        "x": [1, 3, None, None],
+        "y": [2, 1, None, 3],
+    }
 
-    excepted = pl.DataFrame(
-        {
-            "a": [None, None, 1, 2, 5],
-            "b": [1, 2, None, 1, None],
-            "c": [1, 2, 2, 3, 1],
-        }
-    )
+    res = df.sort("x", "y", nulls_last=[True, False], descending=True)
+    assert res.to_dict(as_series=False) == {
+        "x": [3, 1, None, None],
+        "y": [1, 2, None, 3],
+    }
+
+    res = df.sort("x", "y", nulls_last=[False, True], descending=True)
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 3, 1],
+        "y": [3, None, 1, 2],
+    }
+
+    res = df.sort("x", "y", nulls_last=[False, True], descending=[True, False])
+    assert res.to_dict(as_series=False) == {
+        "x": [None, None, 3, 1],
+        "y": [3, None, 1, 2],
+    }
 
 
 def test_sort_by_exprs() -> None:
@@ -115,50 +134,50 @@ def test_sort_by_exprs() -> None:
 
 def test_arg_sort_nulls() -> None:
     a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
+
     assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 3, 4]
     assert a.arg_sort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
 
-    assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
-        None,
-        None,
-        1.0,
-        2.0,
-        3.0,
-    ]
-    assert a.to_frame().sort(by="a", nulls_last=True).to_series().to_list() == [
-        1.0,
-        2.0,
-        3.0,
-        None,
-        None,
-    ]
+    res = a.to_frame().sort(by="a", nulls_last=False).to_series().to_list()
+    assert res == [None, None, 1.0, 2.0, 3.0]
+
+    res = a.to_frame().sort(by="a", nulls_last=True).to_series().to_list()
+    assert res == [1.0, 2.0, 3.0, None, None]
 
 
-def test_expr_arg_sort_nulls_last() -> None:
+@pytest.mark.parametrize(
+    ("nulls_last", "expected"),
+    [
+        (True, [0, 1, 4, 3, 2]),
+        (False, [2, 3, 0, 1, 4]),
+        ([True, False], [0, 1, 4, 2, 3]),
+        ([False, True], [3, 2, 0, 1, 4]),
+    ],
+)
+def test_expr_arg_sort_nulls_last(
+    nulls_last: bool | list[bool], expected: list[int]
+) -> None:
     df = pl.DataFrame(
-        {"a": [1, 2, None, None, 5], "b": [None, 1, 2, 1, None], "c": [2, 3, 1, 2, 1]}
+        {
+            "a": [1, 2, None, None, 5],
+            "b": [1, 2, None, 1, None],
+            "c": [2, 3, 1, 2, 1],
+        },
     )
-
     out = (
-        df.select(pl.arg_sort_by("a", "b", nulls_last=True, maintain_order=True))
+        df.select(pl.arg_sort_by("a", "b", nulls_last=nulls_last, maintain_order=True))
         .to_series()
         .to_list()
     )
-
-    expected = [0, 1, 4, 3, 2]
-
     assert out == expected
 
 
 def test_arg_sort_window_functions() -> None:
     df = pl.DataFrame({"Id": [1, 1, 2, 2, 3, 3], "Age": [1, 2, 3, 4, 5, 6]})
     out = df.select(
-        [
-            pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
-            pl.arg_sort_by("Age").over("Id").alias("arg_sort_by"),
-        ]
+        pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
+        pl.arg_sort_by("Age").over("Id").alias("arg_sort_by"),
     )
-
     assert (
         out["arg_sort"].to_list() == out["arg_sort_by"].to_list() == [0, 1, 0, 1, 0, 1]
     )
@@ -195,10 +214,8 @@ def test_sort_aggregation_fast_paths() -> None:
     )
 
     expected = df.select(
-        [
-            pl.all().max().name.suffix("_max"),
-            pl.all().min().name.suffix("_min"),
-        ]
+        pl.all().max().name.suffix("_max"),
+        pl.all().min().name.suffix("_min"),
     )
 
     assert expected.to_dict(as_series=False) == {
@@ -217,77 +234,41 @@ def test_sort_aggregation_fast_paths() -> None:
     for descending in [True, False]:
         for null_last in [True, False]:
             out = df.select(
-                [
-                    pl.all()
-                    .sort(descending=descending, nulls_last=null_last)
-                    .max()
-                    .name.suffix("_max"),
-                    pl.all()
-                    .sort(descending=descending, nulls_last=null_last)
-                    .min()
-                    .name.suffix("_min"),
-                ]
+                pl.all()
+                .sort(descending=descending, nulls_last=null_last)
+                .max()
+                .name.suffix("_max"),
+                pl.all()
+                .sort(descending=descending, nulls_last=null_last)
+                .min()
+                .name.suffix("_min"),
             )
             assert_frame_equal(out, expected)
 
 
-def test_sorted_join_and_dtypes() -> None:
-    for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int16]:
-        df_a = (
-            pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
-            .with_row_index()
-            .with_columns(pl.col("a").cast(dt).set_sorted())
-        )
-
-    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
-        pl.col("a").cast(dt).set_sorted()
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
+def test_sorted_join_and_dtypes(dtype: pl.PolarsDataType) -> None:
+    df_a = (
+        pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
+        .with_row_index()
+        .with_columns(pl.col("a").cast(dtype).set_sorted())
     )
 
-    assert df_a.join(df_b, on="a", how="inner").to_dict(as_series=False) == {
+    df_b = pl.DataFrame({"a": [-2, -3, 3, 10]}).with_columns(
+        pl.col("a").cast(dtype).set_sorted()
+    )
+
+    result_inner = df_a.join(df_b, on="a", how="inner")
+    assert result_inner.to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
-    assert df_a.join(df_b, on="a", how="left").to_dict(as_series=False) == {
+
+    result_left = df_a.join(df_b, on="a", how="left", coalesce=True)
+    assert result_left.to_dict(as_series=False) == {
         "index": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
-
-
-def test_sorted_flag() -> None:
-    s = pl.arange(0, 7, eager=True)
-    assert s.flags["SORTED_ASC"]
-    assert s.reverse().flags["SORTED_DESC"]
-    assert pl.Series([b"a"]).set_sorted().flags["SORTED_ASC"]
-    assert (
-        pl.Series([date(2020, 1, 1), date(2020, 1, 2)])
-        .set_sorted()
-        .cast(pl.Datetime)
-        .flags["SORTED_ASC"]
-    )
-
-    # empty
-    q = pl.LazyFrame(
-        schema={
-            "store_id": pl.UInt16,
-            "item_id": pl.UInt32,
-            "timestamp": pl.Datetime,
-        }
-    ).sort("timestamp")
-
-    assert q.collect()["timestamp"].flags["SORTED_ASC"]
-
-    # top-k/bottom-k
-    df = pl.DataFrame({"foo": [56, 2, 3]})
-    assert df.top_k(2, by="foo")["foo"].flags["SORTED_DESC"]
-    assert df.bottom_k(2, by="foo")["foo"].flags["SORTED_ASC"]
-
-    # ensure we don't panic for these types
-    # struct
-    pl.Series([{"a": 1}]).set_sorted(descending=True)
-    # list
-    pl.Series([[{"a": 1}]]).set_sorted(descending=True)
-    # object
-    pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
 def test_sorted_fast_paths() -> None:
@@ -312,124 +293,11 @@ def test_arg_sort_rank_nans() -> None:
             }
         )
         .with_columns(
-            [
-                pl.col("val").rank().alias("rank"),
-                pl.col("val").arg_sort().alias("arg_sort"),
-            ]
+            pl.col("val").rank().alias("rank"),
+            pl.col("val").arg_sort().alias("arg_sort"),
         )
         .select(["rank", "arg_sort"])
     ).to_dict(as_series=False) == {"rank": [1.0, 2.0], "arg_sort": [0, 1]}
-
-
-def test_top_k() -> None:
-    # expression
-    s = pl.Series("a", [3, 8, 1, 5, 2])
-
-    assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
-    assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
-
-    assert_series_equal(s.top_k(pl.Series([3])), pl.Series("a", [8, 5, 3]))
-    assert_series_equal(s.bottom_k(pl.Series([4])), pl.Series("a", [1, 2, 3, 5]))
-
-    # 5886
-    df = pl.DataFrame(
-        {
-            "test": [2, 4, 1, 3],
-            "val": [2, 4, 9, 3],
-            "bool_val": [False, True, True, False],
-            "str_value": ["d", "b", "a", "c"],
-        }
-    )
-    assert_frame_equal(
-        df.select(pl.col("test").top_k(10)),
-        pl.DataFrame({"test": [4, 3, 2, 1]}),
-    )
-
-    assert_frame_equal(
-        df.select(
-            top_k=pl.col("test").top_k(pl.col("val").min()),
-            bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
-        ),
-        pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
-    )
-
-    assert_frame_equal(
-        df.select(
-            pl.col("bool_val").top_k(2).alias("top_k"),
-            pl.col("bool_val").bottom_k(2).alias("bottom_k"),
-        ),
-        pl.DataFrame({"top_k": [True, True], "bottom_k": [False, False]}),
-    )
-
-    assert_frame_equal(
-        df.select(
-            pl.col("str_value").top_k(2).alias("top_k"),
-            pl.col("str_value").bottom_k(2).alias("bottom_k"),
-        ),
-        pl.DataFrame({"top_k": ["d", "c"], "bottom_k": ["a", "b"]}),
-    )
-
-    with pytest.raises(ComputeError, match="`k` must be set for `top_k`"):
-        df.select(
-            pl.col("bool_val").top_k(pl.lit(None)),
-        )
-
-    with pytest.raises(ComputeError, match="`k` must be a single value for `top_k`."):
-        df.select(pl.col("test").top_k(pl.lit(pl.Series("s", [1, 2]))))
-
-    # dataframe
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3, 4, 2, 2],
-            "b": [3, 2, 1, 4, 3, 2],
-        }
-    )
-
-    assert_frame_equal(
-        df.top_k(3, by=["a", "b"]),
-        pl.DataFrame({"a": [4, 3, 2], "b": [4, 1, 3]}),
-    )
-
-    assert_frame_equal(
-        df.top_k(3, by=["a", "b"], descending=True),
-        pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
-    )
-    assert_frame_equal(
-        df.bottom_k(4, by=["a", "b"], descending=True),
-        pl.DataFrame({"a": [4, 3, 2, 2], "b": [4, 1, 3, 2]}),
-    )
-
-
-def test_sorted_flag_unset_by_arithmetic_4937() -> None:
-    df = pl.DataFrame(
-        {
-            "ts": [1, 1, 1, 0, 1],
-            "price": [3.3, 3.0, 3.5, 3.6, 3.7],
-            "mask": [1, 1, 1, 1, 0],
-        }
-    )
-
-    assert df.sort("price").group_by("ts").agg(
-        [
-            (pl.col("price") * pl.col("mask")).max().alias("pmax"),
-            (pl.col("price") * pl.col("mask")).min().alias("pmin"),
-        ]
-    ).sort("ts").to_dict(as_series=False) == {
-        "ts": [0, 1],
-        "pmax": [3.6, 3.5],
-        "pmin": [3.6, 0.0],
-    }
-
-
-def test_unset_sorted_flag_after_extend() -> None:
-    df1 = pl.DataFrame({"Add": [37, 41], "Batch": [48, 49]}).sort("Add")
-    df2 = pl.DataFrame({"Add": [37], "Batch": [67]}).sort("Add")
-
-    df1.extend(df2)
-    assert not df1["Add"].flags["SORTED_ASC"]
-    df = df1.group_by("Add").agg([pl.col("Batch").min()]).sort("Add")
-    assert df["Add"].flags["SORTED_ASC"]
-    assert df.to_dict(as_series=False) == {"Add": [37, 41], "Batch": [48, 49]}
 
 
 def test_set_sorted_schema() -> None:
@@ -503,10 +371,8 @@ def test_sort_by_in_over_5499() -> None:
         }
     )
     assert df.select(
-        [
-            pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
-            pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
-        ]
+        pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
+        pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
     ).to_dict(as_series=False) == {
         "sorted_1": [0, 2, 1, 4, 5, 3],
         "sorted_2": [None, 1, 0, 3, 4, None],
@@ -676,20 +542,6 @@ def test_sort_descending() -> None:
         df.sort(["a", "b"], descending=[True])
 
 
-def test_top_k_descending() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    result = df.top_k(1, by=["a", "b"], descending=True)
-    expected = pl.DataFrame({"a": [1], "b": [4]})
-    assert_frame_equal(result, expected)
-    result = df.top_k(1, by=["a", "b"], descending=[True, True])
-    assert_frame_equal(result, expected)
-    with pytest.raises(
-        ValueError,
-        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
-    ):
-        df.top_k(1, by=["a", "b"], descending=[True])
-
-
 def test_sort_by_descending() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     result = df.select(pl.col("a").sort_by(["a", "b"], descending=True))
@@ -753,41 +605,6 @@ def test_sort_top_k_fast_path() -> None:
         "b": [4.0, 5.0, 6.0],
         "c": ["b", "c", "a"],
     }
-
-
-def test_top_k_9385() -> None:
-    assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
-        "b"
-    ].to_list() == [False]
-
-
-def test_sorted_flag_partition_by() -> None:
-    assert (
-        pl.DataFrame({"one": [1, 2, 3], "two": ["a", "a", "b"]})
-        .set_sorted("one")
-        .partition_by("two", maintain_order=True)[0]["one"]
-        .flags["SORTED_ASC"]
-    )
-
-
-@pytest.mark.parametrize("value", [1, "a", True])
-def test_sorted_flag_singletons(value: Any) -> None:
-    assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
-
-
-def test_sorted_flag_null() -> None:
-    assert pl.DataFrame({"x": [None] * 2})["x"].flags["SORTED_ASC"] is False
-
-
-def test_sorted_update_flags_10327() -> None:
-    assert pl.concat(
-        [
-            pl.Series("a", [1], dtype=pl.Int64).to_frame(),
-            pl.Series("a", [], dtype=pl.Int64).to_frame(),
-            pl.Series("a", [2], dtype=pl.Int64).to_frame(),
-            pl.Series("a", [], dtype=pl.Int64).to_frame(),
-        ]
-    )["a"].to_list() == [1, 2]
 
 
 def test_sort_by_11653() -> None:
@@ -873,191 +690,6 @@ def test_sort_series_nulls_last(input: list[Any], expected: list[Any]) -> None:
     assert pl.Series(input).sort(nulls_last=True).to_list() == expected
 
 
-def test_sorted_flag_14552() -> None:
-    a = pl.DataFrame({"a": [2, 1, 3]})
-
-    a = pl.concat([a, a], rechunk=False)
-    assert not a.join(a, on="a", how="left")["a"].flags["SORTED_ASC"]
-
-
-def test_sorted_flag_concat_15072() -> None:
-    # Both all-null
-    a = pl.Series("x", [None, None], dtype=pl.Int8)
-    b = pl.Series("x", [None, None], dtype=pl.Int8)
-    assert pl.concat((a, b)).flags["SORTED_ASC"]
-
-    # left all-null, right 0 < null_count < len
-    a = pl.Series("x", [None, None], dtype=pl.Int8)
-    b = pl.Series("x", [1, 2, 1, None], dtype=pl.Int8)
-
-    out = pl.concat((a, b.sort()))
-    assert out.to_list() == [None, None, None, 1, 1, 2]
-    assert out.flags["SORTED_ASC"]
-
-    out = pl.concat((a, b.sort(descending=True)))
-    assert out.to_list() == [None, None, None, 2, 1, 1]
-    assert out.flags["SORTED_DESC"]
-
-    out = pl.concat((a, b.sort(nulls_last=True)))
-    assert out.to_list() == [None, None, 1, 1, 2, None]
-    assert is_not_sorted(out)
-
-    out = pl.concat((a, b.sort(nulls_last=True, descending=True)))
-    assert out.to_list() == [None, None, 2, 1, 1, None]
-    assert is_not_sorted(out)
-
-    # left 0 < null_count < len, right all-null
-    a = pl.Series("x", [1, 2, 1, None], dtype=pl.Int8)
-    b = pl.Series("x", [None, None], dtype=pl.Int8)
-
-    out = pl.concat((a.sort(), b))
-    assert out.to_list() == [None, 1, 1, 2, None, None]
-    assert is_not_sorted(out)
-
-    out = pl.concat((a.sort(descending=True), b))
-    assert out.to_list() == [None, 2, 1, 1, None, None]
-    assert is_not_sorted(out)
-
-    out = pl.concat((a.sort(nulls_last=True), b))
-    assert out.to_list() == [1, 1, 2, None, None, None]
-    assert out.flags["SORTED_ASC"]
-
-    out = pl.concat((a.sort(nulls_last=True, descending=True), b))
-    assert out.to_list() == [2, 1, 1, None, None, None]
-    assert out.flags["SORTED_DESC"]
-
-    # both 0 < null_count < len
-    assert pl.concat(
-        (
-            pl.Series([None, 1]).set_sorted(),
-            pl.Series([2]).set_sorted(),
-        )
-    ).flags["SORTED_ASC"]
-
-    assert is_not_sorted(
-        pl.concat(
-            (
-                pl.Series([None, 1]).set_sorted(),
-                pl.Series([2, None]).set_sorted(),
-            )
-        )
-    )
-
-    assert pl.concat(
-        (
-            pl.Series([None, 2]).set_sorted(descending=True),
-            pl.Series([1]).set_sorted(descending=True),
-        )
-    ).flags["SORTED_DESC"]
-
-    assert is_not_sorted(
-        pl.concat(
-            (
-                pl.Series([None, 2]).set_sorted(descending=True),
-                pl.Series([1, None]).set_sorted(descending=True),
-            )
-        )
-    )
-
-    # Concat with empty series
-    s = pl.Series([None, 1]).set_sorted()
-
-    out = pl.concat((s.clear(), s))
-    assert_series_equal(out, s)
-    assert out.flags["SORTED_ASC"]
-
-    out = pl.concat((s, s.clear()))
-    assert_series_equal(out, s)
-    assert out.flags["SORTED_ASC"]
-
-    s = pl.Series([1, None]).set_sorted()
-
-    out = pl.concat((s.clear(), s))
-    assert_series_equal(out, s)
-    assert out.flags["SORTED_ASC"]
-
-    out = pl.concat((s, s.clear()))
-    assert_series_equal(out, s)
-    assert out.flags["SORTED_ASC"]
-
-
-@pytest.mark.parametrize("unit_descending", [True, False])
-def test_sorted_flag_concat_unit(unit_descending: bool) -> None:
-    unit = pl.Series([1]).set_sorted(descending=unit_descending)
-
-    a = unit
-    b = pl.Series([2, 3]).set_sorted()
-
-    out = pl.concat((a, b))
-    assert out.to_list() == [1, 2, 3]
-    assert out.flags["SORTED_ASC"]
-
-    out = pl.concat((b, a))
-    assert out.to_list() == [2, 3, 1]
-    assert is_not_sorted(out)
-
-    a = unit
-    b = pl.Series([3, 2]).set_sorted(descending=True)
-
-    out = pl.concat((a, b))
-    assert out.to_list() == [1, 3, 2]
-    assert is_not_sorted(out)
-
-    out = pl.concat((b, a))
-    assert out.to_list() == [3, 2, 1]
-    assert out.flags["SORTED_DESC"]
-
-    # unit with nulls first
-    unit = pl.Series([None, 1]).set_sorted(descending=unit_descending)
-
-    a = unit
-    b = pl.Series([2, 3]).set_sorted()
-
-    out = pl.concat((a, b))
-    assert out.to_list() == [None, 1, 2, 3]
-    assert out.flags["SORTED_ASC"]
-
-    out = pl.concat((b, a))
-    assert out.to_list() == [2, 3, None, 1]
-    assert is_not_sorted(out)
-
-    a = unit
-    b = pl.Series([3, 2]).set_sorted(descending=True)
-
-    out = pl.concat((a, b))
-    assert out.to_list() == [None, 1, 3, 2]
-    assert is_not_sorted(out)
-
-    out = pl.concat((b, a))
-    assert out.to_list() == [3, 2, None, 1]
-    assert is_not_sorted(out)
-
-    # unit with nulls last
-    unit = pl.Series([1, None]).set_sorted(descending=unit_descending)
-
-    a = unit
-    b = pl.Series([2, 3]).set_sorted()
-
-    out = pl.concat((a, b))
-    assert out.to_list() == [1, None, 2, 3]
-    assert is_not_sorted(out)
-
-    out = pl.concat((b, a))
-    assert out.to_list() == [2, 3, 1, None]
-    assert is_not_sorted(out)
-
-    a = unit
-    b = pl.Series([3, 2]).set_sorted(descending=True)
-
-    out = pl.concat((a, b))
-    assert out.to_list() == [1, None, 3, 2]
-    assert is_not_sorted(out)
-
-    out = pl.concat((b, a))
-    assert out.to_list() == [3, 2, 1, None]
-    assert out.flags["SORTED_DESC"]
-
-
 @pytest.mark.parametrize("descending", [True, False])
 @pytest.mark.parametrize("nulls_last", [True, False])
 def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
@@ -1078,3 +710,73 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
         df.sort(["x", "y"], descending=descending, nulls_last=nulls_last),
         pl.DataFrame({"x": ref_x, "y": ref_y}),
     )
+
+
+@pytest.mark.release()
+def test_sort_nan_1942() -> None:
+    # https://github.com/pola-rs/polars/issues/1942
+    import time
+
+    start = time.time()
+    pl.repeat(float("nan"), 2**13, eager=True).sort()
+    end = time.time()
+
+    assert (end - start) < 1.0
+
+
+def test_sort_chunked_no_nulls() -> None:
+    df = pl.DataFrame({"values": [3.0, 2.0]})
+    df = pl.concat([df, df], rechunk=False)
+
+    assert df.with_columns(pl.col("values").arg_sort())["values"].to_list() == [
+        1,
+        3,
+        0,
+        2,
+    ]
+
+
+def test_sort_string_nulls() -> None:
+    str_series = pl.Series(
+        "b", ["a", None, "c", None, "x", "z", "y", None], dtype=pl.String
+    )
+    assert str_series.sort(descending=False, nulls_last=False).to_list() == [
+        None,
+        None,
+        None,
+        "a",
+        "c",
+        "x",
+        "y",
+        "z",
+    ]
+    assert str_series.sort(descending=True, nulls_last=False).to_list() == [
+        None,
+        None,
+        None,
+        "z",
+        "y",
+        "x",
+        "c",
+        "a",
+    ]
+    assert str_series.sort(descending=True, nulls_last=True).to_list() == [
+        "z",
+        "y",
+        "x",
+        "c",
+        "a",
+        None,
+        None,
+        None,
+    ]
+    assert str_series.sort(descending=False, nulls_last=True).to_list() == [
+        "a",
+        "c",
+        "x",
+        "y",
+        "z",
+        None,
+        None,
+        None,
+    ]

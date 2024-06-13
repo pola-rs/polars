@@ -55,13 +55,13 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
 
         match (page.encoding(), is_optional, is_filtered) {
             (Encoding::Plain, true, false) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
                 let values = BitmapIter::new(values, 0, values.len() * 8);
 
                 Ok(State::Optional(values))
             },
             (Encoding::Plain, false, false) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
                 let values = BitmapIter::new(values, 0, values.len() * 8);
 
                 Ok(State::Required(values))

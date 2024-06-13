@@ -39,7 +39,7 @@ static FIXED_OFFSET_PATTERN: &str = r#"(?x)
 static FIXED_OFFSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(FIXED_OFFSET_PATTERN).unwrap());
 
 #[cfg(feature = "timezones")]
-pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
+pub fn validate_time_zone(tz: &str) -> PolarsResult<()> {
     match tz.parse::<Tz>() {
         Ok(_) => Ok(()),
         Err(_) => {

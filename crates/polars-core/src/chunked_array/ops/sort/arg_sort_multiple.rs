@@ -27,21 +27,26 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
     by: &[Series],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
+    let nulls_last = &options.nulls_last;
     let descending = &options.descending;
+
     debug_assert_eq!(descending.len() - 1, by.len());
+    debug_assert_eq!(nulls_last.len() - 1, by.len());
+
     let compare_inner: Vec<_> = by
         .iter()
         .map(|s| s.into_total_ord_inner())
         .collect_trusted();
 
     let first_descending = descending[0];
+    let first_nulls_last = nulls_last[0];
 
     let compare = |tpl_a: &(_, T), tpl_b: &(_, T)| -> Ordering {
         match (
             first_descending,
             tpl_a
                 .1
-                .null_order_cmp(&tpl_b.1, options.nulls_last ^ first_descending),
+                .null_order_cmp(&tpl_b.1, first_nulls_last ^ first_descending),
         ) {
             // if ordering is equal, we check the other arrays until we find a non-equal ordering
             // if we have exhausted all arrays, we keep the equal ordering.
@@ -52,7 +57,7 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
                     ordering_other_columns(
                         &compare_inner,
                         descending.get_unchecked(1..),
-                        options.nulls_last,
+                        nulls_last.get_unchecked(1..),
                         idx_a,
                         idx_b,
                     )
@@ -184,17 +189,19 @@ pub fn _get_rows_encoded_unordered(by: &[Series]) -> PolarsResult<RowsEncoded> {
 pub fn _get_rows_encoded(
     by: &[Series],
     descending: &[bool],
-    nulls_last: bool,
+    nulls_last: &[bool],
 ) -> PolarsResult<RowsEncoded> {
     debug_assert_eq!(by.len(), descending.len());
+    debug_assert_eq!(by.len(), nulls_last.len());
+
     let mut cols = Vec::with_capacity(by.len());
     let mut fields = Vec::with_capacity(by.len());
-    for (by, descending) in by.iter().zip(descending) {
-        let arr = _get_rows_encoded_compat_array(by)?;
 
+    for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
+        let arr = _get_rows_encoded_compat_array(by)?;
         let sort_field = EncodingField {
-            descending: *descending,
-            nulls_last,
+            descending: *desc,
+            nulls_last: *null_last,
             no_order: false,
         };
         match arr.data_type() {
@@ -203,12 +210,12 @@ pub fn _get_rows_encoded(
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
                 for arr in arr.values() {
                     cols.push(arr.clone() as ArrayRef);
-                    fields.push(sort_field)
+                    fields.push(sort_field);
                 }
             },
             _ => {
                 cols.push(arr);
-                fields.push(sort_field)
+                fields.push(sort_field);
             },
         }
     }
@@ -219,7 +226,7 @@ pub fn _get_rows_encoded_ca(
     name: &str,
     by: &[Series],
     descending: &[bool],
-    nulls_last: bool,
+    nulls_last: &[bool],
 ) -> PolarsResult<BinaryOffsetChunked> {
     _get_rows_encoded(by, descending, nulls_last)
         .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
@@ -236,12 +243,13 @@ pub fn _get_rows_encoded_ca_unordered(
 pub(crate) fn argsort_multiple_row_fmt(
     by: &[Series],
     mut descending: Vec<bool>,
-    nulls_last: bool,
+    mut nulls_last: Vec<bool>,
     parallel: bool,
 ) -> PolarsResult<IdxCa> {
-    _broadcast_descending(by.len(), &mut descending);
+    _broadcast_bools(by.len(), &mut descending);
+    _broadcast_bools(by.len(), &mut nulls_last);
 
-    let rows_encoded = _get_rows_encoded(by, &descending, nulls_last)?;
+    let rows_encoded = _get_rows_encoded(by, &descending, &nulls_last)?;
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
     if parallel {

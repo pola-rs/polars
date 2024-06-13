@@ -1,5 +1,5 @@
 use super::super::delta_bitpacked;
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// Decodes [Delta-length byte array](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-length-byte-array-delta_length_byte_array--6)
 /// lengths and values.
@@ -35,7 +35,7 @@ pub struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    pub fn try_new(values: &'a [u8]) -> Result<Self, Error> {
+    pub fn try_new(values: &'a [u8]) -> Result<Self, ParquetError> {
         let lengths = delta_bitpacked::Decoder::try_new(values)?;
         Ok(Self {
             values,
@@ -64,7 +64,7 @@ impl<'a> Decoder<'a> {
 }
 
 impl<'a> Iterator for Decoder<'a> {
-    type Item = Result<i32, Error>;
+    type Item = Result<i32, ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let result = self.lengths.next();

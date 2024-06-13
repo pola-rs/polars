@@ -3,7 +3,9 @@ use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_utils::slice::GetSaferUnchecked;
 
+use crate::array::Splitable;
 use crate::buffer::Buffer;
 pub use crate::types::Offset;
 
@@ -156,6 +158,15 @@ impl<O: Offset> Offsets<O> {
             Some(element) => element,
             None => unsafe { unreachable_unchecked() },
         }
+    }
+
+    /// Returns a `length` corresponding to the position `index`
+    /// # Panic
+    /// This function panics iff `index >= self.len()`
+    #[inline]
+    pub fn length_at(&self, index: usize) -> usize {
+        let (start, end) = self.start_end(index);
+        end - start
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
@@ -432,6 +443,15 @@ impl<O: Offset> OffsetsBuffer<O> {
         }
     }
 
+    /// Returns a `length` corresponding to the position `index`
+    /// # Panic
+    /// This function panics iff `index >= self.len()`
+    #[inline]
+    pub fn length_at(&self, index: usize) -> usize {
+        let (start, end) = self.start_end(index);
+        end - start
+    }
+
     /// Returns a range (start, end) corresponding to the position `index`
     /// # Panic
     /// This function panics iff `index >= self.len()`
@@ -449,8 +469,8 @@ impl<O: Offset> OffsetsBuffer<O> {
     #[inline]
     pub unsafe fn start_end_unchecked(&self, index: usize) -> (usize, usize) {
         // soundness: the invariant of the function
-        let start = self.0.get_unchecked(index).to_usize();
-        let end = self.0.get_unchecked(index + 1).to_usize();
+        let start = self.0.get_unchecked_release(index).to_usize();
+        let end = self.0.get_unchecked_release(index + 1).to_usize();
         (start, end)
     }
 
@@ -554,5 +574,21 @@ impl<O: Offset> std::ops::Deref for OffsetsBuffer<O> {
     #[inline]
     fn deref(&self) -> &[O] {
         self.0.as_slice()
+    }
+}
+
+impl<O: Offset> Splitable for OffsetsBuffer<O> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len_proxy()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let mut lhs = self.0.clone();
+        let mut rhs = self.0.clone();
+
+        lhs.slice(0, offset + 1);
+        rhs.slice(offset, self.0.len() - offset);
+
+        (Self(lhs), Self(rhs))
     }
 }

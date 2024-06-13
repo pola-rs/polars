@@ -19,7 +19,7 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
             })
             .collect();
         let df = unsafe { DataFrame::new_no_checks(columns) };
-        if df.height() == 0 {
+        if df.is_empty() {
             None
         } else {
             Some(df)

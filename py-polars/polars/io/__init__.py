@@ -15,6 +15,7 @@ from polars.io.spreadsheet import read_excel, read_ods
 
 __all__ = [
     "read_avro",
+    "read_clipboard",
     "read_csv",
     "read_csv_batched",
     "read_database",
@@ -36,5 +37,4 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
-    "read_clipboard",
 ]

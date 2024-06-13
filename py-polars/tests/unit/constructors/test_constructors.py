@@ -16,7 +16,6 @@ import polars as pl
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
-from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -185,10 +184,8 @@ def test_error_string_dtypes() -> None:
         pl.Series("n", [1, 2, 3], dtype="f32")  # type: ignore[arg-type]
 
 
-def test_init_structured_objects(monkeypatch: Any) -> None:
+def test_init_structured_objects() -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-
     @dataclasses.dataclass
     class TradeDC:
         timestamp: datetime
@@ -543,15 +540,20 @@ def test_init_ndarray() -> None:
     assert np.array_equal(df.to_numpy(), np.arange(4).reshape(-1, 1).astype(np.int64))
 
     df = pl.DataFrame(np.arange(4).reshape(-1, 2).astype(np.int64), schema=["a"])
-    assert_frame_equal(df, pl.DataFrame({"a": [[0, 1], [2, 3]]}))
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"a": [[0, 1], [2, 3]]}, schema={"a": pl.Array(pl.Int64, shape=2)}
+        ),
+    )
 
     # 2D numpy arrays
     df = pl.DataFrame({"a": np.arange(5, dtype=np.int64).reshape(1, -1)})
-    assert df.dtypes == [pl.List(pl.Int64)]
+    assert df.dtypes == [pl.Array(pl.Int64, shape=5)]
     assert df.shape == (1, 1)
 
     df = pl.DataFrame({"a": np.arange(10, dtype=np.int64).reshape(2, -1)})
-    assert df.dtypes == [pl.List(pl.Int64)]
+    assert df.dtypes == [pl.Array(pl.Int64, shape=5)]
     assert df.shape == (2, 1)
     assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 
@@ -894,21 +896,15 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
-        df = pl.DataFrame(
-            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
-            schema={"ts": pl.Datetime("ms")},
-        )
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
+        schema={"ts": pl.Datetime("ms")},
+    )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
-        df = pl.DataFrame(
-            [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
-            schema={"ts": pl.Datetime("ms")},
-        )
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        schema={"ts": pl.Datetime("ms")},
+    )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
 
 
@@ -1060,11 +1056,9 @@ def test_init_only_columns() -> None:
             ],
         )
         expected = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
-            [
-                pl.col("a").cast(pl.Date),
-                pl.col("b").cast(pl.UInt64),
-                pl.col("c").cast(pl.Int8),
-            ]
+            pl.col("a").cast(pl.Date),
+            pl.col("b").cast(pl.UInt64),
+            pl.col("c").cast(pl.Int8),
         )
         expected.insert_column(3, pl.Series("d", [], pl.List(pl.UInt8)))
 
@@ -1624,7 +1618,7 @@ def test_array_construction() -> None:
         {"row_id": "a", "data": [1, 2, 3]},
         {"row_id": "b", "data": [2, 3, 4]},
     ]
-    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, width=3)}
+    schema = {"row_id": pl.String(), "data": pl.Array(inner=pl.Int64, shape=3)}
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]

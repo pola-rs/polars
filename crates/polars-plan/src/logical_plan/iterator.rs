@@ -11,7 +11,10 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Len => {},
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_)
+            | IndexColumn(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            Field(_) => {},
             Alias(e, _) => $push($c, e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first

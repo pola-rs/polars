@@ -44,7 +44,7 @@ fn cast_rhs(
         }
         if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == inner_type {
             // coerce to list JIT
-            *s = s.reshape(&[-1, 1]).unwrap();
+            *s = s.reshape_list(&[-1, 1]).unwrap();
         }
         if s.dtype() != dtype {
             *s = s.cast(dtype).map_err(|e| {
@@ -136,8 +136,7 @@ pub trait ListNameSpaceImpl: AsList {
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name(), ca.len());
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
+        {
             ca.amortized_iter()
                 .zip(separator)
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
@@ -194,13 +193,13 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
-            return sum_with_nulls(ca, &ca.inner_dtype());
+            return sum_with_nulls(ca, ca.inner_dtype());
         };
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, &dt)),
-            dt => sum_with_nulls(ca, &dt),
+            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, dt)),
+            dt => sum_with_nulls(ca, dt),
         }
     }
 
@@ -212,7 +211,7 @@ pub trait ListNameSpaceImpl: AsList {
         };
 
         match ca.inner_dtype() {
-            dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
+            dt if dt.is_numeric() => mean_list_numerical(ca, dt),
             _ => sum_mean::mean_with_nulls(ca),
         }
     }
@@ -304,7 +303,7 @@ pub trait ListNameSpaceImpl: AsList {
                 if let Some(periods) = periods.get(0) {
                     ca.apply_amortized(|s| s.as_ref().shift(periods))
                 } else {
-                    ListChunked::full_null_with_dtype(ca.name(), ca.len(), &ca.inner_dtype())
+                    ListChunked::full_null_with_dtype(ca.name(), ca.len(), ca.inner_dtype())
                 }
             },
             _ => ca.zip_and_apply_amortized(periods, |opt_s, opt_periods| {
@@ -355,7 +354,7 @@ pub trait ListNameSpaceImpl: AsList {
         unsafe {
             Series::try_from((ca.name(), chunks))
                 .unwrap()
-                .cast_unchecked(&ca.inner_dtype())
+                .cast_unchecked(ca.inner_dtype())
         }
     }
 
@@ -369,7 +368,7 @@ pub trait ListNameSpaceImpl: AsList {
                 _ => ListChunked::full_null_with_dtype(
                     list_ca.name(),
                     list_ca.len(),
-                    &list_ca.inner_dtype(),
+                    list_ca.inner_dtype(),
                 ),
             },
             (1, len_offset) if len_offset == list_ca.len() => {
@@ -386,7 +385,7 @@ pub trait ListNameSpaceImpl: AsList {
                     ListChunked::full_null_with_dtype(
                         list_ca.name(),
                         list_ca.len(),
-                        &list_ca.inner_dtype(),
+                        list_ca.inner_dtype(),
                     )
                 }
             },
@@ -402,7 +401,7 @@ pub trait ListNameSpaceImpl: AsList {
                     ListChunked::full_null_with_dtype(
                         list_ca.name(),
                         list_ca.len(),
-                        &list_ca.inner_dtype(),
+                        list_ca.inner_dtype(),
                     )
                 }
             },
@@ -428,8 +427,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
-            // SAFETY: unstable series never lives longer than the iterator.
-            unsafe {
+            {
                 list_ca
                     .amortized_iter()
                     .map(|s| {
@@ -451,8 +449,7 @@ pub trait ListNameSpaceImpl: AsList {
         match idx.dtype() {
             List(_) => {
                 let idx_ca = idx.list().unwrap();
-                // SAFETY: unstable series never lives longer than the iterator.
-                let mut out = unsafe {
+                let mut out = {
                     list_ca
                         .amortized_iter()
                         .zip(idx_ca)
@@ -479,8 +476,7 @@ pub trait ListNameSpaceImpl: AsList {
                     if min >= 0 {
                         index_typed_index(idx)
                     } else {
-                        // SAFETY: unstable series never lives longer than the iterator.
-                        let mut out = unsafe {
+                        let mut out = {
                             list_ca
                                 .amortized_iter()
                                 .map(|opt_s| {
@@ -532,7 +528,7 @@ pub trait ListNameSpaceImpl: AsList {
                     Ok(ListChunked::full_null_with_dtype(
                         ca.name(),
                         ca.len(),
-                        &ca.inner_dtype(),
+                        ca.inner_dtype(),
                     ))
                 }
             },
@@ -571,7 +567,7 @@ pub trait ListNameSpaceImpl: AsList {
                     Ok(ListChunked::full_null_with_dtype(
                         ca.name(),
                         ca.len(),
-                        &ca.inner_dtype(),
+                        ca.inner_dtype(),
                     ))
                 }
             },
@@ -593,7 +589,7 @@ pub trait ListNameSpaceImpl: AsList {
         let other_len = other.len();
         let length = ca.len();
         let mut other = other.to_vec();
-        let mut inner_super_type = ca.inner_dtype();
+        let mut inner_super_type = ca.inner_dtype().clone();
 
         for s in &other {
             match s.dtype() {
@@ -684,8 +680,7 @@ pub trait ListNameSpaceImpl: AsList {
             let mut iters = Vec::with_capacity(other_len + 1);
 
             for s in other.iter_mut() {
-                // SAFETY: unstable series never lives longer than the iterator.
-                iters.push(unsafe { s.list()?.amortized_iter() })
+                iters.push(s.list()?.amortized_iter())
             }
             let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
             let mut builder = get_list_builder(

@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars._utils.convert import (
-    MS_PER_SECOND,
-    NS_PER_SECOND,
-    US_PER_SECOND,
-)
+from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
@@ -31,7 +27,7 @@ def test_string_date() -> None:
 def test_invalid_string_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-aa"]})
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
 
 
@@ -67,7 +63,7 @@ def test_string_datetime() -> None:
 
 def test_invalid_string_datetime() -> None:
     df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.InvalidOperationError):
         df.with_columns(
             **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
         )
@@ -236,11 +232,11 @@ def test_strict_cast_int(
         assert _cast_expr(*args) == expected_value  # type: ignore[arg-type]
         assert _cast_lit(*args) == expected_value  # type: ignore[arg-type]
     else:
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_series(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_expr(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_lit(*args)  # type: ignore[arg-type]
 
 
@@ -375,11 +371,11 @@ def test_strict_cast_temporal(
         assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_series_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_expr_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_lit_t(*args)  # type: ignore[arg-type]
 
 
@@ -571,11 +567,11 @@ def test_strict_cast_string_and_binary(
         assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_series_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_expr_t(*args)  # type: ignore[arg-type]
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(pl.InvalidOperationError):
             _cast_lit_t(*args)  # type: ignore[arg-type]
 
 
@@ -611,15 +607,15 @@ def test_cast_categorical_name_retention(
 
 def test_cast_date_to_time() -> None:
     s = pl.Series([date(1970, 1, 1), date(2000, 12, 31)])
-    msg = "cannot cast `Date` to `Time`"
-    with pytest.raises(pl.ComputeError, match=msg):
+    msg = "casting from Date to Time not supported"
+    with pytest.raises(pl.InvalidOperationError, match=msg):
         s.cast(pl.Time)
 
 
 def test_cast_time_to_date() -> None:
     s = pl.Series([time(0, 0), time(20, 00)])
-    msg = "cannot cast `Time` to `Date`"
-    with pytest.raises(pl.ComputeError, match=msg):
+    msg = "casting from Time to Date not supported"
+    with pytest.raises(pl.InvalidOperationError, match=msg):
         s.cast(pl.Date)
 
 
@@ -640,3 +636,56 @@ def test_cast_array_to_different_width() -> None:
         pl.InvalidOperationError, match="cannot cast Array to a different width"
     ):
         s.cast(pl.Array(pl.Int16, 3))
+
+
+def test_cast_decimal_to_decimal_high_precision() -> None:
+    precision = 22
+    values = [Decimal("9" * precision)]
+    s = pl.Series(values, dtype=pl.Decimal(None, 0))
+
+    target_dtype = pl.Decimal(precision, 0)
+    result = s.cast(target_dtype)
+
+    assert result.dtype == target_dtype
+    assert result.to_list() == values
+
+
+def test_err_on_time_datetime_cast() -> None:
+    s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="casting from Time to Datetime\\(Microseconds, None\\) not supported; consider using `dt.combine`",
+    ):
+        s.cast(pl.Datetime)
+
+
+def test_err_on_invalid_time_zone_cast() -> None:
+    s = pl.Series([datetime(2021, 1, 1)])
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+        s.cast(pl.Datetime("us", "qwerty"))
+
+
+def test_invalid_inner_type_cast_list() -> None:
+    s = pl.Series([[-1, 1]])
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"cannot cast List inner type: 'Int64' to Categorical",
+    ):
+        s.cast(pl.List(pl.Categorical))
+
+
+def test_all_null_cast_5826() -> None:
+    df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
+    out = df.with_columns(pl.col("a").cast(pl.Boolean))
+    assert out.dtypes == [pl.Boolean]
+    assert out.item() is None
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
+)
+def test_bool_numeric_supertype(dtype: pl.PolarsDataType) -> None:
+    df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
+    result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
+    assert result.item() - 0.3333333 <= 0.00001

@@ -8,7 +8,17 @@ import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Collection,
+    Generator,
+    Iterable,
+    Literal,
+    Sequence,
+    TypeVar,
+)
 
 import polars as pl
 from polars import functions as F
@@ -28,10 +38,15 @@ from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Reversible
+    from collections.abc import Iterator, Reversible
 
     from polars import DataFrame
     from polars.type_aliases import PolarsDataType, SizeUnit
+
+    if sys.version_info >= (3, 13):
+        from typing import TypeIs
+    else:
+        from typing_extensions import TypeIs
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -56,7 +71,7 @@ def _process_null_values(
         return null_values
 
 
-def _is_generator(val: object) -> bool:
+def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
     return (
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)
@@ -302,7 +317,7 @@ def _cast_repr_strings_with_schema(
             elif tp == Duration:
                 cast_cols[c] = (
                     F.col(c)
-                    .apply(str_duration_, return_dtype=Int64)
+                    .map_elements(str_duration_, return_dtype=Int64)
                     .cast(Duration("ns"))
                     .cast(tp)
                 )
@@ -417,10 +432,11 @@ def find_stacklevel() -> int:
 
 
 def _get_stack_locals(
-    of_type: type | tuple[type, ...] | None = None,
+    of_type: type | Collection[type] | Callable[[Any], bool] | None = None,
+    *,
+    named: str | Collection[str] | None = None,
     n_objects: int | None = None,
     n_frames: int | None = None,
-    named: str | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """
     Retrieve f_locals from all (or the last 'n') stack frames from the calling location.
@@ -428,7 +444,9 @@ def _get_stack_locals(
     Parameters
     ----------
     of_type
-        Only return objects of this type.
+        Only return objects of this type; can be a single class, tuple of
+        classes, or a callable that returns True/False if the object being
+        tested is considered a match.
     n_objects
         If specified, return only the most recent `n` matching objects.
     n_frames
@@ -436,24 +454,39 @@ def _get_stack_locals(
     named
         If specified, only return objects matching the given name(s).
     """
-    if isinstance(named, str):
-        named = (named,)
-
     objects = {}
     examined_frames = 0
+
+    if isinstance(named, str):
+        named = (named,)
     if n_frames is None:
         n_frames = sys.maxsize
+
+    if inspect.isfunction(of_type):
+        matches_type = of_type
+    else:
+        if isinstance(of_type, Collection):
+            of_type = tuple(of_type)
+
+        def matches_type(obj: Any) -> bool:  # type: ignore[misc]
+            return isinstance(obj, of_type)  # type: ignore[arg-type]
+
+    if named is not None:
+        if isinstance(named, str):
+            named = (named,)
+        elif not isinstance(named, set):
+            named = set(named)
+
     stack_frame = inspect.currentframe()
     stack_frame = getattr(stack_frame, "f_back", None)
-
     try:
         while stack_frame and examined_frames < n_frames:
             local_items = list(stack_frame.f_locals.items())
             for nm, obj in reversed(local_items):
                 if (
                     nm not in objects
-                    and (named is None or (nm in named))
-                    and (of_type is None or isinstance(obj, of_type))
+                    and (named is None or nm in named)
+                    and (of_type is None or matches_type(obj))
                 ):
                     objects[nm] = obj
                     if n_objects is not None and len(objects) >= n_objects:
@@ -478,6 +511,23 @@ def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
         category=category,
         stacklevel=find_stacklevel(),
     )
+
+
+def extend_bool(
+    value: bool | Sequence[bool],
+    n_match: int,
+    value_name: str,
+    match_name: str,
+) -> Sequence[bool]:
+    """Ensure the given bool or sequence of bools is the correct length."""
+    values = [value] * n_match if isinstance(value, bool) else value
+    if n_match != len(values):
+        msg = (
+            f"the length of `{value_name}` ({len(values)}) "
+            f"does not match the length of `{match_name}` ({n_match})"
+        )
+        raise ValueError(msg)
+    return values
 
 
 def in_terminal_that_supports_colour() -> bool:

@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::sync::Arc;
 
 use polars_core::datatypes::Field;
@@ -6,11 +5,12 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
+use polars_expr::state::ExecutionState;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::dsl::Expr;
 use polars_plan::logical_plan::expr_ir::ExprIR;
 use polars_plan::logical_plan::{ArenaExprIter, Context};
-use polars_plan::prelude::{AAggExpr, AExpr};
+use polars_plan::prelude::{AExpr, IRAggExpr};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::IdxSize;
 
@@ -32,7 +32,7 @@ impl PhysicalIoExpr for Len {
     }
 }
 impl PhysicalPipedExpr for Len {
-    fn evaluate(&self, chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
+    fn evaluate(&self, chunk: &DataChunk, _lazy_state: &ExecutionState) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that
         // so we fill a null series.
         Ok(Series::new_null("", chunk.data.height()))
@@ -85,23 +85,28 @@ pub fn can_convert_to_hash_agg(
             ae @ AExpr::Agg(agg_fn) => {
                 matches!(
                     agg_fn,
-                    AAggExpr::Sum(_)
-                        | AAggExpr::First(_)
-                        | AAggExpr::Last(_)
-                        | AAggExpr::Mean(_)
-                        | AAggExpr::Count(_, false)
+                    IRAggExpr::Sum(_)
+                        | IRAggExpr::First(_)
+                        | IRAggExpr::Last(_)
+                        | IRAggExpr::Mean(_)
+                        | IRAggExpr::Count(_, false)
                 ) || (matches!(
                     agg_fn,
-                    AAggExpr::Max {
+                    IRAggExpr::Max {
                         propagate_nans: false,
                         ..
-                    } | AAggExpr::Min {
+                    } | IRAggExpr::Min {
                         propagate_nans: false,
                         ..
                     }
                 ) && {
                     if let Ok(field) = ae.to_field(input_schema, Context::Default, expr_arena) {
-                        field.dtype.to_physical().is_numeric()
+                        match field.dtype {
+                            DataType::Date => {
+                                matches!(agg_fn, IRAggExpr::Mean(_) | IRAggExpr::Median(_))
+                            },
+                            _ => field.dtype.to_physical().is_numeric(),
+                        }
                     } else {
                         false
                     }
@@ -135,7 +140,7 @@ where
             AggregateFunction::Len(CountAgg::new()),
         ),
         AExpr::Agg(agg) => match agg {
-            AAggExpr::Min { input, .. } => {
+            IRAggExpr::Min { input, .. } => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,
@@ -159,7 +164,7 @@ where
                 };
                 (logical_dtype, phys_expr, agg_fn)
             },
-            AAggExpr::Max { input, .. } => {
+            IRAggExpr::Max { input, .. } => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,
@@ -183,7 +188,7 @@ where
                 };
                 (logical_dtype, phys_expr, agg_fn)
             },
-            AAggExpr::Sum(input) => {
+            IRAggExpr::Sum(input) => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,
@@ -229,7 +234,7 @@ where
                 };
                 (logical_dtype, phys_expr, agg_fn)
             },
-            AAggExpr::Mean(input) => {
+            IRAggExpr::Mean(input) => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,
@@ -241,7 +246,7 @@ where
                 #[cfg(feature = "dtype-categorical")]
                 if matches!(
                     logical_dtype,
-                    DataType::Categorical(_, _) | DataType::Enum(_, _)
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::Date
                 ) {
                     return (
                         logical_dtype.clone(),
@@ -259,7 +264,7 @@ where
                 };
                 (logical_dtype, phys_expr, agg_fn)
             },
-            AAggExpr::First(input) => {
+            IRAggExpr::First(input) => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,
@@ -273,7 +278,7 @@ where
                     AggregateFunction::First(FirstAgg::new(logical_dtype.to_physical())),
                 )
             },
-            AAggExpr::Last(input) => {
+            IRAggExpr::Last(input) => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,
@@ -287,7 +292,7 @@ where
                     AggregateFunction::Last(LastAgg::new(logical_dtype.to_physical())),
                 )
             },
-            AAggExpr::Count(input, _) => {
+            IRAggExpr::Count(input, _) => {
                 let phys_expr = to_physical(
                     &ExprIR::from_node(*input, expr_arena),
                     expr_arena,

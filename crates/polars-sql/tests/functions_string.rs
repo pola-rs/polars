@@ -89,41 +89,43 @@ fn test_array_to_string() {
         "b" => &[1, 1, 42],
     }
     .unwrap();
+
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
-    let sql = context
-        .execute(
-            r#"
-        SELECT
-            b,
-            a
-        FROM df
-        GROUP BY
-            b"#,
-        )
-        .unwrap();
-    context.register("df_1", sql.clone());
+
     let sql = r#"
-        SELECT
-            b,
-            array_to_string(a, ', ') as as,
-        FROM df_1
-        ORDER BY
-            b,
-            as"#;
+        SELECT b, ARRAY_TO_STRING("a",', ') AS a2s,
+        FROM (
+            SELECT b, ARRAY_AGG(a) AS "a"
+            FROM df
+            GROUP BY b
+        ) tbl
+        ORDER BY a2s"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_expected = df! {
+        "b" => &[1, 42],
+        "a2s" => &["first, first", "third"],
+    }
+    .unwrap();
+    assert!(df_sql.equals(&df_expected));
+}
 
-    let df_pl = df
-        .lazy()
-        .group_by([col("b")])
-        .agg([col("a")])
-        .select(&[col("b"), col("a").list().join(lit(", "), true).alias("as")])
-        .sort_by_exprs(
-            vec![col("b"), col("as")],
-            SortMultipleOptions::default().with_maintain_order(true),
-        )
-        .collect()
-        .unwrap();
+#[test]
+fn test_array_literal() {
+    let mut context = SQLContext::new();
+    context.register("df", DataFrame::empty().lazy());
 
-    assert!(df_sql.equals_missing(&df_pl));
+    let sql = "SELECT [100,200,300] AS arr FROM df";
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_expected = df! {
+        "arr" => &[100i64, 200, 300],
+    }
+    .unwrap()
+    .lazy()
+    .select(&[col("arr").implode()])
+    .collect()
+    .unwrap();
+
+    assert!(df_sql.equals(&df_expected));
+    assert!(df_sql.height() == 1);
 }

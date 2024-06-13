@@ -9,7 +9,7 @@ use polars_core::hashing::{
 };
 use polars_core::prelude::*;
 use polars_core::utils::flatten::flatten_nullable;
-use polars_core::utils::{_set_partition_size, split_ca, split_df};
+use polars_core::utils::{_set_partition_size, split_and_flatten};
 use polars_core::{with_match_physical_float_polars_type, IdBuildHasher, POOL};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
@@ -169,21 +169,24 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let left_asof = left_asof.rechunk();
-    let right_asof = right_asof.rechunk();
+    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_iter().next().unwrap();
     let right_val_arr = right_asof.downcast_iter().next().unwrap();
 
     let n_threads = POOL.current_num_threads();
-    let split_by_left = split_ca(by_left, n_threads).unwrap();
-    let split_by_right = split_ca(by_right, n_threads).unwrap();
+    // `strict` is false so that we always flatten. Even if there are more chunks than threads.
+    let split_by_left = split_and_flatten(by_left, n_threads);
+    let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
     // TODO: handle nulls more efficiently. Right now we just join on the value
     // ignoring the validity mask, and ignore the nulls later.
     let right_slices = split_by_right
         .iter()
-        .map(|ca| ca.downcast_iter().next().unwrap().values_iter().copied())
+        .map(|ca| {
+            assert_eq!(ca.chunks().len(), 1);
+            ca.downcast_iter().next().unwrap().values_iter().copied()
+        })
         .collect();
     let hash_tbls = build_tables(right_slices, false);
     let n_tables = hash_tbls.len();
@@ -197,6 +200,7 @@ where
             let mut group_states: PlHashMap<IdxSize, A> =
                 PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
+            assert_eq!(by_left.chunks().len(), 1);
             let by_left_chunk = by_left.downcast_iter().next().unwrap();
             for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
                 let Some(by_left_k) = opt_by_left_k else {
@@ -245,14 +249,13 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let left_asof = left_asof.rechunk();
-    let right_asof = right_asof.rechunk();
+    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_iter().next().unwrap();
     let right_val_arr = right_asof.downcast_iter().next().unwrap();
 
     let n_threads = POOL.current_num_threads();
-    let split_by_left = split_ca(by_left, n_threads).unwrap();
-    let split_by_right = split_ca(by_right, n_threads).unwrap();
+    let split_by_left = split_and_flatten(by_left, n_threads);
+    let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
     let hb = RandomState::default();
@@ -311,14 +314,13 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let left_asof = left_asof.rechunk();
-    let right_asof = right_asof.rechunk();
+    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_iter().next().unwrap();
     let right_val_arr = right_asof.downcast_iter().next().unwrap();
 
     let n_threads = POOL.current_num_threads();
-    let split_by_left = split_df(by_left, n_threads).unwrap();
-    let split_by_right = split_df(by_right, n_threads).unwrap();
+    let split_by_left = split_and_flatten(by_left, n_threads);
+    let split_by_right = split_and_flatten(by_right, n_threads);
 
     let (build_hashes, random_state) =
         _df_rows_to_hashes_threaded_vertical(&split_by_right, None).unwrap();

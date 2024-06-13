@@ -45,16 +45,37 @@ pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
 };
 pub use crate::parquet::write::{
-    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator, RowGroupIter,
-    Version,
+    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator,
+    RowGroupIterColumns, Version,
 };
 pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
+
+/// The statistics to write
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StatisticsOptions {
+    pub min_value: bool,
+    pub max_value: bool,
+    pub distinct_count: bool,
+    pub null_count: bool,
+}
+
+impl Default for StatisticsOptions {
+    fn default() -> Self {
+        Self {
+            min_value: true,
+            max_value: true,
+            distinct_count: false,
+            null_count: true,
+        }
+    }
+}
 
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOptions {
     /// Whether to write statistics
-    pub write_statistics: bool,
+    pub statistics: StatisticsOptions,
     /// The page and file version to use
     pub version: Version,
     /// The compression to apply to every page
@@ -66,14 +87,49 @@ pub struct WriteOptions {
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{array_to_columns, Nested};
+pub use pages::{array_to_columns, arrays_to_columns, Nested};
 use polars_error::{polars_bail, PolarsResult};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
 #[cfg(feature = "async")]
 pub use sink::FileSink;
 
+use self::pages::{FixedSizeListNested, PrimitiveNested, StructNested};
 use crate::write::dictionary::encode_as_dictionary_optional;
+
+impl StatisticsOptions {
+    pub fn empty() -> Self {
+        Self {
+            min_value: false,
+            max_value: false,
+            distinct_count: false,
+            null_count: false,
+        }
+    }
+
+    pub fn full() -> Self {
+        Self {
+            min_value: true,
+            max_value: true,
+            distinct_count: true,
+            null_count: true,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !(self.min_value || self.max_value || self.distinct_count || self.null_count)
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.min_value && self.max_value && self.distinct_count && self.null_count
+    }
+}
+
+impl WriteOptions {
+    pub fn has_statistics(&self) -> bool {
+        !self.statistics.is_empty()
+    }
+}
 
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
@@ -92,9 +148,9 @@ pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
                 let end = *l_nested.offsets.last();
                 return (start as usize, (end - start) as usize);
             },
-            Nested::FixedSizeList { len, width, .. } => return (0, *len * *width),
-            Nested::Primitive(_, _, len) => out = (0, *len),
-            Nested::Struct(_, _, _) => {},
+            Nested::FixedSizeList(nested) => return (0, nested.length * nested.width),
+            Nested::Primitive(nested) => out = (0, nested.length),
+            Nested::Struct(_) => {},
         }
     }
     out
@@ -150,29 +206,33 @@ pub fn slice_parquet_array(
                 current_length = l_nested.offsets.range() as usize;
                 current_offset = *l_nested.offsets.first() as usize;
             },
-            Nested::Struct(validity, _, length) => {
+            Nested::Struct(StructNested {
+                validity, length, ..
+            }) => {
                 *length = current_length;
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
             },
-            Nested::Primitive(validity, _, length) => {
+            Nested::Primitive(PrimitiveNested {
+                validity, length, ..
+            }) => {
                 *length = current_length;
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
                 primitive_array.slice(current_offset, current_length);
             },
-            Nested::FixedSizeList {
+            Nested::FixedSizeList(FixedSizeListNested {
                 validity,
-                len,
+                length,
                 width,
                 ..
-            } => {
+            }) => {
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
-                *len = current_length;
+                *length = current_length;
                 // Update the offset/ length so that the Primitive is sliced properly.
                 current_length *= *width;
                 current_offset *= *width;
@@ -188,7 +248,7 @@ pub fn get_max_length(nested: &[Nested]) -> usize {
         match nested {
             Nested::LargeList(l_nested) => length += l_nested.offsets.range() as usize,
             Nested::List(l_nested) => length += l_nested.offsets.range() as usize,
-            Nested::FixedSizeList { len, width, .. } => length += *len * *width,
+            Nested::FixedSizeList(nested) => length += nested.length * nested.width,
             _ => {},
         }
     }
@@ -217,9 +277,9 @@ pub fn array_to_pages(
     };
     if let Encoding::RleDictionary = encoding {
         // Only take this path for primitive columns
-        if matches!(nested.first(), Some(Nested::Primitive(_, _, _))) {
+        if matches!(nested.first(), Some(Nested::Primitive(_))) {
             if let Some(result) =
-                encode_as_dictionary_optional(primitive_array, type_.clone(), options)
+                encode_as_dictionary_optional(primitive_array, nested, type_.clone(), options)
             {
                 return result;
             }
@@ -441,8 +501,12 @@ pub fn array_to_page_simple(
                 values.into(),
                 array.validity().cloned(),
             );
-            let statistics = if options.write_statistics {
-                Some(fixed_len_bytes::build_statistics(&array, type_.clone()))
+            let statistics = if options.has_statistics() {
+                Some(fixed_len_bytes::build_statistics(
+                    &array,
+                    type_.clone(),
+                    &options.statistics,
+                ))
             } else {
                 None
             };
@@ -464,8 +528,12 @@ pub fn array_to_page_simple(
                 values.into(),
                 array.validity().cloned(),
             );
-            let statistics = if options.write_statistics {
-                Some(fixed_len_bytes::build_statistics(&array, type_.clone()))
+            let statistics = if options.has_statistics() {
+                Some(fixed_len_bytes::build_statistics(
+                    &array,
+                    type_.clone(),
+                    &options.statistics,
+                ))
             } else {
                 None
             };
@@ -473,8 +541,12 @@ pub fn array_to_page_simple(
         },
         ArrowDataType::FixedSizeBinary(_) => {
             let array = array.as_any().downcast_ref().unwrap();
-            let statistics = if options.write_statistics {
-                Some(fixed_len_bytes::build_statistics(array, type_.clone()))
+            let statistics = if options.has_statistics() {
+                Some(fixed_len_bytes::build_statistics(
+                    array,
+                    type_.clone(),
+                    &options.statistics,
+                ))
             } else {
                 None
             };
@@ -521,11 +593,12 @@ pub fn array_to_page_simple(
                 );
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
-                let statistics = if options.write_statistics {
+                let statistics = if options.has_statistics() {
                     let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
+                        &options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -549,9 +622,13 @@ pub fn array_to_page_simple(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal256(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None
@@ -611,9 +688,13 @@ pub fn array_to_page_simple(
             } else {
                 let size = decimal_length_from_precision(precision);
 
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None
@@ -750,9 +831,13 @@ fn array_to_page_nested(
             } else {
                 let size = decimal_length_from_precision(precision);
 
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None
@@ -807,11 +892,12 @@ fn array_to_page_nested(
                 primitive::nested_array_to_page::<i64, i64>(&array, options, type_, nested)
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
-                let statistics = if options.write_statistics {
+                let statistics = if options.has_statistics() {
                     let stats = fixed_len_bytes::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
                         size,
+                        &options.statistics,
                     );
                     Some(stats)
                 } else {
@@ -835,9 +921,13 @@ fn array_to_page_nested(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.write_statistics {
-                    let stats =
-                        fixed_len_bytes::build_statistics_decimal256(array, type_.clone(), size);
+                let statistics = if options.has_statistics() {
+                    let stats = fixed_len_bytes::build_statistics_decimal256(
+                        array,
+                        type_.clone(),
+                        size,
+                        &options.statistics,
+                    );
                     Some(stats)
                 } else {
                     None

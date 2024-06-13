@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -67,10 +68,11 @@ impl AsRef<Expr> for AggExpr {
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, Arc<str>),
-    Column(Arc<str>),
-    Columns(Vec<String>),
+    Alias(Arc<Expr>, ColumnName),
+    Column(ColumnName),
+    Columns(Arc<[ColumnName]>),
     DtypeColumn(Vec<DataType>),
+    IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Arc<Expr>,
@@ -80,7 +82,7 @@ pub enum Expr {
     Cast {
         expr: Arc<Expr>,
         data_type: DataType,
-        strict: bool,
+        options: CastOptions,
     },
     Sort {
         expr: Arc<Expr>,
@@ -116,11 +118,12 @@ pub enum Expr {
         input: Arc<Expr>,
         by: Arc<Expr>,
     },
-    /// See postgres window functions
+    /// Polars flavored window functions.
     Window {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
+        order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
     Wildcard,
@@ -143,6 +146,8 @@ pub enum Expr {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
+    #[cfg(feature = "dtype-struct")]
+    Field(Arc<[ColumnName]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
@@ -153,7 +158,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
+    SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`
@@ -172,6 +177,7 @@ impl Hash for Expr {
             Expr::Column(name) => name.hash(state),
             Expr::Columns(names) => names.hash(state),
             Expr::DtypeColumn(dtypes) => dtypes.hash(state),
+            Expr::IndexColumn(indices) => indices.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
             Expr::Nth(v) => v.hash(state),
@@ -187,7 +193,7 @@ impl Hash for Expr {
             Expr::Cast {
                 expr,
                 data_type,
-                strict,
+                options: strict,
             } => {
                 expr.hash(state);
                 data_type.hash(state);
@@ -245,10 +251,12 @@ impl Hash for Expr {
             Expr::Window {
                 function,
                 partition_by,
+                order_by,
                 options,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
+                order_by.hash(state);
                 options.hash(state);
             },
             Expr::Slice {
@@ -275,6 +283,8 @@ impl Hash for Expr {
                 options.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(names) => names.hash(state),
         }
     }
 }
@@ -291,14 +301,14 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(Arc<str>),
+    Name(ColumnName),
     Dtype(DataType),
 }
 
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(&self, schema: &Schema, ctxt: Context) -> PolarsResult<Field> {
-        // this is not called much and th expression depth is typically shallow
+        // this is not called much and the expression depth is typically shallow
         let mut arena = Arena::with_capacity(5);
         self.to_field_amortized(schema, ctxt, &mut arena)
     }

@@ -20,17 +20,17 @@ fn test_lazy_exec() {
     let _new = df
         .clone()
         .lazy()
-        .select([col("sepal.width"), col("variety")])
-        .sort(["sepal.width"], Default::default())
+        .select([col("sepal_width"), col("variety")])
+        .sort(["sepal_width"], Default::default())
         .collect();
 
     let new = df
         .lazy()
-        .filter(not(col("sepal.width").lt(lit(3.5))))
+        .filter(not(col("sepal_width").lt(lit(3.5))))
         .collect()
         .unwrap();
 
-    let check = new.column("sepal.width").unwrap().f64().unwrap().gt(3.4);
+    let check = new.column("sepal_width").unwrap().f64().unwrap().gt(3.4);
     assert!(check.all())
 }
 
@@ -39,10 +39,10 @@ fn test_lazy_alias() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").alias("petals"), col("sepal.width")])
+        .select([col("sepal_width").alias("petals"), col("sepal_width")])
         .collect()
         .unwrap();
-    assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
+    assert_eq!(new.get_column_names(), &["petals", "sepal_width"]);
 }
 
 #[test]
@@ -50,16 +50,16 @@ fn test_lazy_melt() {
     let df = get_df();
 
     let args = MeltArgs {
-        id_vars: vec!["petal.width".into(), "petal.length".into()],
-        value_vars: vec!["sepal.length".into(), "sepal.width".into()],
+        id_vars: vec!["petal_width".into(), "petal_length".into()],
+        value_vars: vec!["sepal_length".into(), "sepal_width".into()],
         ..Default::default()
     };
 
     let out = df
         .lazy()
         .melt(args)
-        .filter(col("variable").eq(lit("sepal.length")))
-        .select([col("variable"), col("petal.width"), col("value")])
+        .filter(col("variable").eq(lit("sepal_length")))
+        .select([col("variable"), col("petal_width"), col("value")])
         .collect()
         .unwrap();
     assert_eq!(out.shape(), (7, 3));
@@ -87,11 +87,11 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
+        .select([col("sepal_width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
-        new.column("sepal.width").unwrap().f64().unwrap().get(0),
+        new.column("sepal_width").unwrap().f64().unwrap().get(0),
         Some(700.0)
     );
 }
@@ -102,7 +102,7 @@ fn test_lazy_is_null() {
     let new = df
         .clone()
         .lazy()
-        .filter(col("sepal.width").is_null())
+        .filter(col("sepal_width").is_null())
         .collect()
         .unwrap();
 
@@ -111,7 +111,7 @@ fn test_lazy_is_null() {
     let new = df
         .clone()
         .lazy()
-        .filter(col("sepal.width").is_not_null())
+        .filter(col("sepal_width").is_not_null())
         .collect()
         .unwrap();
     assert_eq!(new.height(), df.height());
@@ -119,7 +119,7 @@ fn test_lazy_is_null() {
     let new = df
         .lazy()
         .group_by([col("variety")])
-        .agg([col("sepal.width").min()])
+        .agg([col("sepal_width").min()])
         .collect()
         .unwrap();
 
@@ -134,8 +134,8 @@ fn test_lazy_pushdown_through_agg() {
         .lazy()
         .group_by([col("variety")])
         .agg([
-            col("sepal.length").min(),
-            col("petal.length").min().alias("foo"),
+            col("sepal_length").min(),
+            col("petal_length").min().alias("foo"),
         ])
         .select([col("foo")])
         // second selection is to test if optimizer can handle that
@@ -153,7 +153,7 @@ fn test_lazy_shift() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").alias("foo").shift(lit(2))])
+        .select([col("sepal_width").alias("foo").shift(lit(2))])
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
@@ -205,18 +205,18 @@ fn test_lazy_ternary_and_predicates() {
     let ldf = df
         .lazy()
         .with_column(
-            when(col("sepal.length").lt(lit(5.0)))
+            when(col("sepal_length").lt(lit(5.0)))
                 .then(
                     lit(3), // is another type on purpose to check type coercion
                 )
-                .otherwise(col("sepal.width"))
+                .otherwise(col("sepal_width"))
                 .alias("foo"),
         )
         .filter(col("foo").gt(lit(3.0)));
 
     let new = ldf.collect().unwrap();
-    let length = new.column("sepal.length").unwrap();
-    assert_eq!(length, &Series::new("sepal.length", &[5.1f64, 5.0, 5.4]));
+    let length = new.column("sepal_length").unwrap();
+    assert_eq!(length, &Series::new("sepal_length", &[5.1f64, 5.0, 5.4]));
     assert_eq!(new.shape(), (3, 6));
 }
 
@@ -550,21 +550,15 @@ fn test_simplify_expr() {
 
     let plan = df
         .lazy()
-        .select(&[lit(1.0f32) + lit(1.0f32) + col("sepal.width")])
+        .select(&[lit(1.0) + lit(1.0) + col("sepal_width")])
         .logical_plan;
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(SimplifyExprRule {})];
-
-    let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer
-        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-        .unwrap();
+    let lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena, true, false).unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
-        matches!(plan, LogicalPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
+        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float(2.0))))
     );
 }
 
@@ -640,16 +634,10 @@ fn test_type_coercion() {
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
-    let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
-
-    let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
-    lp_top = optimizer
-        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
-        .unwrap();
+    let lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena, true, true).unwrap();
     let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
 
-    if let LogicalPlan::Select { expr, .. } = lp {
+    if let DslPlan::Select { expr, .. } = lp {
         if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
             assert!(matches!(&**left, Expr::Cast { .. }));
             // bar is already float, does not have to be coerced
@@ -713,7 +701,7 @@ fn test_lazy_group_by_apply() {
         .group_by([col("fruits")])
         .agg([col("cars").apply(
             |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
-            GetOutput::same_type(),
+            GetOutput::from_type(DataType::UInt32),
         )])
         .collect()
         .unwrap();
@@ -1048,7 +1036,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("int"), col("flt")],
-            SortMultipleOptions::default().with_order_descendings([true, false]),
+            SortMultipleOptions::default().with_order_descending_multi([true, false]),
         )])
         .collect()?;
 
@@ -1066,7 +1054,7 @@ fn test_arg_sort_multiple() -> PolarsResult<()> {
         .lazy()
         .select([arg_sort_by(
             [col("str"), col("flt")],
-            SortMultipleOptions::default().with_order_descendings([true, false]),
+            SortMultipleOptions::default().with_order_descending_multi([true, false]),
         )])
         .collect()?;
     Ok(())
@@ -1155,9 +1143,11 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b")
-            .forward_fill(None)
-            .over_with_options([col("a")], WindowMapping::Join)])
+        .select([col("b").forward_fill(None).over_with_options(
+            [col("a")],
+            None,
+            WindowMapping::Join,
+        )])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1183,7 +1173,7 @@ fn test_cross_join() -> PolarsResult<()> {
         "b" => [None, Some(12)]
     ]?;
 
-    let out = df1.lazy().cross_join(df2.lazy()).collect()?;
+    let out = df1.lazy().cross_join(df2.lazy(), None).collect()?;
     assert_eq!(out.shape(), (6, 4));
     Ok(())
 }
@@ -1317,7 +1307,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(lit(1))
                 .filter(col("B").shift(lit(1)).gt(lit(4)))
-                .over_with_options([col("fruits")], WindowMapping::Join)
+                .over_with_options([col("fruits")], None, WindowMapping::Join)
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1676,7 +1666,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .over_with_options([col("group")], WindowMapping::Join)])
+            .over_with_options([col("group")], None, WindowMapping::Join)])
         .collect()?;
 
     let out = out.column("value")?.explode()?;

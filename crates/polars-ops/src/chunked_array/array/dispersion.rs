@@ -13,7 +13,7 @@ pub(super) fn median_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as i64)))
                 .with_name(ca.name());
-            out.into_duration(tu).into_series()
+            out.into_duration(*tu).into_series()
         },
         _ => {
             let out: Float64Chunked = ca
@@ -39,13 +39,14 @@ pub(super) fn std_with_nulls(ca: &ArrayChunked, ddof: u8) -> PolarsResult<Series
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().std(ddof).map(|v| v as i64)))
                 .with_name(ca.name());
-            out.into_duration(tu).into_series()
+            out.into_duration(*tu).into_series()
         },
         _ => {
-            let out: Float64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().std(ddof)))
-                .collect();
+            let out: Float64Chunked = {
+                ca.amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().std(ddof)))
+                    .collect()
+            };
             out.into_series()
         },
     };

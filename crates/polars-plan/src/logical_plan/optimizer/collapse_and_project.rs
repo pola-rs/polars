@@ -62,11 +62,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     None
                 }
             },
-            SimpleProjection {
-                columns,
-                input,
-                duplicate_check,
-            } if !self.eager => {
+            SimpleProjection { columns, input } if !self.eager => {
                 match lp_arena.get(*input) {
                     // If there are 2 subsequent fast projections, flatten them and only take the last
                     SimpleProjection {
@@ -74,7 +70,6 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     } => Some(SimpleProjection {
                         input: *prev_input,
                         columns: columns.clone(),
-                        duplicate_check: *duplicate_check,
                     }),
                     // Cleanup projections set in projection pushdown just above caches
                     // they are not needed.
@@ -131,7 +126,11 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                 slice,
                 sort_options,
             } => match lp_arena.get(*input) {
-                Sort { input: inner, .. } => Some(Sort {
+                Sort {
+                    input: inner,
+                    slice: None,
+                    ..
+                } => Some(Sort {
                     input: *inner,
                     by_column: by_column.clone(),
                     slice: *slice,

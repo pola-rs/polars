@@ -24,9 +24,9 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         self.0.ref_field().data_type()
     }
     #[allow(unused)]
-    fn _set_flags(&mut self, flags: Settings) {}
-    fn _get_flags(&self) -> Settings {
-        Settings::empty()
+    fn _set_flags(&mut self, flags: MetadataFlags) {}
+    fn _get_flags(&self) -> MetadataFlags {
+        MetadataFlags::empty()
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
@@ -97,7 +97,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.name()
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
+    fn chunk_lengths(&self) -> ChunkLenIter {
         let s = self.0.fields().first().unwrap();
         s.chunk_lengths()
     }
@@ -124,6 +124,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let mut out = self.0._apply_fields(|s| s.slice(offset, length));
         out.update_chunks(0);
         out.into_series()
+    }
+
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b): (Vec<_>, Vec<_>) = self.0.fields().iter().map(|s| s.split_at(offset)).unzip();
+
+        let a = StructChunked::new(self.name(), &a).unwrap();
+        let b = StructChunked::new(self.name(), &b).unwrap();
+        (a.into_series(), b.into_series())
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -218,8 +226,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .into_series()
     }
 
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
-        self.0.cast(dtype)
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -315,13 +323,13 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         let df = self.0.clone().unnest();
 
-        let desc = if options.descending {
-            vec![true; df.width()]
-        } else {
-            vec![false; df.width()]
-        };
+        let n_cols = df.width();
+        let desc = vec![options.descending; n_cols];
+        let last = vec![options.nulls_last; n_cols];
 
-        let multi_options = SortMultipleOptions::from(&options).with_order_descendings(desc);
+        let multi_options = SortMultipleOptions::from(&options)
+            .with_order_descending_multi(desc)
+            .with_nulls_last_multi(last);
 
         let out = df.sort_impl(df.columns.clone(), multi_options, None)?;
         Ok(StructChunked::new_unchecked(self.name(), &out.columns).into_series())

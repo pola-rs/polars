@@ -2,7 +2,7 @@ use parquet_format_safe::Type;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// The set of all physical types representable in Parquet
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -19,7 +19,7 @@ pub enum PhysicalType {
 }
 
 impl TryFrom<(Type, Option<i32>)> for PhysicalType {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from((type_, length): (Type, Option<i32>)) -> Result<Self, Self::Error> {
         Ok(match type_ {
@@ -31,11 +31,12 @@ impl TryFrom<(Type, Option<i32>)> for PhysicalType {
             Type::DOUBLE => PhysicalType::Double,
             Type::BYTE_ARRAY => PhysicalType::ByteArray,
             Type::FIXED_LEN_BYTE_ARRAY => {
-                let length = length
-                    .ok_or_else(|| Error::oos("Length must be defined for FixedLenByteArray"))?;
+                let length = length.ok_or_else(|| {
+                    ParquetError::oos("Length must be defined for FixedLenByteArray")
+                })?;
                 PhysicalType::FixedLenByteArray(length.try_into()?)
             },
-            _ => return Err(Error::oos("Unknown type")),
+            _ => return Err(ParquetError::oos("Unknown type")),
         })
     }
 }

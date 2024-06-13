@@ -1,4 +1,3 @@
-use polars_utils::format_smartstring;
 use polars_utils::iter::EnumerateIdxTrait;
 use smartstring::alias::String as SmartString;
 
@@ -7,15 +6,10 @@ use super::*;
 pub(super) fn profile_name(
     s: &dyn PhysicalExpr,
     input_schema: &Schema,
-    has_cse: bool,
 ) -> PolarsResult<SmartString> {
-    match (has_cse, s.to_field(input_schema)) {
-        (false, Err(e)) => Err(e),
-        (true, Err(_)) => Ok(expr_to_leaf_column_names_iter(s.as_expression().unwrap())
-            .map(|n| n.as_ref().into())
-            .next()
-            .unwrap()),
-        (_, Ok(fld)) => Ok(fld.name),
+    match s.to_field(input_schema) {
+        Err(e) => Err(e),
+        Ok(fld) => Ok(fld.name),
     }
 }
 
@@ -56,7 +50,7 @@ fn rolling_evaluate(
 fn window_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
-    window: PlHashMap<SmartString, Vec<IdAndExpression>>,
+    window: PlHashMap<String, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Series)>>> {
     POOL.install(|| {
         window
@@ -116,7 +110,7 @@ fn execute_projection_cached_window_fns(
     #[allow(clippy::type_complexity)]
     // String: partition_name,
     // u32: index,
-    let mut windows: PlHashMap<SmartString, Vec<IdAndExpression>> = PlHashMap::default();
+    let mut windows: PlHashMap<String, Vec<IdAndExpression>> = PlHashMap::default();
     #[cfg(feature = "dynamic_group_by")]
     let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
@@ -131,13 +125,21 @@ fn execute_projection_cached_window_fns(
             if let Expr::Window {
                 partition_by,
                 options,
+                order_by,
                 ..
             } = e
             {
                 let entry = match options {
                     WindowType::Over(_) => {
-                        let group_by = format_smartstring!("{:?}", partition_by.as_slice());
-                        windows.entry(group_by).or_insert_with(Vec::new)
+                        let mut key = format!("{:?}", partition_by.as_slice());
+                        if let Some((e, k)) = order_by {
+                            polars_expr::prelude::window_function_format_order_by(
+                                &mut key,
+                                e.as_ref(),
+                                k,
+                            )
+                        }
+                        windows.entry(key).or_insert_with(Vec::new)
                     },
                     #[cfg(feature = "dynamic_group_by")]
                     WindowType::Rolling(options) => rolling.entry(options).or_insert_with(Vec::new),
@@ -214,7 +216,6 @@ fn run_exprs_seq(
 
 pub(super) fn evaluate_physical_expressions(
     df: &mut DataFrame,
-    cse_exprs: &[Arc<dyn PhysicalExpr>],
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
     has_windows: bool,
@@ -228,36 +229,7 @@ pub(super) fn evaluate_physical_expressions(
         run_exprs_seq
     };
 
-    let cse_expr_runner = if has_windows {
-        execute_projection_cached_window_fns
-    } else if run_parallel && cse_exprs.len() > 1 {
-        run_exprs_par
-    } else {
-        run_exprs_seq
-    };
-
-    let selected_columns = if !cse_exprs.is_empty() {
-        let tmp_cols = cse_expr_runner(df, cse_exprs, state)?;
-        if has_windows {
-            state.clear_window_expr_cache();
-        }
-
-        let width = df.width();
-
-        // put the cse expressions at the end
-        unsafe {
-            df.hstack_mut_unchecked(&tmp_cols);
-        }
-        let result = expr_runner(df, exprs, state)?;
-        // restore original df
-        unsafe {
-            df.get_columns_mut().truncate(width);
-        }
-
-        result
-    } else {
-        expr_runner(df, exprs, state)?
-    };
+    let selected_columns = expr_runner(df, exprs, state)?;
 
     if has_windows {
         state.clear_window_expr_cache();
@@ -269,17 +241,21 @@ pub(super) fn evaluate_physical_expressions(
 pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
-    duplicate_check: bool,
+    options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
         return Ok(DataFrame::empty());
     };
+    let duplicate_check = options.duplicate_check;
+    let should_broadcast = options.should_broadcast;
     let mut df_height = 0;
+    let mut has_empty = false;
     let mut all_equal_len = true;
     {
         let mut names = PlHashSet::with_capacity(selected_columns.len());
         for s in &selected_columns {
             let len = s.len();
+            has_empty |= len == 0;
             df_height = std::cmp::max(df_height, len);
             if len != first_len {
                 all_equal_len = false;
@@ -299,19 +275,36 @@ pub(super) fn check_expand_literals(
         }
     }
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
-    if !all_equal_len {
+    if !all_equal_len && should_broadcast {
         selected_columns = selected_columns
             .into_iter()
             .map(|series| {
-                Ok(if series.len() == 1 && df_height > 1 {
-                    series.new_from_index(0, df_height)
-                } else if series.len() == df_height || series.len() == 0 {
-                    series
-                } else {
-                    polars_bail!(
+                Ok(match series.len() {
+                    0 if df_height == 1 => series,
+                    1 => {
+                        if has_empty {
+
+                        polars_ensure!(df_height == 1,
                         ComputeError: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     );
+
+                            series.slice(0, 0)
+                        } else if df_height == 1 {
+                            series
+                        } else {
+                            series.new_from_index(0, df_height)
+                        }
+                    },
+                    len if len == df_height => {
+                        series
+                    },
+                    _ => {
+                        polars_bail!(
+                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
+                        series.len(), df_height
+                    )
+                    }
                 })
             })
             .collect::<PolarsResult<_>>()?

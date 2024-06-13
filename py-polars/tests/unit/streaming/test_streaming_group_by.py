@@ -8,7 +8,6 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.testing._constants import PARTITION_LIMIT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -66,7 +65,8 @@ def test_streaming_group_by_types() -> None:
                         pl.col("bool").mean().alias("bool_mean"),
                         pl.col("bool").sum().alias("bool_sum"),
                         pl.col("date").sum().alias("date_sum"),
-                        pl.col("date").mean().alias("date_mean"),
+                        # Date streaming mean/median has been temporarily disabled
+                        # pl.col("date").mean().alias("date_mean"),
                         pl.col("date").first().alias("date_first"),
                         pl.col("date").last().alias("date_last"),
                         pl.col("date").min().alias("date_min"),
@@ -87,7 +87,7 @@ def test_streaming_group_by_types() -> None:
             "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
             "date_sum": pl.Date,
-            "date_mean": pl.Date,
+            # "date_mean": pl.Date,
             "date_first": pl.Date,
             "date_last": pl.Date,
             "date_min": pl.Date,
@@ -103,8 +103,9 @@ def test_streaming_group_by_types() -> None:
             "bool_last": [False],
             "bool_mean": [0.5],
             "bool_sum": [1],
-            "date_sum": [date(2074, 1, 1)],
-            "date_mean": [date(2022, 1, 1)],
+            "date_sum": [None],
+            # Date streaming mean/median has been temporarily disabled
+            # "date_mean": [date(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],
             "date_last": [date(2022, 1, 1)],
             "date_min": [date(2022, 1, 1)],
@@ -397,7 +398,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert """--- STREAMING""" in res.explain(streaming=True)
+    assert "STREAMING" in res.explain(streaming=True)
 
 
 def test_group_by_min_max_string_type() -> None:
@@ -456,7 +457,7 @@ def test_streaming_group_null_count() -> None:
     ) == {"g": [1], "a": [3]}
 
 
-def test_streaming_groupby_binary_15116() -> None:
+def test_streaming_group_by_binary_15116() -> None:
     assert (
         pl.LazyFrame(
             {
@@ -483,16 +484,20 @@ def test_streaming_groupby_binary_15116() -> None:
     }
 
 
-def test_streaming_group_by_convert_15380() -> None:
+def test_streaming_group_by_convert_15380(partition_limit: int) -> None:
     assert (
-        pl.DataFrame({"a": [1] * PARTITION_LIMIT}).group_by(b="a").len()["len"].item()
-        == PARTITION_LIMIT
+        pl.DataFrame({"a": [1] * partition_limit}).group_by(b="a").len()["len"].item()
+        == partition_limit
     )
 
 
 @pytest.mark.parametrize("streaming", [True, False])
-@pytest.mark.parametrize("n_rows", [PARTITION_LIMIT - 1, PARTITION_LIMIT + 3])
-def test_streaming_group_by_boolean_mean_15610(n_rows: int, streaming: bool) -> None:
+@pytest.mark.parametrize("n_rows_limit_offset", [-1, +3])
+def test_streaming_group_by_boolean_mean_15610(
+    n_rows_limit_offset: int, streaming: bool, partition_limit: int
+) -> None:
+    n_rows = partition_limit + n_rows_limit_offset
+
     # Also test non-streaming because it sometimes dispatched to streaming agg.
     expect = pl.DataFrame({"a": [False, True], "c": [0.0, 0.5]})
 

@@ -1,7 +1,7 @@
 use futures::future::{try_join_all, BoxFuture};
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 use crate::parquet::metadata::ColumnChunkMetaData;
 use crate::parquet::read::get_field_columns;
 
@@ -9,7 +9,7 @@ use crate::parquet::read::get_field_columns;
 pub async fn read_column_async<'b, R, F>(
     factory: F,
     meta: &ColumnChunkMetaData,
-) -> Result<Vec<u8>, Error>
+) -> Result<Vec<u8>, ParquetError>
 where
     R: AsyncRead + AsyncSeek + Send + Unpin,
     F: Fn() -> BoxFuture<'b, std::io::Result<R>>,
@@ -40,7 +40,7 @@ pub async fn read_columns_async<
     factory: F,
     columns: &'a [ColumnChunkMetaData],
     field_name: &'a str,
-) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>, Error> {
+) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>, ParquetError> {
     let fields = get_field_columns(columns, field_name).collect::<Vec<_>>();
     let futures = fields
         .iter()

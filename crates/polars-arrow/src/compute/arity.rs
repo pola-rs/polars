@@ -105,9 +105,6 @@ where
 {
     let mut mut_bitmap = MutableBitmap::with_capacity(array.len());
 
-    // TODO: Clippy lint is broken, remove attr once fixed.
-    // https://github.com/rust-lang/rust-clippy/issues/12580
-    #[cfg_attr(feature = "nightly", allow(clippy::manual_unwrap_or_default))]
     let values = array
         .values()
         .iter()
@@ -257,9 +254,6 @@ where
 
     let mut mut_bitmap = MutableBitmap::with_capacity(lhs.len());
 
-    // TODO: Clippy lint is broken, remove attr once fixed.
-    // https://github.com/rust-lang/rust-clippy/issues/12580
-    #[cfg_attr(feature = "nightly", allow(clippy::manual_unwrap_or_default))]
     let values = lhs
         .values()
         .iter()

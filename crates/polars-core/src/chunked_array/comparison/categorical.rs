@@ -2,6 +2,7 @@ use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::FromTrustedLenIterator;
 use polars_compute::comparisons::TotalOrdKernel;
 
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::nulls::replace_non_null;
 use crate::prelude::*;
 
@@ -178,7 +179,7 @@ where
             },
         }
     } else {
-        let lhs_string = lhs.cast(&DataType::String)?;
+        let lhs_string = lhs.cast_with_options(&DataType::String, CastOptions::NonStrict)?;
         Ok(str_compare_function(lhs_string.str().unwrap(), rhs))
     }
 }
@@ -211,7 +212,7 @@ where
             ),
         }
     } else {
-        let lhs_string = lhs.cast(&DataType::String)?;
+        let lhs_string = lhs.cast_with_options(&DataType::String, CastOptions::NonStrict)?;
         Ok(str_compare_function(lhs_string.str().unwrap(), rhs))
     }
 }

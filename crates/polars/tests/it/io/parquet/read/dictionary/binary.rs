@@ -1,5 +1,5 @@
 use polars_parquet::parquet::encoding::get_length;
-use polars_parquet::parquet::error::Error;
+use polars_parquet::parquet::error::ParquetError;
 
 #[derive(Debug)]
 pub struct BinaryPageDict {
@@ -12,15 +12,15 @@ impl BinaryPageDict {
     }
 
     #[inline]
-    pub fn value(&self, index: usize) -> Result<&[u8], Error> {
+    pub fn value(&self, index: usize) -> Result<&[u8], ParquetError> {
         self.values
             .get(index)
             .map(|x| x.as_ref())
-            .ok_or_else(|| Error::OutOfSpec("invalid index".to_string()))
+            .ok_or_else(|| ParquetError::OutOfSpec("invalid index".to_string()))
     }
 }
 
-fn read_plain(bytes: &[u8], length: usize) -> Result<Vec<Vec<u8>>, Error> {
+fn read_plain(bytes: &[u8], length: usize) -> Result<Vec<Vec<u8>>, ParquetError> {
     let mut bytes = bytes;
     let mut values = Vec::new();
 
@@ -29,7 +29,7 @@ fn read_plain(bytes: &[u8], length: usize) -> Result<Vec<Vec<u8>>, Error> {
         bytes = &bytes[4..];
 
         if slot_length > bytes.len() {
-            return Err(Error::OutOfSpec(
+            return Err(ParquetError::OutOfSpec(
                 "The string on a dictionary page has a length that is out of bounds".to_string(),
             ));
         }
@@ -42,7 +42,7 @@ fn read_plain(bytes: &[u8], length: usize) -> Result<Vec<Vec<u8>>, Error> {
     Ok(values)
 }
 
-pub fn read(buf: &[u8], num_values: usize) -> Result<BinaryPageDict, Error> {
+pub fn read(buf: &[u8], num_values: usize) -> Result<BinaryPageDict, ParquetError> {
     let values = read_plain(buf, num_values)?;
     Ok(BinaryPageDict::new(values))
 }

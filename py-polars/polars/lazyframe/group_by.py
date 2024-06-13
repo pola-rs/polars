@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_function
-from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_ldf
 
 if TYPE_CHECKING:
@@ -142,7 +142,7 @@ class LazyGroupBy:
             )
             raise TypeError(msg)
 
-        pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
+        pyexprs = parse_into_list_of_expressions(*aggs, **named_aggs)
         return wrap_ldf(self.lgb.agg(pyexprs))
 
     def map_groups(
@@ -657,26 +657,3 @@ class LazyGroupBy:
         └────────┴─────┴──────┴─────┘
         """
         return self.agg(F.all().sum())
-
-    @deprecate_renamed_function("map_groups", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[DataFrame], DataFrame],
-        schema: SchemaDict | None,
-    ) -> LazyFrame:
-        """
-        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
-
-        .. deprecated:: 0.19.0
-            This method has been renamed to :func:`LazyGroupBy.map_groups`.
-
-        Parameters
-        ----------
-        function
-            Function to apply over each group of the `LazyFrame`.
-        schema
-            Schema of the output function. This has to be known statically. If the
-            given schema is incorrect, this is a bug in the caller's query and may
-            lead to errors. If set to None, polars assumes the schema is unchanged.
-        """
-        return self.map_groups(function, schema)

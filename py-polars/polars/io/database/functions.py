@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
 
-from polars._utils.deprecation import issue_deprecation_warning
 from polars.datatypes import N_INFER_DEFAULT
-from polars.exceptions import InvalidOperationError
+from polars.dependencies import import_optional
 from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 
@@ -31,12 +30,11 @@ def read_database(
     query: str | Selectable,
     connection: ConnectionOrCursor | str,
     *,
-    iter_batches: Literal[False] = False,
+    iter_batches: Literal[False] = ...,
     batch_size: int | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     execute_options: dict[str, Any] | None = ...,
-    **kwargs: Any,
 ) -> DataFrame: ...
 
 
@@ -50,11 +48,23 @@ def read_database(
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     execute_options: dict[str, Any] | None = ...,
-    **kwargs: Any,
 ) -> Iterable[DataFrame]: ...
 
 
-def read_database(  # noqa: D417
+@overload
+def read_database(
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
+    *,
+    iter_batches: bool,
+    batch_size: int | None = ...,
+    schema_overrides: SchemaDict | None = ...,
+    infer_schema_length: int | None = ...,
+    execute_options: dict[str, Any] | None = ...,
+) -> DataFrame | Iterable[DataFrame]: ...
+
+
+def read_database(
     query: str | Selectable,
     connection: ConnectionOrCursor | str,
     *,
@@ -63,7 +73,6 @@ def read_database(  # noqa: D417
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     execute_options: dict[str, Any] | None = None,
-    **kwargs: Any,
 ) -> DataFrame | Iterable[DataFrame]:
     """
     Read the results of a SQL query into a DataFrame, given a connection object.
@@ -132,7 +141,7 @@ def read_database(  # noqa: D417
 
     * The `read_database_uri` function can be noticeably faster than `read_database`
       if you are using a SQLAlchemy or DBAPI2 connection, as `connectorx` and `adbc`
-      optimises translation of the result set into Arrow format. Note that you can
+      optimise translation of the result set into Arrow format. Note that you can
       determine a connection's URI from a SQLAlchemy engine object by calling
       `conn.engine.url.render_as_string(hide_password=False)`.
 
@@ -140,9 +149,10 @@ def read_database(  # noqa: D417
       query then that cursor will be automatically closed when the query completes;
       however, Polars will *never* close any other open connection or cursor.
 
-    * We are able to support more than just relational databases and SQL queries
-      through this function. For example, we can load graph database results from
-      a `KùzuDB` connection in conjunction with a Cypher query.
+    * Polars is able to support more than just relational databases and SQL queries
+      through this function. For example, you can load local graph database results
+      from a `KùzuDB` connection in conjunction with a Cypher query, or use SurrealQL
+      with SurrealDB.
 
     See Also
     --------
@@ -224,40 +234,19 @@ def read_database(  # noqa: D417
     if isinstance(connection, str):
         # check for odbc connection string
         if re.search(r"\bdriver\s*=\s*{[^}]+?}", connection, re.IGNORECASE):
-            try:
-                import arrow_odbc  # noqa: F401
-            except ModuleNotFoundError:
-                msg = (
-                    "use of an ODBC connection string requires the `arrow-odbc` package"
-                    "\n\nPlease run: pip install arrow-odbc"
-                )
-                raise ModuleNotFoundError(msg) from None
-
+            _ = import_optional(
+                module_name="arrow_odbc",
+                err_prefix="use of ODBC connection string requires the",
+                err_suffix="package",
+            )
             connection = ODBCCursorProxy(connection)
+        elif "://" in connection:
+            # otherwise looks like a mistaken call to read_database_uri
+            msg = "Use of string URI is invalid here; call `read_database_uri` instead"
+            raise ValueError(msg)
         else:
-            # otherwise looks like a call to read_database_uri
-            issue_deprecation_warning(
-                message="Use of a string URI with 'read_database' is deprecated; use `read_database_uri` instead",
-                version="0.19.0",
-            )
-            if iter_batches or batch_size:
-                msg = "Batch parameters are not supported for `read_database_uri`"
-                raise InvalidOperationError(msg)
-            if not isinstance(query, (list, str)):
-                msg = f"`read_database_uri` expects one or more string queries; found {type(query)}"
-                raise TypeError(msg)
-            return read_database_uri(
-                query,
-                uri=connection,
-                schema_overrides=schema_overrides,
-                **kwargs,
-            )
-
-    # note: can remove this check (and **kwargs) once we drop the
-    # pass-through deprecation support for read_database_uri
-    if kwargs:
-        msg = f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
-        raise ValueError(msg)
+            msg = "unable to identify string connection as valid ODBC (no driver)"
+            raise ValueError(msg)
 
     # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:

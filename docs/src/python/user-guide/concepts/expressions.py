@@ -3,7 +3,7 @@ import polars as pl
 df = pl.DataFrame(
     {
         "foo": [1, 2, 3, None, 5],
-        "bar": ["foo", "ham", "spam", "egg", None],
+        "bar": [1.5, 0.9, 2.0, 0.0, None],
     }
 )
 

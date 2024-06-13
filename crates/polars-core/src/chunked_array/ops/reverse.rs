@@ -74,7 +74,7 @@ impl ChunkReverse for BinaryChunked {
 
 impl ChunkReverse for StringChunked {
     fn reverse(&self) -> Self {
-        unsafe { self.as_binary().reverse().to_string() }
+        unsafe { self.as_binary().reverse().to_string_unchecked() }
     }
 }
 
@@ -89,7 +89,7 @@ impl ChunkReverse for ArrayChunked {
         let values = arr.values().as_ref();
 
         let mut builder =
-            get_fixed_size_list_builder(&ca.inner_dtype(), ca.len(), ca.width(), ca.name())
+            get_fixed_size_list_builder(ca.inner_dtype(), ca.len(), ca.width(), ca.name())
                 .expect("not yet supported");
 
         // SAFETY, we are within bounds

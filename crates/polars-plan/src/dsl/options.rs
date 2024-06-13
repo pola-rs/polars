@@ -97,3 +97,11 @@ pub enum WindowMapping {
     /// warning: this can be memory intensive
     Join,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum NestedType {
+    #[cfg(feature = "dtype-array")]
+    Array,
+    List,
+}

@@ -4,7 +4,7 @@ mod primitive;
 
 pub use binary::BinaryPageDict;
 pub use fixed_len_binary::FixedLenByteArrayPageDict;
-use polars_parquet::parquet::error::{Error, Result};
+use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::page::DictPage;
 use polars_parquet::parquet::schema::types::PhysicalType;
 pub use primitive::PrimitivePageDict;
@@ -19,7 +19,7 @@ pub enum DecodedDictPage {
     FixedLenByteArray(FixedLenByteArrayPageDict),
 }
 
-pub fn deserialize(page: &DictPage, physical_type: PhysicalType) -> Result<DecodedDictPage> {
+pub fn deserialize(page: &DictPage, physical_type: PhysicalType) -> ParquetResult<DecodedDictPage> {
     _deserialize(&page.buffer, page.num_values, page.is_sorted, physical_type)
 }
 
@@ -28,9 +28,9 @@ fn _deserialize(
     num_values: usize,
     is_sorted: bool,
     physical_type: PhysicalType,
-) -> Result<DecodedDictPage> {
+) -> ParquetResult<DecodedDictPage> {
     match physical_type {
-        PhysicalType::Boolean => Err(Error::OutOfSpec(
+        PhysicalType::Boolean => Err(ParquetError::OutOfSpec(
             "Boolean physical type cannot be dictionary-encoded".to_string(),
         )),
         PhysicalType::Int32 => {

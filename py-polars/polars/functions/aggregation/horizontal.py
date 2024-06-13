@@ -4,8 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable
 
 import polars.functions as F
-from polars._utils.deprecation import deprecate_renamed_function
-from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import UInt32
 
@@ -58,7 +57,7 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ null  ┆ null  ┆ z   ┆ null  │
     └───────┴───────┴─────┴───────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.all_horizontal(pyexprs))
 
 
@@ -103,7 +102,7 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ null  ┆ null  ┆ z   ┆ null  │
     └───────┴───────┴─────┴───────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.any_horizontal(pyexprs))
 
 
@@ -138,7 +137,7 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 3   ┆ null ┆ z   ┆ 3   │
     └─────┴──────┴─────┴─────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.max_horizontal(pyexprs))
 
 
@@ -173,7 +172,7 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 3   ┆ null ┆ z   ┆ 3   │
     └─────┴──────┴─────┴─────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.min_horizontal(pyexprs))
 
 
@@ -208,7 +207,7 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 3   ┆ null ┆ z   ┆ 3   │
     └─────┴──────┴─────┴─────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.sum_horizontal(pyexprs))
 
 
@@ -243,7 +242,7 @@ def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 3   ┆ null ┆ z   ┆ 3.0  │
     └─────┴──────┴─────┴──────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.mean_horizontal(pyexprs))
 
 
@@ -278,27 +277,10 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ 3   ┆ null ┆ z   ┆ {3,null}  │
     └─────┴──────┴─────┴───────────┘
     """
-    pyexprs = parse_as_list_of_expressions(*exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs)
     exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
     # (Expr): use u32 as that will not cast to float as eagerly
     return F.cum_fold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
         "cum_sum"
     )
-
-
-@deprecate_renamed_function("cum_sum_horizontal", version="0.19.14")
-def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
-    """
-    Cumulatively sum all values horizontally across columns.
-
-    .. deprecated:: 0.19.14
-        This function has been renamed to :func:`cum_sum_horizontal`.
-
-    Parameters
-    ----------
-    *exprs
-        Column(s) to use in the aggregation. Accepts expression input. Strings are
-        parsed as column names, other non-expression inputs are parsed as literals.
-    """
-    return cum_sum_horizontal(*exprs).alias("cumsum")

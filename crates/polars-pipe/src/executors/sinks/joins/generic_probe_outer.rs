@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::_coalesce_outer_join;
+use polars_ops::prelude::_coalesce_full_join;
 use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
@@ -18,12 +18,12 @@ use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
-pub struct GenericOuterJoinProbe<K: ExtraPayload> {
+pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     /// all chunks are stacked into a single dataframe
     /// the dataframe is not rechunked.
     df_a: Arc<DataFrame>,
     // Dummy needed for the flush phase.
-    df_b_dummy: Option<DataFrame>,
+    df_b_flush_dummy: Option<DataFrame>,
     /// The join columns are all tightly packed
     /// the values of a join column(s) can be found
     /// by:
@@ -58,7 +58,7 @@ pub struct GenericOuterJoinProbe<K: ExtraPayload> {
     key_names_right: Arc<[SmartString]>,
 }
 
-impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
+impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         df_a: DataFrame,
@@ -75,9 +75,9 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         key_names_left: Arc<[SmartString]>,
         key_names_right: Arc<[SmartString]>,
     ) -> Self {
-        GenericOuterJoinProbe {
+        GenericFullOuterJoinProbe {
             df_a: Arc::new(df_a),
-            df_b_dummy: None,
+            df_b_flush_dummy: None,
             materialized_join_cols,
             suffix,
             hb,
@@ -152,7 +152,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
                 .iter()
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>();
-            Ok(_coalesce_outer_join(
+            Ok(_coalesce_full_join(
                 out,
                 &l,
                 &r,
@@ -207,8 +207,8 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         self.join_tuples_a.clear();
         self.join_tuples_b.clear();
 
-        if self.df_b_dummy.is_none() {
-            self.df_b_dummy = Some(chunk.data.clear())
+        if self.df_b_flush_dummy.is_none() {
+            self.df_b_flush_dummy = Some(chunk.data.clear())
         }
 
         let mut hashes = std::mem::take(&mut self.hashes);
@@ -270,7 +270,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
         };
 
         let size = left_df.height();
-        let right_df = self.df_b_dummy.as_ref().unwrap();
+        let right_df = self.df_b_flush_dummy.as_ref().unwrap();
 
         let right_df = unsafe {
             DataFrame::new_no_checks(
@@ -287,7 +287,7 @@ impl<K: ExtraPayload> GenericOuterJoinProbe<K> {
     }
 }
 
-impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
+impl<K: ExtraPayload> Operator for GenericFullOuterJoinProbe<K> {
     fn execute(
         &mut self,
         context: &PExecutionContext,
@@ -301,7 +301,7 @@ impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
     }
 
     fn must_flush(&self) -> bool {
-        true
+        self.df_b_flush_dummy.is_some()
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Operator> {
@@ -310,6 +310,6 @@ impl<K: ExtraPayload> Operator for GenericOuterJoinProbe<K> {
         Box::new(new)
     }
     fn fmt(&self) -> &str {
-        "generic_outer_join_probe"
+        "generic_full_join_probe"
     }
 }

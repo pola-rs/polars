@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
@@ -20,11 +21,17 @@ TEMPORAL_DTYPES: set[pl.PolarsDataType] = (
     {pl.Date, pl.Time} | pl.DURATION_DTYPES | DATETIME_DTYPES
 )
 
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+else:
+    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
+
 
 @given(
     s=series(
         allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
+        allow_chunks=False,
     )
 )
 def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
@@ -36,8 +43,8 @@ def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
 @given(
     s=series(
         allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
-        chunked=False,
-        null_probability=0.0,
+        allow_chunks=False,
+        allow_null=False,
     )
 )
 def test_series_from_buffers_numeric(s: pl.Series) -> None:
@@ -45,7 +52,7 @@ def test_series_from_buffers_numeric(s: pl.Series) -> None:
     assert_series_equal(s, result)
 
 
-@given(s=series(allowed_dtypes=TEMPORAL_DTYPES, chunked=False))
+@given(s=series(allowed_dtypes=TEMPORAL_DTYPES, allow_chunks=False))
 def test_series_from_buffers_temporal_with_validity(s: pl.Series) -> None:
     validity = s.is_not_null()
     physical = pl.Int32 if s.dtype == pl.Date else pl.Int64
@@ -89,11 +96,12 @@ def test_series_from_buffers_boolean() -> None:
 
 def test_series_from_buffers_datetime() -> None:
     dtype = pl.Datetime(time_zone="Europe/Amsterdam")
+    tzinfo = ZoneInfo("Europe/Amsterdam")
     data = pl.Series(
         [
-            datetime(2022, 2, 10, 6),
-            datetime(2022, 2, 11, 12),
-            datetime(2022, 2, 12, 18),
+            datetime(2022, 2, 10, 6, tzinfo=tzinfo),
+            datetime(2022, 2, 11, 12, tzinfo=tzinfo),
+            datetime(2022, 2, 12, 18, tzinfo=tzinfo),
         ],
         dtype=dtype,
     ).cast(pl.Int64)
@@ -103,9 +111,9 @@ def test_series_from_buffers_datetime() -> None:
 
     expected = pl.Series(
         [
-            datetime(2022, 2, 10, 6),
+            datetime(2022, 2, 10, 6, tzinfo=tzinfo),
             None,
-            datetime(2022, 2, 12, 18),
+            datetime(2022, 2, 12, 18, tzinfo=tzinfo),
         ],
         dtype=dtype,
     )

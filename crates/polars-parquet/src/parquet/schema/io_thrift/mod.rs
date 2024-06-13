@@ -4,11 +4,11 @@ mod to_thrift;
 
 #[cfg(test)]
 mod tests {
-    use crate::parquet::error::Result;
+    use crate::parquet::error::ParquetResult;
     use crate::parquet::schema::io_message::from_message;
     use crate::parquet::schema::types::ParquetType;
 
-    fn test_round_trip(message: &str) -> Result<()> {
+    fn test_round_trip(message: &str) -> ParquetResult<()> {
         let expected_schema = from_message(message)?;
         let thrift_schema = expected_schema.to_thrift();
         let thrift_schema = thrift_schema.into_iter().collect::<Vec<_>>();

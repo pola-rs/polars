@@ -11,7 +11,7 @@ use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::datatypes::ArrowSchema;
 use crate::io::ipc::IpcSchema;
-use crate::record_batch::RecordBatch;
+use crate::record_batch::RecordBatchT;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream
 #[derive(Debug, Clone)]
@@ -67,7 +67,7 @@ pub enum StreamState {
     /// A live stream without data
     Waiting,
     /// Next item in the stream
-    Some(RecordBatch<Box<dyn Array>>),
+    Some(RecordBatchT<Box<dyn Array>>),
 }
 
 impl StreamState {
@@ -76,7 +76,7 @@ impl StreamState {
     /// # Panics
     ///
     /// If the `StreamState` was `Waiting`.
-    pub fn unwrap(self) -> RecordBatch<Box<dyn Array>> {
+    pub fn unwrap(self) -> RecordBatchT<Box<dyn Array>> {
         if let StreamState::Some(batch) = self {
             batch
         } else {

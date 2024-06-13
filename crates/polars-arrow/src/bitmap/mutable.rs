@@ -4,9 +4,9 @@ use std::sync::Arc;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{
-    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunksExactMut, BitmapIter,
+    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunks, BitChunksExactMut, BitmapIter,
 };
-use super::Bitmap;
+use super::{intersects_with_mut, Bitmap};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
 use crate::trusted_len::TrustedLen;
 
@@ -246,10 +246,13 @@ impl MutableBitmap {
         count_zeros(&self.buffer, 0, self.length)
     }
 
-    /// Returns the number of unset bits on this [`MutableBitmap`].
-    #[deprecated(since = "0.13.0", note = "use `unset_bits` instead")]
-    pub fn null_count(&self) -> usize {
-        self.unset_bits()
+    /// Returns the number of set bits on this [`MutableBitmap`].
+    ///
+    /// Guaranteed to be `<= self.len()`.
+    /// # Implementation
+    /// This function is `O(N)`
+    pub fn set_bits(&self) -> usize {
+        self.length - self.unset_bits()
     }
 
     /// Returns the length of the [`MutableBitmap`].
@@ -335,9 +338,20 @@ impl MutableBitmap {
         self.buffer.shrink_to_fit();
     }
 
+    /// Returns an iterator over bits in bit chunks [`BitChunk`].
+    ///
+    /// This iterator is useful to operate over multiple bits via e.g. bitwise.
+    pub fn chunks<T: BitChunk>(&self) -> BitChunks<T> {
+        BitChunks::new(&self.buffer, 0, self.length)
+    }
+
     /// Returns an iterator over mutable slices, [`BitChunksExactMut`]
     pub(crate) fn bitchunks_exact_mut<T: BitChunk>(&mut self) -> BitChunksExactMut<T> {
         BitChunksExactMut::new(&mut self.buffer, self.length)
+    }
+
+    pub fn intersects_with(&self, other: &Self) -> bool {
+        intersects_with_mut(self, other)
     }
 
     pub fn freeze(self) -> Bitmap {

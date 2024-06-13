@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars::prelude::*;
 use pyo3::prelude::*;
 use smartstring::alias::String as SmartString;
@@ -46,7 +48,7 @@ impl PyExpr {
         let name_mapper = Arc::new(move |name: &str| {
             Python::with_gil(|py| {
                 let out = name_mapper.call1(py, (name,)).unwrap();
-                let out: SmartString = out.extract::<&str>(py).unwrap().into();
+                let out: SmartString = out.extract::<Cow<str>>(py).unwrap().into();
                 out
             })
         }) as FieldsNameMapper;

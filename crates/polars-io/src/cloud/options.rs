@@ -188,7 +188,7 @@ fn read_config(
             continue;
         }
 
-        let mut config = std::fs::File::open(&resolve_homedir(path)).ok()?;
+        let mut config = std::fs::File::open(resolve_homedir(path)).ok()?;
         let mut buf = vec![];
         config.read_to_end(&mut buf).ok()?;
         let content = std::str::from_utf8(buf.as_ref()).ok()?;
@@ -429,10 +429,10 @@ impl CloudOptions {
 #[cfg(feature = "cloud")]
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::parse_url;
 
     #[test]
-    fn test_parse_path() {
+    fn test_parse_url() {
         assert_eq!(
             parse_url(r"http://Users/Jane Doe/data.csv")
                 .unwrap()

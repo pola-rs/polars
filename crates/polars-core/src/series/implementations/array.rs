@@ -1,16 +1,15 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use super::private;
+use super::{private, MetadataFlags};
+use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::{AsSinglePtr, Settings};
+use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-#[cfg(feature = "chunked_ids")]
-use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn compute_len(&mut self) {
@@ -23,11 +22,11 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         self.0.ref_field().data_type()
     }
 
-    fn _get_flags(&self) -> Settings {
+    fn _get_flags(&self) -> MetadataFlags {
         self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, flags: Settings) {
+    fn _set_flags(&mut self, flags: MetadataFlags) {
         self.0.set_flags(flags)
     }
 
@@ -53,6 +52,24 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.add_to(rhs)
+    }
+
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.subtract(rhs)
+    }
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.multiply(rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.divide(rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.remainder(rhs)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<ArrayChunked> {
@@ -60,8 +77,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.rename(name);
     }
 
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.chunk_id()
+    fn chunk_lengths(&self) -> ChunkLenIter {
+        self.0.chunk_lengths()
     }
     fn name(&self) -> &str {
         self.0.name()
@@ -79,6 +96,11 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
+    }
+
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_series(), b.into_series())
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -124,8 +146,8 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        self.0.cast(data_type)
+    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(data_type, options)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

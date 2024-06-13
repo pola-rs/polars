@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any, Iterator, cast
 
 
@@ -24,6 +23,8 @@ def PortableTemporaryFile(
 
     Plays better with Windows when using the 'delete' option.
     """
+    from tempfile import NamedTemporaryFile
+
     params = cast(
         Any,
         {

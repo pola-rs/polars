@@ -3,21 +3,21 @@ use std::borrow::Cow;
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
-#[cfg(feature = "regex")]
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+use polars_core::utils::handle_casting_failures;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::format_smartstring;
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::*;
+use crate::{map, map_as_slice};
+
 #[cfg(feature = "timezones")]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
-
-use polars_core::utils::handle_casting_failures;
-#[cfg(feature = "dtype-struct")]
-use polars_utils::format_smartstring;
-
-use super::*;
-use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -39,7 +39,6 @@ pub enum StringFunction {
     },
     CountMatches(bool),
     EndsWith,
-    Explode,
     Extract(usize),
     ExtractAll,
     #[cfg(feature = "extract_groups")]
@@ -62,6 +61,8 @@ pub enum StringFunction {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     },
+    #[cfg(feature = "extract_jsonpath")]
+    JsonPathMatch,
     #[cfg(feature = "regex")]
     Replace {
         // negative is replace all
@@ -135,7 +136,6 @@ impl StringFunction {
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-            Explode => mapper.with_same_dtype(),
             Extract(_) => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
@@ -146,6 +146,8 @@ impl StringFunction {
             Find { .. } => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
@@ -204,7 +206,6 @@ impl Display for StringFunction {
             ConcatHorizontal { .. } => "concat_horizontal",
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } => "concat_vertical",
-            Explode => "explode",
             ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
@@ -216,6 +217,8 @@ impl Display for StringFunction {
             Tail { .. } => "tail",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
             Lowercase => "lowercase",
             LenChars => "len_chars",
@@ -327,7 +330,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatVertical {
                 delimiter,
                 ignore_nulls,
-            } => map!(strings::concat, &delimiter, ignore_nulls),
+            } => map!(strings::join, &delimiter, ignore_nulls),
             #[cfg(feature = "concat_str")]
             ConcatHorizontal {
                 delimiter,
@@ -359,7 +362,6 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Base64Encode => map!(strings::base64_encode),
             #[cfg(feature = "binary_encoding")]
             Base64Decode(strict) => map!(strings::base64_decode, strict),
-            Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
             #[cfg(feature = "extract_jsonpath")]
@@ -367,6 +369,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 dtype,
                 infer_schema_len,
             } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
             ContainsMany {
                 ascii_case_insensitive,
@@ -648,16 +652,10 @@ fn to_datetime(
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };
-    if let (Some(tz), true) = (time_zone, tz_aware) {
-        if tz != "UTC" {
-            polars_bail!(
-                ComputeError:
-                "if using strftime/to_datetime with a time-zone-aware format, the output will be in UTC. Please either drop the time zone from the function call, or set it to UTC. \
-                If you are trying to convert the output to a different time zone, please use `convert_time_zone`."
-            )
-        }
-    };
-
+    #[cfg(feature = "timezones")]
+    if let Some(time_zone) = time_zone {
+        validate_time_zone(time_zone)?;
+    }
     let out = if options.exact {
         datetime_strings
             .as_datetime(
@@ -705,10 +703,10 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
+pub(super) fn join(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
     let str_s = s.cast(&DataType::String)?;
-    let concat = polars_ops::chunked_array::str_concat(str_s.str()?, delimiter, ignore_nulls);
-    Ok(concat.into_series())
+    let joined = polars_ops::chunked_array::str_join(str_s.str()?, delimiter, ignore_nulls);
+    Ok(joined.into_series())
 }
 
 #[cfg(feature = "concat_str")]
@@ -964,11 +962,6 @@ pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
     s.str()?.base64_decode(strict).map(|ca| ca.into_series())
 }
 
-pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
-    let ca = s.str()?;
-    ca.explode()
-}
-
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
     let ca = s.str()?;
@@ -983,4 +976,11 @@ pub(super) fn json_decode(
 ) -> PolarsResult<Series> {
     let ca = s.str()?;
     ca.json_decode(dtype, infer_schema_len)
+}
+
+#[cfg(feature = "extract_jsonpath")]
+pub(super) fn json_path_match(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let pat = s[1].str()?;
+    Ok(ca.json_path_match(pat)?.into_series())
 }

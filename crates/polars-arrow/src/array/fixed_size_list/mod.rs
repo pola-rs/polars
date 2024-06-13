@@ -1,4 +1,4 @@
-use super::{new_empty_array, new_null_array, Array};
+use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
@@ -69,6 +69,7 @@ impl FixedSizeListArray {
     }
 
     /// Alias to `Self::try_new(...).unwrap()`
+    #[track_caller]
     pub fn new(data_type: ArrowDataType, values: Box<dyn Array>, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }
@@ -213,5 +214,35 @@ impl Array for FixedSizeListArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl Splitable for FixedSizeListArray {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs_values, rhs_values) =
+            unsafe { self.values.split_at_boxed_unchecked(offset * self.size) };
+        let (lhs_validity, rhs_validity) =
+            unsafe { self.validity.split_at_unchecked(offset * self.size) };
+
+        let size = self.size;
+
+        (
+            Self {
+                data_type: self.data_type.clone(),
+                values: lhs_values,
+                validity: lhs_validity,
+                size,
+            },
+            Self {
+                data_type: self.data_type.clone(),
+                values: rhs_values,
+                validity: rhs_validity,
+                size,
+            },
+        )
     }
 }

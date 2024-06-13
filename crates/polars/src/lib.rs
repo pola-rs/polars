@@ -245,7 +245,7 @@
 //!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
 //!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
-//!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
+//!     - `interpolate` [interpolate None values](polars_ops::series::interpolate())
 //!     - `extract_jsonpath` - [Run jsonpath queries on StringChunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_gather` take sublist by multiple indices
@@ -266,7 +266,7 @@
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.
 //!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
-//!     - `date_offset` - Add an offset to dates that take months and leap years into account.
+//!     - `offset_by` - Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` - Trigonometric functions.
 //!     - `sign` - Compute the element-wise sign of a [`Series`].
 //!     - `propagate_nans` - NaN propagating min/max aggregations.
@@ -315,13 +315,17 @@
 //! * `dtype-full` - all opt-in dtypes.
 //! * `dtype-slim` - slim preset of opt-in dtypes.
 //!
-//! ## Performance and string data
-//! Large string data can really slow down your queries.
-//! Read more in the [performance section](crate::docs::performance)
+//! ## Performance
+//! To gains most performance out of Polars we recommend compiling on a nightly compiler
+//! with the features `simd` and `performant` activated. The activated cpu features also influence
+//! the amount of simd acceleration we can use.
+//!
+//! See this the features we activate for our python builds, or if you just run locally and want to
+//! use all available features on your cpu, set `RUSTFLAGS='-C target-cpu=native'`.
 //!
 //! ### Custom allocator
-//! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
-//! allocator.
+//! An OLAP query engine does a lot of heap allocations. It is recommended to use a custom
+//! allocator, (we have found this to have up to ~25% runtime influence).
 //! [JeMalloc](https://crates.io/crates/jemallocator) and
 //! [Mimalloc](https://crates.io/crates/mimalloc) for instance, show a significant
 //! performance gain in runtime as well as memory usage.

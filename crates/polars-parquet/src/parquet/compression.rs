@@ -2,15 +2,18 @@
 pub use super::parquet_bridge::{
     BrotliLevel, Compression, CompressionOptions, GzipLevel, ZstdLevel,
 };
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 
 #[cfg(any(feature = "snappy", feature = "lz4"))]
-fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Result<usize>>(
+fn inner_compress<
+    G: Fn(usize) -> ParquetResult<usize>,
+    F: Fn(&[u8], &mut [u8]) -> ParquetResult<usize>,
+>(
     input: &[u8],
     output: &mut Vec<u8>,
     get_length: G,
     compress: F,
-) -> Result<()> {
+) -> ParquetResult<()> {
     let original_length = output.len();
     let max_required_length = get_length(input.len())?;
 
@@ -30,7 +33,7 @@ pub fn compress(
     compression: CompressionOptions,
     input_buf: &[u8],
     #[allow(clippy::ptr_arg)] output_buf: &mut Vec<u8>,
-) -> Result<()> {
+) -> ParquetResult<()> {
     match compression {
         #[cfg(feature = "brotli")]
         CompressionOptions::Brotli(level) => {
@@ -49,7 +52,7 @@ pub fn compress(
             encoder.flush().map_err(|e| e.into())
         },
         #[cfg(not(feature = "brotli"))]
-        CompressionOptions::Brotli(_) => Err(Error::FeatureNotActive(
+        CompressionOptions::Brotli(_) => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Brotli,
             "compress to brotli".to_string(),
         )),
@@ -62,7 +65,7 @@ pub fn compress(
             encoder.try_finish().map_err(|e| e.into())
         },
         #[cfg(not(feature = "gzip"))]
-        CompressionOptions::Gzip(_) => Err(Error::FeatureNotActive(
+        CompressionOptions::Gzip(_) => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Gzip,
             "compress to gzip".to_string(),
         )),
@@ -74,7 +77,7 @@ pub fn compress(
             |input, output| Ok(snap::raw::Encoder::new().compress(input, output)?),
         ),
         #[cfg(not(feature = "snappy"))]
-        CompressionOptions::Snappy => Err(Error::FeatureNotActive(
+        CompressionOptions::Snappy => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Snappy,
             "compress to snappy".to_string(),
         )),
@@ -89,7 +92,7 @@ pub fn compress(
             },
         ),
         #[cfg(all(not(feature = "lz4"), not(feature = "lz4_flex")))]
-        CompressionOptions::Lz4Raw => Err(Error::FeatureNotActive(
+        CompressionOptions::Lz4Raw => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Lz4,
             "compress to lz4".to_string(),
         )),
@@ -112,14 +115,14 @@ pub fn compress(
             }
         },
         #[cfg(not(feature = "zstd"))]
-        CompressionOptions::Zstd(_) => Err(Error::FeatureNotActive(
+        CompressionOptions::Zstd(_) => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Zstd,
             "compress to zstd".to_string(),
         )),
-        CompressionOptions::Uncompressed => Err(Error::InvalidParameter(
+        CompressionOptions::Uncompressed => Err(ParquetError::InvalidParameter(
             "Compressing uncompressed".to_string(),
         )),
-        _ => Err(Error::FeatureNotSupported(format!(
+        _ => Err(ParquetError::FeatureNotSupported(format!(
             "Compression {:?} is not supported",
             compression,
         ))),
@@ -129,7 +132,11 @@ pub fn compress(
 /// Decompresses data stored in slice `input_buf` and writes output to `output_buf`.
 /// Returns the total number of bytes written.
 #[allow(unused_variables)]
-pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> {
+pub fn decompress(
+    compression: Compression,
+    input_buf: &[u8],
+    output_buf: &mut [u8],
+) -> ParquetResult<()> {
     match compression {
         #[cfg(feature = "brotli")]
         Compression::Brotli => {
@@ -140,7 +147,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
                 .map_err(|e| e.into())
         },
         #[cfg(not(feature = "brotli"))]
-        Compression::Brotli => Err(Error::FeatureNotActive(
+        Compression::Brotli => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Brotli,
             "decompress with brotli".to_string(),
         )),
@@ -151,7 +158,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
             decoder.read_exact(output_buf).map_err(|e| e.into())
         },
         #[cfg(not(feature = "gzip"))]
-        Compression::Gzip => Err(Error::FeatureNotActive(
+        Compression::Gzip => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Gzip,
             "decompress with gzip".to_string(),
         )),
@@ -161,7 +168,9 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
 
             let len = decompress_len(input_buf)?;
             if len > output_buf.len() {
-                return Err(Error::OutOfSpec(String::from("snappy header out of spec")));
+                return Err(ParquetError::OutOfSpec(String::from(
+                    "snappy header out of spec",
+                )));
             }
             Decoder::new()
                 .decompress(input_buf, output_buf)
@@ -169,7 +178,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
                 .map(|_| ())
         },
         #[cfg(not(feature = "snappy"))]
-        Compression::Snappy => Err(Error::FeatureNotActive(
+        Compression::Snappy => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Snappy,
             "decompress with snappy".to_string(),
         )),
@@ -184,7 +193,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
                 .map_err(|e| e.into())
         },
         #[cfg(all(not(feature = "lz4"), not(feature = "lz4_flex")))]
-        Compression::Lz4Raw => Err(Error::FeatureNotActive(
+        Compression::Lz4Raw => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Lz4,
             "decompress with lz4".to_string(),
         )),
@@ -196,7 +205,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
         }),
 
         #[cfg(all(not(feature = "lz4_flex"), not(feature = "lz4")))]
-        Compression::Lz4 => Err(Error::FeatureNotActive(
+        Compression::Lz4 => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Lz4,
             "decompress with legacy lz4".to_string(),
         )),
@@ -208,14 +217,14 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
             decoder.read_exact(output_buf).map_err(|e| e.into())
         },
         #[cfg(not(feature = "zstd"))]
-        Compression::Zstd => Err(Error::FeatureNotActive(
+        Compression::Zstd => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Zstd,
             "decompress with zstd".to_string(),
         )),
-        Compression::Uncompressed => Err(Error::InvalidParameter(
+        Compression::Uncompressed => Err(ParquetError::InvalidParameter(
             "Compressing uncompressed".to_string(),
         )),
-        _ => Err(Error::FeatureNotSupported(format!(
+        _ => Err(ParquetError::FeatureNotSupported(format!(
             "Compression {:?} is not supported",
             compression,
         ))),
@@ -226,7 +235,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
 /// Translated from the apache arrow c++ function [TryDecompressHadoop](https://github.com/apache/arrow/blob/bf18e6e4b5bb6180706b1ba0d597a65a4ce5ca48/cpp/src/arrow/util/compression_lz4.cc#L474).
 /// Returns error if decompression failed.
 #[cfg(any(feature = "lz4", feature = "lz4_flex"))]
-fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> {
+fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> ParquetResult<()> {
     // Parquet files written with the Hadoop Lz4Codec use their own framing.
     // The input buffer can contain an arbitrary number of "frames", each
     // with the following structure:
@@ -254,11 +263,13 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> 
         input_len -= PREFIX_LEN;
 
         if input_len < expected_compressed_size as usize {
-            return Err(Error::oos("Not enough bytes for Hadoop frame"));
+            return Err(ParquetError::oos("Not enough bytes for Hadoop frame"));
         }
 
         if output_len < expected_decompressed_size as usize {
-            return Err(Error::oos("Not enough bytes to hold advertised output"));
+            return Err(ParquetError::oos(
+                "Not enough bytes to hold advertised output",
+            ));
         }
         let decompressed_size = lz4_decompress_to_buffer(
             &input[..expected_compressed_size as usize],
@@ -266,7 +277,7 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> 
             output,
         )?;
         if decompressed_size != expected_decompressed_size as usize {
-            return Err(Error::oos("unexpected decompressed size"));
+            return Err(ParquetError::oos("unexpected decompressed size"));
         }
         input_len -= expected_compressed_size as usize;
         output_len -= expected_decompressed_size as usize;
@@ -280,7 +291,7 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> 
     if input_len == 0 {
         Ok(())
     } else {
-        Err(Error::oos("Not all input are consumed"))
+        Err(ParquetError::oos("Not all input are consumed"))
     }
 }
 
@@ -290,7 +301,7 @@ fn lz4_decompress_to_buffer(
     src: &[u8],
     uncompressed_size: Option<i32>,
     buffer: &mut [u8],
-) -> Result<usize> {
+) -> ParquetResult<usize> {
     let size = lz4::block::decompress_to_buffer(src, uncompressed_size, buffer)?;
     Ok(size)
 }

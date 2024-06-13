@@ -59,15 +59,29 @@ def s3(s3_base: str, io_files_path: Path) -> str:
 
 @pytest.mark.parametrize(
     ("function", "extension"),
-    [(pl.read_csv, "csv"), (pl.read_ipc, "ipc")],
+    [
+        pytest.param(
+            pl.read_csv,
+            "csv",
+            marks=pytest.mark.skip(
+                reason="Causes intermittent failures in CI. See: "
+                "https://github.com/pola-rs/polars/issues/16910"
+            ),
+        ),
+        (pl.read_ipc, "ipc"),
+    ],
 )
 def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
+    storage_options = {"endpoint_url": s3}
     df = function(
         f"s3://bucket/foods1.{extension}",
-        storage_options={"endpoint_url": s3},
+        storage_options=storage_options,
     )
     assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
     assert df.shape == (27, 4)
+
+    # ensure we aren't modifying the original user dictionary (ref #15859)
+    assert storage_options == {"endpoint_url": s3}
 
 
 @pytest.mark.parametrize(

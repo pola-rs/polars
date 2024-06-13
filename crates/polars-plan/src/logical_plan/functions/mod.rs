@@ -1,4 +1,5 @@
 mod count;
+mod dsl;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
@@ -10,8 +11,9 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+pub use dsl::*;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -22,8 +24,6 @@ use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
 use crate::logical_plan::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
-
-type CachedSchema = Arc<Mutex<Option<SchemaRef>>>;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -58,16 +58,14 @@ pub enum FunctionNode {
         alias: Option<Arc<str>>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
+    /// Streaming engine pipeline
     Pipeline {
         function: Arc<dyn DataFrameUdfMut>,
         schema: SchemaRef,
-        original: Option<Arc<LogicalPlan>>,
+        original: Option<Arc<IRPlan>>,
     },
     Unnest {
         columns: Arc<[Arc<str>]>,
-    },
-    DropNulls {
-        subset: Arc<[Arc<str>]>,
     },
     Rechunk,
     // The two DataFrames are temporary concatenated
@@ -84,18 +82,23 @@ pub enum FunctionNode {
         new: Arc<[SmartString]>,
         // A column name gets swapped with an existing column
         swapping: bool,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Explode {
         columns: Arc<[Arc<str>]>,
-        schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     Melt {
         args: Arc<MeltArgs>,
-        schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        schema: CachedSchema,
     },
     RowIndex {
         name: Arc<str>,
         // Might be cached.
+        #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
         offset: Option<IdxSize>,
     },
@@ -107,7 +110,6 @@ impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (Count { paths: paths_l, .. }, Count { paths: paths_r, .. }) => paths_l == paths_r,
             (
@@ -150,7 +152,6 @@ impl Hash for FunctionNode {
             },
             FunctionNode::Pipeline { .. } => {},
             FunctionNode::Unnest { columns } => columns.hash(state),
-            FunctionNode::DropNulls { subset } => subset.hash(state),
             FunctionNode::Rechunk => {},
             #[cfg(feature = "merge_sorted")]
             FunctionNode::MergeSorted { column } => column.hash(state),
@@ -158,6 +159,7 @@ impl Hash for FunctionNode {
                 existing,
                 new,
                 swapping: _,
+                ..
             } => {
                 existing.hash(state);
                 new.hash(state);
@@ -184,9 +186,7 @@ impl FunctionNode {
             Rechunk | Pipeline { .. } => false,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
-            DropNulls { .. } | Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => {
-                true
-            },
+            Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -212,12 +212,7 @@ impl FunctionNode {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython { predicate_pd, .. } => *predicate_pd,
-            DropNulls { .. }
-            | Rechunk
-            | Unnest { .. }
-            | Rename { .. }
-            | Explode { .. }
-            | Melt { .. } => true,
+            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } | Count { .. } => false,
@@ -231,8 +226,7 @@ impl FunctionNode {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython { projection_pd, .. } => *projection_pd,
-            DropNulls { .. }
-            | Rechunk
+            Rechunk
             | Count { .. }
             | Unnest { .. }
             | Rename { .. }
@@ -267,7 +261,6 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Count {
                 paths, scan_type, ..
             } => count::count_rows(paths, scan_type),
@@ -309,6 +302,19 @@ impl FunctionNode {
             RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
         }
     }
+
+    pub fn to_streaming_lp(&self) -> Option<IRPlanRef> {
+        let Self::Pipeline {
+            function: _,
+            schema: _,
+            original,
+        } = self
+        else {
+            return None;
+        };
+
+        Some(original.as_ref()?.as_ref().as_ref())
+    }
 }
 
 impl Debug for FunctionNode {
@@ -324,11 +330,6 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            DropNulls { subset } => {
-                write!(f, "DROP_NULLS by: ")?;
-                let subset = subset.as_ref();
-                fmt_column_delimited(f, subset, "[", "]")
-            },
             Rechunk => write!(f, "RECHUNK"),
             Count { .. } => write!(f, "FAST COUNT(*)"),
             Unnest { columns } => {
@@ -340,12 +341,14 @@ impl Display for FunctionNode {
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
+                    let ir_display = original.as_ref().display();
+
                     writeln!(f, "--- STREAMING")?;
-                    write!(f, "{:?}", original.as_ref())?;
+                    write!(f, "{ir_display}")?;
                     let indent = 2;
-                    writeln!(f, "{:indent$}--- END STREAMING", "")
+                    write!(f, "{:indent$}--- END STREAMING", "")
                 } else {
-                    writeln!(f, "STREAMING")
+                    write!(f, "STREAMING")
                 }
             },
             Rename { .. } => write!(f, "RENAME"),

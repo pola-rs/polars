@@ -1,19 +1,23 @@
 use std::collections::BTreeSet;
 
+use polars_ops::prelude::JoinCoalesce;
+
 use super::*;
 
 fn cached_before_root(q: LazyFrame) {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    for input in lp_arena.get(lp).get_inputs() {
+    for input in lp_arena.get(lp).get_inputs_vec() {
         assert!(matches!(lp_arena.get(input), IR::Cache { .. }));
     }
 }
 
 fn count_caches(q: LazyFrame) -> usize {
-    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
+    let IRPlan {
+        lp_top, lp_arena, ..
+    } = q.to_alp_optimized().unwrap();
     (&lp_arena)
-        .iter(node)
+        .iter(lp_top)
         .filter(|(_node, lp)| matches!(lp, IR::Cache { .. }))
         .count()
 }
@@ -196,7 +200,11 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         b,
         &[col("a"), col("b")],
         &[col("a"), col("b")],
-        JoinType::Left.into(),
+        JoinArgs {
+            how: JoinType::Left,
+            coalesce: JoinCoalesce::CoalesceColumns,
+            ..Default::default()
+        },
     );
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
@@ -303,12 +311,16 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
     ]?
     .lazy();
 
-    let left = left.cross_join(right.clone().select([col("A")]));
+    let left = left.cross_join(right.clone().select([col("A")]), None);
     let q = left.join(
         right.rename(["B"], ["C"]),
         [col("A"), col("C")],
         [col("A"), col("C")],
-        JoinType::Left.into(),
+        JoinArgs {
+            how: JoinType::Left,
+            coalesce: JoinCoalesce::CoalesceColumns,
+            ..Default::default()
+        },
     );
 
     let out = q.collect()?;

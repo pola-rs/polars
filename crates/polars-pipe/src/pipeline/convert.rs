@@ -18,7 +18,7 @@ use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink as SinkTrait, Source};
 use crate::pipeline::dispatcher::ThreadedSink;
-use crate::pipeline::PipeLine;
+use crate::pipeline::{PhysOperator, PipeLine};
 
 pub type CallBacks = PlHashMap<Node, PlaceHolder>;
 
@@ -54,7 +54,7 @@ where
         DataFrameScan {
             df,
             projection,
-            selection,
+            filter: selection,
             output_schema,
             ..
         } => {
@@ -68,7 +68,7 @@ where
                 }
                 // projection is free
                 if let Some(projection) = projection {
-                    df = df.select(projection.as_slice())?;
+                    df = df.select(projection.as_ref())?;
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
@@ -99,14 +99,11 @@ where
             }
             match scan_type {
                 #[cfg(feature = "csv")]
-                FileScan::Csv {
-                    options: csv_options,
-                } => {
-                    assert_eq!(paths.len(), 1);
+                FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
-                        paths[0].clone(),
+                        paths,
                         file_info.schema,
-                        csv_options,
+                        options,
                         file_options,
                         verbose,
                     )?;
@@ -285,12 +282,12 @@ where
                     };
 
                     match jt {
-                        join_type @ JoinType::Inner | join_type @ JoinType::Left => {
+                        JoinType::Inner | JoinType::Left => {
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
                                 Arc::from(options.args.suffix()),
-                                join_type.clone(),
+                                options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
@@ -302,7 +299,7 @@ where
                                 placeholder,
                             )) as Box<dyn SinkTrait>
                         },
-                        JoinType::Outer { .. } => {
+                        JoinType::Full { .. } => {
                             // First get the names before we (potentially) swap.
                             let key_names_left = join_columns_left
                                 .iter()
@@ -317,7 +314,7 @@ where
 
                             Box::new(GenericBuild::<Tracker>::new(
                                 Arc::from(options.args.suffix()),
-                                jt.clone(),
+                                options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
@@ -337,6 +334,13 @@ where
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
+        },
+        Reduce {
+            input: _,
+            exprs: _,
+            schema: _,
+        } => {
+            todo!()
         },
         Sort {
             input,
@@ -415,10 +419,10 @@ where
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
-                                        expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
+                                        expr_arena.add(AExpr::Agg(IRAggExpr::First(col)))
                                     },
                                     UniqueKeepStrategy::Last => {
-                                        expr_arena.add(AExpr::Agg(AAggExpr::Last(col)))
+                                        expr_arena.add(AExpr::Agg(IRAggExpr::Last(col)))
                                     },
                                     UniqueKeepStrategy::None => {
                                         unreachable!()
@@ -553,8 +557,7 @@ fn get_hstack<F>(
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     input_schema: SchemaRef,
-    cse_exprs: Option<Box<HstackOperator>>,
-    unchecked: bool,
+    options: ProjectionOptions,
 ) -> PolarsResult<HstackOperator>
 where
     F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -562,8 +565,7 @@ where
     Ok(operators::HstackOperator {
         exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
         input_schema,
-        cse_exprs,
-        unchecked,
+        options,
     })
 }
 
@@ -584,57 +586,33 @@ where
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
-        Select { expr, input, .. } => {
+        Select {
+            expr,
+            input,
+            options,
+            ..
+        } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-
-            let cse_exprs = expr.cse_exprs();
-            let cse_exprs = if cse_exprs.is_empty() {
-                None
-            } else {
-                Some(get_hstack(
-                    cse_exprs,
-                    expr_arena,
-                    to_physical,
-                    (*input_schema).clone(),
-                    None,
-                    true,
-                )?)
-            };
-
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(
-                    expr.default_exprs(),
-                    expr_arena,
-                    &to_physical,
-                    Some(&input_schema),
-                )?,
-                cse_exprs,
+                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
+                options: *options,
             };
             Box::new(op) as Box<dyn Operator>
         },
-        HStack { exprs, input, .. } => {
+        HStack {
+            exprs,
+            input,
+            options,
+            ..
+        } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-            let cse_exprs = exprs.cse_exprs();
-            let cse_exprs = if cse_exprs.is_empty() {
-                None
-            } else {
-                Some(Box::new(get_hstack(
-                    cse_exprs,
-                    expr_arena,
-                    to_physical,
-                    (*input_schema).clone(),
-                    None,
-                    true,
-                )?))
-            };
             let op = get_hstack(
-                exprs.default_exprs(),
+                exprs,
                 expr_arena,
                 to_physical,
                 (*input_schema).clone(),
-                cse_exprs,
-                false,
+                *options,
             )?;
 
             Box::new(op) as Box<dyn Operator>
@@ -758,7 +736,9 @@ where
 
     Ok(PipeLine::new(
         source_objects,
-        unsafe { std::mem::transmute(operator_objects) },
+        unsafe {
+            std::mem::transmute::<Vec<Box<dyn Operator>>, Vec<PhysOperator>>(operator_objects)
+        },
         sinks,
         verbose,
     ))

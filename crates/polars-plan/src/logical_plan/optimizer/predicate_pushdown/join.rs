@@ -70,7 +70,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     {
         match how {
             JoinType::Left => LeftRight(false, true),
-            JoinType::Outer { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
+            JoinType::Full { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
             _ => LeftRight(false, false),
         }
     }
@@ -78,7 +78,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     {
         match how {
             JoinType::Left => LeftRight(false, true),
-            JoinType::Outer { .. } | JoinType::Cross => LeftRight(true, true),
+            JoinType::Full { .. } | JoinType::Cross => LeftRight(true, true),
             _ => LeftRight(false, false),
         }
     }

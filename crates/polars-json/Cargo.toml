@@ -23,3 +23,6 @@ num-traits = { workspace = true }
 ryu = { workspace = true }
 simd-json = { workspace = true }
 streaming-iterator = { workspace = true }
+
+[features]
+timezones = ["arrow/chrono-tz"]

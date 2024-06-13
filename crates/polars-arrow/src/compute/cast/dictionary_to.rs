@@ -1,6 +1,6 @@
 use polars_error::{polars_bail, PolarsResult};
 
-use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
+use super::{primitive_as_primitive, primitive_to_primitive, CastOptionsImpl};
 use crate::array::{Array, DictionaryArray, DictionaryKey};
 use crate::compute::cast::cast;
 use crate::datatypes::ArrowDataType;
@@ -35,7 +35,7 @@ pub fn dictionary_to_dictionary_values<K: DictionaryKey>(
     let values = from.values();
     let length = values.len();
 
-    let values = cast(values.as_ref(), values_type, CastOptions::default())?;
+    let values = cast(values.as_ref(), values_type, CastOptionsImpl::default())?;
 
     assert_eq!(values.len(), length); // this is guaranteed by `cast`
     unsafe {
@@ -55,7 +55,7 @@ pub fn wrapping_dictionary_to_dictionary_values<K: DictionaryKey>(
     let values = cast(
         values.as_ref(),
         values_type,
-        CastOptions {
+        CastOptionsImpl {
             wrapped: true,
             partial: false,
         },
@@ -127,7 +127,7 @@ where
 pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
     array: &dyn Array,
     to_type: &ArrowDataType,
-    options: CastOptions,
+    options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref::<DictionaryArray<K>>().unwrap();
     let keys = array.keys();

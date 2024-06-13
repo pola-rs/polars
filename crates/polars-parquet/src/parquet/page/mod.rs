@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{get_length, Encoding};
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::indexes::Interval;
 use crate::parquet::metadata::Descriptor;
 pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};
-use crate::parquet::statistics::{deserialize_statistics, Statistics};
+use crate::parquet::statistics::Statistics;
 pub use crate::parquet::thrift_format::{
     DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
 };
@@ -99,16 +97,16 @@ impl CompressedDataPage {
     }
 
     /// Decodes the raw statistics into a statistics
-    pub fn statistics(&self) -> Option<Result<Arc<dyn Statistics>>> {
+    pub fn statistics(&self) -> Option<ParquetResult<Statistics>> {
         match &self.header {
             DataPageHeader::V1(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
             DataPageHeader::V2(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
         }
     }
 
@@ -218,16 +216,16 @@ impl DataPage {
     }
 
     /// Decodes the raw statistics into a statistics
-    pub fn statistics(&self) -> Option<Result<Arc<dyn Statistics>>> {
+    pub fn statistics(&self) -> Option<ParquetResult<Statistics>> {
         match &self.header {
             DataPageHeader::V1(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
             DataPageHeader::V2(d) => d
                 .statistics
                 .as_ref()
-                .map(|x| deserialize_statistics(x, self.descriptor.primitive_type.clone())),
+                .map(|x| Statistics::deserialize(x, self.descriptor.primitive_type.clone())),
         }
     }
 }
@@ -355,54 +353,63 @@ impl CompressedDictPage {
     }
 }
 
+pub struct EncodedSplitBuffer<'a> {
+    /// Encoded Repetition Levels
+    pub rep: &'a [u8],
+    /// Encoded Definition Levels
+    pub def: &'a [u8],
+    /// Encoded Values
+    pub values: &'a [u8],
+}
+
 /// Splits the page buffer into 3 slices corresponding to (encoded rep levels, encoded def levels, encoded values) for v1 pages.
 #[inline]
 pub fn split_buffer_v1(
     buffer: &[u8],
     has_rep: bool,
     has_def: bool,
-) -> Result<(&[u8], &[u8], &[u8])> {
+) -> ParquetResult<EncodedSplitBuffer> {
     let (rep, buffer) = if has_rep {
         let level_buffer_length = get_length(buffer).ok_or_else(|| {
-            Error::oos("The number of bytes declared in v1 rep levels is higher than the page size")
+            ParquetError::oos(
+                "The number of bytes declared in v1 rep levels is higher than the page size",
+            )
         })?;
-        (
-            buffer.get(4..4 + level_buffer_length).ok_or_else(|| {
-                Error::oos(
-                    "The number of bytes declared in v1 rep levels is higher than the page size",
-                )
-            })?,
-            buffer.get(4 + level_buffer_length..).ok_or_else(|| {
-                Error::oos(
-                    "The number of bytes declared in v1 rep levels is higher than the page size",
-                )
-            })?,
-        )
+
+        if buffer.len() < level_buffer_length + 4 {
+            return Err(ParquetError::oos(
+                "The number of bytes declared in v1 rep levels is higher than the page size",
+            ));
+        }
+
+        buffer[4..].split_at(level_buffer_length)
     } else {
         (&[] as &[u8], buffer)
     };
 
     let (def, buffer) = if has_def {
         let level_buffer_length = get_length(buffer).ok_or_else(|| {
-            Error::oos("The number of bytes declared in v1 rep levels is higher than the page size")
+            ParquetError::oos(
+                "The number of bytes declared in v1 def levels is higher than the page size",
+            )
         })?;
-        (
-            buffer.get(4..4 + level_buffer_length).ok_or_else(|| {
-                Error::oos(
-                    "The number of bytes declared in v1 def levels is higher than the page size",
-                )
-            })?,
-            buffer.get(4 + level_buffer_length..).ok_or_else(|| {
-                Error::oos(
-                    "The number of bytes declared in v1 def levels is higher than the page size",
-                )
-            })?,
-        )
+
+        if buffer.len() < level_buffer_length + 4 {
+            return Err(ParquetError::oos(
+                "The number of bytes declared in v1 def levels is higher than the page size",
+            ));
+        }
+
+        buffer[4..].split_at(level_buffer_length)
     } else {
         (&[] as &[u8], buffer)
     };
 
-    Ok((rep, def, buffer))
+    Ok(EncodedSplitBuffer {
+        rep,
+        def,
+        values: buffer,
+    })
 }
 
 /// Splits the page buffer into 3 slices corresponding to (encoded rep levels, encoded def levels, encoded values) for v2 pages.
@@ -410,16 +417,15 @@ pub fn split_buffer_v2(
     buffer: &[u8],
     rep_level_buffer_length: usize,
     def_level_buffer_length: usize,
-) -> Result<(&[u8], &[u8], &[u8])> {
-    Ok((
-        &buffer[..rep_level_buffer_length],
-        &buffer[rep_level_buffer_length..rep_level_buffer_length + def_level_buffer_length],
-        &buffer[rep_level_buffer_length + def_level_buffer_length..],
-    ))
+) -> ParquetResult<EncodedSplitBuffer> {
+    let (rep, buffer) = buffer.split_at(rep_level_buffer_length);
+    let (def, values) = buffer.split_at(def_level_buffer_length);
+
+    Ok(EncodedSplitBuffer { rep, def, values })
 }
 
 /// Splits the page buffer into 3 slices corresponding to (encoded rep levels, encoded def levels, encoded values).
-pub fn split_buffer(page: &DataPage) -> Result<(&[u8], &[u8], &[u8])> {
+pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer> {
     match page.header() {
         DataPageHeader::V1(_) => split_buffer_v1(
             page.buffer(),

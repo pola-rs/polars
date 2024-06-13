@@ -161,18 +161,12 @@ def test_concat_horizontal_single_df(lazy: bool) -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.parametrize("lazy", [False, True])
-def test_concat_horizontal_duplicate_col(lazy: bool) -> None:
-    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
-    b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
-
-    if lazy:
-        dfs: list[pl.DataFrame] | list[pl.LazyFrame] = [a.lazy(), b.lazy()]
-    else:
-        dfs = [a, b]
+def test_concat_horizontal_duplicate_col() -> None:
+    a = pl.LazyFrame({"a": ["a", "b"], "b": [1, 2]})
+    b = pl.LazyFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
 
     with pytest.raises(pl.DuplicateError):
-        pl.concat(dfs, how="horizontal")  # type: ignore[type-var]
+        pl.concat([a, b], how="horizontal").collect()
 
 
 def test_concat_vertical() -> None:
@@ -189,14 +183,18 @@ def test_concat_vertical() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_extend_ints() -> None:
+    a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
+    with pytest.raises(pl.exceptions.SchemaError):
+        a.extend(a.select(pl.lit(0, dtype=pl.Int32).alias("a")))
+
+
 def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
 
     out = df.select(
-        [
-            pl.corr("a", "b").alias("pearson"),
-            pl.corr("a", "b", method="spearman").alias("spearman"),
-        ]
+        pl.corr("a", "b").alias("pearson"),
+        pl.corr("a", "b", method="spearman").alias("spearman"),
     )
     assert out["pearson"][0] == pytest.approx(1.0)
     assert out["spearman"][0] == pytest.approx(1.0)
@@ -495,14 +493,12 @@ def test_lazy_functions() -> None:
 
     # regex selection
     out = df.select(
-        [
-            pl.struct(pl.max("^a|b$")).alias("x"),
-            pl.struct(pl.min("^.*[bc]$")).alias("y"),
-            pl.struct(pl.sum("^[^b]$")).alias("z"),
-        ]
+        pl.struct(pl.max("^a|b$")).alias("x"),
+        pl.struct(pl.min("^.*[bc]$")).alias("y"),
+        pl.struct(pl.sum("^[^a]$")).alias("z"),
     )
     assert out.rows() == [
-        ({"a": "foo", "b": 3}, {"b": 1, "c": -1.0}, {"a": None, "c": 5.0})
+        ({"a": "foo", "b": 3}, {"b": 1, "c": -1.0}, {"b": 6, "c": 5.0})
     ]
 
 

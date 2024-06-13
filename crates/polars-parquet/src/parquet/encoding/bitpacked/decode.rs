@@ -1,5 +1,5 @@
 use super::{Packed, Unpackable, Unpacked};
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 /// An [`Iterator`] of [`Unpackable`] unpacked from a bitpacked slice of bytes.
 /// # Implementation
@@ -26,15 +26,19 @@ fn decode_pack<T: Unpackable>(packed: &[u8], num_bits: usize, unpacked: &mut T::
 
 impl<'a, T: Unpackable> Decoder<'a, T> {
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
-    pub fn try_new(packed: &'a [u8], num_bits: usize, mut length: usize) -> Result<Self, Error> {
+    pub fn try_new(
+        packed: &'a [u8],
+        num_bits: usize,
+        mut length: usize,
+    ) -> Result<Self, ParquetError> {
         let block_size = std::mem::size_of::<T>() * num_bits;
 
         if num_bits == 0 {
-            return Err(Error::oos("Bitpacking requires num_bits > 0"));
+            return Err(ParquetError::oos("Bitpacking requires num_bits > 0"));
         }
 
         if packed.len() * 8 < length * num_bits {
-            return Err(Error::oos(format!(
+            return Err(ParquetError::oos(format!(
                 "Unpacking {length} items with a number of bits {num_bits} requires at least {} bytes.",
                 length * num_bits / 8
             )));

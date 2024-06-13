@@ -1,3 +1,4 @@
+use arrow::array::Splitable;
 use arrow::bitmap::Bitmap;
 
 #[test]
@@ -33,6 +34,39 @@ fn as_slice_offset_middle() {
 }
 
 #[test]
+fn split_at_unset_bits() {
+    let bm = Bitmap::from_u8_slice([0b01101010, 0, 0, 0b100], 27);
+
+    assert_eq!(bm.unset_bits(), 22);
+
+    let (lhs, rhs) = bm.split_at(5);
+    assert_eq!(lhs.lazy_unset_bits(), Some(3));
+    assert_eq!(rhs.lazy_unset_bits(), Some(19));
+
+    let (lhs, rhs) = bm.split_at(22);
+    assert_eq!(lhs.lazy_unset_bits(), Some(18));
+    assert_eq!(rhs.lazy_unset_bits(), Some(4));
+
+    let (lhs, rhs) = bm.split_at(0);
+    assert_eq!(lhs.lazy_unset_bits(), Some(0));
+    assert_eq!(rhs.lazy_unset_bits(), Some(22));
+
+    let (lhs, rhs) = bm.split_at(27);
+    assert_eq!(lhs.lazy_unset_bits(), Some(22));
+    assert_eq!(rhs.lazy_unset_bits(), Some(0));
+
+    let bm = Bitmap::new_zeroed(1024);
+    let (lhs, rhs) = bm.split_at(512);
+    assert_eq!(lhs.lazy_unset_bits(), Some(512));
+    assert_eq!(rhs.lazy_unset_bits(), Some(512));
+
+    let bm = Bitmap::new_with_value(true, 1024);
+    let (lhs, rhs) = bm.split_at(512);
+    assert_eq!(lhs.lazy_unset_bits(), Some(0));
+    assert_eq!(rhs.lazy_unset_bits(), Some(0));
+}
+
+#[test]
 fn debug() {
     let b = Bitmap::from([true, true, false, true, true, true, true, true, true]);
     let b = b.sliced(2, 7);
@@ -44,7 +78,6 @@ fn debug() {
 }
 
 #[test]
-#[cfg(feature = "arrow")]
 fn from_arrow() {
     use arrow_buffer::buffer::{BooleanBuffer, NullBuffer};
     let buffer = arrow_buffer::Buffer::from_iter(vec![true, true, true, false, false, false, true]);

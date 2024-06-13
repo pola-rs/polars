@@ -18,8 +18,8 @@ def build_info() -> dict[str, Any]:
 
     The dictionary with build information contains the following keys:
 
-    - `"build"`
-    - `"info-time"`
+    - `"compiler"`
+    - `"time"`
     - `"dependencies"`
     - `"features"`
     - `"host"`
@@ -29,11 +29,5 @@ def build_info() -> dict[str, Any]:
 
     If Polars was compiled without the `build_info` feature flag, only the `"version"`
     key is included.
-
-    Notes
-    -----
-    `pyo3-built`_ is used to generate the build information.
-
-    .. _pyo3-built: https://github.com/PyO3/pyo3-built
     """
     return __build__

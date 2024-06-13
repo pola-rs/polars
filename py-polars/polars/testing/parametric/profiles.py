@@ -5,14 +5,11 @@ import re
 
 from hypothesis import settings
 
-from polars._utils.deprecation import deprecate_nonkeyword_arguments
 from polars.type_aliases import ParametricProfileNames
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["profile"], version="0.19.3")
 def load_profile(
-    profile: ParametricProfileNames | int = "fast",
-    set_environment: bool = False,  # noqa: FBT001
+    profile: ParametricProfileNames | int = "fast", *, set_environment: bool = False
 ) -> None:
     """
     Load a named (or custom) hypothesis profile for use with the parametric tests.
@@ -31,7 +28,7 @@ def load_profile(
     Examples
     --------
     >>> # load a custom profile that will run with 1500 iterations
-    >>> from polars.testing.parametric.profiles import load_profile
+    >>> from polars.testing.parametric import load_profile
     >>> load_profile(1500)
     """
     common_settings = {"print_blob": True, "deadline": None}
@@ -84,7 +81,7 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
     Examples
     --------
     >>> # prefer the 'balanced' profile for running parametric tests
-    >>> from polars.testing.parametric.profiles import set_profile
+    >>> from polars.testing.parametric import set_profile
     >>> set_profile("balanced")
     """
     profile_name = str(profile).split(".")[-1]

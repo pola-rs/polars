@@ -22,7 +22,6 @@ from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String,
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
-from polars.io import read_csv
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
@@ -738,6 +737,8 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         else:
             # otherwise, take a trip through our CSV inference logic
             if all(tp == String for tp in df.schema.values()):
+                from polars.io import read_csv
+
                 buf = io.BytesIO()
                 df.write_csv(file=buf)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)

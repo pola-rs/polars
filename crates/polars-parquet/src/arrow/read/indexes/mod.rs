@@ -1,5 +1,5 @@
 //! API to perform page-level filtering (also known as indexes)
-use crate::parquet::error::Error as ParquetError;
+use crate::parquet::error::ParquetError;
 use crate::parquet::indexes::{
     select_pages, BooleanIndex, ByteIndex, FixedLenByteIndex, Index as ParquetIndex, NativeIndex,
     PageLocation,
@@ -325,6 +325,7 @@ pub fn compute_page_row_intervals(
 ///   For each field, the outermost vector corresponds to each parquet column:
 ///   a primitive field contains 1 column, a struct field with 2 primitive fields contain 2 columns.
 ///   The inner `Vec<Interval>` contains one [`Interval`] per page: its length equals the length of [`ColumnPageStatistics`].
+///
 /// It returns a single [`Vec<Interval>`] denoting the set of intervals that the predicate selects (over all columns).
 ///
 /// This returns one item per `field`. For each field, there is one item per column (for non-nested types it returns one column)

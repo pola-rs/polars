@@ -7,6 +7,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
@@ -18,7 +19,7 @@ use crate::logical_plan::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
-pub enum AAggExpr {
+pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
@@ -45,7 +46,7 @@ pub enum AAggExpr {
     AggGroups(Node),
 }
 
-impl Hash for AAggExpr {
+impl Hash for IRAggExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
@@ -59,9 +60,9 @@ impl Hash for AAggExpr {
     }
 }
 
-impl AAggExpr {
-    pub(super) fn equal_nodes(&self, other: &AAggExpr) -> bool {
-        use AAggExpr::*;
+impl IRAggExpr {
+    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
+        use IRAggExpr::*;
         match (self, other) {
             (
                 Min {
@@ -87,9 +88,9 @@ impl AAggExpr {
     }
 }
 
-impl From<AAggExpr> for GroupByMethod {
-    fn from(value: AAggExpr) -> Self {
-        use AAggExpr::*;
+impl From<IRAggExpr> for GroupByMethod {
+    fn from(value: IRAggExpr) -> Self {
+        use IRAggExpr::*;
         match value {
             Min { propagate_nans, .. } => {
                 if propagate_nans {
@@ -121,7 +122,7 @@ impl From<AAggExpr> for GroupByMethod {
     }
 }
 
-// AExpr representation of Nodes which are allocated in an Arena
+/// IR expression node that is allocated in an [`Arena`][polars_utils::arena::Arena].
 #[derive(Clone, Debug, Default)]
 pub enum AExpr {
     Explode(Node),
@@ -136,7 +137,7 @@ pub enum AExpr {
     Cast {
         expr: Node,
         data_type: DataType,
-        strict: bool,
+        options: CastOptions,
     },
     Sort {
         expr: Node,
@@ -156,7 +157,7 @@ pub enum AExpr {
         input: Node,
         by: Node,
     },
-    Agg(AAggExpr),
+    Agg(IRAggExpr),
     Ternary {
         predicate: Node,
         truthy: Node,
@@ -172,7 +173,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefore we need `[ExprIr]`.
+        /// Therefor we need `[ExprIr]`.
         input: Vec<ExprIR>,
         /// function to apply
         function: FunctionExpr,
@@ -181,6 +182,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
+        order_by: Option<(Node, SortOptions)>,
         options: WindowType,
     },
     #[default]
@@ -303,8 +305,12 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 options: _,
             } => {
+                if let Some((n, _)) = order_by {
+                    container.push_node(*n);
+                }
                 for e in partition_by.iter().rev() {
                     container.push_node(*e);
                 }
@@ -355,7 +361,7 @@ impl AExpr {
             },
             Agg(a) => {
                 match a {
-                    AAggExpr::Quantile { expr, quantile, .. } => {
+                    IRAggExpr::Quantile { expr, quantile, .. } => {
                         *expr = inputs[0];
                         *quantile = inputs[1];
                     },
@@ -397,11 +403,17 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
+                order_by,
                 ..
             } => {
+                let offset = order_by.is_some() as usize;
                 *function = *inputs.last().unwrap();
                 partition_by.clear();
-                partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
+                partition_by.extend_from_slice(&inputs[offset..inputs.len() - 1]);
+
+                if let Some((_, options)) = order_by {
+                    *order_by = Some((inputs[0], *options));
+                }
 
                 return self;
             },
@@ -418,9 +430,9 @@ impl AExpr {
     }
 }
 
-impl AAggExpr {
+impl IRAggExpr {
     pub fn get_input(&self) -> NodeInputs {
-        use AAggExpr::*;
+        use IRAggExpr::*;
         use NodeInputs::*;
         match self {
             Min { input, .. } => Single(*input),
@@ -440,7 +452,7 @@ impl AAggExpr {
         }
     }
     pub fn set_input(&mut self, input: Node) {
-        use AAggExpr::*;
+        use IRAggExpr::*;
         let node = match self {
             Min { input, .. } => input,
             Max { input, .. } => input,

@@ -49,7 +49,7 @@ impl RowValues {
         let mut names = vec![];
 
         for phys_e in self.join_column_eval.iter() {
-            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr().rechunk();
             if determine_idx {
                 names.push(s.name().to_string());

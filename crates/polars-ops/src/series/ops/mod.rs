@@ -16,6 +16,8 @@ mod cut;
 mod diff;
 #[cfg(feature = "ewma")]
 mod ewm;
+#[cfg(feature = "ewma_by")]
+mod ewm_by;
 #[cfg(feature = "round_series")]
 mod floor_divide;
 #[cfg(feature = "fused")]
@@ -23,6 +25,8 @@ mod fused;
 mod horizontal;
 mod index;
 mod int_range;
+#[cfg(any(feature = "interpolate_by", feature = "interpolate"))]
+mod interpolation;
 #[cfg(feature = "is_between")]
 mod is_between;
 #[cfg(feature = "is_first_distinct")]
@@ -78,6 +82,8 @@ pub use cut::*;
 pub use diff::*;
 #[cfg(feature = "ewma")]
 pub use ewm::*;
+#[cfg(feature = "ewma_by")]
+pub use ewm_by::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
 #[cfg(feature = "fused")]
@@ -85,6 +91,12 @@ pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
 pub use int_range::*;
+#[cfg(feature = "interpolate")]
+pub use interpolation::interpolate::*;
+#[cfg(feature = "interpolate_by")]
+pub use interpolation::interpolate_by::*;
+#[cfg(any(feature = "interpolate", feature = "interpolate_by"))]
+pub use interpolation::*;
 #[cfg(feature = "is_between")]
 pub use is_between::*;
 #[cfg(feature = "is_first_distinct")]

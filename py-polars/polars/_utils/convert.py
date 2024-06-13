@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
 from typing import (
@@ -13,24 +13,23 @@ from typing import (
     overload,
 )
 
+from polars._utils.constants import (
+    EPOCH,
+    EPOCH_DATE,
+    EPOCH_UTC,
+    MS_PER_SECOND,
+    NS_PER_SECOND,
+    SECONDS_PER_DAY,
+    SECONDS_PER_HOUR,
+    US_PER_SECOND,
+)
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
-    from datetime import tzinfo
+    from datetime import date, tzinfo
     from decimal import Decimal
 
     from polars.type_aliases import TimeUnit
-
-
-SECONDS_PER_DAY = 86_400
-SECONDS_PER_HOUR = 3_600
-NS_PER_SECOND = 1_000_000_000
-US_PER_SECOND = 1_000_000
-MS_PER_SECOND = 1_000
-
-EPOCH_DATE = date(1970, 1, 1)
-EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
-EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 @overload

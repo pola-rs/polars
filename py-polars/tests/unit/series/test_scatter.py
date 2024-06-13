@@ -17,7 +17,6 @@ def test_scatter() -> None:
         pl.Series(),
         pl.Series(dtype=pl.Int8),
         np.array([]),
-        np.ndarray(shape=(0, 0)),
     ):
         s.scatter(x, 8)  # type: ignore[arg-type]
         assert s.to_list() == [1, 2, 3]
@@ -51,14 +50,6 @@ def test_scatter() -> None:
 
     with pytest.raises(pl.OutOfBoundsError):
         a[-100] = None
-
-
-def test_set_at_idx_deprecated() -> None:
-    s = pl.Series("s", [1, 2, 3])
-    with pytest.deprecated_call():
-        result = s.set_at_idx(1, 10)
-    expected = pl.Series("s", [1, 10, 3])
-    assert_series_equal(result, expected)
 
 
 def test_scatter_datetime() -> None:

@@ -2,6 +2,7 @@ use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
+use crate::chunked_array::cast::CastOptions;
 use crate::config::verbose;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
 use crate::utils::flatten::flatten_par;
@@ -36,7 +37,7 @@ where
                 .downcast_iter()
                 .map(|arr| arr.values().as_slice())
                 .collect::<Vec<_>>();
-            group_by_threaded_slice(keys, sorted)
+            group_by_threaded_slice(keys, n_partitions, sorted)
         } else {
             let keys = ca
                 .downcast_iter()
@@ -235,13 +236,17 @@ impl IntoGroupsProxy for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]
         {
-            let ca = self.cast(&DataType::UInt8).unwrap();
+            let ca = self
+                .cast_with_options(&DataType::UInt8, CastOptions::Overflowing)
+                .unwrap();
             let ca = ca.u8().unwrap();
             ca.group_tuples(multithreaded, sorted)
         }
         #[cfg(not(feature = "performant"))]
         {
-            let ca = self.cast(&DataType::UInt32).unwrap();
+            let ca = self
+                .cast_with_options(&DataType::UInt32, CastOptions::Overflowing)
+                .unwrap();
             let ca = ca.u32().unwrap();
             ca.group_tuples(multithreaded, sorted)
         }
@@ -261,9 +266,10 @@ impl IntoGroupsProxy for BinaryChunked {
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
+            let n_partitions = bh.len();
             // Take slices so that the vecs are not cloned.
             let bh = bh.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            group_by_threaded_slice(bh, sorted)
+            group_by_threaded_slice(bh, n_partitions, sorted)
         } else {
             group_by(bh[0].iter(), sorted)
         };
@@ -277,9 +283,10 @@ impl IntoGroupsProxy for BinaryOffsetChunked {
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
+            let n_partitions = bh.len();
             // Take slices so that the vecs are not cloned.
             let bh = bh.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            group_by_threaded_slice(bh, sorted)
+            group_by_threaded_slice(bh, n_partitions, sorted)
         } else {
             group_by(bh[0].iter(), sorted)
         };

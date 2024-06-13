@@ -4,6 +4,7 @@ mod immutable;
 mod mutable;
 mod utils;
 
+use arrow::array::Splitable;
 use arrow::bitmap::Bitmap;
 use proptest::prelude::*;
 
@@ -121,4 +122,16 @@ fn subslicing_gives_correct_null_count() {
 
     let view3 = view2.sliced(0, 1);
     assert_eq!(view3.unset_bits(), 0);
+}
+
+#[test]
+fn split_at() {
+    let bm = create_bitmap([0b01101010], 8);
+
+    let (lhs, rhs) = bm.split_at(5);
+    assert_eq!(
+        &lhs.iter().collect::<Vec<bool>>(),
+        &[false, true, false, true, false]
+    );
+    assert_eq!(&rhs.iter().collect::<Vec<bool>>(), &[true, true, false]);
 }

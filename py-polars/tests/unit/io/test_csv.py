@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
@@ -48,7 +50,7 @@ def test_quoted_date() -> None:
 def test_date_pattern_with_datetime_override_10826() -> None:
     result = pl.read_csv(
         source=io.StringIO("col\n2023-01-01\n2023-02-01\n2023-03-01"),
-        dtypes={"col": pl.Datetime},
+        schema_overrides={"col": pl.Datetime},
     )
     expected = pl.Series(
         "col", [datetime(2023, 1, 1), datetime(2023, 2, 1), datetime(2023, 3, 1)]
@@ -57,7 +59,7 @@ def test_date_pattern_with_datetime_override_10826() -> None:
 
     result = pl.read_csv(
         source=io.StringIO("col\n2023-01-01T01:02:03\n2023-02-01\n2023-03-01"),
-        dtypes={"col": pl.Datetime},
+        schema_overrides={"col": pl.Datetime},
     )
     expected = pl.Series(
         "col",
@@ -74,11 +76,9 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 
     read_df = pl.read_csv(buf, try_parse_dates=True)
     read_df = read_df.with_columns(
-        [
-            pl.col("cat").cast(pl.Categorical),
-            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
-            pl.col("time").cast(pl.Time),
-        ]
+        pl.col("cat").cast(pl.Categorical),
+        pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+        pl.col("time").cast(pl.Time),
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):
@@ -96,11 +96,9 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     read_df = pl.read_csv(file_path, try_parse_dates=True)
 
     read_df = read_df.with_columns(
-        [
-            pl.col("cat").cast(pl.Categorical),
-            pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
-            pl.col("time").cast(pl.Time),
-        ]
+        pl.col("cat").cast(pl.Categorical),
+        pl.col("enum").cast(pl.Enum(["foo", "ham", "bar"])),
+        pl.col("time").cast(pl.Time),
     )
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
@@ -339,10 +337,10 @@ def test_datetime_parsing_default_formats() -> None:
     csv = textwrap.dedent(
         """\
         ts_dmy,ts_dmy_f,ts_dmy_p
-        01/01/21 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00
-        01/01/21 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00
-        01/01/21 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15
-        01/01/21 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30
+        01/01/2021 00:00:00,31-01-2021T00:00:00.123,31-01-2021 11:00
+        01/01/2021 00:15:00,31-01-2021T00:15:00.123,31-01-2021 01:00
+        01/01/2021 00:30:00,31-01-2021T00:30:00.123,31-01-2021 01:15
+        01/01/2021 00:45:00,31-01-2021T00:45:00.123,31-01-2021 01:30
         """
     )
 
@@ -360,7 +358,7 @@ def test_partial_dtype_overwrite() -> None:
         """
     )
     f = io.StringIO(csv)
-    df = pl.read_csv(f, dtypes=[pl.String])
+    df = pl.read_csv(f, schema_overrides=[pl.String])
     assert df.dtypes == [pl.String, pl.Int64, pl.Int64]
 
 
@@ -373,7 +371,7 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
         """
     )
     f = io.StringIO(csv)
-    df = pl.read_csv(f, columns=["c", "b", "d"], dtypes=[pl.Int32, pl.String])
+    df = pl.read_csv(f, columns=["c", "b", "d"], schema_overrides=[pl.Int32, pl.String])
     assert df.dtypes == [pl.String, pl.Int32, pl.Int64]
 
 
@@ -386,7 +384,7 @@ def test_dtype_overwrite_with_column_idx_selection() -> None:
         """
     )
     f = io.StringIO(csv)
-    df = pl.read_csv(f, columns=[2, 1, 3], dtypes=[pl.Int32, pl.String])
+    df = pl.read_csv(f, columns=[2, 1, 3], schema_overrides=[pl.Int32, pl.String])
     # Columns without an explicit dtype set will get pl.String if dtypes is a list
     # if the column selection is done with column indices instead of column names.
     assert df.dtypes == [pl.String, pl.Int32, pl.String]
@@ -486,7 +484,7 @@ def test_column_rename_and_dtype_overwrite() -> None:
     df = pl.read_csv(
         f,
         new_columns=["A", "B", "C"],
-        dtypes={"A": pl.String, "B": pl.Int64, "C": pl.Float32},
+        schema_overrides={"A": pl.String, "B": pl.Int64, "C": pl.Float32},
     )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float32]
 
@@ -495,7 +493,7 @@ def test_column_rename_and_dtype_overwrite() -> None:
         f,
         columns=["a", "c"],
         new_columns=["A", "C"],
-        dtypes={"A": pl.String, "C": pl.Float32},
+        schema_overrides={"A": pl.String, "C": pl.Float32},
     )
     assert df.dtypes == [pl.String, pl.Float32]
 
@@ -509,7 +507,7 @@ def test_column_rename_and_dtype_overwrite() -> None:
     df = pl.read_csv(
         f,
         new_columns=["A", "B", "C"],
-        dtypes={"A": pl.String, "C": pl.Float32},
+        schema_overrides={"A": pl.String, "C": pl.Float32},
         has_header=False,
     )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float32]
@@ -570,7 +568,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
         ComputeError,
         match="cannot scan compressed csv; use `read_csv` for compressed data",
     ):
-        pl.scan_csv(csv_file)
+        pl.scan_csv(csv_file).collect()
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
@@ -753,7 +751,7 @@ def test_ignore_try_parse_dates() -> None:
     dtypes: dict[str, type[pl.DataType]] = {
         k: pl.String for k in headers
     }  # Forces String type for every column
-    df = pl.read_csv(csv, columns=headers, dtypes=dtypes)
+    df = pl.read_csv(csv, columns=headers, schema_overrides=dtypes)
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
 
@@ -784,7 +782,7 @@ def test_csv_date_handling() -> None:
     out = pl.read_csv(csv.encode(), try_parse_dates=True)
     assert_frame_equal(out, expected)
     dtypes = {"date": pl.Date}
-    out = pl.read_csv(csv.encode(), dtypes=dtypes)
+    out = pl.read_csv(csv.encode(), schema_overrides=dtypes)
     assert_frame_equal(out, expected)
 
 
@@ -835,7 +833,9 @@ def test_csv_date_dtype_ignore_errors() -> None:
         !!
         """
     )
-    out = pl.read_csv(csv.encode(), ignore_errors=True, dtypes={"date": pl.Date})
+    out = pl.read_csv(
+        csv.encode(), ignore_errors=True, schema_overrides={"date": pl.Date}
+    )
     expected = pl.DataFrame(
         {
             "date": [
@@ -863,7 +863,9 @@ def test_csv_globbing(io_files_path: Path) -> None:
     assert df.row(0) == ("vegetables", 2)
 
     with pytest.raises(ValueError):
-        _ = pl.read_csv(path, dtypes=[pl.String, pl.Int64, pl.Int64, pl.Int64])
+        _ = pl.read_csv(
+            path, schema_overrides=[pl.String, pl.Int64, pl.Int64, pl.Int64]
+        )
 
     dtypes = {
         "category": pl.String,
@@ -872,7 +874,7 @@ def test_csv_globbing(io_files_path: Path) -> None:
         "sugars_g": pl.Int32,
     }
 
-    df = pl.read_csv(path, dtypes=dtypes)
+    df = pl.read_csv(path, schema_overrides=dtypes)
     assert df.dtypes == list(dtypes.values())
 
 
@@ -957,7 +959,7 @@ def test_escaped_null_values() -> None:
     df = pl.read_csv(
         f,
         null_values={"a": "None", "b": "n/a", "c": "NA"},
-        dtypes={"a": pl.String, "b": pl.Int64, "c": pl.Float64},
+        schema_overrides={"a": pl.String, "b": pl.Int64, "c": pl.Float64},
     )
     assert df[1, "a"] is None
     assert df[0, "b"] is None
@@ -1056,7 +1058,7 @@ a
     result = pl.read_csv(
         io.StringIO(data),
         try_parse_dates=try_parse_dates,
-        dtypes={"a": pl.Datetime(time_unit)},
+        schema_overrides={"a": pl.Datetime(time_unit)},
     )
     expected = pl.DataFrame(
         {
@@ -1203,7 +1205,7 @@ def test_csv_dtype_overwrite_bool() -> None:
     csv = "a, b\n" + ",false\n" + ",false\n" + ",false"
     df = pl.read_csv(
         csv.encode(),
-        dtypes={"a": pl.Boolean, "b": pl.Boolean},
+        schema_overrides={"a": pl.Boolean, "b": pl.Boolean},
     )
     assert df.dtypes == [pl.Boolean, pl.Boolean]
 
@@ -1399,7 +1401,9 @@ def test_csv_categorical_lifetime() -> None:
     """
     )
 
-    df = pl.read_csv(csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical})
+    df = pl.read_csv(
+        csv.encode(), schema_overrides={"a": pl.Categorical, "b": pl.Categorical}
+    )
     assert df.dtypes == [pl.Categorical, pl.Categorical]
     assert df.to_dict(as_series=False) == {
         "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
@@ -1414,9 +1418,9 @@ def test_csv_categorical_categorical_merge() -> None:
     f = io.BytesIO()
     pl.DataFrame({"x": ["A"] * N + ["B"] * N}).write_csv(f)
     f.seek(0)
-    assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique(
-        maintain_order=True
-    )["x"].to_list() == ["A", "B"]
+    assert pl.read_csv(
+        f, schema_overrides={"x": pl.Categorical}, sample_size=10
+    ).unique(maintain_order=True)["x"].to_list() == ["A", "B"]
 
 
 def test_batched_csv_reader(foods_file_path: Path) -> None:
@@ -1442,15 +1446,31 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     # the final batch of the low-memory variant is different
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-    batches = reader.next_batches(5)
-    assert len(batches) == 5  # type: ignore[arg-type]
+    batches = reader.next_batches(10)
+    assert batches is not None
+    assert len(batches) == 5
 
-    batches += reader.next_batches(5)  # type: ignore[operator]
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
 
     reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
     batches = reader.next_batches(10)
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
+
+    # ragged lines
+    with NamedTemporaryFile() as tmp:
+        data = b"A\nB,ragged\nC"
+        tmp.write(data)
+        tmp.seek(0)
+
+        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        batches = pl.read_csv_batched(
+            tmp.name,
+            has_header=False,
+            truncate_ragged_lines=True,
+        ).next_batches(1)
+
+        assert batches is not None
+        assert_frame_equal(pl.concat(batches), expected)
 
 
 def test_batched_csv_reader_empty(io_files_path: Path) -> None:
@@ -1504,7 +1524,7 @@ def test_csv_single_categorical_null() -> None:
 
     df = pl.read_csv(
         f,
-        dtypes={"y": pl.Categorical},
+        schema_overrides={"y": pl.Categorical},
     )
 
     assert df.dtypes == [pl.String, pl.Categorical, pl.String]
@@ -1518,7 +1538,9 @@ def test_csv_quoted_missing() -> None:
         '"1"|"Free text without a linebreak"|""|"789"\n'
         '"0"|"Free text with \ntwo \nlinebreaks"|"101112"|"131415"'
     )
-    result = pl.read_csv(csv.encode(), separator="|", dtypes={"col3": pl.Int32})
+    result = pl.read_csv(
+        csv.encode(), separator="|", schema_overrides={"col3": pl.Int32}
+    )
     expected = pl.DataFrame(
         {
             "col1": [0, 1, 0],
@@ -1562,7 +1584,7 @@ def test_csv_scan_categorical(tmp_path: Path) -> None:
 
     file_path = tmp_path / "test_csv_scan_categorical.csv"
     df.write_csv(file_path)
-    result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
+    result = pl.scan_csv(file_path, schema_overrides={"x": pl.Categorical}).collect()
 
     assert result["x"].dtype == pl.Categorical
 
@@ -1778,14 +1800,14 @@ def test_ignore_errors_casting_dtypes() -> None:
 
     assert pl.read_csv(
         source=io.StringIO(csv),
-        dtypes={"inventory": pl.Int8},
+        schema_overrides={"inventory": pl.Int8},
         ignore_errors=True,
     ).to_dict(as_series=False) == {"inventory": [10, None, None, 90]}
 
     with pytest.raises(pl.ComputeError):
         pl.read_csv(
             source=io.StringIO(csv),
-            dtypes={"inventory": pl.Int8},
+            schema_overrides={"inventory": pl.Int8},
             ignore_errors=False,
         )
 
@@ -1795,7 +1817,7 @@ def test_ignore_errors_date_parser() -> None:
     with pytest.raises(pl.ComputeError):
         pl.read_csv(
             source=io.StringIO(data_invalid_date),
-            dtypes={"date": pl.Date},
+            schema_overrides={"date": pl.Date},
             ignore_errors=False,
         )
 
@@ -1953,8 +1975,10 @@ def test_read_csv_invalid_dtypes() -> None:
         """
     )
     f = io.StringIO(csv)
-    with pytest.raises(TypeError, match="`dtypes` should be of type list or dict"):
-        pl.read_csv(f, dtypes={pl.Int64, pl.String})  # type: ignore[arg-type]
+    with pytest.raises(
+        TypeError, match="`schema_overrides` should be of type list or dict"
+    ):
+        pl.read_csv(f, schema_overrides={pl.Int64, pl.String})  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("columns", [["b"], "b"])
@@ -2044,6 +2068,22 @@ def test_csv_escape_cf_15349() -> None:
     assert f.read() == b'test\nnormal\n"with\rcr"\n'
 
 
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("streaming", [True, False])
+def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.csv"
+
+    df = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int64).to_frame()
+    df.write_csv(path)
+
+    skip = 2
+    expect = df.slice(skip)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+
+    assert_frame_equal(out, expect)
+
+
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     csv = textwrap.dedent(
@@ -2058,3 +2098,82 @@ def test_skip_rows_after_header_pyarrow(use_pyarrow: bool) -> None:
     df = pl.read_csv(f, skip_rows_after_header=1, use_pyarrow=use_pyarrow)
     expected = pl.DataFrame({"foo": [3, 5], "bar": [4, 6]})
     assert_frame_equal(df, expected)
+
+
+def test_csv_float_decimal() -> None:
+    floats = b"a;b\n12,239;1,233\n13,908;87,32"
+    read = pl.read_csv(floats, decimal_comma=True, separator=";")
+    assert read.dtypes == [pl.Float64] * 2
+    assert read.to_dict(as_series=False) == {"a": [12.239, 13.908], "b": [1.233, 87.32]}
+
+    floats = b"a;b\n12,239;1,233\n13,908;87,32"
+    with pytest.raises(
+        pl.InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
+    ):
+        pl.read_csv(floats, decimal_comma=True)
+
+
+def test_fsspec_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
+    with pytest.raises(
+        ImportError, match=r"`fsspec` is required for `storage_options` argument"
+    ):
+        pl.read_csv(
+            "s3://foods/cabbage.csv", storage_options={"key": "key", "secret": "secret"}
+        )
+
+
+@pytest.mark.write_disk()
+@pytest.mark.skipif(
+    os.environ.get("POLARS_FORCE_ASYNC") == "1" or sys.platform == "win32",
+    reason="only local",
+)
+def test_no_glob(tmpdir: Path) -> None:
+    df = pl.DataFrame({"foo": 1})
+    p = tmpdir / "*.csv"
+    df.write_csv(str(p))
+    p = tmpdir / "*1.csv"
+    df.write_csv(str(p))
+    p = tmpdir / "*.csv"
+    assert_frame_equal(pl.read_csv(str(p), glob=False), df)
+
+
+def test_read_csv_dtypes_deprecated() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c
+        1,2,3
+        4,5,6
+        """
+    )
+    f = io.StringIO(csv)
+
+    with pytest.deprecated_call():
+        df = pl.read_csv(f, dtypes=[pl.Int8, pl.Int8, pl.Int8])  # type: ignore[call-arg]
+
+    expected = pl.DataFrame(
+        {"a": [1, 4], "b": [2, 5], "c": [3, 6]},
+        schema={"a": pl.Int8, "b": pl.Int8, "c": pl.Int8},
+    )
+    assert_frame_equal(df, expected)
+
+
+def test_projection_applied_on_file_with_no_rows_16606(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / "data.csv"
+
+    data = """\
+a,b,c,d
+"""
+
+    with path.open("w") as f:
+        f.write(data)
+
+    columns = ["a", "b"]
+
+    out = pl.read_csv(path, columns=columns).columns
+    assert out == columns
+
+    out = pl.scan_csv(path).select(columns).collect().columns
+    assert out == columns

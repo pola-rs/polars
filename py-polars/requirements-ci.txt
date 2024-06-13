@@ -1,0 +1,8 @@
+# -------------------------------------------------------
+# Packages that we require for unit tests that run on CI
+# (installable via `make requirements-all`)
+# -------------------------------------------------------
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+jax[cpu]
+pyiceberg>=0.5.0

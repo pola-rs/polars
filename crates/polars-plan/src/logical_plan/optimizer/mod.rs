@@ -4,8 +4,8 @@ use crate::prelude::*;
 
 mod cache_states;
 mod delay_rechunk;
-mod drop_nulls;
 
+mod cluster_with_columns;
 mod collapse_and_project;
 mod collect_members;
 mod count_star;
@@ -21,11 +21,9 @@ mod simplify_functions;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
-mod type_coercion;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
-use drop_nulls::ReplaceDropNulls;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
@@ -33,10 +31,10 @@ pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
-pub use type_coercion::TypeCoercionRule;
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
+pub use crate::logical_plan::conversion::type_coercion::TypeCoercionRule;
 use crate::logical_plan::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
 use crate::logical_plan::optimizer::cse::prune_unused_caches;
@@ -48,7 +46,7 @@ use crate::logical_plan::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
 
 pub trait Optimize {
-    fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;
+    fn optimize(&self, logical_plan: DslPlan) -> PolarsResult<DslPlan>;
 }
 
 // arbitrary constant to reduce reallocation.
@@ -59,7 +57,7 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
 }
 
 pub fn optimize(
-    logical_plan: LogicalPlan,
+    logical_plan: DslPlan,
     opt_state: OptState,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -69,6 +67,7 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
     // get toggle values
+    let cluster_with_columns = opt_state.cluster_with_columns;
     let predicate_pushdown = opt_state.predicate_pushdown;
     let projection_pushdown = opt_state.projection_pushdown;
     let type_coercion = opt_state.type_coercion;
@@ -94,11 +93,16 @@ pub fn optimize(
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
+    let mut lp_top = to_alp(
+        logical_plan,
+        expr_arena,
+        lp_arena,
+        simplify_expr,
+        type_coercion,
+    )?;
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
-    let prev_schema = logical_plan.schema()?.into_owned();
-
-    let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
+    let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
     // Collect members for optimizations that need it.
     let mut members = MemberCollector::new();
@@ -107,7 +111,6 @@ pub fn optimize(
     }
 
     if simplify_expr {
-        rules.push(Box::new(SimplifyExprRule {}));
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
@@ -154,6 +157,10 @@ pub fn optimize(
         lp_arena.replace(lp_top, alp);
     }
 
+    if cluster_with_columns {
+        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
+    }
+
     // Make sure its before slice pushdown.
     if fast_projection {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
@@ -173,23 +180,20 @@ pub fn optimize(
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
     }
-    if type_coercion {
-        rules.push(Box::new(TypeCoercionRule {}))
-    }
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
     if simplify_expr {
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
 
-    rules.push(Box::new(ReplaceDropNulls {}));
     if !eager {
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
-    if members.has_joins_or_unions && members.has_cache {
+    if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
+        // We only want to run this on cse inserted caches
         cache_states::set_cache_states(
             lp_top,
             lp_arena,

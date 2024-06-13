@@ -1,26 +1,28 @@
-//! Contains [`RecordBatch`], a container of [`Array`] where every array has the
+//! Contains [`RecordBatchT`], a container of [`Array`] where every array has the
 //! same length.
 
 use polars_error::{polars_bail, PolarsResult};
 
-use crate::array::Array;
+use crate::array::{Array, ArrayRef};
 
 /// A vector of trait objects of [`Array`] where every item has
-/// the same length, [`RecordBatch::len`].
+/// the same length, [`RecordBatchT::len`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RecordBatch<A: AsRef<dyn Array>> {
+pub struct RecordBatchT<A: AsRef<dyn Array>> {
     arrays: Vec<A>,
 }
 
-impl<A: AsRef<dyn Array>> RecordBatch<A> {
-    /// Creates a new [`RecordBatch`].
+pub type RecordBatch = RecordBatchT<ArrayRef>;
+
+impl<A: AsRef<dyn Array>> RecordBatchT<A> {
+    /// Creates a new [`RecordBatchT`].
     /// # Panic
     /// Iff the arrays do not have the same length
     pub fn new(arrays: Vec<A>) -> Self {
         Self::try_new(arrays).unwrap()
     }
 
-    /// Creates a new [`RecordBatch`].
+    /// Creates a new [`RecordBatchT`].
     /// # Error
     /// Iff the arrays do not have the same length
     pub fn try_new(arrays: Vec<A>) -> PolarsResult<Self> {
@@ -32,19 +34,19 @@ impl<A: AsRef<dyn Array>> RecordBatch<A> {
                 .any(|array| array.len() != len)
             {
                 polars_bail!(ComputeError:
-                    "Chunk require all its arrays to have an equal number of rows".to_string(),
+                    "RecordBatch requires all its arrays to have an equal number of rows".to_string(),
                 );
             }
         }
         Ok(Self { arrays })
     }
 
-    /// returns the [`Array`]s in [`RecordBatch`]
+    /// returns the [`Array`]s in [`RecordBatchT`]
     pub fn arrays(&self) -> &[A] {
         &self.arrays
     }
 
-    /// returns the [`Array`]s in [`RecordBatch`]
+    /// returns the [`Array`]s in [`RecordBatchT`]
     pub fn columns(&self) -> &[A] {
         &self.arrays
     }
@@ -62,20 +64,20 @@ impl<A: AsRef<dyn Array>> RecordBatch<A> {
         self.len() == 0
     }
 
-    /// Consumes [`RecordBatch`] into its underlying arrays.
+    /// Consumes [`RecordBatchT`] into its underlying arrays.
     /// The arrays are guaranteed to have the same length
     pub fn into_arrays(self) -> Vec<A> {
         self.arrays
     }
 }
 
-impl<A: AsRef<dyn Array>> From<RecordBatch<A>> for Vec<A> {
-    fn from(c: RecordBatch<A>) -> Self {
+impl<A: AsRef<dyn Array>> From<RecordBatchT<A>> for Vec<A> {
+    fn from(c: RecordBatchT<A>) -> Self {
         c.into_arrays()
     }
 }
 
-impl<A: AsRef<dyn Array>> std::ops::Deref for RecordBatch<A> {
+impl<A: AsRef<dyn Array>> std::ops::Deref for RecordBatchT<A> {
     type Target = [A];
 
     #[inline]

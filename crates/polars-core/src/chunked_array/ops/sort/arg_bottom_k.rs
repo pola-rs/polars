@@ -26,14 +26,23 @@ impl PartialOrd for CompareRow<'_> {
     }
 }
 
+/// Return the indices of the bottom k elements.
+///
+/// Similar to .argsort() then .slice(0, k) but with a more efficient implementation.
 pub fn _arg_bottom_k(
     k: usize,
     by_column: &[Series],
     sort_options: &mut SortMultipleOptions,
 ) -> PolarsResult<NoNull<IdxCa>> {
     let from_n_rows = by_column[0].len();
-    _broadcast_descending(by_column.len(), &mut sort_options.descending);
-    let encoded = _get_rows_encoded(by_column, &sort_options.descending, sort_options.nulls_last)?;
+    _broadcast_bools(by_column.len(), &mut sort_options.descending);
+    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
+
+    let encoded = _get_rows_encoded(
+        by_column,
+        &sort_options.descending,
+        &sort_options.nulls_last,
+    )?;
     let arr = encoded.into_array();
     let mut rows = arr
         .values_iter()

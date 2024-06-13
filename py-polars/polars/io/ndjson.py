@@ -34,9 +34,9 @@ def read_ndjson(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a `read()` method, such as a file handler (e.g. via builtin `open`
-        function) or `BytesIO`).
+        Path to a file or a file-like object (by "file-like object" we refer to objects
+        that have a `read()` method, such as a file handler like the builtin `open`
+        function, or a `BytesIO` instance).
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -143,6 +143,9 @@ def scan_ndjson(
     else:
         sources = [normalize_filepath(source) for source in source]
         source = None  # type: ignore[assignment]
+    if infer_schema_length == 0:
+        msg = "'infer_schema_length' should be positive"
+        raise ValueError(msg)
 
     pylf = PyLazyFrame.new_from_ndjson(
         source,

@@ -5,7 +5,9 @@ use super::*;
 fn get_upper_projections(
     parent: Node,
     lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
     names_scratch: &mut Vec<ColumnName>,
+    found_required_columns: &mut bool,
 ) -> bool {
     let parent = lp_arena.get(parent);
 
@@ -15,9 +17,15 @@ fn get_upper_projections(
         SimpleProjection { columns, .. } => {
             let iter = columns.iter_names().map(|s| ColumnName::from(s.as_str()));
             names_scratch.extend(iter);
+            *found_required_columns = true;
             false
         },
-        Filter { .. } => true,
+        Filter { predicate, .. } => {
+            // Also add predicate, as the projection is above the filter node.
+            names_scratch.extend(aexpr_to_leaf_names(predicate.node(), expr_arena));
+
+            true
+        },
         // Only filter and projection nodes are allowed, any other node we stop.
         _ => false,
     }
@@ -47,11 +55,10 @@ fn get_upper_predicates(
 type TwoParents = [Option<Node>; 2];
 
 /// 1. This will ensure that all equal caches communicate the amount of columns
-/// they need to project.
-/// 2.
-/// - This will ensure we apply predicate in the subtrees below the caches.
-/// - If the predicate above the cache is the same for all matching caches that filter will be applied
-///  as well.
+///    they need to project.
+/// 2. This will ensure we apply predicate in the subtrees below the caches.
+///    If the predicate above the cache is the same for all matching caches, that filter will be
+///    applied as well.
 ///
 /// # Example
 /// Consider this tree, where `SUB-TREE` is duplicate and can be cached.
@@ -65,7 +72,7 @@ type TwoParents = [Option<Node>; 2];
 ///    SUB-TREE                                 SUB-TREE
 ///
 /// STEPS:
-/// - 1 CSE will run and will insert cache nodes
+/// - 1. CSE will run and will insert cache nodes
 ///
 ///                         Tree
 ///                         |
@@ -76,7 +83,7 @@ type TwoParents = [Option<Node>; 2];
 ///    |                                        |
 ///    SUB-TREE                                 SUB-TREE
 ///
-/// - 2 predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
+/// - 2. predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
 ///
 ///                         Tree
 ///                         |
@@ -195,13 +202,17 @@ pub(super) fn set_cache_states(
                     v.parents.push(frame.parent);
                     v.cache_nodes.push(frame.current);
 
-                    let mut found_columns = false;
+                    let mut found_required_columns = false;
 
                     for parent_node in frame.parent.into_iter().flatten() {
-                        let keep_going =
-                            get_upper_projections(parent_node, lp_arena, &mut names_scratch);
+                        let keep_going = get_upper_projections(
+                            parent_node,
+                            lp_arena,
+                            expr_arena,
+                            &mut names_scratch,
+                            &mut found_required_columns,
+                        );
                         if !names_scratch.is_empty() {
-                            found_columns = true;
                             v.names_union.extend(names_scratch.drain(..));
                         }
                         // We stop early as we want to find the first projection node above the cache.
@@ -231,7 +242,7 @@ pub(super) fn set_cache_states(
 
                     // There was no explicit projection and we must take
                     // all columns
-                    if !found_columns {
+                    if !found_required_columns {
                         let schema = lp.schema(lp_arena);
                         v.names_union.extend(
                             schema

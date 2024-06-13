@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg" alt="Polars logo">
+  <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/banner/polars_github_banner.svg" alt="Polars logo">
   <br>
 </h1>
 
@@ -23,13 +23,13 @@
 
 <p align="center">
   <b>Documentation</b>:
-  <a href="https://docs.pola.rs/py-polars/html/reference/index.html">Python</a>
+  <a href="https://docs.pola.rs/api/python/stable/reference/index.html">Python</a>
   -
   <a href="https://docs.rs/polars/latest/polars/">Rust</a>
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
   -
-  <a href="https://rpolars.github.io/index.html">R</a>
+  <a href="https://pola-rs.github.io/r-polars/index.html">R</a>
   |
   <b>StackOverflow</b>:
   <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
@@ -153,11 +153,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 
 ### Blazingly fast
 
-Polars is very fast. In fact, it is one of the best performing solutions available.
-See the results in [DuckDB's db-benchmark](https://duckdblabs.github.io/db-benchmark/).
-
-In the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) Polars is orders of magnitude faster than pandas, dask, modin and vaex
-on full queries (including IO).
+Polars is very fast. In fact, it is one of the best performing solutions available. See the [TPC-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Lightweight
 

@@ -1,8 +1,8 @@
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
-use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
+use polars_ops::series::SeriesMethods;
 
 use crate::prelude::*;
 
@@ -43,7 +43,6 @@ pub trait PolarsUpsample {
         by: I,
         time_column: &str,
         every: Duration,
-        offset: Duration,
     ) -> PolarsResult<DataFrame>;
 
     /// Upsample a [`DataFrame`] at a regular frequency.
@@ -85,7 +84,6 @@ pub trait PolarsUpsample {
         by: I,
         time_column: &str,
         every: Duration,
-        offset: Duration,
     ) -> PolarsResult<DataFrame>;
 }
 
@@ -95,10 +93,11 @@ impl PolarsUpsample for DataFrame {
         by: I,
         time_column: &str,
         every: Duration,
-        offset: Duration,
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
-        upsample_impl(self, by, time_column, every, offset, false)
+        let time_type = self.column(time_column)?.dtype();
+        ensure_duration_matches_data_type(every, time_type, "every")?;
+        upsample_impl(self, by, time_column, every, false)
     }
 
     fn upsample_stable<I: IntoVec<String>>(
@@ -106,10 +105,11 @@ impl PolarsUpsample for DataFrame {
         by: I,
         time_column: &str,
         every: Duration,
-        offset: Duration,
     ) -> PolarsResult<DataFrame> {
         let by = by.into_vec();
-        upsample_impl(self, by, time_column, every, offset, true)
+        let time_type = self.column(time_column)?.dtype();
+        ensure_duration_matches_data_type(every, time_type, "every")?;
+        upsample_impl(self, by, time_column, every, true)
     }
 }
 
@@ -118,18 +118,10 @@ fn upsample_impl(
     by: Vec<String>,
     index_column: &str,
     every: Duration,
-    offset: Duration,
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    if offset.parsed_int || every.parsed_int {
-        polars_ensure!(
-            ((offset.parsed_int || offset.is_zero())
-             && (every.parsed_int || every.is_zero())),
-            ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
-        )
-    }
-    ensure_sorted_arg(s, "upsample")?;
+    s.ensure_sorted_arg("upsample")?;
     let time_type = s.dtype();
     if matches!(time_type, DataType::Date) {
         let mut df = source.clone();
@@ -138,7 +130,7 @@ fn upsample_impl(
                 .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        let mut out = upsample_impl(&df, by, index_column, every, stable)?;
         out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
@@ -155,7 +147,7 @@ fn upsample_impl(
                 .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        let mut out = upsample_impl(&df, by, index_column, every, stable)?;
         out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
@@ -166,13 +158,13 @@ fn upsample_impl(
                 .unwrap()
         })
         .unwrap();
-        let mut out = upsample_impl(&df, by, index_column, every, offset, stable)?;
+        let mut out = upsample_impl(&df, by, index_column, every, stable)?;
         out.apply(index_column, |s| s.cast(time_type).unwrap())
             .unwrap();
         Ok(out)
     } else if by.is_empty() {
         let index_column = source.column(index_column)?;
-        upsample_single_impl(source, index_column, every, offset)
+        upsample_single_impl(source, index_column, every)
     } else {
         let gb = if stable {
             source.group_by_stable(by)
@@ -182,7 +174,7 @@ fn upsample_impl(
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column, every, offset)
+            upsample_single_impl(&df, index_column, every)
         })
     }
 }
@@ -191,7 +183,6 @@ fn upsample_single_impl(
     source: &DataFrame,
     index_column: &Series,
     every: Duration,
-    offset: Duration,
 ) -> PolarsResult<DataFrame> {
     let index_col_name = index_column.name();
 
@@ -209,11 +200,6 @@ fn upsample_single_impl(
                         Some(tz) => Some(parse_time_zone(tz)?),
                         _ => None,
                     };
-                    let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first, tz.as_ref())?,
-                        TimeUnit::Microseconds => offset.add_us(first, tz.as_ref())?,
-                        TimeUnit::Milliseconds => offset.add_ms(first, tz.as_ref())?,
-                    };
                     let range = datetime_range_impl(
                         index_col_name,
                         first,
@@ -229,7 +215,11 @@ fn upsample_single_impl(
                         source,
                         &[index_col_name],
                         &[index_col_name],
-                        JoinArgs::new(JoinType::Left),
+                        JoinArgs {
+                            how: JoinType::Left,
+                            coalesce: JoinCoalesce::CoalesceColumns,
+                            ..Default::default()
+                        },
                     )
                 },
                 _ => polars_bail!(

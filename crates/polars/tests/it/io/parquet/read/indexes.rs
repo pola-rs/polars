@@ -1,4 +1,4 @@
-use polars_parquet::parquet::error::Error;
+use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::indexes::{
     BooleanIndex, BoundaryOrder, ByteIndex, Index, NativeIndex, PageIndex, PageLocation,
 };
@@ -72,7 +72,7 @@ const FILE: &[u8] = &[
 ];
 
 #[test]
-fn test() -> Result<(), Error> {
+fn test() -> Result<(), ParquetError> {
     let mut reader = std::io::Cursor::new(FILE);
 
     let expected_index = vec![

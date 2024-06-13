@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import (
-    deprecate_renamed_function,
-    deprecate_renamed_parameter,
-)
+from polars._utils.deprecation import deprecate_function
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
@@ -84,8 +81,6 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -104,7 +99,17 @@ class StringNameSpace:
             `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
             found, the default is `"us"`.
         time_zone
-            Time zone for the resulting Datetime column.
+            Time zone for the resulting Datetime column. Rules are:
+
+            - If inputs are tz-naive and `time_zone` is None, the result time zone is
+              `None`.
+            - If inputs are offset-aware and `time_zone` is None, inputs are converted
+              to `'UTC'` and the result time zone is `'UTC'`.
+            - If inputs are offset-aware and `time_zone` is given, inputs are converted
+              to `time_zone` and the result time zone is `time_zone`.
+            - If inputs are tz-naive and `time_zone` is given, input time zones are
+              replaced with (not converted to!) `time_zone`, and the result time zone
+              is `time_zone`.
         strict
             Raise an error if any conversion fails.
         exact
@@ -116,24 +121,6 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as `pl.Datetime(time_unit)`,
-                and offset-aware strings are converted to
-                `pl.Datetime(time_unit, "UTC")`.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -197,7 +184,6 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        use_earliest: bool | None = None,
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
@@ -223,15 +209,6 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        use_earliest
-            Determine how to deal with ambiguous datetimes:
-
-            - `None` (default): raise
-            - `True`: use the earliest datetime
-            - `False`: use the latest datetime
-
-            .. deprecated:: 0.19.0
-                Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
@@ -390,42 +367,6 @@ class StringNameSpace:
             4
             3
             2
-            null
-        ]
-        """
-
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Series:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`String`.
-
-        Examples
-        --------
-        >>> pl.Series([1, None, 2]).str.concat("-")
-        shape: (1,)
-        Series: '' [str]
-        [
-            "1-2"
-        ]
-        >>> pl.Series([1, None, 2]).str.concat("-", ignore_nulls=False)
-        shape: (1,)
-        Series: '' [str]
-        [
             null
         ]
         """
@@ -696,6 +637,7 @@ class StringNameSpace:
     def json_decode(
         self,
         dtype: PolarsDataType | None = None,
+        *,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Series:
         """
@@ -730,7 +672,7 @@ class StringNameSpace:
         ]
         """
 
-    def json_path_match(self, json_path: str) -> Series:
+    def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
         Extract the first match of json string with provided JSONPath expression.
 
@@ -1216,7 +1158,7 @@ class StringNameSpace:
 
     def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         r"""
-        Replace first matching regex/literal substring with a new string value.
+        Replace all matching regex/literal substrings with a new string value.
 
         Parameters
         ----------
@@ -1227,12 +1169,10 @@ class StringNameSpace:
             String that will replace the matched substring.
         literal
             Treat `pattern` as a literal string.
-        n
-            Number of matches to replace.
 
         See Also
         --------
-        replace_all
+        replace
 
         Notes
         -----
@@ -1502,7 +1442,6 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int | IntoExprColumn) -> Series:
         """
         Pad the start of the string with zeros until it reaches the given length.
@@ -1582,8 +1521,8 @@ class StringNameSpace:
         shape: (2,)
         Series: 'sing' [str]
         [
-            "Welcome To My …
-            "There's No Tur…
+            "Welcome To My World"
+            "There's No Turning Back"
         ]
         """
 
@@ -1778,9 +1717,22 @@ class StringNameSpace:
         ]
         """
 
+    @deprecate_function(
+        'Use `.str.split("").explode()` instead.'
+        " Note that empty strings will result in null instead of being preserved."
+        " To get the exact same behavior, split first and then use when/then/otherwise"
+        " to handle the empty list before exploding.",
+        version="0.20.31",
+    )
     def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
+
+        .. deprecated:: 0.20.31
+            Use `.str.split("").explode()` instead.
+            Note that empty strings will result in null instead of being preserved.
+            To get the exact same behavior, split first and then use when/then/otherwise
+            to handle the empty list before exploding.
 
         Returns
         -------
@@ -1790,7 +1742,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", ["foo", "bar"])
-        >>> s.str.explode()
+        >>> s.str.explode()  # doctest: +SKIP
         shape: (6,)
         Series: 'a' [str]
         [
@@ -1846,169 +1798,6 @@ class StringNameSpace:
                 null
         ]
         """
-
-    @deprecate_renamed_function("to_integer", version="0.19.14")
-    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
-    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Series:
-        """
-        Parse integers with base radix from strings.
-
-        .. deprecated:: 0.19.14
-            This method has been renamed to :func:`to_integer`.
-
-        Parameters
-        ----------
-        base
-            Positive integer which is the base of the string we are parsing.
-        strict
-            Bool, Default=True will raise any ParseError or overflow as ComputeError.
-            False silently convert to Null.
-        """
-
-    @deprecate_renamed_function("strip_chars", version="0.19.3")
-    def strip(self, characters: str | None = None) -> Series:
-        """
-        Remove leading and trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-
-    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
-    def lstrip(self, characters: str | None = None) -> Series:
-        """
-        Remove leading characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`strip_chars_start`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-
-    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
-    def rstrip(self, characters: str | None = None) -> Series:
-        """
-        Remove trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.strip_chars_end`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-        """
-
-    @deprecate_renamed_function("count_matches", version="0.19.3")
-    def count_match(self, pattern: str | Series) -> Series:
-        """
-        Count all successive non-overlapping regex matches.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`count_matches`.
-
-        Parameters
-        ----------
-        pattern
-            A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
-            regular expressions.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`UInt32`. Returns null if the original
-            value is null.
-        """
-
-    @deprecate_renamed_function("len_bytes", version="0.19.8")
-    def lengths(self) -> Series:
-        """
-        Return the number of bytes in each string.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_bytes`.
-        """
-
-    @deprecate_renamed_function("len_chars", version="0.19.8")
-    def n_chars(self) -> Series:
-        """
-        Return the length of each string as the number of characters.
-
-        .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len_chars`.
-        """
-
-    @deprecate_renamed_function("pad_end", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def ljust(self, length: int, fill_char: str = " ") -> Series:
-        """
-        Return the string left justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_end`.
-
-        Parameters
-        ----------
-        length
-            Justify left to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-
-    @deprecate_renamed_function("pad_start", version="0.19.12")
-    @deprecate_renamed_parameter("width", "length", version="0.19.12")
-    def rjust(self, length: int, fill_char: str = " ") -> Series:
-        """
-        Return the string right justified in a string of length `length`.
-
-        .. deprecated:: 0.19.12
-            This method has been renamed to :func:`pad_start`.
-
-        Parameters
-        ----------
-        length
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-        """
-
-    @deprecate_renamed_function("json_decode", version="0.19.15")
-    def json_extract(
-        self,
-        dtype: PolarsDataType | None = None,
-        infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> Series:
-        """
-        Parse string values as JSON.
-
-        .. deprecated:: 0.19.15
-            This method has been renamed to :meth:`json_decode`.
-
-        Parameters
-        ----------
-        dtype
-            The dtype to cast the extracted value to. If None, the dtype will be
-            inferred from the JSON value.
-        infer_schema_length
-            The maximum number of rows to scan for schema inference.
-            If set to `None`, the full data may be scanned *(this is slow)*.
-        """
-        return self.json_decode(dtype, infer_schema_length)
 
     def contains_any(
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
@@ -2088,5 +1877,85 @@ class StringNameSpace:
             "Everybody wants to rule the world"
             "Tell you what me want, what me really really want"
             "Can me feel the love tonight"
+        ]
+        """
+
+    def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, None, 3])
+        >>> s.str.join("-")
+        shape: (1,)
+        Series: '' [str]
+        [
+            "1-3"
+        ]
+        >>> s.str.join(ignore_nulls=False)
+        shape: (1,)
+        Series: '' [str]
+        [
+            null
+        ]
+        """
+
+    @deprecate_function(
+        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
+        " is an empty string instead of a hyphen.",
+        version="1.0.0",
+    )
+    def concat(
+        self, delimiter: str | None = None, *, ignore_nulls: bool = True
+    ) -> Series:
+        """
+        Vertically concatenate the string values in the column to a single string value.
+
+        .. deprecated:: 1.0.0
+            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
+            is an empty string instead of a hyphen.
+
+        Parameters
+        ----------
+        delimiter
+            The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, null values will be propagated. This means that
+            if the column contains any null values, the output is null.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`String`.
+
+        Examples
+        --------
+        >>> pl.Series([1, None, 2]).str.concat("-")  # doctest: +SKIP
+        shape: (1,)
+        Series: '' [str]
+        [
+            "1-2"
+        ]
+        >>> pl.Series([1, None, 2]).str.concat(ignore_nulls=False)  # doctest: +SKIP
+        shape: (1,)
+        Series: '' [str]
+        [
+            null
         ]
         """
