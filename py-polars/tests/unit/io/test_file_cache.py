@@ -10,21 +10,26 @@ import polars as pl
 
 @pytest.mark.slow()
 @pytest.mark.skipif(sys.platform == "win32", reason="Paths differ on windows")
-def test_file_cache_ttl(
-    monkeypatch: pytest.MonkeyPatch, io_files_path: Path, tmp_path: Path
-) -> None:
-    file_cache_prefix = Path(pl._get_file_cache_prefix())
-    io_files_path = io_files_path.absolute()
+def test_file_cache_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    file_cache_prefix = Path(pl._get_file_cache_prefix())
+    tmp_path = tmp_path.absolute()
+    tmp_path.mkdir(exist_ok=True)
 
     from time import sleep
 
     from blake3 import blake3
 
     paths = [
-        io_files_path / "foods1.csv",
-        io_files_path / "foods2.csv",
+        tmp_path / "1.csv",
+        tmp_path / "2.csv",
     ]
+    df = pl.DataFrame({"a": 1})
+
+    for p in paths:
+        df.write_csv(p)
+
     hashes = [blake3(bytes(x)).hexdigest()[:32] for x in paths]
     metadata_file_paths = [file_cache_prefix / f"m/{x}" for x in hashes]
     data_file_dir = file_cache_prefix / "d/"
@@ -39,7 +44,7 @@ def test_file_cache_ttl(
     assert all(x.exists() for x in metadata_file_paths)
     assert all(has_data_file)
 
-    sleep(10)
+    sleep(5)
 
     has_data_file = [False, False]
     for data_file in data_file_dir.iterdir():
