@@ -39,7 +39,7 @@ def test_file_cache_ttl(
     assert all(x.exists() for x in metadata_file_paths)
     assert all(has_data_file)
 
-    sleep(5)
+    sleep(10)
 
     has_data_file = [False, False]
     for data_file in data_file_dir.iterdir():
