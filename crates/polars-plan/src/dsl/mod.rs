@@ -1495,7 +1495,25 @@ impl Expr {
 
     #[cfg(feature = "replace")]
     /// Replace the given values with other values.
-    pub fn replace<E: Into<Expr>>(
+    pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
+        let old = old.into();
+        let new = new.into();
+
+        // If we search and replace by literals, we can run on batches.
+        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
+
+        let args = [old, new];
+
+        if literal_searchers {
+            self.map_many_private(FunctionExpr::Replace, &args, false, false)
+        } else {
+            self.apply_many_private(FunctionExpr::Replace, &args, false, false)
+        }
+    }
+
+    #[cfg(feature = "replace")]
+    /// Replace the given values with other values.
+    pub fn replace_strict<E: Into<Expr>>(
         self,
         old: E,
         new: E,
@@ -1504,7 +1522,8 @@ impl Expr {
     ) -> Expr {
         let old = old.into();
         let new = new.into();
-        // If we search and replace by literals, we can run on batches.
+
+        // If we replace by literals, we can run on batches.
         let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
 
         let mut args = vec![old, new];
@@ -1513,9 +1532,19 @@ impl Expr {
         }
 
         if literal_searchers {
-            self.map_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+            self.map_many_private(
+                FunctionExpr::ReplaceStrict { return_dtype },
+                &args,
+                false,
+                false,
+            )
         } else {
-            self.apply_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+            self.apply_many_private(
+                FunctionExpr::ReplaceStrict { return_dtype },
+                &args,
+                false,
+                false,
+            )
         }
     }
 

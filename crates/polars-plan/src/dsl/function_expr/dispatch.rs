@@ -156,9 +156,18 @@ pub(super) fn hist(
 }
 
 #[cfg(feature = "replace")]
-pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
-    let default = if let Some(s) = s.get(3) { s } else { &s[0] };
-    polars_ops::series::replace(&s[0], &s[1], &s[2], default, return_dtype)
+pub(super) fn replace(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::series::replace(&s[0], &s[1], &s[2])
+}
+
+#[cfg(feature = "replace")]
+pub(super) fn replace_strict(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
+    match s.get(3) {
+        Some(default) => {
+            polars_ops::series::replace_or_default(&s[0], &s[1], &s[2], default, return_dtype)
+        },
+        None => polars_ops::series::replace_strict(&s[0], &s[1], &s[2], return_dtype),
+    }
 }
 
 pub(super) fn fill_null_with_strategy(
