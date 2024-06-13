@@ -51,11 +51,9 @@ impl CloudWriter {
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         // SAFETY:
-        // we extend the lifetime for the duration of this function. This is save as wel block the
+        // We extend the lifetime for the duration of this function. This is safe as well block the
         // async runtime here
-        let buf = unsafe {
-            std::mem::transmute::<&[u8], &'static [u8]>(buf)
-        };
+        let buf = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(buf) };
         get_runtime().block_on(async {
             let res = self.writer.put_part(PutPayload::from_static(buf)).await;
             if res.is_err() {
