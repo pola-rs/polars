@@ -609,7 +609,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
 
 
 def test_int_operator_stability() -> None:
@@ -630,5 +630,5 @@ def test_duration_division_schema() -> None:
         .select(pl.col("a") / pl.col("a"))
     )
 
-    assert q.schema == {"a": pl.Float64}
+    assert q.collect_schema() == {"a": pl.Float64}
     assert q.collect().to_dict(as_series=False) == {"a": [1.0]}

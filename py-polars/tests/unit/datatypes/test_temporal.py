@@ -1225,7 +1225,7 @@ def test_convert_time_zone_lazy_schema() -> None:
     result = ldf.with_columns(
         pl.col("ts_us").dt.convert_time_zone("America/New_York").alias("ts_us_ny"),
         pl.col("ts_ms").dt.convert_time_zone("America/New_York").alias("ts_us_kt"),
-    ).schema
+    ).collect_schema()
     expected = {
         "ts_us": pl.Datetime("us", "UTC"),
         "ts_ms": pl.Datetime("ms", "UTC"),

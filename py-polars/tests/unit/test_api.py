@@ -81,7 +81,8 @@ def test_custom_lazy_namespace() -> None:
 
         def by_column_dtypes(self) -> list[pl.LazyFrame]:
             return [
-                self._lf.select(pl.col(dt)) for dt in self._lf.collect_schema().dtypes()
+                self._lf.select(pl.col(tp))
+                for tp in dict.fromkeys(self._lf.collect_schema().dtypes())
             ]
 
     ldf = pl.DataFrame(

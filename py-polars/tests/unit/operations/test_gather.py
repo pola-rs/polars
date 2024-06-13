@@ -29,7 +29,7 @@ def test_gather_agg_schema() -> None:
         df.lazy()
         .group_by("group", maintain_order=True)
         .agg(pl.col("value").get(1))
-        .schema["value"]
+        .collect_schema()["value"]
         == pl.Int64
     )
 

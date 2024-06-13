@@ -41,7 +41,7 @@ def test_interpolate_linear(
 ) -> None:
     df = pl.LazyFrame({"a": [1, None, 2, None, 3]}, schema={"a": input_dtype})
     result = df.with_columns(pl.all().interpolate(method="linear"))
-    assert result.schema["a"] == output_dtype
+    assert result.collect_schema()["a"] == output_dtype
     expected = pl.DataFrame(
         {"a": [1.0, 1.5, 2.0, 2.5, 3.0]}, schema={"a": output_dtype}
     )
@@ -87,7 +87,7 @@ def test_interpolate_temporal_linear(
 ) -> None:
     df = pl.LazyFrame({"a": input}, schema={"a": input_dtype})
     result = df.with_columns(pl.all().interpolate(method="linear"))
-    assert result.schema["a"] == input_dtype
+    assert result.collect_schema()["a"] == input_dtype
     expected = pl.DataFrame({"a": output}, schema={"a": input_dtype})
     assert_frame_equal(result.collect(), expected)
 
@@ -110,7 +110,7 @@ def test_interpolate_temporal_linear(
 def test_interpolate_nearest(input_dtype: PolarsDataType) -> None:
     df = pl.LazyFrame({"a": [1, None, 2, None, 3]}, schema={"a": input_dtype})
     result = df.with_columns(pl.all().interpolate(method="nearest"))
-    assert result.schema["a"] == input_dtype
+    assert result.collect_schema()["a"] == input_dtype
     expected = pl.DataFrame({"a": [1, 2, 2, 3, 3]}, schema={"a": input_dtype})
     assert_frame_equal(result.collect(), expected)
 
@@ -154,6 +154,6 @@ def test_interpolate_temporal_nearest(
 ) -> None:
     df = pl.LazyFrame({"a": input}, schema={"a": input_dtype})
     result = df.with_columns(pl.all().interpolate(method="nearest"))
-    assert result.schema["a"] == input_dtype
+    assert result.collect_schema()["a"] == input_dtype
     expected = pl.DataFrame({"a": output}, schema={"a": input_dtype})
     assert_frame_equal(result.collect(), expected)

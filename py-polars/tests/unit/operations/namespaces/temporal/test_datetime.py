@@ -344,7 +344,9 @@ def test_base_utc_offset_lazy_schema() -> None:
         eager=True,
     )
     df = pl.DataFrame({"ts": ser}).lazy()
-    result = df.with_columns(base_utc_offset=pl.col("ts").dt.base_utc_offset()).schema
+    result = df.with_columns(
+        base_utc_offset=pl.col("ts").dt.base_utc_offset()
+    ).collect_schema()
     expected = {
         "ts": pl.Datetime(time_unit="us", time_zone="Europe/London"),
         "base_utc_offset": pl.Duration(time_unit="ms"),
@@ -382,7 +384,7 @@ def test_dst_offset_lazy_schema() -> None:
         eager=True,
     )
     df = pl.DataFrame({"ts": ser}).lazy()
-    result = df.with_columns(dst_offset=pl.col("ts").dt.dst_offset()).schema
+    result = df.with_columns(dst_offset=pl.col("ts").dt.dst_offset()).collect_schema()
     expected = {
         "ts": pl.Datetime(time_unit="us", time_zone="Europe/London"),
         "dst_offset": pl.Duration(time_unit="ms"),

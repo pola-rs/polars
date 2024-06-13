@@ -576,7 +576,7 @@ def test_cast_frame() -> None:
     # cast via col:dtype map
     assert lf.cast(
         dtypes={"b": pl.Float32, "c": pl.String, "d": pl.Datetime("ms")}
-    ).schema == {
+    ).collect_schema() == {
         "a": pl.Float64,
         "b": pl.Float32,
         "c": pl.String,
@@ -591,7 +591,12 @@ def test_cast_frame() -> None:
             cs.temporal(): pl.String,
         }
     )
-    assert lfc.schema == {"a": pl.UInt8, "b": pl.Int32, "c": pl.Boolean, "d": pl.String}
+    assert lfc.collect_schema() == {
+        "a": pl.UInt8,
+        "b": pl.Int32,
+        "c": pl.Boolean,
+        "d": pl.String,
+    }
     assert lfc.collect().rows() == [
         (1, 4, True, "2020-01-02"),
         (2, 5, False, "2021-03-04"),
@@ -1245,22 +1250,22 @@ def test_cum_agg_types() -> None:
         pl.col("b").cum_sum(),
         pl.col("c").cum_sum(),
     )
-    assert cum_sum_lf.schema["a"] == pl.Int64
-    assert cum_sum_lf.schema["b"] == pl.UInt32
-    assert cum_sum_lf.schema["c"] == pl.Float64
+    assert cum_sum_lf.collect_schema()["a"] == pl.Int64
+    assert cum_sum_lf.collect_schema()["b"] == pl.UInt32
+    assert cum_sum_lf.collect_schema()["c"] == pl.Float64
     collected_cumsum_lf = cum_sum_lf.collect()
-    assert collected_cumsum_lf.schema == cum_sum_lf.schema
+    assert collected_cumsum_lf.schema == cum_sum_lf.collect_schema()
 
     cum_prod_lf = ldf.select(
         pl.col("a").cast(pl.UInt64).cum_prod(),
         pl.col("b").cum_prod(),
         pl.col("c").cum_prod(),
     )
-    assert cum_prod_lf.schema["a"] == pl.UInt64
-    assert cum_prod_lf.schema["b"] == pl.Int64
-    assert cum_prod_lf.schema["c"] == pl.Float64
+    assert cum_prod_lf.collect_schema()["a"] == pl.UInt64
+    assert cum_prod_lf.collect_schema()["b"] == pl.Int64
+    assert cum_prod_lf.collect_schema()["c"] == pl.Float64
     collected_cum_prod_lf = cum_prod_lf.collect()
-    assert collected_cum_prod_lf.schema == cum_prod_lf.schema
+    assert collected_cum_prod_lf.schema == cum_prod_lf.collect_schema()
 
 
 def test_compare_schema_between_lazy_and_eager_6904() -> None:

@@ -33,7 +33,7 @@ def test_array_min_max_dtype_12123() -> None:
         min=pl.col("a").arr.min().alias("min"),
     )
 
-    assert df.schema == {
+    assert df.collect_schema() == {
         "a": pl.Array(pl.Float64, 2),
         "b": pl.Float64,
         "max": pl.Float64,

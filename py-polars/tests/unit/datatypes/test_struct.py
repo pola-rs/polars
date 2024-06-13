@@ -871,7 +871,7 @@ def test_struct_null_count_10130() -> None:
 def test_struct_arithmetic_schema() -> None:
     q = pl.LazyFrame({"A": [1], "B": [2]})
 
-    assert q.select(pl.struct("A") - pl.struct("B")).schema["A"] == pl.Struct(
+    assert q.select(pl.struct("A") - pl.struct("B")).collect_schema()["A"] == pl.Struct(
         {"A": pl.Int64}
     )
 

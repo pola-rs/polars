@@ -302,7 +302,10 @@ def test_arg_sort_rank_nans() -> None:
 
 def test_set_sorted_schema() -> None:
     assert (
-        pl.DataFrame({"A": [0, 1]}).lazy().with_columns(pl.col("A").set_sorted()).schema
+        pl.DataFrame({"A": [0, 1]})
+        .lazy()
+        .with_columns(pl.col("A").set_sorted())
+        .collect_schema()
     ) == {"A": pl.Int64}
 
 

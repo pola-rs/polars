@@ -923,17 +923,17 @@ def test_join_coalesce(how: JoinStrategy) -> None:
     how = "inner"
     q = a.join(b, on="a", coalesce=False, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "a_right", "b_right", "c"]
 
     q = a.join(b, on=["a", "b"], coalesce=False, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "a_right", "b_right", "c"]
 
     q = a.join(b, on=["a", "b"], coalesce=True, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "c"]
 
 

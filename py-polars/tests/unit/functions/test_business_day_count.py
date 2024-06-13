@@ -108,7 +108,7 @@ def test_business_day_count_schema() -> None:
     result = lf.select(
         business_day_count=pl.business_day_count("start", "end"),
     )
-    assert result.schema["business_day_count"] == pl.Int32
+    assert result.collect_schema()["business_day_count"] == pl.Int32
     assert result.collect().schema["business_day_count"] == pl.Int32
     assert 'col("start").business_day_count([col("end")])' in result.explain()
 
