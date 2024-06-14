@@ -552,10 +552,20 @@ impl Series {
     }
 
     pub fn try_mul(&self, rhs: &Self) -> PolarsResult<Self> {
+        use DataType::*;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
-                _struct_arithmetic(self, rhs, |a, b| a.try_mul(b))
+            (Struct(_), Struct(_)) => _struct_arithmetic(self, rhs, |a, b| a.try_mul(b)),
+            // temporal lh
+            (Duration(_), _) | (Date, _) | (Datetime(_, _), _) | (Time, _) => self.multiply(rhs),
+            // temporal rhs
+            (_, Date) | (_, Datetime(_, _)) | (_, Time) => {
+                polars_bail!(opq = mul, self.dtype(), rhs.dtype())
+            },
+            (_, Duration(_)) => {
+                // swap order
+                let out = rhs.multiply(self)?;
+                Ok(out.with_name(self.name()))
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
@@ -565,11 +575,22 @@ impl Series {
     }
 
     pub fn try_div(&self, rhs: &Self) -> PolarsResult<Self> {
+        use DataType::*;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
-            (DataType::Struct(_), DataType::Struct(_)) => {
+            (Struct(_), Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.try_div(b))
             },
+            (Duration(_), _) => self.divide(rhs),
+            | (Date, _)
+            | (Datetime(_, _), _)
+            | (Time, _)
+            // temporal rhs
+            | (_ , Duration(_))
+            | (_ , Time)
+            | (_ , Date)
+            | (_ , Datetime(_, _))
+            => polars_bail!(opq = div, self.dtype(), rhs.dtype()),
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.divide(rhs.as_ref())
