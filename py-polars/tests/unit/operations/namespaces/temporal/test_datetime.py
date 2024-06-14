@@ -1358,13 +1358,13 @@ def test_dt_mean_deprecated() -> None:
     ("values", "quantile", "expected"),
     [
         ([date(2024, 1, x) for x in range(1, 6)], 0.0, date(2024, 1, 1)),
-        ([date(2024, 1, x) for x in range(1, 6)], 0.3, date(2024, 1, 1)),
-        ([date(2024, 1, x) for x in range(1, 6)], 0.5, date(2024, 1, 1)),
-        ([date(2024, 1, x) for x in range(1, 6)], 0.75, date(2024, 1, 1)),
-        ([date(2024, 1, x) for x in range(1, 6)], 1.0, date(2024, 1, 1)),
+        ([date(2024, 1, x) for x in range(1, 6)], 0.3, date(2024, 1, 2)),
+        ([date(2024, 1, x) for x in range(1, 6)], 0.5, date(2024, 1, 3)),
+        ([date(2024, 1, x) for x in range(1, 6)], 0.75, date(2024, 1, 4)),
+        ([date(2024, 1, x) for x in range(1, 6)], 1.0, date(2024, 1, 5)),
     ],
 )
-def test_date_quantile(values, quantile, expected) -> None:
+def test_date_quantile(values: list[date], quantile: float, expected: date) -> None:
     s = pl.Series("a", values)
     assert s.quantile(quantile) == expected
     assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
@@ -1374,13 +1374,15 @@ def test_date_quantile(values, quantile, expected) -> None:
     ("values", "quantile", "expected"),
     [
         ([datetime(2024, 1, x) for x in range(1, 6)], 0.0, datetime(2024, 1, 1)),
-        ([datetime(2024, 1, x) for x in range(1, 6)], 0.3, datetime(2024, 1, 1)),
-        ([datetime(2024, 1, x) for x in range(1, 6)], 0.5, datetime(2024, 1, 1)),
-        ([datetime(2024, 1, x) for x in range(1, 6)], 0.75, datetime(2024, 1, 1)),
-        ([datetime(2024, 1, x) for x in range(1, 6)], 1.0, datetime(2024, 1, 1)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.3, datetime(2024, 1, 2)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.5, datetime(2024, 1, 3)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.75, datetime(2024, 1, 4)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 1.0, datetime(2024, 1, 5)),
     ],
 )
-def test_datetime_quantile(values, quantile, expected) -> None:
+def test_datetime_quantile(
+    values: list[datetime], quantile: float, expected: datetime
+) -> None:
     s = pl.Series("a", values)
     assert s.quantile(quantile) == expected
     assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
@@ -1396,7 +1398,9 @@ def test_datetime_quantile(values, quantile, expected) -> None:
         ([timedelta(days=x) for x in range(1, 6)], 1.0, timedelta(days=5)),
     ],
 )
-def test_duration_quantile(values, quantile, expected) -> None:
+def test_duration_quantile(
+    values: list[timedelta], quantile: float, expected: timedelta
+) -> None:
     s = pl.Series("a", values)
     assert s.quantile(quantile) == expected
     assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
@@ -1412,7 +1416,7 @@ def test_duration_quantile(values, quantile, expected) -> None:
         ([time(hour=x) for x in range(1, 6)], 1.0, time(hour=5)),
     ],
 )
-def test_time_quantile(values, quantile, expected) -> None:
+def test_time_quantile(values: list[time], quantile: float, expected: time) -> None:
     s = pl.Series("a", values)
     assert s.quantile(quantile) == expected
     assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
