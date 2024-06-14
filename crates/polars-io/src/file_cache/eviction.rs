@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fs4::FileExt;
 use polars_core::config;
-use polars_error::PolarsResult;
+use polars_error::{PolarsError, PolarsResult};
 
 use super::cache_lock::{GlobalFileCacheGuardExclusive, GLOBAL_FILE_CACHE_LOCK};
 use super::metadata::EntryMetadata;
@@ -153,7 +153,7 @@ impl EvictionManager {
     /// The following directories exist:
     /// * `self.data_dir`
     /// * `self.metadata_dir`
-    pub(super) unsafe fn run_in_background(mut self) {
+    pub(super) fn run_in_background(mut self) {
         let verbose = config::verbose();
 
         if verbose {
@@ -232,8 +232,30 @@ impl EvictionManager {
     }
 
     fn update_file_list(&mut self) -> PolarsResult<()> {
-        let data_files_iter = std::fs::read_dir(self.data_dir.as_ref()).unwrap();
-        let metadata_files_iter = std::fs::read_dir(self.metadata_dir.as_ref()).unwrap();
+        let data_files_iter = match std::fs::read_dir(self.data_dir.as_ref()) {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!("failed to read data directory: {}", e);
+
+                return Err(PolarsError::IO {
+                    error: e.into(),
+                    msg: Some(msg.into()),
+                });
+            },
+        };
+
+        let metadata_files_iter = match std::fs::read_dir(self.metadata_dir.as_ref()) {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!("failed to read metadata directory: {}", e);
+
+                return Err(PolarsError::IO {
+                    error: e.into(),
+                    msg: Some(msg.into()),
+                });
+            },
+        };
+
         let mut files_to_remove = Vec::with_capacity(
             data_files_iter
                 .size_hint()

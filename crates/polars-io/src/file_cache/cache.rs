@@ -50,19 +50,17 @@ pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
         )
     }
 
-    // Safety: We have created the data and metadata directories.
-    unsafe {
-        EvictionManager {
-            data_dir,
-            metadata_dir,
-            files_to_remove: None,
-            min_ttl: min_ttl.clone(),
-            notify_ttl_updated: notify_ttl_updated.clone(),
-        }
-        .run_in_background();
-
-        FileCache::new_unchecked(prefix, min_ttl, notify_ttl_updated)
+    EvictionManager {
+        data_dir,
+        metadata_dir,
+        files_to_remove: None,
+        min_ttl: min_ttl.clone(),
+        notify_ttl_updated: notify_ttl_updated.clone(),
     }
+    .run_in_background();
+
+    // Safety: We have created the data and metadata directories.
+    unsafe { FileCache::new_unchecked(prefix, min_ttl, notify_ttl_updated) }
 });
 
 pub struct FileCache {
