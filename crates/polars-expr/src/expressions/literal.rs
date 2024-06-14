@@ -37,6 +37,10 @@ impl PhysicalExpr for LiteralExpr {
             UInt64(v) => UInt64Chunked::full(LITERAL_NAME, *v, 1).into_series(),
             Float32(v) => Float32Chunked::full(LITERAL_NAME, *v, 1).into_series(),
             Float64(v) => Float64Chunked::full(LITERAL_NAME, *v, 1).into_series(),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, scale) => Int128Chunked::full(LITERAL_NAME, *v, 1)
+                .into_decimal_unchecked(None, *scale)
+                .into_series(),
             Boolean(v) => BooleanChunked::full(LITERAL_NAME, *v, 1).into_series(),
             Null => polars_core::prelude::Series::new_null(LITERAL_NAME, 1),
             Range {
