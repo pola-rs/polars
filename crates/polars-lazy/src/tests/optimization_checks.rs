@@ -480,11 +480,10 @@ fn test_with_column_prune() -> PolarsResult<()> {
     (&lp_arena).iter(lp).for_each(|(_, lp)| {
         use IR::*;
         match lp {
-            DataFrameScan { projection, .. } => {
-                let projection = projection.as_ref().unwrap();
-                let projection = projection.as_ref();
+            DataFrameScan { output_schema, .. } => {
+                let projection = output_schema.as_ref().unwrap();
                 assert_eq!(projection.len(), 1);
-                let name = &projection[0];
+                let name = projection.get_at_index(0).unwrap().0;
                 assert_eq!(name, "c1");
             },
             HStack { exprs, .. } => {
@@ -503,7 +502,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use IR::*;
 
-        matches!(lp, IR::SimpleProjection { .. } | DataFrameScan { .. })
+        matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),

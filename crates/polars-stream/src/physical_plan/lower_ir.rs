@@ -26,7 +26,6 @@ pub fn lower_ir(
         IR::DataFrameScan {
             df,
             output_schema,
-            projection,
             filter,
             ..
         } => {
@@ -38,12 +37,10 @@ pub fn lower_ir(
 
             let mut phys_node = phys_sm.insert(PhysNode::DataFrameScan { df: df.clone() });
 
-            if projection.is_some() {
-                // TODO: normalize output_schema <-> projection so we don't have to unwrap here.
-                let schema = output_schema.clone().unwrap();
+            if let Some(schema) = output_schema {
                 phys_node = phys_sm.insert(PhysNode::SimpleProjection {
                     input: phys_node,
-                    schema,
+                    schema: schema.clone(),
                 })
             }
 

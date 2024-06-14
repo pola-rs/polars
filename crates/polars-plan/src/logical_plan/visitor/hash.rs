@@ -90,12 +90,11 @@ impl Hash for HashableEqLP<'_> {
             IR::DataFrameScan {
                 df,
                 schema: _,
-                output_schema: _,
-                projection,
+                output_schema,
                 filter: selection,
             } => {
                 (Arc::as_ptr(df) as usize).hash(state);
-                projection.hash(state);
+                output_schema.hash(state);
                 hash_option_expr(selection, self.expr_arena, state);
             },
             IR::SimpleProjection { columns, input: _ } => {
@@ -279,20 +278,18 @@ impl HashableEqLP<'_> {
                 IR::DataFrameScan {
                     df: dfl,
                     schema: _,
-                    output_schema: _,
-                    projection: pl,
+                    output_schema: s_l,
                     filter: sl,
                 },
                 IR::DataFrameScan {
                     df: dfr,
                     schema: _,
-                    output_schema: _,
-                    projection: pr,
+                    output_schema: s_r,
                     filter: sr,
                 },
             ) => {
                 Arc::as_ptr(dfl) == Arc::as_ptr(dfr)
-                    && pl == pr
+                    && s_l == s_r
                     && opt_expr_ir_eq(sl, sr, self.expr_arena)
             },
             (

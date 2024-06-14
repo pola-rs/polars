@@ -59,8 +59,8 @@ fn prepare_scan_args(
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
-    pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
-    pub(crate) projection: Option<Arc<[String]>>,
+    pub(crate) filter: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) projection: Option<Vec<SmartString>>,
     pub(crate) predicate_has_windows: bool,
 }
 
@@ -72,10 +72,10 @@ impl Executor for DataFrameExec {
         // projection should be before selection as those are free
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
-            df = df.select(projection.as_ref())?;
+            df = df.select(projection.as_slice())?;
         }
 
-        if let Some(selection) = &self.selection {
+        if let Some(selection) = &self.filter {
             if self.predicate_has_windows {
                 state.insert_has_window_function_flag()
             }

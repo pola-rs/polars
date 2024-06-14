@@ -192,7 +192,7 @@ impl<'a> TreeFmtNode<'a> {
                     Scan { .. } => ND(wh(h, &lp.describe()), vec![]),
                     DataFrameScan {
                         schema,
-                        projection,
+                        output_schema,
                         filter: selection,
                         ..
                     } => ND(
@@ -201,7 +201,7 @@ impl<'a> TreeFmtNode<'a> {
                             &format!(
                                 "DF {:?}\nPROJECT {}/{} COLUMNS",
                                 schema.iter_names().take(4).collect::<Vec<_>>(),
-                                if let Some(columns) = projection {
+                                if let Some(columns) = output_schema {
                                     format!("{}", columns.len())
                                 } else {
                                     "*".to_string()

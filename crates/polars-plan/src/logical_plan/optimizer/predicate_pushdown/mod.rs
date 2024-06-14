@@ -307,7 +307,6 @@ impl<'a> PredicatePushDown<'a> {
                 df,
                 schema,
                 output_schema,
-                projection,
                 filter: selection,
             } => {
                 let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
@@ -315,7 +314,6 @@ impl<'a> PredicatePushDown<'a> {
                     df,
                     schema,
                     output_schema,
-                    projection,
                     filter: selection,
                 };
                 Ok(lp)
@@ -390,7 +388,6 @@ impl<'a> PredicatePushDown<'a> {
                                     df: Arc::new(df),
                                     schema: schema.clone(),
                                     output_schema: None,
-                                    projection: None,
                                     filter: None,
                                 });
                             } else {

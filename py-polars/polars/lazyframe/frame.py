@@ -607,7 +607,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> json = lf.serialize()
         >>> json
-        '{"MapFunction":{"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"filter":null}},"function":{"Stats":"Sum"}}}'
+        '{"MapFunction":{"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"filter":null}},"function":{"Stats":"Sum"}}}'
 
         The logical plan can later be deserialized back into a LazyFrame.
 
