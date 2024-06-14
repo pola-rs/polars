@@ -77,7 +77,8 @@ fn to_graph_rec<'a>(
 
         InMemorySink { input } => {
             let input_key = to_graph_rec(*input, ctx)?;
-            ctx.graph.add_node(nodes::in_memory_sink::InMemorySink::default(), [input_key])
+            ctx.graph
+                .add_node(nodes::in_memory_sink::InMemorySink::default(), [input_key])
         },
 
         // Fallback to the in-memory engine.

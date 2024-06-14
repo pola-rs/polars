@@ -20,7 +20,8 @@ pub fn run_query(
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
 
     let root = crate::physical_plan::lower_ir(node, &mut ir_arena, &mut expr_arena, &mut phys_sm)?;
-    let (mut graph, phys_to_graph) = crate::physical_plan::physical_plan_to_graph(&mut phys_sm, &expr_arena)?;
+    let (mut graph, phys_to_graph) =
+        crate::physical_plan::physical_plan_to_graph(&mut phys_sm, &expr_arena)?;
     let mut results = crate::execute::execute_graph(&mut graph)?;
     Ok(results.remove(phys_to_graph[root]).unwrap())
 }

@@ -9,7 +9,9 @@ use crate::async_primitives::pipe::{pipe, Receiver, Sender};
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::Morsel;
 
-pub fn execute_graph(graph: &mut Graph) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
+pub fn execute_graph(
+    graph: &mut Graph,
+) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     let num_pipes = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipes);
 
