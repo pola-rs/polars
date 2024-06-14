@@ -1352,3 +1352,67 @@ def test_dt_mean_deprecated() -> None:
     with pytest.deprecated_call():
         result = s.dt.mean()
     assert result == s.mean()
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile", "expected"),
+    [
+        ([date(2024, 1, x) for x in range(1, 6)], 0.0, date(2024, 1, 1)),
+        ([date(2024, 1, x) for x in range(1, 6)], 0.3, date(2024, 1, 1)),
+        ([date(2024, 1, x) for x in range(1, 6)], 0.5, date(2024, 1, 1)),
+        ([date(2024, 1, x) for x in range(1, 6)], 0.75, date(2024, 1, 1)),
+        ([date(2024, 1, x) for x in range(1, 6)], 1.0, date(2024, 1, 1)),
+    ],
+)
+def test_date_quantile(values, quantile, expected) -> None:
+    s = pl.Series("a", values)
+    assert s.quantile(quantile) == expected
+    assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile", "expected"),
+    [
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.0, datetime(2024, 1, 1)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.3, datetime(2024, 1, 1)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.5, datetime(2024, 1, 1)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 0.75, datetime(2024, 1, 1)),
+        ([datetime(2024, 1, x) for x in range(1, 6)], 1.0, datetime(2024, 1, 1)),
+    ],
+)
+def test_datetime_quantile(values, quantile, expected) -> None:
+    s = pl.Series("a", values)
+    assert s.quantile(quantile) == expected
+    assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile", "expected"),
+    [
+        ([timedelta(days=x) for x in range(1, 6)], 0.0, timedelta(days=1)),
+        ([timedelta(days=x) for x in range(1, 6)], 0.3, timedelta(days=2)),
+        ([timedelta(days=x) for x in range(1, 6)], 0.5, timedelta(days=3)),
+        ([timedelta(days=x) for x in range(1, 6)], 0.75, timedelta(days=4)),
+        ([timedelta(days=x) for x in range(1, 6)], 1.0, timedelta(days=5)),
+    ],
+)
+def test_duration_quantile(values, quantile, expected) -> None:
+    s = pl.Series("a", values)
+    assert s.quantile(quantile) == expected
+    assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile", "expected"),
+    [
+        ([time(hour=x) for x in range(1, 6)], 0.0, time(hour=1)),
+        ([time(hour=x) for x in range(1, 6)], 0.3, time(hour=2)),
+        ([time(hour=x) for x in range(1, 6)], 0.5, time(hour=3)),
+        ([time(hour=x) for x in range(1, 6)], 0.75, time(hour=4)),
+        ([time(hour=x) for x in range(1, 6)], 1.0, time(hour=5)),
+    ],
+)
+def test_time_quantile(values, quantile, expected) -> None:
+    s = pl.Series("a", values)
+    assert s.quantile(quantile) == expected
+    assert s.to_frame().select(pl.col("a").quantile(quantile)).item() == expected
