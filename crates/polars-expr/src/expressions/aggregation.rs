@@ -4,6 +4,7 @@ use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
+use polars_core::chunked_array::metadata::MetadataEnv;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{NoNull, _split_offsets};
@@ -65,15 +66,25 @@ impl PhysicalExpr for AggregationExpr {
         };
 
         match group_by {
-            GroupByMethod::Min => match s.is_sorted_flag() {
-                IsSorted::Ascending | IsSorted::Descending => {
-                    s.min_reduce().map(|sc| sc.into_series(s.name()))
-                },
-                IsSorted::Not => parallel_op_series(
-                    |s| s.min_reduce().map(|sc| sc.into_series(s.name())),
-                    s,
-                    allow_threading,
-                ),
+            GroupByMethod::Min => {
+                let extensive_use = MetadataEnv::extensive_use();
+
+                if extensive_use {
+                    if let Some(sc) = s.get_metadata_min_value() {
+                        return Ok(sc.into_series(s.name()));
+                    }
+                }
+
+                match s.is_sorted_flag() {
+                    IsSorted::Ascending | IsSorted::Descending => {
+                        s.min_reduce().map(|sc| sc.into_series(s.name()))
+                    },
+                    IsSorted::Not => parallel_op_series(
+                        |s| s.min_reduce().map(|sc| sc.into_series(s.name())),
+                        s,
+                        allow_threading,
+                    ),
+                }
             },
             #[cfg(feature = "propagate_nans")]
             GroupByMethod::NanMin => parallel_op_series(
@@ -90,15 +101,25 @@ impl PhysicalExpr for AggregationExpr {
             GroupByMethod::NanMin => {
                 panic!("activate 'propagate_nans' feature")
             },
-            GroupByMethod::Max => match s.is_sorted_flag() {
-                IsSorted::Ascending | IsSorted::Descending => {
-                    s.max_reduce().map(|sc| sc.into_series(s.name()))
-                },
-                IsSorted::Not => parallel_op_series(
-                    |s| s.max_reduce().map(|sc| sc.into_series(s.name())),
-                    s,
-                    allow_threading,
-                ),
+            GroupByMethod::Max => {
+                let extensive_use = MetadataEnv::extensive_use();
+
+                if extensive_use {
+                    if let Some(sc) = s.get_metadata_max_value() {
+                        return Ok(sc.into_series(s.name()));
+                    }
+                }
+
+                match s.is_sorted_flag() {
+                    IsSorted::Ascending | IsSorted::Descending => {
+                        s.max_reduce().map(|sc| sc.into_series(s.name()))
+                    },
+                    IsSorted::Not => parallel_op_series(
+                        |s| s.max_reduce().map(|sc| sc.into_series(s.name())),
+                        s,
+                        allow_threading,
+                    ),
+                }
             },
             #[cfg(feature = "propagate_nans")]
             GroupByMethod::NanMax => parallel_op_series(
