@@ -12,6 +12,7 @@ use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
 use super::utils::FILE_CACHE_PREFIX;
 use crate::prelude::is_cloud_url;
+use crate::utils::ensure_directory_init;
 
 pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
     let prefix = FILE_CACHE_PREFIX.as_ref();
@@ -24,16 +25,44 @@ pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
     let min_ttl = Arc::new(AtomicU64::from(get_env_file_cache_ttl()));
     let notify_ttl_updated = Arc::new(tokio::sync::Notify::new());
 
-    EvictionManager {
-        data_dir: prefix.join("d/").into_boxed_path(),
-        metadata_dir: prefix.join("m/").into_boxed_path(),
-        files_to_remove: None,
-        min_ttl: min_ttl.clone(),
-        notify_ttl_updated: notify_ttl_updated.clone(),
+    let metadata_dir = prefix
+        .as_ref()
+        .join(std::str::from_utf8(&[METADATA_PREFIX]).unwrap())
+        .into_boxed_path();
+    if let Err(err) = ensure_directory_init(&metadata_dir) {
+        panic!(
+            "failed to create file cache metadata directory: path = {}, err = {}",
+            metadata_dir.to_str().unwrap(),
+            err
+        )
     }
-    .run_in_background();
 
-    FileCache::new(prefix, min_ttl, notify_ttl_updated)
+    let data_dir = prefix
+        .as_ref()
+        .join(std::str::from_utf8(&[DATA_PREFIX]).unwrap())
+        .into_boxed_path();
+
+    if let Err(err) = ensure_directory_init(&data_dir) {
+        panic!(
+            "failed to create file cache data directory: path = {}, err = {}",
+            data_dir.to_str().unwrap(),
+            err
+        )
+    }
+
+    // Safety: We have created the data and metadata directories.
+    unsafe {
+        EvictionManager {
+            data_dir,
+            metadata_dir,
+            files_to_remove: None,
+            min_ttl: min_ttl.clone(),
+            notify_ttl_updated: notify_ttl_updated.clone(),
+        }
+        .run_in_background();
+
+        FileCache::new_unchecked(prefix, min_ttl, notify_ttl_updated)
+    }
 });
 
 pub struct FileCache {
@@ -44,31 +73,15 @@ pub struct FileCache {
 }
 
 impl FileCache {
-    fn new(
+    /// # Safety
+    /// The following directories exist:
+    /// * `{prefix}/{METADATA_PREFIX}/`
+    /// * `{prefix}/{DATA_PREFIX}/`
+    unsafe fn new_unchecked(
         prefix: Arc<Path>,
         min_ttl: Arc<AtomicU64>,
         notify_ttl_updated: Arc<tokio::sync::Notify>,
     ) -> Self {
-        let path = &prefix
-            .as_ref()
-            .join(std::str::from_utf8(&[METADATA_PREFIX]).unwrap());
-        let _ = std::fs::create_dir_all(path);
-        assert!(
-            path.is_dir(),
-            "failed to create file cache metadata directory: {}",
-            path.to_str().unwrap(),
-        );
-
-        let path = &prefix
-            .as_ref()
-            .join(std::str::from_utf8(&[DATA_PREFIX]).unwrap());
-        let _ = std::fs::create_dir_all(path);
-        assert!(
-            path.is_dir(),
-            "failed to create file cache data directory: {}",
-            path.to_str().unwrap(),
-        );
-
         Self {
             prefix,
             entries: Default::default(),

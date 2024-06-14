@@ -19,6 +19,7 @@ pub(super) struct EntryMetadata {
     pub(super) local_last_modified: u64,
     pub(super) local_size: u64,
     pub(super) remote_last_modified: u64,
+    /// TTL since last access, in seconds.
     pub(super) ttl: u64,
 }
 

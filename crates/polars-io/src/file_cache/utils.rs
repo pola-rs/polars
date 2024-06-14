@@ -11,20 +11,19 @@ use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
 use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
 use crate::pl_async;
 use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
+use crate::utils::ensure_directory_init;
 
 pub static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
     let path = POLARS_TEMP_DIR_BASE_PATH
         .join("file-cache/")
         .into_boxed_path();
 
-    if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
-        if !path.is_dir() {
-            panic!(
-                "failed to create file cache directory: path = {}, err = {}",
-                path.to_str().unwrap(),
-                err
-            );
-        }
+    if let Err(err) = ensure_directory_init(path.as_ref()) {
+        panic!(
+            "failed to create file cache directory: path = {}, err = {}",
+            path.to_str().unwrap(),
+            err
+        );
     }
 
     path

@@ -149,7 +149,11 @@ impl EvictionCandidate {
 }
 
 impl EvictionManager {
-    pub(super) fn run_in_background(mut self) {
+    /// # Safety
+    /// The following directories exist:
+    /// * `self.data_dir`
+    /// * `self.metadata_dir`
+    pub(super) unsafe fn run_in_background(mut self) {
         let verbose = config::verbose();
 
         if verbose {

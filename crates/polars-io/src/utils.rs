@@ -32,6 +32,18 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
     path
 });
 
+/// Ignores errors from `std::fs::create_dir_all` if the directory exists.
+#[cfg(feature = "file_cache")]
+pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
+    let result = std::fs::create_dir_all(path);
+
+    if path.is_dir() {
+        Ok(())
+    } else {
+        result
+    }
+}
+
 pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
     reader: &'a mut R,
 ) -> PolarsResult<ReaderBytes<'a>> {
