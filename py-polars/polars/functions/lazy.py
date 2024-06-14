@@ -855,7 +855,9 @@ def corr(
     if method == "pearson":
         return wrap_expr(plr.pearson_corr(a, b, ddof, min_periods))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans, min_periods))
+        return wrap_expr(
+            plr.spearman_rank_corr(a, b, ddof, propagate_nans, min_periods)
+        )
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)

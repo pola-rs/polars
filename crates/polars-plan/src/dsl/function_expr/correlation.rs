@@ -25,7 +25,12 @@ impl Display for CorrelationMethod {
     }
 }
 
-pub(super) fn corr(s: &[Series], ddof: u8, method: CorrelationMethod, min_periods: usize) -> PolarsResult<Series> {
+pub(super) fn corr(
+    s: &[Series],
+    ddof: u8,
+    method: CorrelationMethod,
+    min_periods: usize,
+) -> PolarsResult<Series> {
     match method {
         CorrelationMethod::Pearson => pearson_corr(s, ddof, min_periods),
         #[cfg(all(feature = "rank", feature = "propagate_nans"))]
@@ -69,7 +74,8 @@ fn pearson_corr(s: &[Series], ddof: u8, min_periods: usize) -> PolarsResult<Seri
     use polars_ops::chunked_array::cov::pearson_corr;
     let ret = match a.dtype() {
         DataType::Float32 => {
-            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof, min_periods).map(|v| v as f32);
+            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof, min_periods)
+                .map(|v| v as f32);
             return Ok(Series::new(name, &[ret]));
         },
         DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof, min_periods),
@@ -86,7 +92,12 @@ fn pearson_corr(s: &[Series], ddof: u8, min_periods: usize) -> PolarsResult<Seri
 }
 
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-fn spearman_rank_corr(s: &[Series], ddof: u8, propagate_nans: bool, min_periods: usize) -> PolarsResult<Series> {
+fn spearman_rank_corr(
+    s: &[Series],
+    ddof: u8,
+    propagate_nans: bool,
+    min_periods: usize,
+) -> PolarsResult<Series> {
     use polars_core::utils::coalesce_nulls_series;
     use polars_ops::chunked_array::nan_propagating_aggregate::nan_max_s;
     let a = &s[0];

@@ -482,7 +482,13 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
 }
 
 #[pyfunction]
-pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool, min_periods: usize) -> PyExpr {
+pub fn spearman_rank_corr(
+    a: PyExpr,
+    b: PyExpr,
+    ddof: u8,
+    propagate_nans: bool,
+    min_periods: usize,
+) -> PyExpr {
     #[cfg(feature = "propagate_nans")]
     {
         dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans, min_periods).into()

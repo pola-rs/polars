@@ -54,7 +54,13 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8, min_periods: usize) -> Expr {
 ///     If to `false` then `NaN` are regarded as larger than any finite number
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool, min_periods: usize) -> Expr {
+pub fn spearman_rank_corr(
+    a: Expr,
+    b: Expr,
+    ddof: u8,
+    propagate_nans: bool,
+    min_periods: usize,
+) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::SpearmanRank(propagate_nans),
