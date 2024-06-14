@@ -7,7 +7,7 @@ use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 pub use Compression as AvroCompression;
 
-use crate::shared::SerWriter;
+use crate::shared::{schema_to_arrow_checked, SerWriter};
 
 /// Write a [`DataFrame`] to [Apache Avro] format
 ///
@@ -64,7 +64,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        let schema = df.schema().to_arrow(false);
+        let schema = schema_to_arrow_checked(&df.schema(), false, "avro")?;
         let record = write::to_record(&schema, self.name.clone())?;
 
         let mut data = vec![];

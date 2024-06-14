@@ -1,7 +1,9 @@
+import io
 from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
+import pytest
 
 import polars as pl
 
@@ -168,3 +170,20 @@ def test_format_object_series_14267() -> None:
     s = pl.Series([Path(), Path("abc")])
     expected = "shape: (2,)\n" "Series: '' [o][object]\n" "[\n" "\t.\n" "\tabc\n" "]"
     assert str(s) == expected
+
+
+def test_object_raise_writers() -> None:
+    df = pl.DataFrame({"a": object()})
+
+    buf = io.BytesIO()
+
+    with pytest.raises(pl.ComputeError):
+        df.write_parquet(buf)
+    with pytest.raises(pl.ComputeError):
+        df.write_ipc(buf)
+    with pytest.raises(pl.ComputeError):
+        df.write_json(buf)
+    with pytest.raises(pl.ComputeError):
+        df.write_csv(buf)
+    with pytest.raises(pl.ComputeError):
+        df.write_avro(buf)
