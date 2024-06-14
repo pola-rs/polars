@@ -1,3 +1,4 @@
+#[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
 
 use super::*;
@@ -275,6 +276,7 @@ pub(super) fn process_binary(
             | (_, Duration(_))
             | (Time, _)
             | (_, Time) => return Ok(None),
+            #[cfg(feature = "dtype-struct")]
             (Struct(_), right) if right.is_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
