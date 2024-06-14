@@ -264,9 +264,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_decimal(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
-        let dtype = DataType::Decimal(None, None);
-        Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
+        Self::new_from_any_values(name, values, strict)
     }
 
     #[staticmethod]
