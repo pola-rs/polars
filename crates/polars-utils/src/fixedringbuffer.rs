@@ -1,12 +1,25 @@
+/// A ring-buffer with a size determined at creation-time
+///
+/// This makes it perfectly suited for buffers that produce and consume at different speeds.
 pub struct FixedRingBuffer<T> {
     start: usize,
     length: usize,
     buffer: *mut T,
-
-    buffer_capacity: usize,
-
-    /// I know that `buffer` also stores a capacity, but these are different. I promise.
+    /// The wanted fixed capacity in the buffer
     capacity: usize,
+
+    /// The actually allocated capacity, this should not be used for any calculations and it purely
+    /// used for the deallocation.
+    _buffer_capacity: usize,
+}
+
+#[inline(always)]
+const fn wrapping_add(x: usize, n: usize, capacity: usize) -> usize {
+    assert!(n <= capacity);
+
+    let sub = if capacity - n <= x { capacity } else { 0 };
+
+    x.wrapping_add(n).wrapping_sub(sub)
 }
 
 impl<T> FixedRingBuffer<T> {
@@ -17,7 +30,7 @@ impl<T> FixedRingBuffer<T> {
             start: 0,
             length: 0,
 
-            buffer_capacity: buffer.capacity(),
+            _buffer_capacity: buffer.capacity(),
             buffer: buffer.leak() as *mut [T] as *mut T,
             capacity,
         }
@@ -48,35 +61,61 @@ impl<T> FixedRingBuffer<T> {
         self.len() == self.capacity
     }
 
-    #[inline(always)]
-    const fn wrapping_add(&self, x: usize, n: usize) -> usize {
-        assert!(n <= self.capacity);
-
-        x.wrapping_add(n).wrapping_sub(if self.capacity - n <= x {
-            self.capacity
+    /// Get a reference to all elements in the form of two slices.
+    ///
+    /// These are in the listed in the order of being pushed into the buffer.
+    #[inline]
+    pub fn as_slices(&self) -> (&[T], &[T]) {
+        // SAFETY: Only pick the part that is actually defined
+        if self.capacity - self.length > self.start {
+            (
+                unsafe {
+                    std::slice::from_raw_parts(self.buffer.wrapping_add(self.start), self.length)
+                },
+                &[],
+            )
         } else {
-            0
-        })
+            (
+                unsafe {
+                    std::slice::from_raw_parts(
+                        self.buffer.wrapping_add(self.start),
+                        self.capacity - self.start,
+                    )
+                },
+                unsafe {
+                    std::slice::from_raw_parts(
+                        self.buffer,
+                        wrapping_add(self.start, self.length, self.capacity),
+                    )
+                },
+            )
+        }
     }
 
-    // SAFETY: This value is never read again
+    /// Pop an item at the front of the [`FixedRingBuffer`]
+    #[inline]
     pub fn pop_front(&mut self) -> Option<T> {
         if self.is_empty() {
             return None;
         }
 
+        // SAFETY: This value is never read again
         let item = unsafe { self.buffer.wrapping_add(self.start).read() };
-        self.start = self.wrapping_add(self.start, 1);
+        self.start = wrapping_add(self.start, 1, self.capacity);
         self.length -= 1;
         Some(item)
     }
 
+    /// Push an item into the [`FixedRingBuffer`]
+    ///
+    /// Returns `None` if there is no more space
+    #[inline]
     pub fn push(&mut self, value: T) -> Option<()> {
         if self.is_full() {
             return None;
         }
 
-        let offset = self.wrapping_add(self.start, self.len());
+        let offset = wrapping_add(self.start, self.len(), self.capacity);
 
         unsafe { self.buffer.wrapping_add(offset).write(value) };
         self.length += 1;
@@ -86,6 +125,9 @@ impl<T> FixedRingBuffer<T> {
 }
 
 impl<T: Copy> FixedRingBuffer<T> {
+    /// Add at most `num` items of `value` into the [`FixedRingBuffer`]
+    ///
+    /// This returns the amount of items actually added.
     pub fn fill_repeat(&mut self, value: T, num: usize) -> usize {
         if num == 0 || self.is_full() {
             return 0;
@@ -93,8 +135,8 @@ impl<T: Copy> FixedRingBuffer<T> {
 
         let num = usize::min(num, self.remaining_capacity());
 
-        let start = self.wrapping_add(self.start, self.len());
-        let end = self.wrapping_add(start, num);
+        let start = wrapping_add(self.start, self.len(), self.capacity);
+        let end = wrapping_add(start, num, self.capacity);
 
         if start < end {
             unsafe { std::slice::from_raw_parts_mut(self.buffer.wrapping_add(start), num) }
@@ -122,11 +164,11 @@ impl<T: Copy> FixedRingBuffer<T> {
 impl<T> Drop for FixedRingBuffer<T> {
     fn drop(&mut self) {
         for i in 0..self.length {
-            let offset = self.wrapping_add(self.start, i);
+            let offset = wrapping_add(self.start, i, self.capacity);
             unsafe { self.buffer.wrapping_add(offset).read() };
         }
 
-        unsafe { Vec::from_raw_parts(self.buffer, 0, self.buffer_capacity) };
+        unsafe { Vec::from_raw_parts(self.buffer, 0, self._buffer_capacity) };
     }
 }
 
