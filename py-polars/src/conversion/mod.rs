@@ -35,14 +35,40 @@ use crate::py_modules::{POLARS, SERIES};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
+pub(crate) unsafe trait Transparent {
+    type Target;
+}
+
+unsafe impl Transparent for PySeries {
+    type Target = Series;
+}
+
+unsafe impl<T> Transparent for Wrap<T> {
+    type Target = T;
+}
+
+unsafe impl<T: Transparent> Transparent for Option<T> {
+    type Target = Option<T::Target>;
+}
+
+pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
+    assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Target>());
+    assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<T::Target>());
+    let len = input.len();
+    let cap = input.capacity();
+    let mut manual_drop_vec = std::mem::ManuallyDrop::new(input);
+    let vec_ptr: *mut T = manual_drop_vec.as_mut_ptr();
+    let ptr: *mut T::Target = vec_ptr as *mut T::Target;
+    unsafe { Vec::from_raw_parts(ptr, len, cap) }
+}
+
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // SAFETY: Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
 }
 
 pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    // SAFETY: Wrap is transparent.
-    unsafe { std::mem::transmute(buf) }
+    reinterpret_vec(buf)
 }
 
 #[repr(transparent)]
@@ -467,7 +493,7 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
 impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
-        let vals = vec_extract_wrapped(vals);
+        let vals = reinterpret_vec(vals);
         Ok(Wrap(Row(vals)))
     }
 }

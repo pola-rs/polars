@@ -7,11 +7,11 @@ use polars::export::arrow::bitmap::MutableBitmap;
 use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::Wrap;
+use crate::conversion::{reinterpret_vec, Wrap};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
@@ -280,12 +280,20 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> Self {
-        let series_vec: Vec<Option<Series>> = values
-            .into_iter()
-            .map(|v| v.map(|py_s| py_s.series))
-            .collect();
-        Series::new(name, series_vec).into()
+    fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
+        let series = reinterpret_vec(values);
+        for s in series.iter() {
+            if let Some(s) = s {
+                if s.dtype().is_object() {
+                    return Err(PyValueError::new_err(format!(
+                        "list of objects isn't supported; try building a 'object' only series",
+                    )));
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok(Series::new(name, series).into())
     }
 
     #[staticmethod]
