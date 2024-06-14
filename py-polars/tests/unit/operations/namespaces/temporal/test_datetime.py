@@ -344,7 +344,9 @@ def test_base_utc_offset_lazy_schema() -> None:
         eager=True,
     )
     df = pl.DataFrame({"ts": ser}).lazy()
-    result = df.with_columns(base_utc_offset=pl.col("ts").dt.base_utc_offset()).schema
+    result = df.with_columns(
+        base_utc_offset=pl.col("ts").dt.base_utc_offset()
+    ).collect_schema()
     expected = {
         "ts": pl.Datetime(time_unit="us", time_zone="Europe/London"),
         "base_utc_offset": pl.Duration(time_unit="ms"),
@@ -382,7 +384,7 @@ def test_dst_offset_lazy_schema() -> None:
         eager=True,
     )
     df = pl.DataFrame({"ts": ser}).lazy()
-    result = df.with_columns(dst_offset=pl.col("ts").dt.dst_offset()).schema
+    result = df.with_columns(dst_offset=pl.col("ts").dt.dst_offset()).collect_schema()
     expected = {
         "ts": pl.Datetime(time_unit="us", time_zone="Europe/London"),
         "dst_offset": pl.Duration(time_unit="ms"),
@@ -720,25 +722,21 @@ def test_combine_lazy_schema_datetime(
 ) -> None:
     df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1)])})
     df = df.with_columns(pl.col("ts").dt.replace_time_zone(time_zone))
-    result = (
-        df.lazy()
-        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
-        .dtypes
+    result = df.lazy().select(
+        pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit)
     )
-    expected = [pl.Datetime(time_unit, time_zone)]
-    assert result == expected
+    expected_dtypes = [pl.Datetime(time_unit, time_zone)]
+    assert result.collect_schema().dtypes() == expected_dtypes
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
     df = pl.DataFrame({"ts": pl.Series([date(2020, 1, 1)])})
-    result = (
-        df.lazy()
-        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
-        .dtypes
+    result = df.lazy().select(
+        pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit)
     )
-    expected = [pl.Datetime(time_unit, None)]
-    assert result == expected
+    expected_dtypes = [pl.Datetime(time_unit, None)]
+    assert result.collect_schema().dtypes() == expected_dtypes
 
 
 def test_is_leap_year() -> None:

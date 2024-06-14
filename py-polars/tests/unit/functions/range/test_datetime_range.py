@@ -338,7 +338,7 @@ def test_datetime_ranges_schema(
             pl.Datetime(time_unit=output_time_unit, time_zone=output_time_zone)
         ),
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
     expected = pl.DataFrame(
@@ -442,7 +442,7 @@ def test_datetime_range_schema_upcasts_to_datetime(
         "end": pl.Date,
         "datetime_range": pl.List(output_dtype),
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
     expected = pl.DataFrame(
@@ -485,7 +485,7 @@ def test_datetime_ranges_no_alias_schema_9037() -> None:
         "start": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
         "end": pl.Datetime(time_unit="us", time_zone=None),
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 

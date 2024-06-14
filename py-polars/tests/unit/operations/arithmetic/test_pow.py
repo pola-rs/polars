@@ -56,4 +56,4 @@ def test_pow_dtype() -> None:
         pl.UInt8,
     ]
     assert df.collect().dtypes == expected
-    assert df.dtypes == expected
+    assert df.collect_schema().dtypes() == expected

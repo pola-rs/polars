@@ -38,7 +38,7 @@ def test_duration_time_units(time_unit: TimeUnit, expected: timedelta) -> None:
             time_unit=time_unit,
         )
     )
-    assert result.schema["duration"] == pl.Duration(time_unit)
+    assert result.collect_schema()["duration"] == pl.Duration(time_unit)
     assert result.collect()["duration"].item() == expected
     if time_unit == "ns":
         assert (

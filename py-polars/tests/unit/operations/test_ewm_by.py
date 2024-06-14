@@ -44,7 +44,7 @@ def test_ewma_by_date(sort: bool) -> None:
         {"values": [None, 1.0, 1.9116116523516815, None, 3.815410804703363]}
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float64
+    assert result.collect_schema()["values"] == pl.Float64
     assert result.collect().schema["values"] == pl.Float64
 
 
@@ -88,7 +88,7 @@ def test_ewma_f32() -> None:
         schema_overrides={"values": pl.Float32},
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float32
+    assert result.collect_schema()["values"] == pl.Float32
     assert result.collect().schema["values"] == pl.Float32
 
 
@@ -170,7 +170,7 @@ def test_ewma_by_index(data_type: PolarsIntegerType) -> None:
         {"values": [None, 1.0, 1.9116116523516815, None, 3.815410804703363]}
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float64
+    assert result.collect_schema()["values"] == pl.Float64
     assert result.collect().schema["values"] == pl.Float64
 
 

@@ -153,7 +153,7 @@ def expand_selector(
         msg = f"expected a selector; found {selector!r} instead."
         raise TypeError(msg)
 
-    return tuple(target.select(selector).columns)
+    return tuple(target.select(selector).collect_schema())
 
 
 def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:

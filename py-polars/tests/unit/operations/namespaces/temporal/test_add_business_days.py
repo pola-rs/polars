@@ -106,7 +106,7 @@ def test_add_business_days_schema() -> None:
     result = lf.select(
         result=pl.col("start").dt.add_business_days("n"),
     )
-    assert result.schema["result"] == pl.Date
+    assert result.collect_schema()["result"] == pl.Date
     assert result.collect().schema["result"] == pl.Date
     assert 'col("start").add_business_days([col("n")])' in result.explain()
 

@@ -900,7 +900,7 @@ def test_list_eval_err_raise_15653() -> None:
 
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
-    assert q.select(pl.col("x").list.sum()).schema["x"] == pl.UInt32
+    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
 
 
 def test_list_eval_type_cast_11188() -> None:
