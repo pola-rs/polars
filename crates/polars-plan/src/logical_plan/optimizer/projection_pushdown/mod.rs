@@ -357,7 +357,6 @@ impl ProjectionPushDown {
                 filter: selection,
                 ..
             } => {
-                let mut projection = None;
                 if !acc_projections.is_empty() {
                     output_schema = Some(Arc::new(update_scan_schema(
                         &acc_projections,
@@ -365,13 +364,11 @@ impl ProjectionPushDown {
                         &schema,
                         false,
                     )?));
-                    projection = get_scan_columns(&mut acc_projections, expr_arena, None);
                 }
                 let lp = DataFrameScan {
                     df,
                     schema,
                     output_schema,
-                    projection,
                     filter: selection,
                 };
                 Ok(lp)

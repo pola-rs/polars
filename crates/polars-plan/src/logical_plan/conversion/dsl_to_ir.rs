@@ -19,7 +19,6 @@ fn empty_df() -> IR {
         df: Arc::new(Default::default()),
         schema: Arc::new(Default::default()),
         output_schema: None,
-        projection: None,
         filter: None,
     }
 }
@@ -203,13 +202,11 @@ pub fn to_alp_impl(
             df,
             schema,
             output_schema,
-            projection,
             filter: selection,
         } => IR::DataFrameScan {
             df,
             schema,
             output_schema,
-            projection,
             filter: selection.map(|expr| to_expr_ir(expr, expr_arena)),
         },
         DslPlan::Select {

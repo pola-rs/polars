@@ -19,6 +19,8 @@ pub type IdxType = UInt32Type;
 #[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
 
+pub use smartstring::alias::String as SmartString;
+
 /// This hashmap uses an IdHasher
 pub type PlIdHashMap<K, V> = hashbrown::HashMap<K, V, IdBuildHasher>;
 

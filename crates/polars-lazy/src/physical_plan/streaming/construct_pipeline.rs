@@ -241,7 +241,6 @@ fn get_pipeline_node(
         df: Arc::new(DataFrame::empty()),
         schema: Arc::new(Schema::new()),
         output_schema: None,
-        projection: None,
         filter: None,
     });
 

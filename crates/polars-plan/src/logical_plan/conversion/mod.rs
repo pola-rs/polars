@@ -99,13 +99,11 @@ impl IR {
                 df,
                 schema,
                 output_schema,
-                projection,
                 filter: selection,
             } => DslPlan::DataFrameScan {
                 df,
                 schema,
                 output_schema,
-                projection,
                 filter: selection.map(|e| e.to_expr(expr_arena)),
             },
             IR::Select {

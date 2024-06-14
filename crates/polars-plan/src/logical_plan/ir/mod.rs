@@ -60,9 +60,11 @@ pub enum IR {
     DataFrameScan {
         df: Arc<DataFrame>,
         schema: SchemaRef,
-        // schema of the projected file
+        // Schema of the projected file
+        // If `None`, no projection is applied
         output_schema: Option<SchemaRef>,
-        projection: Option<Arc<[String]>>,
+        // Predicate to apply on the DataFrame
+        // All the columns required for the predicate are projected.
         filter: Option<ExprIR>,
     },
     // Only selects columns (semantically only has row access).

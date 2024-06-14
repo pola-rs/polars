@@ -249,12 +249,12 @@ impl<'a> IRDisplay<'a> {
             },
             DataFrameScan {
                 schema,
-                projection,
+                output_schema,
                 filter: selection,
                 ..
             } => {
                 let total_columns = schema.len();
-                let n_columns = if let Some(columns) = projection {
+                let n_columns = if let Some(columns) = output_schema {
                     columns.len().to_string()
                 } else {
                     "*".to_string()

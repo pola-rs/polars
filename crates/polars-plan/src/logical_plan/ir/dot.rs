@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use polars_core::schema::Schema;
+
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
 use crate::prelude::ir::format::ColumnsDisplay;
@@ -227,11 +229,11 @@ impl<'a> IRDotDisplay<'a> {
             },
             DataFrameScan {
                 schema,
-                projection,
+                output_schema,
                 filter: selection,
                 ..
             } => {
-                let num_columns = NumColumns(projection.as_ref().map(|p| p.as_ref()));
+                let num_columns = NumColumnsSchema(output_schema.as_ref().map(|p| p.as_ref()));
                 let selection = selection.as_ref().map(|e| self.display_expr(e));
                 let selection = OptionExprIRDisplay(selection);
                 let total_columns = schema.len();
@@ -331,6 +333,7 @@ impl<'a> IRDotDisplay<'a> {
 // A few utility structures for formatting
 struct PathsDisplay<'a>(&'a [PathBuf]);
 struct NumColumns<'a>(Option<&'a [String]>);
+struct NumColumnsSchema<'a>(Option<&'a Schema>);
 struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 
 impl fmt::Display for PathsDisplay<'_> {
@@ -349,6 +352,15 @@ impl fmt::Display for PathsDisplay<'_> {
 }
 
 impl fmt::Display for NumColumns<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            None => f.write_str("*"),
+            Some(columns) => columns.len().fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for NumColumnsSchema<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             None => f.write_str("*"),

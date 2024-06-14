@@ -109,7 +109,7 @@ fn test_cse_cache_union_projection_pd() -> PolarsResult<()> {
                 true
             },
             DataFrameScan {
-                projection: Some(projection),
+                output_schema: Some(projection),
                 ..
             } => projection.as_ref().len() <= 2,
             DataFrameScan { .. } => false,
