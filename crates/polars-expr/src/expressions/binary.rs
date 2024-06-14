@@ -39,7 +39,7 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
     match op {
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
-        Operator::Multiply => left.try_mul_owned(right),
+        Operator::Multiply if left.dtype().is_numeric() => left.try_mul_owned(right),
         _ => apply_operator(&left, &right, op),
     }
 }
@@ -55,12 +55,12 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::NotEq => ChunkCompare::not_equal(left, right).map(|ca| ca.into_series()),
         Operator::Plus => left.try_add(right),
         Operator::Minus => left.try_sub(right),
-        Operator::Multiply => left.try_mul(right),
+        Operator::Multiply => left.multiply(right),
         Operator::Divide => left.try_div(right),
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left.try_div(right),
-            Date | Datetime(_, _) | Float32 | Float64 => left.try_div(right),
+            Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left.divide(right),
             #[cfg(feature = "dtype-array")]
             dt @ Array(_, _) => {
                 let left_dt = dt.cast_leaf(Float64);

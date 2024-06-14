@@ -174,12 +174,59 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         }
     }
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-        // dependent on units, doesn't make sense
-        polars_bail!(opq = mul, self.dtype(), rhs.dtype());
+        let tul = self.0.time_unit();
+        match rhs.dtype() {
+            DataType::Int64 => Ok((&self.0 .0 * rhs.i64().unwrap())
+                .into_duration(tul)
+                .into_series()),
+            dt if dt.is_integer() => {
+                let rhs = rhs.cast(&DataType::Int64)?;
+                self.multiply(&rhs)
+            },
+            dt if dt.is_float() => {
+                let phys = &self.0 .0;
+                let phys_float = phys.cast(dt).unwrap();
+                let out = (&phys_float * rhs).cast(&DataType::Int64).unwrap();
+                let phys = out.i64().unwrap().clone();
+                Ok(phys.into_duration(tul).into_series())
+            },
+            _ => {
+                polars_bail!(opq = mul, self.dtype(), rhs.dtype());
+            },
+        }
     }
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-        // dependent on units, doesn't make sense
-        polars_bail!(opq = div, self.dtype(), rhs.dtype());
+        let tul = self.0.time_unit();
+        match rhs.dtype() {
+            DataType::Duration(tur) => {
+                if tul == *tur {
+                    // Returns a constant as f64.
+                    Ok((&self.0 .0.cast(&DataType::Float64).unwrap()
+                        / &rhs.duration().unwrap().0.cast(&DataType::Float64).unwrap())
+                        .into_series())
+                } else {
+                    let rhs = rhs.cast(self.dtype())?;
+                    self.divide(&rhs)
+                }
+            },
+            DataType::Int64 => Ok((&self.0 .0 / rhs.i64().unwrap())
+                .into_duration(tul)
+                .into_series()),
+            dt if dt.is_integer() => {
+                let rhs = rhs.cast(&DataType::Int64)?;
+                self.divide(&rhs)
+            },
+            dt if dt.is_float() => {
+                let phys = &self.0 .0;
+                let phys_float = phys.cast(dt).unwrap();
+                let out = (&phys_float / rhs).cast(&DataType::Int64).unwrap();
+                let phys = out.i64().unwrap().clone();
+                Ok(phys.into_duration(tul).into_series())
+            },
+            _ => {
+                polars_bail!(opq = div, self.dtype(), rhs.dtype());
+            },
+        }
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "dtypes and units must be equal in duration arithmetic");
