@@ -708,3 +708,34 @@ def test_arithmetic_duration_div_multiply() -> None:
         ],
         "f": [1.0, 1.0, 1.0],
     }
+
+    # rhs
+
+    q = df.lazy().with_columns(
+        b=2 * pl.col("a"),
+        c=2.5 * pl.col("a"),
+    )
+    assert q.schema == pl.Schema(
+        [
+            ("a", pl.Duration(time_unit="us")),
+            ("b", pl.Duration(time_unit="us")),
+            ("c", pl.Duration(time_unit="us")),
+        ]
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [
+            timedelta(microseconds=100),
+            timedelta(microseconds=200),
+            timedelta(microseconds=3000),
+        ],
+        "b": [
+            timedelta(microseconds=200),
+            timedelta(microseconds=400),
+            timedelta(microseconds=6000),
+        ],
+        "c": [
+            timedelta(microseconds=250),
+            timedelta(microseconds=500),
+            timedelta(microseconds=7500),
+        ],
+    }

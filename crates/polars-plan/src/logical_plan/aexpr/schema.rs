@@ -387,6 +387,19 @@ fn get_arithmetic_field(
                 | (_, Date) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (Duration(_), Duration(_)) => {
+                    // True divide handled somewhere else
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                },
+                (l, Duration(_)) if l.is_numeric() => match op {
+                    Operator::Multiply => {
+                        left_field.coerce(right_type);
+                        return Ok(left_field);
+                    },
+                    _ => {
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    },
+                },
                 _ => {
                     // Avoid needlessly type casting numeric columns during arithmetic
                     // with literals.

@@ -277,7 +277,7 @@ pub(super) fn process_binary(
             | (Time, _)
             | (_, Time) => return Ok(None),
             #[cfg(feature = "dtype-struct")]
-            (Struct(_), right) if right.is_numeric() => {
+            (Struct(_), a) | (a, Struct(_)) if a.is_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
                 )
