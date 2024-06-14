@@ -116,7 +116,7 @@ impl MetadataFlags {
 
     pub fn set_fast_explode_list(&mut self, fast_explode_list: bool) {
         mdenv_may_bail!(set: "fast_explode_list", fast_explode_list);
-        self.insert(Self::FAST_EXPLODE_LIST)
+        self.set(Self::FAST_EXPLODE_LIST, fast_explode_list)
     }
 
     pub fn get_fast_explode_list(&self) -> bool {
