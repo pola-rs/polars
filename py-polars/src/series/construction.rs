@@ -291,7 +291,7 @@ impl PySeries {
                 break;
             }
         }
-        Ok(Series::new(name).into())
+        Ok(Series::new(name, series).into())
     }
 
     #[staticmethod]
