@@ -670,7 +670,7 @@ def test_arithmetic_duration_div_multiply() -> None:
         e=pl.col("a") * 2.5,
         f=pl.col("a") / pl.col("a"),  # a constant float
     )
-    assert q.schema == pl.Schema(
+    assert q.collect_schema() == pl.Schema(
         [
             ("a", pl.Duration(time_unit="us")),
             ("b", pl.Duration(time_unit="us")),
@@ -715,7 +715,7 @@ def test_arithmetic_duration_div_multiply() -> None:
         b=2 * pl.col("a"),
         c=2.5 * pl.col("a"),
     )
-    assert q.schema == pl.Schema(
+    assert q.collect_schema() == pl.Schema(
         [
             ("a", pl.Duration(time_unit="us")),
             ("b", pl.Duration(time_unit="us")),
