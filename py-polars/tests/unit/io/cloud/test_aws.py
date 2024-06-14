@@ -89,12 +89,12 @@ def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
     [(pl.scan_ipc, "ipc"), (pl.scan_parquet, "parquet")],
 )
 def test_scan_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
-    df = function(
+    lf = function(
         f"s3://bucket/foods1.{extension}",
         storage_options={"endpoint_url": s3},
     )
-    assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
-    assert df.collect().shape == (27, 4)
+    assert lf.collect_schema().names() == ["category", "calories", "fats_g", "sugars_g"]
+    assert lf.collect().shape == (27, 4)
 
 
 def test_lazy_count_s3(s3: str) -> None:

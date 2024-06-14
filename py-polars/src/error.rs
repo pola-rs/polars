@@ -104,10 +104,11 @@ create_exception!(polars.exceptions, StringCacheMismatchError, PolarsBaseError);
 create_exception!(polars.exceptions, StructFieldNotFoundError, PolarsBaseError);
 
 create_exception!(polars.exceptions, PolarsBaseWarning, PyWarning);
+create_exception!(polars.exceptions, PerformanceWarning, PolarsBaseWarning);
 create_exception!(
     polars.exceptions,
     CategoricalRemappingWarning,
-    PolarsBaseWarning
+    PerformanceWarning
 );
 create_exception!(
     polars.exceptions,

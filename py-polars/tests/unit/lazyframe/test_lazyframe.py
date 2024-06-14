@@ -14,7 +14,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import PolarsInefficientMapWarning
+from polars.exceptions import PerformanceWarning, PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1382,7 +1382,11 @@ def test_lf_properties() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
-    assert lf.columns == ["foo", "bar", "ham"]
-    assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
-    assert lf.width == 3
+    with pytest.warns(PerformanceWarning):
+        assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.String}
+    with pytest.warns(PerformanceWarning):
+        assert lf.columns == ["foo", "bar", "ham"]
+    with pytest.warns(PerformanceWarning):
+        assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
+    with pytest.warns(PerformanceWarning):
+        assert lf.width == 3

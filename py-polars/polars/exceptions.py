@@ -8,6 +8,7 @@ try:
         MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
+        PerformanceWarning,
         PolarsError,
         PolarsPanicError,
         PolarsWarning,
@@ -94,11 +95,14 @@ except ImportError:
     class PolarsWarning(Exception):  # type: ignore[no-redef]
         """Base class for all Polars warnings."""
 
-    class CategoricalRemappingWarning(PolarsWarning):  # type: ignore[no-redef, misc]
-        """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
+    class PerformanceWarning(PolarsWarning):  # type: ignore[no-redef, misc]
+        """Warning issued to indicate potential performance pitfalls."""
+
+    class CategoricalRemappingWarning(PerformanceWarning):  # type: ignore[no-redef, misc]
+        """Warning issued when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
 
     class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef, misc]
-        """Warning raised when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
+        """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
 class InvalidAssert(PolarsError):  # type: ignore[misc]
@@ -141,7 +145,11 @@ class ChronoFormatWarning(PolarsWarning):  # type: ignore[misc]
     """
 
 
-class PolarsInefficientMapWarning(PolarsWarning):  # type: ignore[misc]
+class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
+    """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
+
+
+class PolarsInefficientMapWarning(PerformanceWarning):  # type: ignore[misc]
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
 
@@ -149,26 +157,19 @@ class UnstableWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when unstable functionality is used."""
 
 
-class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
-    """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
-
-
 __all__ = [
-    "CategoricalRemappingWarning",
+    # Errors
     "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
     "InvalidOperationError",
-    "MapWithoutReturnDtypeWarning",
     "ModuleUpgradeRequired",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "PolarsError",
-    "PolarsInefficientMapWarning",
     "PolarsPanicError",
-    "PolarsWarning",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",
@@ -178,4 +179,13 @@ __all__ = [
     "StringCacheMismatchError",
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
+    # Warnings
+    "PolarsWarning",
+    "CategoricalRemappingWarning",
+    "ChronoFormatWarning",
+    "CustomUFuncWarning",
+    "MapWithoutReturnDtypeWarning",
+    "PerformanceWarning",
+    "PolarsInefficientMapWarning",
+    "UnstableWarning",
 ]
