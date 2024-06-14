@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import polars as pl
@@ -680,3 +681,9 @@ def test_err_invalid_comparison() -> None:
         match="could apply comparison on series of dtype 'object; operand names: 'a', 'b'",
     ):
         _ = pl.Series("a", [object()]) == pl.Series("b", [object])
+
+
+def test_no_panic_pandas_nat() -> None:
+    # we don't want to support pd.nat, but don't want to panic.
+    with pytest.raises(Exception):  # noqa: B017
+        pl.DataFrame({"x": [pd.NaT]})

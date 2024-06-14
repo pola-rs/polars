@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::{DataType, Field, OwnedObject, PlHashMap, TimeUnit};
 use polars::prelude::{AnyValue, Series};
-use polars_core::export::chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
+use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::exceptions::{PyOverflowError, PyTypeError};
@@ -141,7 +141,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_bool(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        let b = ob.extract::<bool>().unwrap();
+        let b = ob.extract::<bool>()?;
         Ok(AnyValue::Boolean(b))
     }
 
@@ -161,7 +161,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_float(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        Ok(AnyValue::Float64(ob.extract::<f64>().unwrap()))
+        Ok(AnyValue::Float64(ob.extract::<f64>()?))
     }
 
     fn get_str(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -176,21 +176,18 @@ pub(crate) fn py_object_to_any_value<'py>(
         // Once Python 3.10 is the minimum supported version, converting to &str
         // will be cheaper, and we should do that. Python 3.9 security updates
         // end-of-life is Oct 31, 2025.
-        Ok(AnyValue::StringOwned(
-            ob.extract::<String>().unwrap().into(),
-        ))
+        Ok(AnyValue::StringOwned(ob.extract::<String>()?.into()))
     }
 
     fn get_bytes<'py>(ob: &Bound<'py, PyAny>, _strict: bool) -> PyResult<AnyValue<'py>> {
-        let value = ob.extract::<Vec<u8>>().unwrap();
+        let value = ob.extract::<Vec<u8>>()?;
         Ok(AnyValue::BinaryOwned(value))
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        // unwrap() isn't yet const safe.
-        const UNIX_EPOCH: Option<NaiveDate> = NaiveDate::from_ymd_opt(1970, 1, 1);
+        const UNIX_EPOCH: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
         let date = ob.extract::<NaiveDate>()?;
-        let elapsed = date.signed_duration_since(UNIX_EPOCH.unwrap());
+        let elapsed = date.signed_duration_since(UNIX_EPOCH);
         Ok(AnyValue::Date(elapsed.num_days() as i32))
     }
 
@@ -204,7 +201,7 @@ pub(crate) fn py_object_to_any_value<'py>(
                 .unwrap()
                 .call1((ob, intern!(py, "us")))
                 .unwrap();
-            let v = date.extract::<i64>().unwrap();
+            let v = date.extract::<i64>()?;
             Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None))
         })
     }
