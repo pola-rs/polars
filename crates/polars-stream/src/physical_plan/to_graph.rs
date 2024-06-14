@@ -48,7 +48,7 @@ fn to_graph_rec<'a>(
 
     use PhysNode::*;
     let graph_key = match &ctx.phys_sm[phys_node_key] {
-        DataFrameScan { df } => ctx
+        InMemorySource { df } => ctx
             .graph
             .add_node(nodes::in_memory_source::InMemorySource::new(df.clone()), []),
 
@@ -73,6 +73,11 @@ fn to_graph_rec<'a>(
                 nodes::simple_projection::SimpleProjectionNode::new(schema.clone()),
                 [input_key],
             )
+        },
+
+        InMemorySink { input } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(nodes::in_memory_sink::InMemorySink::default(), [input_key])
         },
 
         // Fallback to the in-memory engine.

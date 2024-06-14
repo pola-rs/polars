@@ -30,7 +30,7 @@ impl InMemorySource {
 impl ComputeNode for InMemorySource {
     fn initialize(&mut self, num_pipelines: usize) {
         let len = self.source.height();
-        let ideal_block_count = len / IDEAL_MORSEL_SIZE;
+        let ideal_block_count = (len / IDEAL_MORSEL_SIZE).max(1);
         let block_count = ideal_block_count.next_multiple_of(num_pipelines);
         self.morsel_size = len.div_ceil(block_count).max(1);
         self.seq = AtomicU64::new(0);

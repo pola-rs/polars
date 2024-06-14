@@ -36,9 +36,9 @@ impl PartialEq for KMergeMorsel {
     }
 }
 
+#[derive(Default)]
 pub struct InMemorySink {
     per_pipe_morsels: Mutex<Vec<VecDeque<Morsel>>>,
-    out_frame: DataFrame,
 }
 
 impl ComputeNode for InMemorySink {
@@ -69,7 +69,7 @@ impl ComputeNode for InMemorySink {
         })
     }
 
-    fn finalize(&mut self) {
+    fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
         // Do a K-way merge on the morsels based on sequence id.
         let mut per_pipe_morsels = core::mem::take(&mut *self.per_pipe_morsels.get_mut());
         let mut dataframes = Vec::with_capacity(per_pipe_morsels.iter().map(|p| p.len()).sum());
@@ -94,6 +94,6 @@ impl ComputeNode for InMemorySink {
             }
         }
 
-        self.out_frame = accumulate_dataframes_vertical_unchecked(dataframes);
+        Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
     }
 }

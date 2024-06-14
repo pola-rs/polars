@@ -9,8 +9,8 @@ slotmap::new_key_type! {
 
 #[derive(Default)]
 pub struct Graph {
-    nodes: SlotMap<GraphNodeKey, GraphNode>,
-    pipes: SlotMap<LogicalPipeKey, LogicalPipe>,
+    pub nodes: SlotMap<GraphNodeKey, GraphNode>,
+    pub pipes: SlotMap<LogicalPipeKey, LogicalPipe>,
 }
 
 impl Graph {
@@ -51,9 +51,9 @@ impl Graph {
 }
 
 pub struct GraphNode {
-    compute: Box<dyn ComputeNode>,
-    inputs: Vec<LogicalPipeKey>,
-    outputs: Vec<LogicalPipeKey>,
+    pub compute: Box<dyn ComputeNode>,
+    pub inputs: Vec<LogicalPipeKey>,
+    pub outputs: Vec<LogicalPipeKey>,
 }
 
 pub struct LogicalPipe {

@@ -3363,6 +3363,7 @@ dependencies = [
  "atomic-waker",
  "crossbeam-deque",
  "crossbeam-utils",
+ "futures",
  "parking_lot",
  "pin-project-lite",
  "polars-core",

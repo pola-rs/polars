@@ -9,6 +9,7 @@ mod lower_ir;
 mod to_graph;
 
 pub use lower_ir::lower_ir;
+pub use to_graph::physical_plan_to_graph;
 
 slotmap::new_key_type! {
     /// Key used for PNodes.
@@ -18,7 +19,7 @@ slotmap::new_key_type! {
 /// A node in the physical plan.
 #[derive(Clone, Debug)]
 pub enum PhysNode {
-    DataFrameScan {
+    InMemorySource {
         df: Arc<DataFrame>,
     },
     Filter {
@@ -28,6 +29,9 @@ pub enum PhysNode {
     SimpleProjection {
         input: PhysNodeKey,
         schema: SchemaRef,
+    },
+    InMemorySink {
+        input: PhysNodeKey,
     },
     // Fallback to the in-memory engine.
     Fallback(Node),

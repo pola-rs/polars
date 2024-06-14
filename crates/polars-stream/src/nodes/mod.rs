@@ -1,3 +1,4 @@
+use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 
@@ -26,5 +27,7 @@ pub trait ComputeNode {
     ) -> JoinHandle<PolarsResult<()>>;
 
     /// Called after this computation is complete.
-    fn finalize(&mut self) {}
+    fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
+        Ok(None)
+    }
 }

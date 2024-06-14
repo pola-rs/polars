@@ -2,7 +2,7 @@ use polars_core::frame::DataFrame;
 
 use crate::async_primitives::wait_group::WaitToken;
 
-pub const IDEAL_MORSEL_SIZE: usize = 10_000;
+pub const IDEAL_MORSEL_SIZE: usize = 100_000;
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct MorselSeq(u64);
