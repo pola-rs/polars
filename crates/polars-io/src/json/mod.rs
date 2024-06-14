@@ -143,8 +143,12 @@ where
         df.align_chunks();
         let fields = df
             .iter()
-            .map(|s| s.field().to_arrow(true))
-            .collect::<Vec<_>>();
+            .map(|s| {
+                #[cfg(feature = "object")]
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                Ok(s.field().to_arrow(true))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
             .iter_chunks(true)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
@@ -184,8 +188,12 @@ where
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         let fields = df
             .iter()
-            .map(|s| s.field().to_arrow(true))
-            .collect::<Vec<_>>();
+            .map(|s| {
+                #[cfg(feature = "object")]
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                Ok(s.field().to_arrow(true))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
         let chunks = df.iter_chunks(true);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
