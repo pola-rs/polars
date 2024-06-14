@@ -38,7 +38,7 @@ class TestIcebergScanIO:
     def test_scan_iceberg_plain(self, iceberg_path: str) -> None:
         df = pl.scan_iceberg(iceberg_path)
         assert len(df.collect()) == 3
-        assert df.schema == {
+        assert df.collect_schema() == {
             "id": pl.Int32,
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),

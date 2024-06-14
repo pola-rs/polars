@@ -434,12 +434,12 @@ def test_schema_mean_horizontal_single_column(
         pl.mean_horizontal(pl.all())
     )
 
-    assert lf.schema == OrderedDict([("a", out_dtype)])
+    assert lf.collect_schema() == OrderedDict([("a", out_dtype)])
 
 
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert lf.schema == OrderedDict([("a", pl.UInt32)])
+    assert lf.collect_schema() == OrderedDict([("a", pl.UInt32)])
 
 
 def test_fold_all_schema() -> None:

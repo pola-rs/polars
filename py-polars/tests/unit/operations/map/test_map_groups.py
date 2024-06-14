@@ -32,7 +32,7 @@ def test_map_groups_lazy() -> None:
 
     expected = pl.LazyFrame({"a": [6.0, 2.0, 2.0], "b": [6.0, 2.0, 4.0]})
     assert_frame_equal(result, expected, check_row_order=False)
-    assert result.schema == expected.schema
+    assert result.collect_schema() == expected.collect_schema()
 
 
 def test_map_groups_rolling() -> None:

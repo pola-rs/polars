@@ -287,7 +287,7 @@ def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     lf1 = pl.scan_parquet(other_parquet_path)
     lf2 = pl.scan_parquet(parquet_path)
 
-    join_cols = set(lf1.columns).intersection(set(lf2.columns))
+    join_cols = set(lf1.collect_schema()).intersection(set(lf2.collect_schema()))
     final_lf = lf1.join(lf2, on=list(join_cols), how="full", coalesce=True)
 
     assert final_lf.collect(streaming=True).to_dict(as_series=False) == {

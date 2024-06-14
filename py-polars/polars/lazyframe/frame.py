@@ -41,6 +41,7 @@ from polars._utils.various import (
     extend_bool,
     is_bool_sequence,
     is_sequence,
+    issue_warning,
     normalize_filepath,
     parse_percentiles,
 )
@@ -74,6 +75,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import import_optional, subprocess
+from polars.exceptions import PerformanceWarning
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.schema import Schema
@@ -195,9 +197,9 @@ class LazyFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Notice that the dtypes are automatically inferred as polars Int64:
+    Notice that the dtypes are automatically inferred as Polars Int64:
 
-    >>> lf.dtypes
+    >>> lf.collect_schema().dtypes()
     [Int64, Int64]
 
     To specify a more detailed/specific frame schema you can supply the `schema`
@@ -399,9 +401,15 @@ class LazyFrame:
 
         Warnings
         --------
-        Determining the column names of a LazyFrame requires resolving its schema.
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Determining the column names of a LazyFrame requires resolving its schema,
+        which is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way of resolving the schema.
+        This property exists only for symmetry with the DataFrame class.
+
+        See Also
+        --------
+        collect_schema
+        Schema.names
 
         Examples
         --------
@@ -415,7 +423,13 @@ class LazyFrame:
         >>> lf.columns
         ['foo', 'bar']
         """
-        return self._ldf.columns()
+        issue_warning(
+            "Determining the column names of a LazyFrame requires resolving its schema,"
+            " which is a potentially expensive operation. Use `LazyFrame.collect_schema().names()`"
+            " to get the column names without this warning.",
+            category=PerformanceWarning,
+        )
+        return self.collect_schema().names()
 
     @property
     def dtypes(self) -> list[DataType]:
@@ -429,13 +443,15 @@ class LazyFrame:
 
         Warnings
         --------
-        Determining the data types of a LazyFrame requires resolving its schema.
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Determining the data types of a LazyFrame requires resolving its schema,
+        which is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way to resolve the schema.
+        This property exists only for symmetry with the DataFrame class.
 
         See Also
         --------
-        schema
+        collect_schema
+        Schema.dtypes
 
         Examples
         --------
@@ -449,7 +465,13 @@ class LazyFrame:
         >>> lf.dtypes
         [Int64, Float64, String]
         """
-        return self._ldf.dtypes()
+        issue_warning(
+            "Determining the data types of a LazyFrame requires resolving its schema,"
+            " which is a potentially expensive operation. Use `LazyFrame.collect_schema().dtypes()`"
+            " to get the data types without this warning.",
+            category=PerformanceWarning,
+        )
+        return self.collect_schema().dtypes()
 
     @property
     def schema(self) -> Schema:
@@ -458,8 +480,14 @@ class LazyFrame:
 
         Warnings
         --------
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Resolving the schema of a LazyFrame is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way to resolve the schema.
+        This property exists only for symmetry with the DataFrame class.
+
+        See Also
+        --------
+        collect_schema
+        Schema
 
         Examples
         --------
@@ -473,7 +501,12 @@ class LazyFrame:
         >>> lf.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
-        return Schema(self._ldf.schema())
+        issue_warning(
+            "Resolving the schema of a LazyFrame is a potentially expensive operation."
+            " Use `LazyFrame.collect_schema()` to get the schema without this warning.",
+            category=PerformanceWarning,
+        )
+        return self.collect_schema()
 
     @property
     def width(self) -> int:
@@ -486,9 +519,15 @@ class LazyFrame:
 
         Warnings
         --------
-        Determining the width of a LazyFrame requires resolving its schema.
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Determining the width of a LazyFrame requires resolving its schema,
+        which is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way to resolve the schema.
+        This property exists only for symmetry with the DataFrame class.
+
+        See Also
+        --------
+        collect_schema
+        Schema.len
 
         Examples
         --------
@@ -501,7 +540,13 @@ class LazyFrame:
         >>> lf.width
         2
         """
-        return self._ldf.width()
+        issue_warning(
+            "Determining the width of a LazyFrame requires resolving its schema,"
+            " which is a potentially expensive operation. Use `LazyFrame.collect_schema().len()`"
+            " to get the width without this warning.",
+            category=PerformanceWarning,
+        )
+        return self.collect_schema().len()
 
     def __bool__(self) -> NoReturn:
         msg = (
@@ -533,7 +578,7 @@ class LazyFrame:
         self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
-        return key in self.columns
+        return key in self.collect_schema()
 
     def __copy__(self) -> Self:
         return self.clone()
@@ -664,8 +709,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> def cast_str_to_int(data, col_name):
-        ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
+        >>> def cast_str_to_int(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
+        ...     return lf.with_columns(pl.col(col_name).cast(pl.Int64))
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
@@ -701,7 +746,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 3   │
         │ 2   ┆ 4   │
         └─────┴─────┘
-        >>> lf.pipe(lambda tdf: tdf.select(sorted(tdf.columns))).collect()
+        >>> lf.pipe(lambda lf: lf.select(sorted(lf.collect_schema()))).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -811,7 +856,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """  # noqa: W505
         from polars.convert import from_dict
 
-        if not self.columns:
+        schema = self.collect_schema()
+
+        if not schema:
             msg = "cannot describe a LazyFrame that has no columns"
             raise TypeError(msg)
 
@@ -831,7 +878,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metric_exprs: list[Expr] = []
         null = F.lit(None)
 
-        for c, dtype in self.schema.items():
+        for c, dtype in schema.items():
             is_numeric = dtype.is_numeric()
             is_temporal = not is_numeric and dtype.is_temporal()
 
@@ -898,12 +945,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_metrics = len(metrics)
         column_metrics = [
             df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
-            for n in range(self.width)
+            for n in range(schema.len())
         ]
-        summary = dict(zip(self.columns, column_metrics))
+        summary = dict(zip(schema, column_metrics))
 
         # cast by column type (numeric/bool -> float), (other -> string)
-        for c in self.columns:
+        for c in schema:
             summary[c] = [  # type: ignore[assignment]
                 (
                     None
@@ -2021,6 +2068,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
         return result  # type: ignore[return-value]
 
+    def collect_schema(self) -> Schema:
+        """
+        Resolve the schema of this LazyFrame.
+
+        Examples
+        --------
+        Determine the schema.
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> lf.collect_schema()
+        Schema({'foo': Int64, 'bar': Float64, 'ham': String})
+
+        Access various properties of the schema.
+
+        >>> schema = lf.collect_schema()
+        >>> schema["bar"]
+        Float64
+        >>> schema.names()
+        ['foo', 'bar', 'ham']
+        >>> schema.dtypes()
+        [Int64, Float64, String]
+        >>> schema.len()
+        3
+        """
+        return Schema(self._ldf.collect_schema())
+
     @unstable()
     def sink_parquet(
         self,
@@ -2736,7 +2815,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
-        return pl.DataFrame(schema=self.schema).clear(n).lazy()
+        return pl.DataFrame(schema=self.collect_schema()).clear(n).lazy()
 
     def clone(self) -> Self:
         """
@@ -2888,7 +2967,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ) or (
                 not is_seq
                 and not isinstance(p, pl.Expr)
-                and not (isinstance(p, str) and p in self.columns)
+                and not (isinstance(p, str) and p in self.collect_schema())
             ):
                 err = (
                     f"Series(…, dtype={p.dtype})"
@@ -5033,7 +5112,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if value is not None:
 
             def infer_dtype(value: Any) -> PolarsDataType:
-                return next(iter(self.select(value).schema.values()))
+                return next(iter(self.select(value).collect_schema().values()))
 
             if isinstance(value, pl.Expr):
                 dtypes = [infer_dtype(value)]
@@ -6123,25 +6202,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(right_on, str):
             right_on = [right_on]
 
-        left_names = self.columns
+        left_schema = self.collect_schema()
         for name in left_on:
-            if name not in left_names:
+            if name not in left_schema:
                 msg = f"left join column {name!r} not found"
                 raise ValueError(msg)
-        right_names = other.columns
+        right_schema = other.collect_schema()
         for name in right_on:
-            if name not in right_names:
+            if name not in right_schema:
                 msg = f"right join column {name!r} not found"
                 raise ValueError(msg)
 
         # no need to join if *only* join columns are in other (inner/left update only)
-        if how != "full" and len(other.columns) == len(right_on):
+        if how != "full" and len(right_schema) == len(right_on):
             if row_index_used:
                 return self.drop(row_index_name)
             return self
 
         # only use non-idx right columns present in left frame
-        right_other = set(other.columns).intersection(self.columns) - set(right_on)
+        right_other = set(right_schema).intersection(left_schema) - set(right_on)
 
         # When include_nulls is True, we need to distinguish records after the join that
         # were originally null in the right frame, as opposed to records that were null

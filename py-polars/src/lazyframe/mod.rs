@@ -34,13 +34,6 @@ pub struct PyLazyFrame {
     pub ldf: LazyFrame,
 }
 
-impl PyLazyFrame {
-    fn get_schema(&mut self) -> PyResult<SchemaRef> {
-        let schema = self.ldf.schema().map_err(PyPolarsErr::from)?;
-        Ok(schema)
-    }
-}
-
 impl From<LazyFrame> for PyLazyFrame {
     fn from(ldf: LazyFrame) -> Self {
         PyLazyFrame { ldf }
@@ -150,7 +143,8 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema, cloud_options, retries
+        encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
+        cloud_options, retries, file_cache_ttl
     )
     )]
     fn new_from_csv(
@@ -183,6 +177,7 @@ impl PyLazyFrame {
         schema: Option<Wrap<Schema>>,
         cloud_options: Option<Vec<(String, String)>>,
         retries: usize,
+        file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
@@ -211,19 +206,22 @@ impl PyLazyFrame {
             };
 
             let first_path_url = first_path.to_string_lossy();
-            let mut cloud_options = cloud_options
-                .map(|kv| parse_cloud_options(&first_path_url, kv))
-                .transpose()?;
+
+            let mut cloud_options = if let Some(opts) = cloud_options {
+                parse_cloud_options(&first_path_url, opts)?
+            } else {
+                Default::default()
+            };
+
             if retries > 0 {
-                cloud_options =
-                    cloud_options
-                        .or_else(|| Some(CloudOptions::default()))
-                        .map(|mut options| {
-                            options.max_retries = retries;
-                            options
-                        });
+                cloud_options.max_retries = retries;
             }
-            cloud_options
+
+            if let Some(file_cache_ttl) = file_cache_ttl {
+                cloud_options.file_cache_ttl = file_cache_ttl;
+            }
+
+            Some(cloud_options)
         };
 
         let r = if let Some(path) = path.as_ref() {
@@ -363,7 +361,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, retries))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, retries, file_cache_ttl))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -374,6 +372,7 @@ impl PyLazyFrame {
         memory_map: bool,
         cloud_options: Option<Vec<(String, String)>>,
         retries: usize,
+        file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: Arc::from(name.as_str()),
@@ -391,19 +390,22 @@ impl PyLazyFrame {
             };
 
             let first_path_url = first_path.to_string_lossy();
-            let mut cloud_options = cloud_options
-                .map(|kv| parse_cloud_options(&first_path_url, kv))
-                .transpose()?;
+
+            let mut cloud_options = if let Some(opts) = cloud_options {
+                parse_cloud_options(&first_path_url, opts)?
+            } else {
+                Default::default()
+            };
+
             if retries > 0 {
-                cloud_options =
-                    cloud_options
-                        .or_else(|| Some(CloudOptions::default()))
-                        .map(|mut options| {
-                            options.max_retries = retries;
-                            options
-                        });
+                cloud_options.max_retries = retries;
             }
-            cloud_options
+
+            if let Some(file_cache_ttl) = file_cache_ttl {
+                cloud_options.file_cache_ttl = file_cache_ttl;
+            }
+
+            Some(cloud_options)
         };
 
         let args = ScanArgsIpc {
@@ -1176,24 +1178,10 @@ impl PyLazyFrame {
         self.ldf.clone().into()
     }
 
-    fn columns(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.get_schema()?;
-        let iter = schema.iter_names().map(|s| s.as_str());
-        Ok(PyList::new_bound(py, iter).to_object(py))
-    }
+    fn collect_schema(&mut self, py: Python) -> PyResult<PyObject> {
+        let schema = self.ldf.schema().map_err(PyPolarsErr::from)?;
 
-    fn dtypes(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.get_schema()?;
-        let iter = schema
-            .iter_dtypes()
-            .map(|dt| Wrap(dt.clone()).to_object(py));
-        Ok(PyList::new_bound(py, iter).to_object(py))
-    }
-
-    fn schema(&mut self, py: Python) -> PyResult<PyObject> {
-        let schema = self.get_schema()?;
         let schema_dict = PyDict::new_bound(py);
-
         schema.iter_fields().for_each(|fld| {
             schema_dict
                 .set_item(fld.name().as_str(), Wrap(fld.data_type().clone()))
@@ -1204,10 +1192,6 @@ impl PyLazyFrame {
 
     fn unnest(&self, columns: Vec<String>) -> Self {
         self.ldf.clone().unnest(columns).into()
-    }
-
-    fn width(&mut self) -> PyResult<usize> {
-        Ok(self.get_schema()?.len())
     }
 
     fn count(&self) -> Self {

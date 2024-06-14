@@ -10,6 +10,6 @@ def test_lazy_rename() -> None:
 
 def test_remove_redundant_mapping_4668() -> None:
     lf = pl.LazyFrame([["a"]] * 2, ["A", "B "]).lazy()
-    clean_name_dict = {x: " ".join(x.split()) for x in lf.columns}
+    clean_name_dict = {x: " ".join(x.split()) for x in lf.collect_schema()}
     lf = lf.rename(clean_name_dict)
-    assert lf.columns == ["A", "B"]
+    assert lf.collect_schema().names() == ["A", "B"]

@@ -28,7 +28,7 @@ def test_fill_null_static_schema_4843() -> None:
 
     df2 = df1.select([pl.col(pl.Int64).fill_null(0)])
     df3 = df2.select(pl.col(pl.Int64))
-    assert df3.schema == {"a": pl.Int64, "b": pl.Int64}
+    assert df3.collect_schema() == {"a": pl.Int64, "b": pl.Int64}
 
 
 def test_fill_null_f32_with_lit() -> None:

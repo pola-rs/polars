@@ -337,7 +337,7 @@ def test_hex_decode_return_dtype() -> None:
     assert df.schema == {"a": pl.Binary}
 
     ldf = pl.LazyFrame(data).select(expr)
-    assert ldf.schema == {"a": pl.Binary}
+    assert ldf.collect_schema() == {"a": pl.Binary}
 
 
 def test_base64_decode_return_dtype() -> None:
@@ -348,7 +348,7 @@ def test_base64_decode_return_dtype() -> None:
     assert df.schema == {"a": pl.Binary}
 
     ldf = pl.LazyFrame(data).select(expr)
-    assert ldf.schema == {"a": pl.Binary}
+    assert ldf.collect_schema() == {"a": pl.Binary}
 
 
 def test_str_replace_str_replace_all() -> None:
@@ -628,7 +628,7 @@ def test_json_decode_lazy_expr() -> None:
     expected = pl.DataFrame(
         {"json": [{"a": 1, "b": True}, None, {"a": 2, "b": False}]}
     ).lazy()
-    assert ldf.schema == {"json": dtype}
+    assert ldf.collect_schema() == {"json": dtype}
     assert_frame_equal(ldf, expected)
 
 
@@ -1444,7 +1444,7 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
         "captures"
     )
 
-    assert df.schema == {"candidate": pl.String, "ref": pl.String}
+    assert df.collect_schema() == {"candidate": pl.String, "ref": pl.String}
 
 
 def test_string_reverse() -> None:

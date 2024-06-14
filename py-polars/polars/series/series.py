@@ -961,8 +961,12 @@ class Series:
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
 
-        if isinstance(other, (PyDecimal, int)) and self.dtype.is_decimal():
-            _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
+        if self.dtype.is_decimal() and isinstance(other, (PyDecimal, int)):
+            if isinstance(other, int):
+                pyseries = sequence_to_pyseries(self.name, [other])
+                _s = self._from_pyseries(pyseries).cast(Decimal(scale=0))._s
+            else:
+                _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
 
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))

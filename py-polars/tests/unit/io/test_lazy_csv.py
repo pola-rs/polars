@@ -137,15 +137,16 @@ def test_scan_csv_schema_new_columns_dtypes(
         assert df1.rows() == df2.rows()
 
     # rename existing columns, then lazy-select disjoint cols
-    df3 = pl.scan_csv(
+    lf = pl.scan_csv(
         file_path,
         new_columns=["colw", "colx", "coly", "colz"],
     )
-    assert df3.dtypes == [pl.String, pl.Int64, pl.Float64, pl.Int64]
-    assert df3.columns == ["colw", "colx", "coly", "colz"]
+    schema = lf.collect_schema()
+    assert schema.dtypes() == [pl.String, pl.Int64, pl.Float64, pl.Int64]
+    assert schema.names() == ["colw", "colx", "coly", "colz"]
     assert (
-        df3.select(["colz", "colx"]).collect().rows()
-        == df1.select(["sugars", pl.col("calories").cast(pl.Int64)]).rows()
+        lf.select("colz", "colx").collect().rows()
+        == df1.select("sugars", pl.col("calories").cast(pl.Int64)).rows()
     )
 
     # partially rename columns / overwrite dtypes

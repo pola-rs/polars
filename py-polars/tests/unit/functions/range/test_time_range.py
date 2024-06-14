@@ -16,7 +16,7 @@ def test_time_range_schema() -> None:
     df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
     result = df.with_columns(time_range=pl.time_ranges(pl.col("start"), pl.col("end")))
     expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 

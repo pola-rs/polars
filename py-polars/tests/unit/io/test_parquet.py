@@ -279,8 +279,10 @@ def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -
 
     a = pl.scan_parquet(file_path)
     b = pl.DataFrame({"a": [1]}).lazy()
-    assert a.join(b, how="cross").collect().shape == (3, df.width + b.width)
-    assert b.join(a, how="cross").collect().shape == (3, df.width + b.width)
+
+    expected_shape = (3, df.width + b.collect_schema().len())
+    assert a.join(b, how="cross").collect().shape == expected_shape
+    assert b.join(a, how="cross").collect().shape == expected_shape
 
 
 def test_recursive_logical_type() -> None:

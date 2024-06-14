@@ -1022,13 +1022,15 @@ def test_schema_on_agg() -> None:
         "first": pl.Int64,
         "last": pl.Int64,
     }
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
 
 
 def test_group_by_schema_err() -> None:
     lf = pl.LazyFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]})
     with pytest.raises(pl.ColumnNotFoundError):
-        lf.group_by("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+        lf.group_by("not-existent").agg(
+            pl.col("bar").max().alias("max_bar")
+        ).collect_schema()
 
 
 @pytest.mark.parametrize(

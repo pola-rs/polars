@@ -431,6 +431,25 @@ def find_stacklevel() -> int:
     return n
 
 
+def issue_warning(message: str, category: type[Warning], **kwargs: Any) -> None:
+    """
+    Issue a warning.
+
+    Parameters
+    ----------
+    message
+        The message associated with the warning.
+    category
+        The warning category.
+    **kwargs
+        Additional arguments for `warnings.warn`. Note that the `stacklevel` is
+        determined automatically.
+    """
+    warnings.warn(
+        message=message, category=category, stacklevel=find_stacklevel(), **kwargs
+    )
+
+
 def _get_stack_locals(
     of_type: type | Collection[type] | Callable[[Any], bool] | None = None,
     *,

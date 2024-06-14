@@ -1708,7 +1708,7 @@ def test_schema_equality() -> None:
     lf = pl.LazyFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
     lf_rev = lf.select("bar", "foo")
 
-    assert lf.schema != lf_rev.schema
+    assert lf.collect_schema() != lf_rev.collect_schema()
     assert lf.collect().schema != lf_rev.collect().schema
 
 

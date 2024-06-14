@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
+import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
@@ -189,8 +190,9 @@ def read_parquet(
 
     if columns is not None:
         if is_int_sequence(columns):
-            columns = [lf.columns[i] for i in columns]
-        lf = lf.select(columns)
+            lf = lf.select(F.nth(columns))
+        else:
+            lf = lf.select(columns)
 
     return lf.collect()
 
