@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
-use polars_core::datatypes::DataType;
-use polars_core::prelude::{ArrowField, ArrowSchema, DataFrame, IdxSize, Schema, Series};
-use polars_error::{polars_ensure, PolarsResult};
+use polars_core::prelude::*;
 
 use crate::options::RowIndex;
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
@@ -123,11 +121,11 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 pub(crate) fn schema_to_arrow_checked(
     schema: &Schema,
     pl_flavor: bool,
-    file_name: &str,
+    _file_name: &str,
 ) -> PolarsResult<ArrowSchema> {
     let fields = schema.iter_fields().map(|field| {
         #[cfg(feature = "object")]
-        polars_ensure!(!matches!(field.data_type(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to {}", file_name);
+        polars_ensure!(!matches!(field.data_type(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to {}", _file_name);
         Ok(ArrowField::new(field.name().as_str(), field.data_type().to_arrow(pl_flavor), true))
     }).collect::<PolarsResult<Vec<_>>>()?;
     Ok(ArrowSchema::from(fields))
