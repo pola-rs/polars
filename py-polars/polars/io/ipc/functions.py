@@ -312,6 +312,7 @@ def scan_ipc(
     storage_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     retries: int = 0,
+    file_cache_ttl: int | None = None,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -344,6 +345,10 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
     retries
         Number of retries if accessing a cloud instance fails.
+    file_cache_ttl
+        Amount of time to keep downloaded cloud files since their last access time,
+        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
+        (which defaults to 1 hour) if not given.
 
     """
     if isinstance(source, (str, Path)):
@@ -374,5 +379,6 @@ def scan_ipc(
         memory_map=memory_map,
         cloud_options=storage_options,
         retries=retries,
+        file_cache_ttl=file_cache_ttl,
     )
     return wrap_ldf(pylf)
