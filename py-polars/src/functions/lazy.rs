@@ -210,8 +210,8 @@ pub fn len() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::cov(a.inner, b.inner, ddof).into()
+pub fn cov(a: PyExpr, b: PyExpr, ddof: u8, min_periods: usize) -> PyExpr {
+    dsl::cov(a.inner, b.inner, ddof, min_periods).into()
 }
 
 #[pyfunction]
