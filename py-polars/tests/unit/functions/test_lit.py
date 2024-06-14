@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
@@ -10,6 +11,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import series
 from polars.testing.parametric.strategies.data import datetimes
 
 
@@ -155,3 +157,27 @@ def test_datetime_ms(value: datetime) -> None:
     result = pl.select(pl.lit(value, dtype=pl.Datetime("ms")))["literal"][0]
     expected_microsecond = value.microsecond // 1000 * 1000
     assert result == value.replace(microsecond=expected_microsecond)
+
+
+def test_lit_decimal() -> None:
+    value = Decimal("0.1")
+
+    expr = pl.lit(value)
+    df = pl.select(expr)
+    result = df.item()
+
+    assert df.dtypes[0] == pl.Decimal(None, 1)
+    assert result == value
+
+
+@given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
+def test_lit_decimal_parametric(s: pl.Series) -> None:
+    scale = s.dtype.scale  # type: ignore[attr-defined]
+    value = s.item()
+
+    expr = pl.lit(value)
+    df = pl.select(expr)
+    result = df.item()
+
+    assert df.dtypes[0] == pl.Decimal(None, scale)
+    assert result == value
