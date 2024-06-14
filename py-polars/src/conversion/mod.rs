@@ -35,6 +35,8 @@ use crate::py_modules::{POLARS, SERIES};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
+/// # Safety
+/// Should only be implemented for transparent types
 pub(crate) unsafe trait Transparent {
     type Target;
 }

@@ -282,7 +282,7 @@ impl PySeries {
     #[staticmethod]
     fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
         let series = reinterpret_vec(values);
-        if let Some(s) = series.iter().flatten() {
+        if let Some(s) = series.iter().flatten().next() {
             if s.dtype().is_object() {
                 return Err(PyValueError::new_err(
                     "list of objects isn't supported; try building a 'object' only series",
