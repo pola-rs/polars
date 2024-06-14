@@ -457,8 +457,8 @@ pub fn map_mul(
 }
 
 #[pyfunction]
-pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::pearson_corr(a.inner, b.inner, ddof).into()
+pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8, min_periods: u8) -> PyExpr {
+    dsl::pearson_corr(a.inner, b.inner, ddof, min_periods).into()
 }
 
 #[pyfunction]

@@ -784,6 +784,7 @@ def corr(
     method: CorrelationMethod = "pearson",
     ddof: int = 1,
     propagate_nans: bool = False,
+    min_periods: int = 1,
 ) -> Expr:
     """
     Compute the Pearson's or Spearman rank correlation correlation between two columns.
@@ -804,6 +805,9 @@ def corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+    min_periods
+        Minimum number of overlapping observations required
+        to have a valid result.
 
     Examples
     --------
@@ -849,9 +853,9 @@ def corr(
     b = parse_into_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b, ddof))
+        return wrap_expr(plr.pearson_corr(a, b, ddof, min_periods))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
+        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans, min_periods))
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)

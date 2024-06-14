@@ -6,6 +6,7 @@ pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::Covariance,
         ddof,
+        min_periods,
     };
     Expr::Function {
         input,
@@ -24,11 +25,12 @@ pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
 /// # Arguments
 /// * ddof
 ///     Delta degrees of freedom
-pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
+pub fn pearson_corr(a: Expr, b: Expr, ddof: u8, min_periods: u8) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::Pearson,
         ddof,
+        min_periods,
     };
     Expr::Function {
         input,
@@ -57,6 +59,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::SpearmanRank(propagate_nans),
         ddof,
+        min_periods,
     };
     Expr::Function {
         input,

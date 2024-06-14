@@ -271,6 +271,7 @@ pub enum FunctionExpr {
     Correlation {
         method: correlation::CorrelationMethod,
         ddof: u8,
+        min_periods: u8,
     },
     #[cfg(feature = "peaks")]
     PeakMin,
@@ -1050,7 +1051,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             #[cfg(feature = "cov")]
-            Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            Correlation { method, ddof, min_periods } => map_as_slice!(correlation::corr, ddof, method, min_periods),
             #[cfg(feature = "peaks")]
             PeakMin => map!(peaks::peak_min),
             #[cfg(feature = "peaks")]
