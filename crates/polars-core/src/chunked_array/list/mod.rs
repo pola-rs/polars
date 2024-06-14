@@ -17,15 +17,13 @@ impl ListChunked {
         let field = Arc::make_mut(&mut self.field);
         field.coerce(DataType::List(Box::new(dtype)));
     }
+
     pub fn set_fast_explode(&mut self) {
-        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(true);
-    }
-    pub(crate) fn unset_fast_explode(&mut self) {
-        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(false);
+        self.set_fast_explode_list(true)
     }
 
     pub fn _can_fast_explode(&self) -> bool {
-        self.effective_metadata().get_fast_explode_list()
+        self.get_fast_explode_list()
     }
 
     /// Set the logical type of the [`ListChunked`].
