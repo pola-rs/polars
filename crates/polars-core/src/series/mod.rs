@@ -505,7 +505,6 @@ impl Series {
     where
         T: NumCast,
     {
-        // @TODO: Add parameter for this
         let min = self.min_reduce()?;
         let min = min.value().extract::<T>();
         Ok(min)
@@ -517,7 +516,6 @@ impl Series {
     where
         T: NumCast,
     {
-        // @TODO: Add parameter for this
         let max = self.max_reduce()?;
         let max = max.value().extract::<T>();
         Ok(max)
