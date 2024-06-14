@@ -643,11 +643,13 @@ impl PySeries {
 
         let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
             (&self.series * &other.series)
+                .map_err(PyPolarsErr::from)?
                 .sum::<f64>()
                 .map_err(PyPolarsErr::from)?
                 .into()
         } else {
             (&self.series * &other.series)
+                .map_err(PyPolarsErr::from)?
                 .sum::<i64>()
                 .map_err(PyPolarsErr::from)?
                 .into()

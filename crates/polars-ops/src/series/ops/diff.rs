@@ -11,12 +11,12 @@ pub fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Ser
     };
 
     match null_behavior {
-        NullBehavior::Ignore => Ok(&s - &s.shift(n)),
+        NullBehavior::Ignore => &s - &s.shift(n),
         NullBehavior::Drop => {
             polars_ensure!(n > 0, InvalidOperation: "only positive integer allowed if nulls are dropped in 'diff' operation");
             let n = n as usize;
             let len = s.len() - n;
-            Ok(&s.slice(n as i64, len) - &s.slice(0, len))
+            &s.slice(n as i64, len) - &s.slice(0, len)
         },
     }
 }

@@ -634,7 +634,7 @@ impl Series {
 
     #[cfg(feature = "dot_product")]
     pub fn dot(&self, other: &Series) -> PolarsResult<f64> {
-        (self * other).sum::<f64>()
+        std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
     /// Get the sum of the Series as a new Series of length 1.

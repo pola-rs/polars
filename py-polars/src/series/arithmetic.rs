@@ -7,23 +7,29 @@ use crate::PySeries;
 #[pymethods]
 impl PySeries {
     fn add(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self
-            .series
-            .try_add(&other.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        Ok((&self.series + &other.series)
+            .map(Into::into)
+            .map_err(PyPolarsErr::from)?)
     }
-    fn sub(&self, other: &PySeries) -> Self {
-        (&self.series - &other.series).into()
+    fn sub(&self, other: &PySeries) -> PyResult<Self> {
+        Ok((&self.series - &other.series)
+            .map(Into::into)
+            .map_err(PyPolarsErr::from)?)
     }
-    fn div(&self, other: &PySeries) -> Self {
-        (&self.series / &other.series).into()
+    fn div(&self, other: &PySeries) -> PyResult<Self> {
+        Ok((&self.series / &other.series)
+            .map(Into::into)
+            .map_err(PyPolarsErr::from)?)
     }
-    fn mul(&self, other: &PySeries) -> Self {
-        (&self.series * &other.series).into()
+    fn mul(&self, other: &PySeries) -> PyResult<Self> {
+        Ok((&self.series * &other.series)
+            .map(Into::into)
+            .map_err(PyPolarsErr::from)?)
     }
-    fn rem(&self, other: &PySeries) -> Self {
-        (&self.series % &other.series).into()
+    fn rem(&self, other: &PySeries) -> PyResult<Self> {
+        Ok((&self.series % &other.series)
+            .map(Into::into)
+            .map_err(PyPolarsErr::from)?)
     }
 }
 

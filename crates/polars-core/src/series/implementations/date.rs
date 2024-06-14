@@ -88,28 +88,28 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
                 let rhs = rhs.cast(&dt)?;
                 lhs.subtract(&rhs)
             },
-            DataType::Duration(_) => ((&self
-                .cast(
+            DataType::Duration(_) => std::ops::Sub::sub(
+                &self.cast(
                     &DataType::Datetime(TimeUnit::Milliseconds, None),
                     CastOptions::NonStrict,
-                )
-                .unwrap())
-                - rhs)
-                .cast(&DataType::Date),
+                )?,
+                rhs,
+            )?
+            .cast(&DataType::Date),
             dtr => polars_bail!(opq = sub, DataType::Date, dtr),
         }
     }
 
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         match rhs.dtype() {
-            DataType::Duration(_) => ((&self
-                .cast(
+            DataType::Duration(_) => std::ops::Add::add(
+                &self.cast(
                     &DataType::Datetime(TimeUnit::Milliseconds, None),
                     CastOptions::NonStrict,
-                )
-                .unwrap())
-                + rhs)
-                .cast(&DataType::Date),
+                )?,
+                rhs,
+            )?
+            .cast(&DataType::Date),
             dtr => polars_bail!(opq = add, DataType::Date, dtr),
         }
     }

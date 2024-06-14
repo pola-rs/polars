@@ -565,7 +565,7 @@ impl PartitionedAggregation for AggregationExpr {
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;
-                        Ok(rename_series(agg_s, new_name))
+                        Ok(rename_series(agg_s?, new_name))
                     },
                     _ => Ok(Series::full_null(
                         new_name,
