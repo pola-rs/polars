@@ -367,24 +367,26 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     decoder: &D,
     additional: usize,
     // Amortized allocations
-    cum_sum: &mut Vec<u32>,
-    cum_rep: &mut Vec<u32>,
+    def_levels: &mut Vec<u32>,
+    rep_levels: &mut Vec<u32>,
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
 
-    cum_sum.resize(max_depth + 1, 0);
-    cum_rep.resize(max_depth + 1, 0);
+    def_levels.resize(max_depth + 1, 0);
+    rep_levels.resize(max_depth + 1, 0);
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
         unsafe {
-            *cum_sum.get_unchecked_release_mut(i + 1) = *cum_sum.get_unchecked_release(i) + delta;
+            *def_levels.get_unchecked_release_mut(i + 1) =
+                *def_levels.get_unchecked_release(i) + delta;
         }
     }
 
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_repeated() as u32;
         unsafe {
-            *cum_rep.get_unchecked_release_mut(i + 1) = *cum_rep.get_unchecked_release(i) + delta;
+            *rep_levels.get_unchecked_release_mut(i + 1) =
+                *rep_levels.get_unchecked_release(i) + delta;
         }
     }
 
@@ -410,80 +412,80 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
 
         let mut is_required = false;
 
-        // SAFETY: only bound check elision.
-        unsafe {
-            for depth in 0..max_depth {
-                let is_right_level = rep <= *cum_rep.get_unchecked_release(depth)
-                    && def >= *cum_sum.get_unchecked_release(depth);
+        for depth in 0..max_depth {
+            // Defines whether this element is defined at `depth`
+            //
+            // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
+            // [ [ [ 1 ] ] ].
+            let is_defined_at_this_depth = rep <= rep_levels[depth] && def >= def_levels[depth];
 
-                let length = nested
-                    .get(depth + 1)
-                    .map(|x| x.len() as i64)
-                    // the last depth is the leaf, which is always increased by 1
-                    .unwrap_or(1);
+            let length = nested
+                .get(depth + 1)
+                .map(|x| x.len() as i64)
+                // the last depth is the leaf, which is always increased by 1
+                .unwrap_or(1);
 
-                let nest = nested.get_unchecked_release_mut(depth);
+            let nest = &mut nested[depth];
 
-                let is_valid = !nest.is_nullable() || def > *cum_sum.get_unchecked_release(depth);
+            let is_valid = !nest.is_nullable() || def > def_levels[depth];
 
-                if is_right_level && !is_valid {
-                    let mut num_elements = 1;
+            if is_defined_at_this_depth && !is_valid {
+                let mut num_elements = 1;
 
-                    nest.push(length, is_valid);
+                nest.push(length, is_valid);
 
-                    for embed_depth in depth..max_depth {
-                        let embed_length = nested
-                            .get(embed_depth + 1)
-                            .map(|x| x.len() as i64)
-                            // the last depth is the leaf, which is always increased by 1
-                            .unwrap_or(1);
+                for embed_depth in depth..max_depth {
+                    let embed_length = nested
+                        .get(embed_depth + 1)
+                        .map(|x| x.len() as i64)
+                        // the last depth is the leaf, which is always increased by 1
+                        .unwrap_or(1);
 
-                        let embed_nest = nested.get_unchecked_release_mut(embed_depth);
+                    let embed_nest = &mut nested[embed_depth];
 
-                        if embed_depth > depth {
-                            for _ in 0..num_elements {
-                                embed_nest.push_default(embed_length);
-                            }
+                    if embed_depth > depth {
+                        for _ in 0..num_elements {
+                            embed_nest.push_default(embed_length);
                         }
-
-                        if embed_depth == max_depth - 1 {
-                            for _ in 0..num_elements {
-                                decoder.push_null(decoded);
-                            }
-
-                            break;
-                        }
-
-                        let embed_num_values = embed_nest.invalid_num_values();
-
-                        if embed_num_values == 0 {
-                            break;
-                        }
-
-                        num_elements *= embed_num_values;
                     }
 
-                    break;
-                }
-
-                if is_required || is_right_level {
-                    nest.push(length, is_valid);
-
-                    if depth == max_depth - 1 {
-                        // the leaf / primitive
-                        let is_valid =
-                            (def != *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
-
-                        if is_valid {
-                            decoder.push_valid(values_state, decoded)?;
-                        } else {
+                    if embed_depth == max_depth - 1 {
+                        for _ in 0..num_elements {
                             decoder.push_null(decoded);
                         }
+
+                        break;
                     }
+
+                    let embed_num_values = embed_nest.invalid_num_values();
+
+                    if embed_num_values == 0 {
+                        break;
+                    }
+
+                    num_elements *= embed_num_values;
                 }
 
-                is_required = (is_required || is_right_level) && nest.is_required() && !is_valid;
+                break;
             }
+
+            if is_required || is_defined_at_this_depth {
+                nest.push(length, is_valid);
+
+                if depth == max_depth - 1 {
+                    // the leaf / primitive
+                    let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
+
+                    if is_valid {
+                        decoder.push_valid(values_state, decoded)?;
+                    } else {
+                        decoder.push_null(decoded);
+                    }
+                }
+            }
+
+            is_required =
+                (is_required || is_defined_at_this_depth) && nest.is_required() && !is_valid;
         }
 
         if page.iter.len() == 0 {
