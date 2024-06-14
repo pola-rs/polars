@@ -41,6 +41,7 @@ from polars._utils.various import (
     extend_bool,
     is_bool_sequence,
     is_sequence,
+    issue_warning,
     normalize_filepath,
     parse_percentiles,
 )
@@ -74,6 +75,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import import_optional, subprocess
+from polars.exceptions import PerformanceWarning
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.schema import Schema
@@ -399,13 +401,15 @@ class LazyFrame:
 
         Warnings
         --------
-        Determining the column names of a LazyFrame requires resolving its schema.
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Determining the column names of a LazyFrame requires resolving its schema,
+        which is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way of resolving the schema.
+        This property exists only for symmetry with the DataFrame class.
 
         See Also
         --------
         collect_schema
+        Schema.names
 
         Examples
         --------
@@ -419,6 +423,12 @@ class LazyFrame:
         >>> lf.columns
         ['foo', 'bar']
         """
+        issue_warning(
+            "Determining the column names of a LazyFrame requires resolving its schema,"
+            " which is a potentially expensive operation. Use `LazyFrame.collect_schema().names()`"
+            " to get the column names without this warning.",
+            category=PerformanceWarning,
+        )
         return self.collect_schema().names()
 
     @property
@@ -433,13 +443,15 @@ class LazyFrame:
 
         Warnings
         --------
-        Determining the data types of a LazyFrame requires resolving its schema.
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Determining the data types of a LazyFrame requires resolving its schema,
+        which is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way to resolve the schema.
+        This property exists only for symmetry with the DataFrame class.
 
         See Also
         --------
         collect_schema
+        Schema.dtypes
 
         Examples
         --------
@@ -453,6 +465,12 @@ class LazyFrame:
         >>> lf.dtypes
         [Int64, Float64, String]
         """
+        issue_warning(
+            "Determining the data types of a LazyFrame requires resolving its schema,"
+            " which is a potentially expensive operation. Use `LazyFrame.collect_schema().dtypes()`"
+            " to get the data types without this warning.",
+            category=PerformanceWarning,
+        )
         return self.collect_schema().dtypes()
 
     @property
@@ -462,12 +480,14 @@ class LazyFrame:
 
         Warnings
         --------
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Resolving the schema of a LazyFrame is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way to resolve the schema.
+        This property exists only for symmetry with the DataFrame class.
 
         See Also
         --------
         collect_schema
+        Schema
 
         Examples
         --------
@@ -481,6 +501,11 @@ class LazyFrame:
         >>> lf.schema
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
+        issue_warning(
+            "Resolving the schema of a LazyFrame is a potentially expensive operation."
+            " Use `LazyFrame.collect_schema()` to get the schema without this warning.",
+            category=PerformanceWarning,
+        )
         return self.collect_schema()
 
     @property
@@ -494,13 +519,15 @@ class LazyFrame:
 
         Warnings
         --------
-        Determining the width of a LazyFrame requires resolving its schema.
-        Resolving the schema of a LazyFrame can be an expensive operation.
-        Avoid accessing this property repeatedly if possible.
+        Determining the width of a LazyFrame requires resolving its schema,
+        which is a potentially expensive operation.
+        Using :meth:`collect_schema` is the idiomatic way to resolve the schema.
+        This property exists only for symmetry with the DataFrame class.
 
         See Also
         --------
         collect_schema
+        Schema.len
 
         Examples
         --------
@@ -513,6 +540,12 @@ class LazyFrame:
         >>> lf.width
         2
         """
+        issue_warning(
+            "Determining the width of a LazyFrame requires resolving its schema,"
+            " which is a potentially expensive operation. Use `LazyFrame.collect_schema().len()`"
+            " to get the width without this warning.",
+            category=PerformanceWarning,
+        )
         return self.collect_schema().len()
 
     def __bool__(self) -> NoReturn:
