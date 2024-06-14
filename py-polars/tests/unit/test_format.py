@@ -348,7 +348,8 @@ def test_format_numeric_locale_options() -> None:
             "b": [100000.987654321, -234567.89],
             "c": [-11111111, 44444444444],
             "d": [D("12345.6789"), D("-9999999.99")],
-        }
+        },
+        strict=False,
     )
 
     # note: numeric digit grouping looks much better
