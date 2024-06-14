@@ -1,7 +1,7 @@
 use super::*;
 
 /// Compute the covariance between two columns.
-pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
+pub fn cov(a: Expr, b: Expr, ddof: u8, min_periods: u8) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::Covariance,
