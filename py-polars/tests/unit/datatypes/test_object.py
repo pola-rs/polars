@@ -187,3 +187,9 @@ def test_object_raise_writers() -> None:
         df.write_csv(buf)
     with pytest.raises(pl.ComputeError):
         df.write_avro(buf)
+
+
+def test_raise_list_object() -> None:
+    # We don't want to support this. Unsafe enough as it is already.
+    with pytest.raises(ValueError):
+        pl.Series([[object()]], dtype=pl.List(pl.Object()))
