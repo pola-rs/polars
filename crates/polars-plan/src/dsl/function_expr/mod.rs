@@ -271,7 +271,7 @@ pub enum FunctionExpr {
     Correlation {
         method: correlation::CorrelationMethod,
         ddof: u8,
-        min_periods: u8,
+        min_periods: usize,
     },
     #[cfg(feature = "peaks")]
     PeakMin,
