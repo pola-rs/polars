@@ -22,7 +22,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
                 D("-0.01"),
                 D("1.2345678"),
                 D("500"),
-                # -1,  # TODO: Address in https://github.com/pola-rs/polars/issues/14427
+                -1,
                 None,
             ]
         )
