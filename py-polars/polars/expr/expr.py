@@ -2964,7 +2964,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
+        >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0]})
         >>> df.select(pl.col("a").max())
         shape: (1, 1)
         ┌─────┐
@@ -2983,7 +2983,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
+        >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0]})
         >>> df.select(pl.col("a").min())
         shape: (1, 1)
         ┌──────┐
@@ -3005,7 +3005,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0, float("nan")]})
+        >>> df = pl.DataFrame({"a": [0.0, float("nan")]})
         >>> df.select(pl.col("a").nan_max())
         shape: (1, 1)
         ┌─────┐
@@ -3027,7 +3027,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0, float("nan")]})
+        >>> df = pl.DataFrame({"a": [0.0, float("nan")]})
         >>> df.select(pl.col("a").nan_min())
         shape: (1, 1)
         ┌─────┐

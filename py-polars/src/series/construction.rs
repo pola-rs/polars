@@ -98,7 +98,7 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_opt_bool(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
+    fn new_opt_bool(name: &str, values: &Bound<PyAny>, _strict: bool) -> PyResult<Self> {
         let len = values.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
@@ -107,25 +107,18 @@ impl PySeries {
             if value.is_none() {
                 builder.append_null()
             } else {
-                match value.extract::<bool>() {
-                    Ok(v) => builder.append_value(v),
-                    Err(e) => {
-                        if strict {
-                            return Err(e);
-                        }
-                        builder.append_null()
-                    },
-                }
+                let v = value.extract::<bool>()?;
+                builder.append_value(v)
             }
         }
-        let ca = builder.finish();
 
+        let ca = builder.finish();
         let s = ca.into_series();
         Ok(s.into())
     }
 }
 
-fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, strict: bool) -> PyResult<PySeries>
+fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, _strict: bool) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -139,19 +132,12 @@ where
         if value.is_none() {
             builder.append_null()
         } else {
-            match value.extract::<T::Native>() {
-                Ok(v) => builder.append_value(v),
-                Err(e) => {
-                    if strict {
-                        return Err(e);
-                    }
-                    builder.append_null()
-                },
-            }
+            let v = value.extract::<T::Native>()?;
+            builder.append_value(v)
         }
     }
-    let ca = builder.finish();
 
+    let ca = builder.finish();
     let s = ca.into_series();
     Ok(s.into())
 }
@@ -243,9 +229,11 @@ impl PySeries {
 
         for res in values.iter()? {
             let value = res?;
-            match value.extract::<Cow<str>>() {
-                Ok(v) => builder.append_value(v),
-                Err(_) => builder.append_null(),
+            if value.is_none() {
+                builder.append_null()
+            } else {
+                let v = value.extract::<Cow<str>>()?;
+                builder.append_value(v)
             }
         }
 
@@ -261,9 +249,11 @@ impl PySeries {
 
         for res in values.iter()? {
             let value = res?;
-            match value.extract::<&[u8]>() {
-                Ok(v) => builder.append_value(v),
-                Err(_) => builder.append_null(),
+            if value.is_none() {
+                builder.append_null()
+            } else {
+                let v = value.extract::<&[u8]>()?;
+                builder.append_value(v)
             }
         }
 
@@ -274,9 +264,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_decimal(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
-        let dtype = DataType::Decimal(None, None);
-        Self::new_from_any_values_and_dtype(name, values, Wrap(dtype), strict)
+        Self::new_from_any_values(name, values, strict)
     }
 
     #[staticmethod]

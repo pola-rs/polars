@@ -15,7 +15,7 @@ df = pl.DataFrame(
             datetime(2025, 12, 4),
             datetime(2025, 12, 5),
         ],
-        "d": [1, 2.0, float("nan"), -42, None],
+        "d": [1.0, 2.0, float("nan"), -42.0, None],
     }
 )
 # --8<-- [end:setup]

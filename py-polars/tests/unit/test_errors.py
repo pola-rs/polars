@@ -78,9 +78,7 @@ def test_error_on_invalid_series_init() -> None:
         ):
             pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
-    with pytest.raises(
-        TypeError, match="'float' object cannot be interpreted as an integer"
-    ):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.Series([1.5, 2.0, 3.75], dtype=pl.Int32)
 
 

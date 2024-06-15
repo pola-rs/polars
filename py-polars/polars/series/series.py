@@ -1958,7 +1958,7 @@ class Series:
         >>> s.nan_max()
         4
 
-        >>> s = pl.Series("a", [1, float("nan"), 4])
+        >>> s = pl.Series("a", [1.0, float("nan"), 4.0])
         >>> s.nan_max()
         nan
         """
@@ -1977,7 +1977,7 @@ class Series:
         >>> s.nan_min()
         1
 
-        >>> s = pl.Series("a", [1, float("nan"), 4])
+        >>> s = pl.Series("a", [1.0, float("nan"), 4.0])
         >>> s.nan_min()
         nan
         """
@@ -4730,7 +4730,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3, float("nan")])
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, float("nan")])
         >>> s.fill_nan(0)
         shape: (4,)
         Series: 'a' [f64]

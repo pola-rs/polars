@@ -496,12 +496,12 @@ def test_horizontal_mean_single_column(
     out_dtype: PolarsDataType,
 ) -> None:
     out = (
-        pl.LazyFrame({"a": pl.Series([1, 0], dtype=in_dtype)})
+        pl.LazyFrame({"a": pl.Series([1, 0]).cast(in_dtype)})
         .select(pl.mean_horizontal(pl.all()))
         .collect()
     )
 
-    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1.0, 0.0], dtype=out_dtype)}))
+    assert_frame_equal(out, pl.DataFrame({"a": pl.Series([1.0, 0.0]).cast(out_dtype)}))
 
 
 def test_horizontal_mean_in_group_by_15115() -> None:

@@ -60,8 +60,17 @@ impl Series {
         let dtype = if strict {
             get_first_non_null_dtype(values)
         } else {
+            // Currently does not work correctly for Decimal because equality is not implemented.
             any_values_to_supertype(values)?
         };
+
+        // TODO: Remove this when Decimal data type equality is implemented.
+        #[cfg(feature = "dtype-decimal")]
+        if !strict && dtype.is_decimal() {
+            let dtype = DataType::Decimal(None, None);
+            return Self::from_any_values_and_dtype(name, values, &dtype, strict);
+        }
+
         Self::from_any_values_and_dtype(name, values, &dtype, strict)
     }
 

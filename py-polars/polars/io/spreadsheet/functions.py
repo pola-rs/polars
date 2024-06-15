@@ -777,7 +777,7 @@ def _read_spreadsheet_openpyxl(
                 # the non-strings will become null, so we handle the cast here
                 values = [str(v) if (v is not None) else v for v in values]
 
-            s = pl.Series(name, values, dtype=dtype)
+            s = pl.Series(name, values, dtype=dtype, strict=False)
             series_data.append(s)
 
     df = pl.DataFrame(
