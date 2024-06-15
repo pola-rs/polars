@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import io
 import json
+import typing
 from collections import OrderedDict
 from io import BytesIO
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -287,3 +292,19 @@ def test_ndjson_null_inference_13183() -> None:
         "start_time": [0.795, 1.6239999999999999, 2.184, None],
         "end_time": [1.495, 2.0540000000000003, 2.645, None],
     }
+
+
+@pytest.mark.write_disk()
+@typing.no_type_check
+def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
+    # this shouldn't be passed, but still we test if we can handle it gracefully
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": ["a", "b", "c"],
+        }
+    )
+    file_path = tmp_path / "test.ndjson"
+    df.write_ndjson(file_path)
+    with open(file_path) as f:  # noqa: PTH123
+        assert_frame_equal(pl.read_ndjson(f), df)

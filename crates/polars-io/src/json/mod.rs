@@ -250,8 +250,8 @@ where
     /// Because JSON values specify their types (number, string, etc), no upcasting or conversion is performed between
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
-    fn finish(self) -> PolarsResult<DataFrame> {
-        let rb: ReaderBytes = (&self.reader).into();
+    fn finish(mut self) -> PolarsResult<DataFrame> {
+        let rb: ReaderBytes = (&mut self.reader).into();
 
         let out = match self.json_format {
             JsonFormat::Json => {
