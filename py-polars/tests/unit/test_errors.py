@@ -676,7 +676,7 @@ def test_err_invalid_comparison() -> None:
 
     with pytest.raises(
         pl.InvalidOperationError,
-        match="could apply comparison on series of dtype 'object; operand names: 'a', 'b'",
+        match="could not apply comparison on series of dtype 'object; operand names: 'a', 'b'",
     ):
         _ = pl.Series("a", [object()]) == pl.Series("b", [object])
 
