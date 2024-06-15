@@ -237,6 +237,6 @@ def test_order_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match="negative ordinals values are invalid for ORDER BY; found -1",
+        match="negative ordinal values are invalid for ORDER BY; found -1",
     ):
         df.sql("SELECT * FROM self ORDER BY -1")

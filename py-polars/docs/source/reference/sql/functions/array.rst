@@ -7,6 +7,8 @@ Array
 
    * - Function
      - Description
+   * - :ref:`ARRAY_AGG <array_agg>`
+     - Aggregate a column/expression values as an array.
    * - :ref:`ARRAY_CONTAINS <array_contains>`
      - Returns true if the array contains the value.
    * - :ref:`ARRAY_GET <array_get>`
@@ -30,6 +32,35 @@ Array
    * - :ref:`UNNEST <unnest>`
      - Unnests (explodes) an array column into multiple rows.
 
+
+.. _array_agg:
+
+ARRAY_AGG
+---------
+Aggregate a column/expression as an array (equivalent to `implode`).
+
+Supports optional inline `ORDER BY` and `LIMIT` clauses.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+    df.sql("""
+      SELECT
+        ARRAY_AGG(foo ORDER BY foo DESC) AS arr_foo,
+        ARRAY_AGG(bar LIMIT 2) AS arr_bar
+      FROM self
+    """)
+    # shape: (1, 2)
+    # ┌───────────┬───────────┐
+    # │ arr_foo   ┆ arr_bar   │
+    # │ ---       ┆ ---       │
+    # │ list[i64] ┆ list[i64] │
+    # ╞═══════════╪═══════════╡
+    # │ [3, 2, 1] ┆ [4, 5]    │
+    # └───────────┴───────────┘
+
 .. _array_contains:
 
 ARRAY_CONTAINS
@@ -42,17 +73,17 @@ Returns true if the array contains the value.
 
     df = pl.DataFrame({"foo": [[1, 2], [4, 3]]})
     df.sql("""
-      SELECT ARRAY_CONTAINS(foo, 2) FROM self
+      SELECT foo, ARRAY_CONTAINS(foo, 2) AS has_two FROM self
     """)
-    # shape: (2, 1)
-    # ┌───────┐
-    # │ foo   │
-    # │ ---   │
-    # │ bool  │
-    # ╞═══════╡
-    # │ true  │
-    # │ false │
-    # └───────┘
+    # shape: (2, 2)
+    # ┌───────────┬─────────┐
+    # │ foo       ┆ has_two │
+    # │ ---       ┆ ---     │
+    # │ list[i64] ┆ bool    │
+    # ╞═══════════╪═════════╡
+    # │ [1, 2]    ┆ true    │
+    # │ [4, 3]    ┆ false   │
+    # └───────────┴─────────┘
 
 .. _array_get:
 
@@ -71,17 +102,21 @@ Returns the value at the given index in the array.
       }
     )
     df.sql("""
-      SELECT ARRAY_GET(foo, 1), ARRAY_GET(bar, 2) FROM self
+      SELECT
+        foo, bar,
+        ARRAY_GET(foo, 1) AS foo_at_1,
+        ARRAY_GET(bar, 2) AS bar_at_2
+      FROM self
     """)
-    # shape: (2, 2)
-    # ┌─────┬──────┐
-    # │ foo ┆ bar  │
-    # │ --- ┆ ---  │
-    # │ i64 ┆ i64  │
-    # ╞═════╪══════╡
-    # │ 2   ┆ null │
-    # │ 3   ┆ 10   │
-    # └─────┴──────┘
+    # shape: (2, 4)
+    # ┌───────────┬────────────┬──────────┬──────────┐
+    # │ foo       ┆ bar        ┆ foo_at_1 ┆ bar_at_2 │
+    # │ ---       ┆ ---        ┆ ---      ┆ ---      │
+    # │ list[i64] ┆ list[i64]  ┆ i64      ┆ i64      │
+    # ╞═══════════╪════════════╪══════════╪══════════╡
+    # │ [1, 2]    ┆ [6, 7]     ┆ 2        ┆ null     │
+    # │ [4, 3, 2] ┆ [8, 9, 10] ┆ 3        ┆ 10       │
+    # └───────────┴────────────┴──────────┴──────────┘
 
 .. _array_length:
 
@@ -95,17 +130,17 @@ Returns the length of the array.
 
     df = pl.DataFrame({"foo": [[1, 2], [4, 3, 2]]})
     df.sql("""
-      SELECT ARRAY_LENGTH(foo) FROM self
+      SELECT foo, ARRAY_LENGTH(foo) AS n_elems FROM self
     """)
-    # shape: (2, 1)
-    # ┌─────┐
-    # │ foo │
-    # │ --- │
-    # │ u32 │
-    # ╞═════╡
-    # │ 2   │
-    # │ 3   │
-    # └─────┘
+    # shape: (2, 2)
+    # ┌───────────┬─────────┐
+    # │ foo       ┆ n_elems │
+    # │ ---       ┆ ---     │
+    # │ list[i64] ┆ u32     │
+    # ╞═══════════╪═════════╡
+    # │ [1, 2]    ┆ 2       │
+    # │ [4, 3, 2] ┆ 3       │
+    # └───────────┴─────────┘
 
 .. _array_lower:
 
@@ -117,24 +152,19 @@ Returns the lower bound (min value) in an array.
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "foo": [[1, 2], [4, 3, -2]],
-        "bar": [[6, 7], [8, 9, 10]]
-      }
-    )
+    df = pl.DataFrame({"foo": [[1, 2], [4, -2, 8]]})
     df.sql("""
-      SELECT ARRAY_LOWER(foo), ARRAY_LOWER(bar) FROM self
+      SELECT foo, ARRAY_LOWER(foo) AS min_elem FROM self
     """)
     # shape: (2, 2)
-    # ┌─────┬─────┐
-    # │ foo ┆ bar │
-    # │ --- ┆ --- │
-    # │ i64 ┆ i64 │
-    # ╞═════╪═════╡
-    # │ 1   ┆ 6   │
-    # │ -2  ┆ 8   │
-    # └─────┴─────┘
+    # ┌────────────┬──────────┐
+    # │ foo        ┆ min_elem │
+    # │ ---        ┆ ---      │
+    # │ list[i64]  ┆ i64      │
+    # ╞════════════╪══════════╡
+    # │ [1, 2]     ┆ 1        │
+    # │ [4, -2, 8] ┆ -2       │
+    # └────────────┴──────────┘
 
 .. _array_mean:
 
@@ -146,28 +176,19 @@ Returns the mean of all values in an array.
 
 .. code-block:: python
     
-    df = pl.DataFrame(
-      {
-        "foo": [[1, 2], [4, 3, -1]],
-        "bar": [[6, 7], [8, 9, 10]]
-      }
-    )
+    df = pl.DataFrame({"foo": [[1, 2], [4, 3, -1]]})
     df.sql("""
-      SELECT
-        ARRAY_MEAN(foo) AS foo_mean,
-        ARRAY_MEAN(bar) AS bar_mean
-      FROM self
+      SELECT foo, ARRAY_MEAN(foo) AS foo_mean FROM self
     """)
-
     # shape: (2, 2)
-    # ┌──────────┬──────────┐
-    # │ foo_mean ┆ bar_mean │
-    # │ ---      ┆ ---      │
-    # │ f64      ┆ f64      │
-    # ╞══════════╪══════════╡
-    # │ 1.5      ┆ 6.5      │
-    # │ 2.0      ┆ 9.0      │
-    # └──────────┴──────────┘
+    # ┌────────────┬──────────┐
+    # │ foo        ┆ foo_mean │
+    # │ ---        ┆ ---      │
+    # │ list[i64]  ┆ f64      │
+    # ╞════════════╪══════════╡
+    # │ [1, 2]     ┆ 1.5      │
+    # │ [4, 3, -1] ┆ 2.0      │
+    # └────────────┴──────────┘
 
 .. _array_reverse:
 
@@ -187,20 +208,20 @@ Returns the array with the elements in reverse order.
     )
     df.sql("""
       SELECT
+        foo,
         ARRAY_REVERSE(foo) AS oof,
         ARRAY_REVERSE(bar) AS rab
       FROM self
     """)
-
-    # shape: (2, 2)
-    # ┌───────────┬────────────┐
-    # │ oof       ┆ rab        │
-    # │ ---       ┆ ---        │
-    # │ list[i64] ┆ list[i64]  │
-    # ╞═══════════╪════════════╡
-    # │ [2, 1]    ┆ [7, 6]     │
-    # │ [2, 3, 4] ┆ [10, 9, 8] │
-    # └───────────┴────────────┘
+    # shape: (2, 3)
+    # ┌───────────┬───────────┬────────────┐
+    # │ foo       ┆ oof       ┆ rab        │
+    # │ ---       ┆ ---       ┆ ---        │
+    # │ list[i64] ┆ list[i64] ┆ list[i64]  │
+    # ╞═══════════╪═══════════╪════════════╡
+    # │ [1, 2]    ┆ [2, 1]    ┆ [7, 6]     │
+    # │ [4, 3, 2] ┆ [2, 3, 4] ┆ [10, 9, 8] │
+    # └───────────┴───────────┴────────────┘
 
 .. _array_sum:
 
@@ -212,28 +233,22 @@ Returns the sum of all values in an array.
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "foo": [[1, -2], [-4, 3, -2]],
-        "bar": [[-6, 7], [8, -9, 10]]
-      }
-    )
+    df = pl.DataFrame({"foo": [[1, -2], [10, 3, -2]]})
     df.sql("""
       SELECT
-        ARRAY_SUM(foo) AS foo_sum,
-        ARRAY_SUM(bar) AS bar_sum
+        foo,
+        ARRAY_SUM(foo) AS foo_sum
       FROM self
     """)
-
     # shape: (2, 2)
-    # ┌─────────┬─────────┐
-    # │ foo_sum ┆ bar_sum │
-    # │ ---     ┆ ---     │
-    # │ i64     ┆ i64     │
-    # ╞═════════╪═════════╡
-    # │ -1      ┆ 1       │
-    # │ -3      ┆ 9       │
-    # └─────────┴─────────┘
+    # ┌─────────────┬─────────┐
+    # │ foo         ┆ foo_sum │
+    # │ ---         ┆ ---     │
+    # │ list[i64]   ┆ i64     │
+    # ╞═════════════╪═════════╡
+    # │ [1, -2]     ┆ -1      │
+    # │ [10, 3, -2] ┆ 11      │
+    # └─────────────┴─────────┘
 
 .. _array_to_string:
 
@@ -245,19 +260,27 @@ Takes all elements of the array and joins them into one string.
 
 .. code-block:: python
 
-    df = pl.DataFrame({"foo": [["a", "b"], ["c", "d", "e"]]})
+    df = pl.DataFrame(
+        {
+            "foo": [["a", "b"], ["c", "d", "e"]],
+            "bar": [[8, None, 8], [3, 2, 1, 0]],
+        }
+    )
     df.sql("""
-      SELECT ARRAY_TO_STRING(foo,',') AS foo_str FROM self
+      SELECT
+        ARRAY_TO_STRING(foo,':') AS s_foo,
+        ARRAY_TO_STRING(bar,':') AS s_bar
+      FROM self
     """)
-    # shape: (2, 1)
-    # ┌─────────┐
-    # │ foo_str │
-    # │ ---     │
-    # │ str     │
-    # ╞═════════╡
-    # │ a,b     │
-    # │ c,d,e   │
-    # └─────────┘
+    # shape: (2, 2)
+    # ┌───────┬─────────┐
+    # │ s_foo ┆ s_bar   │
+    # │ ---   ┆ ---     │
+    # │ str   ┆ str     │
+    # ╞═══════╪═════════╡
+    # │ a:b   ┆ 8:8     │
+    # │ c:d:e ┆ 3:2:1:0 │
+    # └───────┴─────────┘
 
 .. _array_unique:
 
@@ -293,28 +316,19 @@ Returns the upper bound (max value) in an array.
 
 .. code-block:: python
 
-    df = pl.DataFrame(
-      {
-        "foo": [[1, 2], [4, 3, -2]],
-        "bar": [[6, 7], [8, 9, 10]]
-      }
-    )
+    df = pl.DataFrame({"foo": [[5, 0], [4, 8, -2]]})
     df.sql("""
-      SELECT
-        ARRAY_UPPER(foo) AS foo_max,
-        ARRAY_UPPER(bar) AS bar_max
-      FROM self
+      SELECT foo, ARRAY_UPPER(foo) AS max_elem FROM self
     """)
-
     # shape: (2, 2)
-    # ┌─────────┬─────────┐
-    # │ foo_max ┆ bar_max │
-    # │ ---     ┆ ---     │
-    # │ i64     ┆ i64     │
-    # ╞═════════╪═════════╡
-    # │ 2       ┆ 7       │
-    # │ 4       ┆ 10      │
-    # └─────────┴─────────┘
+    # ┌────────────┬──────────┐
+    # │ foo        ┆ max_elem │
+    # │ ---        ┆ ---      │
+    # │ list[i64]  ┆ i64      │
+    # ╞════════════╪══════════╡
+    # │ [5, 0]     ┆ 5        │
+    # │ [4, 8, -2] ┆ 8        │
+    # └────────────┴──────────┘
 
 .. _unnest:
 
@@ -338,7 +352,6 @@ Unnest/explode an array column into multiple rows.
         UNNEST(bar) AS b
       FROM self
     """)
-
     # shape: (5, 2)
     # ┌─────┬─────┐
     # │ f   ┆ b   │

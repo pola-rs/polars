@@ -98,12 +98,15 @@ def test_string_left_right_reverse() -> None:
         "r": ["de", "bc", "a", None],
         "rev": ["edcba", "cba", "a", None],
     }
-    for func, invalid in (("LEFT", "'xyz'"), ("RIGHT", "6.66")):
+    for func, invalid_arg, invalid_err in (
+        ("LEFT", "'xyz'", '"xyz"'),
+        ("RIGHT", "6.66", "(dyn float: 6.66)"),
+    ):
         with pytest.raises(
             SQLSyntaxError,
-            match=f"invalid 'n_chars' for {func}: {invalid}",
+            match=rf"""invalid 'n_chars' for {func} \({invalid_err}\)""",
         ):
-            ctx.execute(f"""SELECT {func}(txt,{invalid}) FROM df""").collect()
+            ctx.execute(f"""SELECT {func}(txt,{invalid_arg}) FROM df""").collect()
 
 
 def test_string_left_negative_expr() -> None:
@@ -349,7 +352,7 @@ def test_string_substr() -> None:
 
         with pytest.raises(
             SQLSyntaxError,
-            match="SUBSTR does not support negative length: -99",
+            match=r"SUBSTR does not support negative length \(-99\)",
         ):
             ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
 

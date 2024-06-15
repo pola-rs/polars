@@ -223,7 +223,7 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"negative ordinals values are invalid for GROUP BY; found -99",
+        match=r"negative ordinal values are invalid for GROUP BY; found -99",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
 

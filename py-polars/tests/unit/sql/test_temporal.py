@@ -272,7 +272,7 @@ def test_timestamp_time_unit_errors() -> None:
         for prec in (0, 15):
             with pytest.raises(
                 SQLSyntaxError,
-                match=f"invalid temporal type precision; expected 1-9, found {prec}",
+                match=rf"invalid temporal type precision \(expected 1-9, found {prec}\)",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")
 
