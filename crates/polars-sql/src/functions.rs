@@ -15,7 +15,7 @@ use sqlparser::ast::{
     OrderByExpr, Value as SQLValue, WindowSpec, WindowType,
 };
 
-use crate::sql_expr::{parse_extract_date_part, parse_sql_expr};
+use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
@@ -1016,7 +1016,7 @@ impl SQLFunctionVisitor<'_> {
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
-                // note: 1-indexed, not 0-indexed, and returns zero if match not found
+                // // note: SQL is 1-indexed; returns zero if no match found
                 self.visit_binary(|expr, substring| {
                     (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32))
                 })
@@ -1092,7 +1092,7 @@ impl SQLFunctionVisitor<'_> {
             Substring => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    // note that SQL is 1-indexed, not 0-indexed, hence the need for adjustments
+                    // note: SQL is 1-indexed, hence the need for adjustments
                     2 => self.try_visit_binary(|e, start| {
                         Ok(match start {
                             Expr::Literal(Null) => lit(Null),
@@ -1148,7 +1148,13 @@ impl SQLFunctionVisitor<'_> {
             // ----
             ArrayAgg => self.visit_arr_agg(),
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
-            ArrayGet => self.visit_binary(|e, i| e.list().get(i, true)),
+            ArrayGet => {
+                // note: SQL is 1-indexed, not 0-indexed
+                self.visit_binary(|e, idx: Expr| {
+                    let idx = adjust_one_indexed_param(idx, true);
+                    e.list().get(idx, true)
+                })
+            },
             ArrayLength => self.visit_unary(|e| e.list().len()),
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),

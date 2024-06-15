@@ -17,7 +17,7 @@ use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat, CastKind,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    Interval, JoinConstraint, ObjectName, Query as Subquery, SelectItem, TimezoneInfo,
+    Interval, JoinConstraint, ObjectName, Query as Subquery, SelectItem, Subscript, TimezoneInfo,
     TrimWhereField, UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
@@ -295,7 +295,7 @@ impl SQLExprVisitor<'_> {
             } => self.visit_like(*negated, expr, pattern, escape_char, true),
             SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::Position { expr, r#in } => Ok(
-                // note: SQL is 1-indexed, not 0-indexed
+                // note: SQL is 1-indexed
                 (self
                     .visit_expr(r#in)?
                     .str()
@@ -316,6 +316,7 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
+            SQLExpr::Subscript { expr, subscript } => self.visit_subscript(expr, subscript),
             SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
             SQLExpr::Trim {
                 expr,
@@ -441,6 +442,19 @@ impl SQLExprVisitor<'_> {
             let matches = expr.str().contains(lit(rx), true);
             Ok(if negated { matches.not() } else { matches })
         }
+    }
+
+    fn visit_subscript(&mut self, expr: &SQLExpr, subscript: &Subscript) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        Ok(match subscript {
+            Subscript::Index { index } => {
+                let idx = adjust_one_indexed_param(self.visit_expr(index)?, true);
+                expr.list().get(idx, true)
+            },
+            Subscript::Slice { .. } => {
+                polars_bail!(SQLSyntax: "array slice syntax is not currently supported")
+            },
+        })
     }
 
     /// Handle implicit temporal string comparisons.
@@ -1188,6 +1202,32 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
             polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
         },
     })
+}
+
+/// Allow an expression that represents a 1-indexed parameter to
+/// be adjusted from 1-indexed (SQL) to 0-indexed (Rust/Polars)
+pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
+    match idx {
+        Expr::Literal(Null) => lit(Null),
+        Expr::Literal(LiteralValue::Int(0)) => {
+            if null_if_zero {
+                lit(Null)
+            } else {
+                idx
+            }
+        },
+        Expr::Literal(LiteralValue::Int(n)) if n < 0 => idx,
+        Expr::Literal(LiteralValue::Int(n)) => lit(n - 1),
+        _ => when(idx.clone().gt(lit(0)))
+            .then(idx.clone() - lit(1))
+            .otherwise(if null_if_zero {
+                when(idx.clone().eq(lit(0)))
+                    .then(lit(Null))
+                    .otherwise(idx.clone())
+            } else {
+                idx.clone()
+            }),
+    }
 }
 
 fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
