@@ -190,10 +190,10 @@ impl PyDataFrame {
     pub fn deserialize(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
         use crate::file::read_if_bytesio;
         py_f = read_if_bytesio(py_f);
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
-            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
+            let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
             let bytes = mmap_read.deref();
             match serde_json::from_slice::<DataFrame>(bytes) {
                 Ok(df) => Ok(df.into()),

@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::polars_warn;
+use polars_error::{polars_err, polars_warn};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
@@ -104,13 +104,22 @@ impl Read for PyFileLikeObject {
                 .call_method_bound(py, "read", (buf.len(),), None)
                 .map_err(pyerr_to_io_err)?;
 
-            let bytes: &Bound<'_, PyBytes> = bytes
-                .downcast_bound(py)
-                .expect("Expecting to be able to downcast into bytes from read result.");
+            let opt_bytes = bytes.downcast_bound::<PyBytes>(py);
 
-            buf.write_all(bytes.as_bytes())?;
+            if let Ok(bytes) = opt_bytes {
+                buf.write_all(bytes.as_bytes())?;
 
-            bytes.len().map_err(pyerr_to_io_err)
+                bytes.len().map_err(pyerr_to_io_err)
+            } else if let Ok(s) = bytes.downcast_bound::<PyString>(py) {
+                let s = s.to_cow().map_err(pyerr_to_io_err)?;
+                buf.write_all(s.as_bytes())?;
+                Ok(s.len())
+            } else {
+                Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    polars_err!(InvalidOperation: "could not read from input"),
+                ))
+            }
         })
     }
 }
