@@ -57,17 +57,14 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     return s3_base
 
 
+@pytest.mark.skip(
+    reason="Causes intermittent failures in CI. See: "
+    "https://github.com/pola-rs/polars/issues/16910"
+)
 @pytest.mark.parametrize(
     ("function", "extension"),
     [
-        pytest.param(
-            pl.read_csv,
-            "csv",
-            marks=pytest.mark.skip(
-                reason="Causes intermittent failures in CI. See: "
-                "https://github.com/pola-rs/polars/issues/16910"
-            ),
-        ),
+        (pl.read_csv, "csv"),
         (pl.read_ipc, "ipc"),
     ],
 )
