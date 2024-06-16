@@ -17,6 +17,9 @@ slotmap::new_key_type! {
 }
 
 /// A node in the physical plan.
+/// A physical plan is created when the `IR` is
+/// translated to actual operation that can run on
+/// the streaming engine.
 #[derive(Clone, Debug)]
 pub enum PhysNode {
     InMemorySource {

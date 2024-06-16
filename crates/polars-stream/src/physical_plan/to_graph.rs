@@ -13,7 +13,7 @@ struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &'a Arena<AExpr>,
     graph: Graph,
-    phys_to_g: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
 }
 
@@ -26,7 +26,7 @@ pub fn physical_plan_to_graph(
         phys_sm,
         expr_arena,
         graph: Graph::with_capacity(phys_sm.len()),
-        phys_to_g: SecondaryMap::with_capacity(phys_sm.len()),
+        phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
     };
 
@@ -34,7 +34,7 @@ pub fn physical_plan_to_graph(
         to_graph_rec(key, &mut ctx)?;
     }
 
-    Ok((ctx.graph, ctx.phys_to_g))
+    Ok((ctx.graph, ctx.phys_to_graph))
 }
 
 #[recursive]
@@ -42,7 +42,8 @@ fn to_graph_rec<'a>(
     phys_node_key: PhysNodeKey,
     ctx: &mut GraphConversionContext<'a>,
 ) -> PolarsResult<GraphNodeKey> {
-    if let Some(graph_key) = ctx.phys_to_g.get(phys_node_key) {
+    // This will ensure we create a proper DAG/Graph instead of a tree.
+    if let Some(graph_key) = ctx.phys_to_graph.get(phys_node_key) {
         return Ok(*graph_key);
     }
 
@@ -87,6 +88,6 @@ fn to_graph_rec<'a>(
         },
     };
 
-    ctx.phys_to_g.insert(phys_node_key, graph_key);
+    ctx.phys_to_graph.insert(phys_node_key, graph_key);
     Ok(graph_key)
 }
