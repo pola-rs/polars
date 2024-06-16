@@ -511,8 +511,8 @@ def test_read_parquet_respects_rechunk_16982(
     # Create a delta lake table with 3 chunks:
     df = pl.DataFrame({"a": [1]})
     df.write_delta(str(tmp_path))
-    df.write_delta(str(tmp_path), mode='append')
-    df.write_delta(str(tmp_path), mode='append')
+    df.write_delta(str(tmp_path), mode="append")
+    df.write_delta(str(tmp_path), mode="append")
 
     rechunk, expected_chunks = rechunk_and_expected_chunks
     result = pl.read_delta(str(tmp_path), rechunk=rechunk)

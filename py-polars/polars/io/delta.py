@@ -147,7 +147,9 @@ def read_delta(
         delta_table_options=delta_table_options,
     )
 
-    return from_arrow(dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options), rechunk=rechunk)  # type: ignore[return-value]
+    return from_arrow(
+        dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options), rechunk=rechunk
+    )  # type: ignore[return-value]
 
 
 def scan_delta(
