@@ -381,6 +381,7 @@ class SQLContext(Generic[FrameType]):
         ...         ("The Shawshank Redemption", 1994, 25_000_000, 28_341_469, 9.3),
         ...     ],
         ...     schema=["title", "release_year", "budget", "gross", "imdb_score"],
+        ...     orient="row",
         ... )
         >>> ctx = pl.SQLContext(films=df)
 

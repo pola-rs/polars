@@ -317,10 +317,10 @@ class DataFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Constructing a DataFrame from a list of lists, row orientation inferred:
+    Constructing a DataFrame from a list of lists, row orientation specified:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df6 = pl.DataFrame(data, schema=["a", "b", "c"])
+    >>> df6 = pl.DataFrame(data, schema=["a", "b", "c"], orient="row")
     >>> df6
     shape: (2, 3)
     ┌─────┬─────┬─────┐
@@ -9250,7 +9250,9 @@ class DataFrame:
         If instead you want to count the number of unique values per-column, you can
         also use expression-level syntax to return a new frame containing that result:
 
-        >>> df = pl.DataFrame([[1, 2, 3], [1, 2, 4]], schema=["a", "b", "c"])
+        >>> df = pl.DataFrame(
+        ...     [[1, 2, 3], [1, 2, 4]], schema=["a", "b", "c"], orient="row"
+        ... )
         >>> df_nunique = df.select(pl.all().n_unique())
 
         In aggregate context there is also an equivalent method for returning the
