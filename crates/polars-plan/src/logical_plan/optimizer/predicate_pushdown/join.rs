@@ -1,4 +1,5 @@
 use super::*;
+use crate::logical_plan::optimizer::join_utils::split_suffix;
 
 // Information concerning individual sides of a join.
 #[derive(PartialEq, Eq)]
@@ -96,6 +97,28 @@ fn all_pred_cols_in_left_on(
     })
 }
 
+// Checks if a predicate refers to columns in both tables
+fn predicate_applies_to_both_tables(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    suffix: &str,
+) -> bool {
+    let mut left_used = false;
+    let mut right_used = false;
+    for name in aexpr_to_leaf_names_iter(predicate, expr_arena) {
+        if schema_left.contains(name.as_ref()) {
+            left_used |= true;
+        } else {
+            right_used |= schema_right.contains(name.as_ref())
+                || name.ends_with(suffix)
+                    && schema_right.contains(split_suffix(name.as_ref(), suffix))
+        }
+    }
+    left_used && right_used
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
     opt: &PredicatePushDown,
@@ -128,6 +151,20 @@ pub(super) fn process_join(
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     for (_, predicate) in acc_predicates {
+        // Cross joins produce a cartesian product, so if a predicate combines columns from both tables, we should not push down.
+        if matches!(options.args.how, JoinType::Cross)
+            && predicate_applies_to_both_tables(
+                predicate.node(),
+                expr_arena,
+                &schema_left,
+                &schema_right,
+                options.args.suffix(),
+            )
+        {
+            local_predicates.push(predicate);
+            continue;
+        }
+
         // check if predicate can pass the joins node
         let block_pushdown_left = has_aexpr(predicate.node(), expr_arena, |ae| {
             should_block_join_specific(
