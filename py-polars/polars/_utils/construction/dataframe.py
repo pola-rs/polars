@@ -537,11 +537,14 @@ def _sequence_of_sequence_to_pydf(
     infer_schema_length: int | None,
 ) -> PyDataFrame:
     if orient is None:
-        orient = _infer_data_orientation(
-            first_element,
-            len_data=len(data),
-            len_schema=len(schema) if schema is not None else None,
-        )
+        if schema is None:
+            orient = "col"
+        else:
+            # Try to infer orientation from schema length and data dimensions
+            is_row_oriented = (len(schema) == len(first_element)) and (
+                len(schema) != len(data)
+            )
+            orient = "row" if is_row_oriented else "col"
 
     if orient == "row":
         column_names, schema_overrides = _unpack_schema(
@@ -597,31 +600,6 @@ def _sequence_of_sequence_to_pydf(
     else:
         msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
         raise ValueError(msg)
-
-
-def _infer_data_orientation(
-    first_element: Sequence[Any] | np.ndarray[Any, Any],
-    len_data: int,
-    len_schema: int | None = None,
-) -> Orientation:
-    # Check if element types in the first 'row' resolve to a single dtype.
-    # Note: limit type-checking to smaller data; larger values are much more
-    # likely to indicate col orientation anyway, so minimize extra checks.
-    if len(first_element) <= 1000 and (len_schema is None or len_schema == len_data):
-        row_types = {type(value) for value in first_element if value is not None}
-        if int in row_types and float in row_types:
-            row_types.discard(int)
-        return "row" if len(row_types) > 1 else "col"
-
-    elif (
-        len_schema is not None
-        and len_schema == len(first_element)
-        and len_schema != len_data
-    ):
-        return "row"
-
-    else:
-        return "col"
 
 
 def _sequence_of_series_to_pydf(
