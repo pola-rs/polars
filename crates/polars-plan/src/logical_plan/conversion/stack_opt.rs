@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 
 use super::*;
 
-/// Applies expression simplification and type coercion during converison to IR.
+/// Applies expression simplification and type coercion during conversion to IR.
 pub(super) struct ConversionOptimizer {
     scratch: Vec<Node>,
     simplify: Option<SimplifyExprRule>,
