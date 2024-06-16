@@ -739,3 +739,11 @@ def test_arithmetic_duration_div_multiply() -> None:
             timedelta(microseconds=7500),
         ],
     }
+
+
+def test_invalid_shapes_err() -> None:
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"cannot do arithmetic operation on series of different lengths: got 2 and 3",
+    ):
+        pl.Series([1, 2]) + pl.Series([1, 2, 3])

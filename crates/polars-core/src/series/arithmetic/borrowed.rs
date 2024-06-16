@@ -524,8 +524,22 @@ impl Rem for &Series {
     }
 }
 
+fn check_lengths(a: &Series, b: &Series) -> PolarsResult<()> {
+    match (a.len(), b.len()) {
+        // broadcasting
+        (1, _) | (_, 1) => Ok(()),
+        // equal
+        (a, b) if a == b => Ok(()),
+        // unequal
+        (a, b) => {
+            polars_bail!(InvalidOperation: "cannot do arithmetic operation on series of different lengths: got {} and {}", a, b)
+        },
+    }
+}
+
 impl Series {
     pub fn try_sub(&self, rhs: &Self) -> PolarsResult<Self> {
+        check_lengths(self, rhs)?;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
@@ -539,6 +553,7 @@ impl Series {
     }
 
     pub fn try_add(&self, rhs: &Self) -> PolarsResult<Self> {
+        check_lengths(self, rhs)?;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
@@ -552,6 +567,7 @@ impl Series {
     }
 
     pub fn try_mul(&self, rhs: &Self) -> PolarsResult<Self> {
+        check_lengths(self, rhs)?;
         use DataType::*;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
@@ -575,6 +591,7 @@ impl Series {
     }
 
     pub fn try_div(&self, rhs: &Self) -> PolarsResult<Self> {
+        check_lengths(self, rhs)?;
         use DataType::*;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
@@ -599,6 +616,7 @@ impl Series {
     }
 
     pub fn try_rem(&self, rhs: &Self) -> PolarsResult<Self> {
+        check_lengths(self, rhs)?;
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
