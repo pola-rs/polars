@@ -501,3 +501,20 @@ def test_categorical_becomes_string(tmp_path: Path) -> None:
     df.write_delta(tmp_path)
     df2 = pl.read_delta(str(tmp_path))
     assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
+def test_read_parquet_respects_rechunk_16982(
+    use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int], tmp_path: Path
+) -> None:
+    # Create a delta lake table with 3 chunks:
+    df = pl.DataFrame({"a": [1]})
+    df.write_delta(str(tmp_path))
+    df.write_delta(str(tmp_path), mode='append')
+    df.write_delta(str(tmp_path), mode='append')
+
+    rechunk, expected_chunks = rechunk_and_expected_chunks
+    result = pl.read_parquet(str(tmp_path), use_pyarrow=use_pyarrow, rechunk=rechunk)
+    assert result.n_chunks() == expected_chunks
