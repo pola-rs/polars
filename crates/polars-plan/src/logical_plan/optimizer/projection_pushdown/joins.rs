@@ -19,10 +19,15 @@ fn add_keys_to_accumulated_state(
     // the JOIN executor
     if add_local {
         // take the left most name as output name
-        let name = aexpr_to_leaf_name(expr, expr_arena);
-        let node = expr_arena.add(AExpr::Column(name.clone()));
-        local_projection.push(ColumnNode(node));
-        Some(name)
+        let mut iter = aexpr_to_leaf_names_iter(expr, expr_arena);
+        if let Some(name) = iter.next() {
+            drop(iter);
+            let node = expr_arena.add(AExpr::Column(name.clone()));
+            local_projection.push(ColumnNode(node));
+            Some(name)
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -250,15 +255,14 @@ pub(super) fn process_join(
                 continue;
             }
 
-            add_keys_to_accumulated_state(
+            let _ = add_keys_to_accumulated_state(
                 e.node(),
                 &mut pushdown_left,
                 &mut local_projection,
                 &mut names_left,
                 expr_arena,
                 true,
-            )
-            .unwrap();
+            );
         }
 
         // For left and innner joins we can set `coalesce` to `true` if the rhs key columns are not projected.
