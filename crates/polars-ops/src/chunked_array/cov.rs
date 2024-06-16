@@ -197,9 +197,7 @@ where
 
     let denom = sample_std_x * sample_std_y;
     let result = sample_cov / denom;
-    if denom.is_zero() {
-        f64::NAN
-    } else if min_periods > n as usize {
+    if (denom.is_zero() || min_periods > n as usize) {
         f64::NAN
     } else {
         result
