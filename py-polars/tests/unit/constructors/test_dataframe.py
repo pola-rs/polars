@@ -105,10 +105,7 @@ def test_df_init_strict() -> None:
 
     df = pl.DataFrame(data, schema=schema, strict=False)
 
-    # TODO: This should result in a Float Series without nulls
-    # https://github.com/pola-rs/polars/issues/14427
-    assert df["a"].to_list() == [1, 2, None]
-
+    assert df["a"].to_list() == [1, 2, 3]
     assert df["a"].dtype == pl.Int8
 
 

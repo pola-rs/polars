@@ -31,6 +31,7 @@ def test_pivot() -> None:
             ("C", None, None, None, None, 2),
         ],
         schema=["foo", "k", "l", "m", "n", "o"],
+        orient="row",
     )
     assert_frame_equal(result, expected)
 

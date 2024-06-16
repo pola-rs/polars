@@ -312,7 +312,6 @@ impl DslBuilder {
             df: Arc::new(df),
             schema,
             output_schema: None,
-            projection: None,
             filter: None,
         }
         .into()

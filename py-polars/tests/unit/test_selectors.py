@@ -184,6 +184,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     ).columns
     assert selected_cols == ["fgg"]
 
+    for missing_column in ("missing", "???"):
+        assert df.select(cs.by_name(missing_column, require_all=False)).columns == []
+
     # check "by_name & col"
     for selector_expr, expected in (
         (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),

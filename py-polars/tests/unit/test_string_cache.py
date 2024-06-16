@@ -180,6 +180,7 @@ def test_string_cache_eager_lazy() -> None:
         ):
             df3 = pl.DataFrame(  # type: ignore[arg-type]
                 data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
+                orient="row",
                 **params,
             )
             assert_frame_equal(df1, df3)

@@ -350,9 +350,9 @@ fn create_physical_plan_impl(
         },
         DataFrameScan {
             df,
-            projection,
             filter: predicate,
             schema,
+            output_schema,
             ..
         } => {
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
@@ -369,8 +369,8 @@ fn create_physical_plan_impl(
                 .transpose()?;
             Ok(Box::new(executors::DataFrameExec {
                 df,
-                projection,
-                selection,
+                projection: output_schema.map(|s| s.iter_names().cloned().collect()),
+                filter: selection,
                 predicate_has_windows: state.has_windows,
             }))
         },

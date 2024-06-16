@@ -73,7 +73,7 @@ def test_int_range_schema() -> None:
     result = pl.LazyFrame().select(int=pl.int_range(-3, 3))
 
     expected_schema = {"int": pl.Int64}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
@@ -139,7 +139,7 @@ def test_int_ranges_schema_dtype_default() -> None:
     result = lf.select(pl.int_ranges("start", "end"))
 
     expected_schema = {"start": pl.List(pl.Int64)}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 
@@ -149,7 +149,7 @@ def test_int_ranges_schema_dtype_arg() -> None:
     result = lf.select(pl.int_ranges("start", "end", dtype=pl.UInt16))
 
     expected_schema = {"start": pl.List(pl.UInt16)}
-    assert result.schema == expected_schema
+    assert result.collect_schema() == expected_schema
     assert result.collect().schema == expected_schema
 
 

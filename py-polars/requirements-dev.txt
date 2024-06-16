@@ -53,6 +53,7 @@ matplotlib
 # Styling
 great-tables>=0.8.0; python_version >= '3.9'
 # Other
+blake3
 gevent
 nest_asyncio
 

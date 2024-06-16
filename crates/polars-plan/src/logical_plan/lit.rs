@@ -45,6 +45,9 @@ pub enum LiteralValue {
     Float32(f32),
     /// A 64-bit floating point number.
     Float64(f64),
+    /// A 128-bit decimal number with a maximum scale of 38.
+    #[cfg(feature = "dtype-decimal")]
+    Decimal(i128, usize),
     Range {
         low: i64,
         high: i64,
@@ -121,6 +124,8 @@ impl LiteralValue {
             Int64(v) => AnyValue::Int64(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, scale) => AnyValue::Decimal(*v, *scale),
             String(v) => AnyValue::String(v),
             #[cfg(feature = "dtype-duration")]
             Duration(v, tu) => AnyValue::Duration(*v, *tu),
@@ -192,6 +197,8 @@ impl LiteralValue {
             LiteralValue::Int64(_) => DataType::Int64,
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
+            #[cfg(feature = "dtype-decimal")]
+            LiteralValue::Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             LiteralValue::String(_) => DataType::String,
             LiteralValue::Binary(_) => DataType::Binary,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
@@ -276,6 +283,8 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Int64(i) => Ok(Self::Int64(i)),
             AnyValue::Float32(f) => Ok(Self::Float32(f)),
             AnyValue::Float64(f) => Ok(Self::Float64(f)),
+            #[cfg(feature = "dtype-decimal")]
+            AnyValue::Decimal(v, scale) => Ok(Self::Decimal(v, scale)),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
             #[cfg(feature = "dtype-datetime")]

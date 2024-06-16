@@ -1,3 +1,4 @@
+#[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
 
 use super::*;
@@ -30,33 +31,6 @@ fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Opera
 }
 
 #[allow(unused_variables)]
-fn is_datetime_arithmetic(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
-    matches!(op, Operator::Minus | Operator::Plus)
-        && matches_any_order!(
-            &type_left,
-            &type_right,
-            DataType::Datetime(_, _) | DataType::Date,
-            DataType::Duration(_)
-        )
-}
-
-#[cfg(feature = "dtype-struct")]
-fn is_struct_numeric_arithmetic(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
-    {
-        op.is_arithmetic() && (matches!(type_right, DataType::Struct(_)) && type_left.is_numeric())
-            || (matches!(type_left, DataType::Struct(_)) && type_right.is_numeric())
-    }
-}
-
-fn is_list_arithmetic(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
-    op.is_arithmetic()
-        && matches!(
-            (&type_left, &type_right),
-            (DataType::List(_), _) | (_, DataType::List(_))
-        )
-}
-
-#[allow(unused_variables)]
 fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
     #[cfg(feature = "dtype-categorical")]
     {
@@ -71,16 +45,6 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
     {
         false
     }
-}
-
-fn str_numeric_arithmetic(type_left: &DataType, type_right: &DataType) -> PolarsResult<()> {
-    let mismatch = type_left.is_numeric() && matches!(type_right, DataType::String)
-        || type_right.is_numeric() && matches!(type_left, DataType::String);
-    polars_ensure!(
-        !mismatch,
-        ComputeError: "arithmetic on string and numeric not allowed, try an explicit cast first",
-    );
-    Ok(())
 }
 
 fn process_list_arithmetic(
@@ -292,30 +256,33 @@ pub(super) fn process_binary(
         _ => {},
     }
 
-    // ensure we don't enter this branch for common numeric arithmetic.
     if op.is_arithmetic() {
-        if !(type_left.is_numeric() && type_right.is_numeric()) {
-            str_numeric_arithmetic(&type_left, &type_right)?;
-
-            if is_datetime_arithmetic(&type_left, &type_right, op) {
-                return Ok(None);
-            }
-            // Special path for list arithmetic
-            if is_list_arithmetic(&type_left, &type_right, op) {
+        match (&type_left, &type_right) {
+            (Duration(_), Duration(_)) => return Ok(None),
+            (Duration(_), r) if r.is_numeric() => return Ok(None),
+            (String, a) | (a, String) if a.is_numeric() => {
+                polars_bail!(InvalidOperation: "arithmetic on string and numeric not allowed, try an explicit cast first")
+            },
+            (List(_), _) | (_, List(_)) => {
                 return process_list_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
-                );
-            }
+                )
+            },
+            (Datetime(_, _), _)
+            | (_, Datetime(_, _))
+            | (Date, _)
+            | (_, Date)
+            | (Duration(_), _)
+            | (_, Duration(_))
+            | (Time, _)
+            | (_, Time) => return Ok(None),
             #[cfg(feature = "dtype-struct")]
-            {
-                let is_struct_numeric_arithmetic =
-                    is_struct_numeric_arithmetic(&type_left, &type_right, op);
-                if is_struct_numeric_arithmetic {
-                    return process_struct_numeric_arithmetic(
-                        type_left, type_right, node_left, node_right, op, expr_arena,
-                    );
-                }
-            }
+            (Struct(_), a) | (a, Struct(_)) if a.is_numeric() => {
+                return process_struct_numeric_arithmetic(
+                    type_left, type_right, node_left, node_right, op, expr_arena,
+                )
+            },
+            _ => {},
         }
     } else if compares_cat_to_string(&type_left, &type_right, op) {
         return Ok(None);

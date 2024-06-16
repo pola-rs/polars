@@ -190,10 +190,10 @@ impl PyDataFrame {
     pub fn deserialize(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
         use crate::file::read_if_bytesio;
         py_f = read_if_bytesio(py_f);
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
-            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
+            let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
             let bytes = mmap_read.deref();
             match serde_json::from_slice::<DataFrame>(bytes) {
                 Ok(df) => Ok(df.into()),
@@ -472,18 +472,20 @@ impl PyDataFrame {
         JsonWriter::new(file)
             .with_json_format(JsonFormat::Json)
             .finish(&mut self.df)
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
+            .map_err(PyPolarsErr::from)?;
+        Ok(())
     }
 
     #[cfg(feature = "json")]
     pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
-        let r = JsonWriter::new(file)
+        JsonWriter::new(file)
             .with_json_format(JsonFormat::JsonLines)
-            .finish(&mut self.df);
+            .finish(&mut self.df)
+            .map_err(PyPolarsErr::from)?;
 
-        r.map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
+        Ok(())
     }
 
     #[cfg(feature = "ipc")]

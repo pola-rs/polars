@@ -320,14 +320,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::DataFrameScan {
             df,
             schema: _,
-            output_schema: _,
-            projection,
+            output_schema,
             filter: selection,
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
-            projection: projection
-                .as_ref()
-                .map_or_else(|| py.None(), |f| f.to_object(py)),
+            projection: output_schema.as_ref().map_or_else(
+                || py.None(),
+                |s| {
+                    s.iter_names()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .to_object(py)
+                },
+            ),
             selection: selection.as_ref().map(|e| e.into()),
         }
         .into_py(py),

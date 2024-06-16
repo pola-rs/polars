@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import polars as pl
@@ -77,9 +78,7 @@ def test_error_on_invalid_series_init() -> None:
         ):
             pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
-    with pytest.raises(
-        TypeError, match="'float' object cannot be interpreted as an integer"
-    ):
+    with pytest.raises(TypeError, match="unexpected value"):
         pl.Series([1.5, 2.0, 3.75], dtype=pl.Int32)
 
 
@@ -447,7 +446,7 @@ def test_take_negative_index_is_oob() -> None:
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        pl.ComputeError, match=r"arithmetic on string and numeric not allowed"
+        pl.InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
     ):
         df.select(pl.col("s") + 1)
 
@@ -677,6 +676,12 @@ def test_err_invalid_comparison() -> None:
 
     with pytest.raises(
         pl.InvalidOperationError,
-        match="could apply comparison on series of dtype 'object; operand names: 'a', 'b'",
+        match="could not apply comparison on series of dtype 'object; operand names: 'a', 'b'",
     ):
         _ = pl.Series("a", [object()]) == pl.Series("b", [object])
+
+
+def test_no_panic_pandas_nat() -> None:
+    # we don't want to support pd.nat, but don't want to panic.
+    with pytest.raises(Exception):  # noqa: B017
+        pl.DataFrame({"x": [pd.NaT]})

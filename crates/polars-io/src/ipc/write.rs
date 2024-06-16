@@ -8,7 +8,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
-use crate::shared::WriterFactory;
+use crate::shared::{schema_to_arrow_checked, WriterFactory};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -58,9 +58,10 @@ impl<W: Write> IpcWriter<W> {
     }
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        let schema = schema_to_arrow_checked(schema, self.pl_flavor, "ipc")?;
         let mut writer = write::FileWriter::new(
             self.writer,
-            Arc::new(schema.to_arrow(self.pl_flavor)),
+            Arc::new(schema),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
@@ -88,9 +89,10 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
+        let schema = schema_to_arrow_checked(&df.schema(), self.pl_flavor, "ipc")?;
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
-            Arc::new(df.schema().to_arrow(self.pl_flavor)),
+            Arc::new(schema),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),

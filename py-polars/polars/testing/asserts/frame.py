@@ -158,7 +158,7 @@ def _assert_frame_schema_equal(
 ) -> None:
     __tracebackhide__ = True
 
-    left_schema, right_schema = left.schema, right.schema
+    left_schema, right_schema = left.collect_schema(), right.collect_schema()
 
     # Fast path for equal frames
     if left_schema == right_schema:

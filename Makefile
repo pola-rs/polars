@@ -109,7 +109,7 @@ fmt:  ## Run autoformatting and linting
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
-clean:  ## Clean up caches and build artifacts
+clean:  ## Clean up caches, build artifacts, and the venv
 	@$(MAKE) -s -C py-polars/ $@
 	@rm -rf .ruff_cache/
 	@rm -rf .hypothesis/

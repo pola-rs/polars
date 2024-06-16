@@ -57,17 +57,14 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     return s3_base
 
 
+@pytest.mark.skip(
+    reason="Causes intermittent failures in CI. See: "
+    "https://github.com/pola-rs/polars/issues/16910"
+)
 @pytest.mark.parametrize(
     ("function", "extension"),
     [
-        pytest.param(
-            pl.read_csv,
-            "csv",
-            marks=pytest.mark.skip(
-                reason="Causes intermittent failures in CI. See: "
-                "https://github.com/pola-rs/polars/issues/16910"
-            ),
-        ),
+        (pl.read_csv, "csv"),
         (pl.read_ipc, "ipc"),
     ],
 )
@@ -89,12 +86,12 @@ def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
     [(pl.scan_ipc, "ipc"), (pl.scan_parquet, "parquet")],
 )
 def test_scan_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
-    df = function(
+    lf = function(
         f"s3://bucket/foods1.{extension}",
         storage_options={"endpoint_url": s3},
     )
-    assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
-    assert df.collect().shape == (27, 4)
+    assert lf.collect_schema().names() == ["category", "calories", "fats_g", "sugars_g"]
+    assert lf.collect().shape == (27, 4)
 
 
 def test_lazy_count_s3(s3: str) -> None:

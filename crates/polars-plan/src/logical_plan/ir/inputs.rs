@@ -126,7 +126,6 @@ impl IR {
                 df,
                 schema,
                 output_schema,
-                projection,
                 filter: selection,
             } => {
                 let mut new_selection = None;
@@ -138,7 +137,6 @@ impl IR {
                     df: df.clone(),
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
-                    projection: projection.clone(),
                     filter: new_selection,
                 }
             },

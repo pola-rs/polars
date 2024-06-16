@@ -279,7 +279,7 @@ def test_boolean_agg_schema() -> None:
     for streaming in [True, False]:
         assert (
             agg_df.collect(streaming=streaming).schema
-            == agg_df.schema
+            == agg_df.collect_schema()
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
 

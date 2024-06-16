@@ -5,15 +5,22 @@ import pytest
 import polars as pl
 
 
-def test_schema_inference_from_rows() -> None:
-    # these have to upcast to float
-    result = pl.from_records([[1, 2.1, 3], [4, 5, 6.4]])
+def test_from_records_schema_inference() -> None:
+    data = [[1, 2.1, 3], [4, 5, 6.4]]
+
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.from_records(data)
+
+    result = pl.from_records(data, strict=False)
     assert result.to_dict(as_series=False) == {
         "column_0": [1.0, 2.1, 3.0],
         "column_1": [4.0, 5.0, 6.4],
     }
 
-    result = pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}])
+
+def test_from_dicts_schema_inference() -> None:
+    data = [{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}]
+    result = pl.from_dicts(data)  # type: ignore[arg-type]
     assert result.to_dict(as_series=False) == {
         "a": [1.0, 3.1],
         "b": [2.0, 4.5],

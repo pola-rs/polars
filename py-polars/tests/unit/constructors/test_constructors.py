@@ -13,6 +13,7 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+from polars._utils.construction.dataframe import _infer_data_orientation
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
@@ -662,6 +663,7 @@ def test_init_numpy_scalars() -> None:
     df_expected = pl.from_records(
         data=[(True, 16, 1234), (False, 64, 9876)],
         schema=OrderedDict([("bool", pl.Boolean), ("i8", pl.Int8), ("u32", pl.UInt32)]),
+        orient="row",
     )
     assert_frame_equal(df, df_expected)
 
@@ -836,13 +838,14 @@ def test_init_py_dtype_misc_float() -> None:
 
 def test_init_seq_of_seq() -> None:
     # List of lists
-    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
+    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"], orient="row")
     expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
     assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         [[1, 2, 3], [4, 5, 6]],
         schema=[("a", pl.Int8), ("b", pl.Int16), ("c", pl.Int32)],
+        orient="row",
     )
     assert df.schema == {"a": pl.Int8, "b": pl.Int16, "c": pl.Int32}
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
@@ -1113,7 +1116,7 @@ def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
 
 
 def test_from_dict_upcast_primitive() -> None:
-    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]})
+    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}, strict=False)
     assert df.dtypes == [pl.Float64, pl.Float64]
 
 
@@ -1622,3 +1625,13 @@ def test_array_construction() -> None:
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
+
+
+def test_infer_data_orientation() -> None:
+    assert _infer_data_orientation([1], 1) == "col"
+    assert _infer_data_orientation([1, 2], 2) == "col"
+    assert _infer_data_orientation([1, 2], 2, 2) == "col"
+    assert _infer_data_orientation([1, 2, 3], 2) == "col"
+    assert _infer_data_orientation([1, 2, 3], 2, 2) == "col"
+    assert _infer_data_orientation([1, 2, 3], 2, 3) == "row"
+    assert _infer_data_orientation([1, "x"], 2) == "row"

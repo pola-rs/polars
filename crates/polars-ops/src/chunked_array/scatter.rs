@@ -6,6 +6,8 @@ use polars_core::utils::arrow::types::NativeType;
 use polars_utils::index::check_bounds;
 
 pub trait ChunkedSet<T: Copy> {
+    /// Invariant for implementations: if the scatter() fails, typically because
+    /// of bad indexes, then self should remain unmodified.
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T>>;
@@ -88,7 +90,7 @@ unsafe fn scatter_impl<V, T: NativeType>(
     }
 }
 
-impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for ChunkedArray<T>
+impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T>
 where
     ChunkedArray<T>: IntoSeries,
 {
@@ -97,8 +99,7 @@ where
         V: IntoIterator<Item = Option<T::Native>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        let mut ca = self.rechunk();
-        drop(self);
+        let mut ca = std::mem::take(self).rechunk();
 
         // SAFETY:
         // we will not modify the length

@@ -78,7 +78,7 @@ simd-json = { version = "0.13", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
 smartstring = "1"
-sqlparser = "0.45"
+sqlparser = "0.47"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"

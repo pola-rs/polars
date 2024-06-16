@@ -209,7 +209,7 @@ def test_group_by_ordinal_position() -> None:
             )
             SELECT c, total_b FROM grp ORDER BY c"""
         )
-        assert_frame_equal(res2, expected.select(expected.columns[:2]))
+        assert_frame_equal(res2, expected.select(pl.nth(0, 1)))
 
 
 def test_group_by_errors() -> None:
@@ -223,7 +223,7 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"negative ordinals values are invalid for GROUP BY; found -99",
+        match=r"negative ordinal values are invalid for GROUP BY; found -99",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY -99, a")
 

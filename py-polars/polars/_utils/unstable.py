@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import inspect
 import os
-import warnings
 from functools import wraps
 from typing import TYPE_CHECKING, Callable, TypeVar
 
-from polars._utils.various import find_stacklevel
+from polars._utils.various import issue_warning
 from polars.exceptions import UnstableWarning
 
 if TYPE_CHECKING:
@@ -46,7 +45,7 @@ def issue_unstable_warning(message: str | None = None) -> None:
         " It may be changed at any point without it being considered a breaking change."
     )
 
-    warnings.warn(message, UnstableWarning, stacklevel=find_stacklevel())
+    issue_warning(message, UnstableWarning)
 
 
 def unstable() -> Callable[[Callable[P, T]], Callable[P, T]]:

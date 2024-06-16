@@ -375,6 +375,32 @@ def test_group_by_flatten_string() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_fast_explode_merge_right_16923() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"foo": [["a", "b"], ["c"]]}),
+            pl.DataFrame({"foo": [None]}, schema={"foo": pl.List(pl.Utf8)}),
+        ],
+        how="diagonal",
+        rechunk=True,
+    ).explode("foo")
+
+    assert len(df) == 4
+
+
+def test_fast_explode_merge_left_16923() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"foo": [None]}, schema={"foo": pl.List(pl.Utf8)}),
+            pl.DataFrame({"foo": [["a", "b"], ["c"]]}),
+        ],
+        how="diagonal",
+        rechunk=True,
+    ).explode("foo")
+
+    assert len(df) == 4
+
+
 @pytest.mark.parametrize(
     ("values", "exploded"),
     [

@@ -609,7 +609,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).schema == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
 
 
 def test_int_operator_stability() -> None:
@@ -630,7 +630,7 @@ def test_duration_division_schema() -> None:
         .select(pl.col("a") / pl.col("a"))
     )
 
-    assert q.schema == {"a": pl.Float64}
+    assert q.collect_schema() == {"a": pl.Float64}
     assert q.collect().to_dict(as_series=False) == {"a": [1.0]}
 
 
@@ -658,3 +658,84 @@ def test_raise_invalid_temporal(a: pl.DataType, b: pl.DataType, op: str) -> None
 
     with pytest.raises(pl.InvalidOperationError):
         eval(f"_df.select(pl.col('a') {op} pl.col('b'))")
+
+
+def test_arithmetic_duration_div_multiply() -> None:
+    df = pl.DataFrame([pl.Series("a", [100, 200, 3000], dtype=pl.Duration)])
+
+    q = df.lazy().with_columns(
+        b=pl.col("a") / 2,
+        c=pl.col("a") / 2.5,
+        d=pl.col("a") * 2,
+        e=pl.col("a") * 2.5,
+        f=pl.col("a") / pl.col("a"),  # a constant float
+    )
+    assert q.collect_schema() == pl.Schema(
+        [
+            ("a", pl.Duration(time_unit="us")),
+            ("b", pl.Duration(time_unit="us")),
+            ("c", pl.Duration(time_unit="us")),
+            ("d", pl.Unknown()),
+            ("e", pl.Unknown()),
+            ("f", pl.Float64()),
+        ]
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [
+            timedelta(microseconds=100),
+            timedelta(microseconds=200),
+            timedelta(microseconds=3000),
+        ],
+        "b": [
+            timedelta(microseconds=50),
+            timedelta(microseconds=100),
+            timedelta(microseconds=1500),
+        ],
+        "c": [
+            timedelta(microseconds=40),
+            timedelta(microseconds=80),
+            timedelta(microseconds=1200),
+        ],
+        "d": [
+            timedelta(microseconds=200),
+            timedelta(microseconds=400),
+            timedelta(microseconds=6000),
+        ],
+        "e": [
+            timedelta(microseconds=250),
+            timedelta(microseconds=500),
+            timedelta(microseconds=7500),
+        ],
+        "f": [1.0, 1.0, 1.0],
+    }
+
+    # rhs
+
+    q = df.lazy().with_columns(
+        b=2 * pl.col("a"),
+        c=2.5 * pl.col("a"),
+    )
+    assert q.collect_schema() == pl.Schema(
+        [
+            ("a", pl.Duration(time_unit="us")),
+            ("b", pl.Duration(time_unit="us")),
+            ("c", pl.Duration(time_unit="us")),
+        ]
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [
+            timedelta(microseconds=100),
+            timedelta(microseconds=200),
+            timedelta(microseconds=3000),
+        ],
+        "b": [
+            timedelta(microseconds=200),
+            timedelta(microseconds=400),
+            timedelta(microseconds=6000),
+        ],
+        "c": [
+            timedelta(microseconds=250),
+            timedelta(microseconds=500),
+            timedelta(microseconds=7500),
+        ],
+    }

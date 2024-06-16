@@ -7,6 +7,12 @@ Set Operations
 
    * - Function
      - Description
+   * - :ref:`EXCEPT <except>`
+     - Combine the result sets of two SELECT statements, returning only the rows
+       that appear in the first result set but not in the second.
+   * - :ref:`INTERSECT <intersect>`
+     - Combine the result sets of two SELECT statements, returning only the rows
+       that appear in both result sets.
    * - :ref:`UNION <union>`
      - Combine the distinct result sets of two or more SELECT statements.
        The final result set will have no duplicate rows.
@@ -19,12 +25,12 @@ Set Operations
        will have no duplicate rows. This also combines columns from both datasets.
 
 
-.. _union:
+.. _except:
 
-UNION
------
-Combine the distinct result sets of two or more SELECT statements.
-The final result set will have no duplicate rows.
+EXCEPT
+------
+Combine the result sets of two SELECT statements, returning only the rows
+that appear in the first result set but not in the second.
 
 **Example:**
 
@@ -39,12 +45,62 @@ The final result set will have no duplicate rows.
         "age": [30, 25, 45],
         "name": ["Bob", "Charlie", "David"],
     })
-    lf_union = pl.sql("""
-        SELECT id, name FROM df1
-        UNION
-        SELECT id, name FROM df2
+    pl.sql("""
+        SELECT id, name FROM lf1
+        EXCEPT
+        SELECT id, name FROM lf2
     """).sort(by="id").collect()
+    # shape: (1, 2)
+    # ┌─────┬───────┐
+    # │ id  ┆ name  │
+    # │ --- ┆ ---   │
+    # │ i64 ┆ str   │
+    # ╞═════╪═══════╡
+    # │ 1   ┆ Alice │
+    # └─────┴───────┘
 
+.. _intersect:
+
+INTERSECT
+---------
+Combine the result sets of two SELECT statements, returning only the rows
+that appear in both result sets.
+
+**Example:**
+
+.. code-block:: python
+
+    pl.sql("""
+        SELECT id, name FROM lf1
+        INTERSECT
+        SELECT id, name FROM lf2
+    """).sort(by="id").collect()
+    # shape: (2, 2)
+    # ┌─────┬─────────┐
+    # │ id  ┆ name    │
+    # │ --- ┆ ---     │
+    # │ i64 ┆ str     │
+    # ╞═════╪═════════╡
+    # │ 2   ┆ Bob     │
+    # │ 3   ┆ Charlie │
+    # └─────┴─────────┘
+
+.. _union:
+
+UNION
+-----
+Combine the distinct result sets of two or more SELECT statements.
+The final result set will have no duplicate rows.
+
+**Example:**
+
+.. code-block:: python
+
+    pl.sql("""
+        SELECT id, name FROM lf1
+        UNION
+        SELECT id, name FROM lf2
+    """).sort(by="id").collect()
     # shape: (4, 2)
     # ┌─────┬─────────┐
     # │ id  ┆ name    │
@@ -68,12 +124,11 @@ The final result set will be composed of all rows from each query.
 
 .. code-block:: python
 
-    lf_union_all = pl.sql("""
-        SELECT id, name FROM df1
+    pl.sql("""
+        SELECT id, name FROM lf1
         UNION ALL
-        SELECT id, name FROM df2
+        SELECT id, name FROM lf2
     """).sort(by="id").collect()
-
     # shape: (6, 2)
     # ┌─────┬─────────┐
     # │ id  ┆ name    │
@@ -100,12 +155,11 @@ will have no duplicate rows. This also combines columns from both datasets.
 
 .. code-block:: python
 
-    lf_union_by_name = pl.sql("""
-        SELECT * FROM df1
+    pl.sql("""
+        SELECT * FROM lf1
         UNION BY NAME
-        SELECT * FROM df2
+        SELECT * FROM lf2
     """).sort(by="id").collect()
-
     # shape: (6, 3)
     # ┌─────┬─────────┬──────┐
     # │ id  ┆ name    ┆ age  │

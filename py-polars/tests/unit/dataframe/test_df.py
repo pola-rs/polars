@@ -998,6 +998,7 @@ def test_literal_series() -> None:
                 (21.0, 2, "reg3", datetime(2022, 8, 18, 0), 3),
             ],
             schema=expected_schema,  # type: ignore[arg-type]
+            orient="row",
         ),
         out,
         atol=0.00001,
@@ -1107,7 +1108,7 @@ def test_from_generator_or_iterable() -> None:
 
 
 def test_from_rows() -> None:
-    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
+    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -1123,7 +1124,7 @@ def test_from_rows() -> None:
 
     # auto-inference with same num rows/cols
     data = [(1, 2, "foo"), (2, 3, "bar"), (3, 4, "baz")]
-    df = pl.from_records(data)
+    df = pl.from_records(data, orient="row")
     assert data == df.rows()
 
 
@@ -1708,7 +1709,7 @@ def test_schema_equality() -> None:
     lf = pl.LazyFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
     lf_rev = lf.select("bar", "foo")
 
-    assert lf.schema != lf_rev.schema
+    assert lf.collect_schema() != lf_rev.collect_schema()
     assert lf.collect().schema != lf_rev.collect().schema
 
 

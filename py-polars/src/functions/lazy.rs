@@ -5,6 +5,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
+use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
 use crate::map::lazy::binary_lambda;
@@ -428,6 +429,9 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(Null {}).into())
     } else if let Ok(value) = value.downcast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
+    } else if value.get_type().qualname().unwrap() == "Decimal" {
+        let av = py_object_to_any_value(value, true)?;
+        Ok(Expr::Literal(LiteralValue::try_from(av).unwrap()).into())
     } else if allow_object {
         let s = Python::with_gil(|py| {
             PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false).series

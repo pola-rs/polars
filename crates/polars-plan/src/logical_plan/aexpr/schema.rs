@@ -101,7 +101,9 @@ impl AExpr {
                         };
                         Field::new(out_name, Boolean)
                     },
-                    Operator::TrueDivide => return get_truediv_field(*left, arena, schema, nested),
+                    Operator::TrueDivide => {
+                        return get_truediv_field(*left, *right, arena, schema, nested)
+                    },
                     _ => return get_arithmetic_field(*left, *right, arena, *op, schema, nested),
                 };
 
@@ -385,6 +387,19 @@ fn get_arithmetic_field(
                 | (_, Date) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (Duration(_), Duration(_)) => {
+                    // True divide handled somewhere else
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                },
+                (l, Duration(_)) if l.is_numeric() => match op {
+                    Operator::Multiply => {
+                        left_field.coerce(right_type);
+                        return Ok(left_field);
+                    },
+                    _ => {
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    },
+                },
                 _ => {
                     // Avoid needlessly type casting numeric columns during arithmetic
                     // with literals.
@@ -418,6 +433,7 @@ fn get_arithmetic_field(
 
 fn get_truediv_field(
     left: Node,
+    right: Node,
     arena: &Arena<AExpr>,
     schema: &Schema,
     nested: &mut u8,
@@ -428,7 +444,17 @@ fn get_truediv_field(
         Float32 => Float32,
         dt if dt.is_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
-        Duration(_) => Float64,
+        Duration(_) => match arena
+            .get(right)
+            .to_field_impl(schema, arena, nested)?
+            .data_type()
+        {
+            Duration(_) => Float64,
+            dt if dt.is_numeric() => return Ok(left_field),
+            dt => {
+                polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.data_type(), dt)
+            },
+        },
         #[cfg(feature = "dtype-datetime")]
         Datetime(_, _) => {
             polars_bail!(InvalidOperation: "division of 'Datetime' datatype is not allowed")

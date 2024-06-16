@@ -88,7 +88,7 @@ def test_series_getitem_multiple_indices(indices: Any) -> None:
 @pytest.mark.parametrize(
     ("input", "match"),
     [
-        ([0.0, 1.0], "'float' object cannot be interpreted as an integer"),
+        ([0.0, 1.0], "unexpected value while building Series of type Int64"),
         (
             pl.Series([[1, 2], [3, 4]]),
             "cannot treat Series of type List\\(Int64\\) as indices",

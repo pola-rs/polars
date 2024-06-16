@@ -24,6 +24,7 @@ def test_all_any_horizontally() -> None:
             [None, None, False],
         ],
         schema=["var1", "var2", "var3"],
+        orient="row",
     )
     result = df.select(
         any=pl.any_horizontal(pl.col("var2"), pl.col("var3")),
@@ -430,16 +431,16 @@ def test_schema_mean_horizontal_single_column(
     in_dtype: pl.PolarsDataType,
     out_dtype: pl.PolarsDataType,
 ) -> None:
-    lf = pl.LazyFrame({"a": pl.Series([1, 0], dtype=in_dtype)}).select(
+    lf = pl.LazyFrame({"a": pl.Series([1, 0]).cast(in_dtype)}).select(
         pl.mean_horizontal(pl.all())
     )
 
-    assert lf.schema == OrderedDict([("a", out_dtype)])
+    assert lf.collect_schema() == OrderedDict([("a", out_dtype)])
 
 
 def test_schema_boolean_sum_horizontal() -> None:
     lf = pl.LazyFrame({"a": [True, False]}).select(pl.sum_horizontal("a"))
-    assert lf.schema == OrderedDict([("a", pl.UInt32)])
+    assert lf.collect_schema() == OrderedDict([("a", pl.UInt32)])
 
 
 def test_fold_all_schema() -> None:

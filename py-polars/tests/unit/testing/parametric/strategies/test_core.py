@@ -142,8 +142,13 @@ def test_dataframes_allow_null_override(df: pl.DataFrame) -> None:
     )
 )
 def test_dataframes_columns(lf: pl.LazyFrame) -> None:
-    assert lf.schema == {"a": pl.UInt8, "b": pl.UInt8, "c": pl.Boolean, "d": pl.String}
-    assert lf.columns == ["a", "b", "c", "d"]
+    assert lf.collect_schema() == {
+        "a": pl.UInt8,
+        "b": pl.UInt8,
+        "c": pl.Boolean,
+        "d": pl.String,
+    }
+    assert lf.collect_schema().names() == ["a", "b", "c", "d"]
     df = lf.collect()
 
     # confirm uint cols bounds
@@ -237,7 +242,7 @@ def test_strategy_dtypes(
 ) -> None:
     # dataframe, lazyframe
     assert all(tp.is_temporal() for tp in df.dtypes)
-    assert all(not tp.is_temporal() for tp in lf.dtypes)
+    assert all(not tp.is_temporal() for tp in lf.collect_schema().dtypes())
 
     # series
     assert s1.dtype.is_temporal()

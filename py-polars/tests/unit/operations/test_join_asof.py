@@ -79,7 +79,7 @@ def test_asof_join_schema_5211() -> None:
         .join_asof(
             df2.lazy(), left_on="today", right_on="next_friday", strategy="forward"
         )
-        .schema
+        .collect_schema()
     ) == {"today": pl.Int64, "next_friday": pl.Int64}
 
 
@@ -119,7 +119,7 @@ def test_asof_join_schema_5684() -> None:
 
     assert_frame_equal(projected_result, result)
     assert (
-        q.schema
+        q.collect_schema()
         == projected_result.schema
         == {"id": pl.Int64, "a": pl.Int64, "b_right": pl.Int64}
     )
@@ -1171,4 +1171,4 @@ def test_join_as_of_by_schema() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
     q = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
-    assert q.collect().columns == q.columns
+    assert q.collect_schema().names() == q.collect().columns

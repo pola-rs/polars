@@ -13,9 +13,14 @@ pub(super) struct FileLockExclusiveGuard(File);
 pub(super) trait FileLockAnyGuard:
     std::ops::Deref<Target = File> + std::ops::DerefMut<Target = File>
 {
+    const IS_EXCLUSIVE: bool;
 }
-impl FileLockAnyGuard for FileLockSharedGuard {}
-impl FileLockAnyGuard for FileLockExclusiveGuard {}
+impl FileLockAnyGuard for FileLockSharedGuard {
+    const IS_EXCLUSIVE: bool = false;
+}
+impl FileLockAnyGuard for FileLockExclusiveGuard {
+    const IS_EXCLUSIVE: bool = true;
+}
 
 impl<T: AsRef<Path>> From<T> for FileLock<T> {
     fn from(path: T) -> Self {

@@ -923,17 +923,17 @@ def test_join_coalesce(how: JoinStrategy) -> None:
     how = "inner"
     q = a.join(b, on="a", coalesce=False, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "a_right", "b_right", "c"]
 
     q = a.join(b, on=["a", "b"], coalesce=False, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "a_right", "b_right", "c"]
 
     q = a.join(b, on=["a", "b"], coalesce=True, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "c"]
 
 
@@ -961,3 +961,12 @@ def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )
+
+
+def test_join_lit_panic_11410() -> None:
+    df = pl.LazyFrame({"date": [1, 2, 3], "symbol": [4, 5, 6]})
+    dates = df.select("date").unique(maintain_order=True)
+    symbols = df.select("symbol").unique(maintain_order=True)
+    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).drop(
+        "literal"
+    ).collect().to_dict(as_series=False) == {"symbol": [4], "date": [1]}

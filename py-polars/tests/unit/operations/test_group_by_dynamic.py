@@ -860,7 +860,7 @@ def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
         "dt", every="2d", closed="right", include_boundaries=include_boundaries
     ).agg(pl.col("dt").min().alias("dt_min"))
 
-    assert result.schema == result.collect().schema
+    assert result.collect_schema() == result.collect().schema
 
 
 def test_group_by_dynamic_12414() -> None:

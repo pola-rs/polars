@@ -80,3 +80,12 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
         .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
     Ok(())
 }
+
+#[cfg(feature = "cloud")]
+#[pyfunction]
+pub fn get_file_cache_prefix() -> PyResult<String> {
+    Ok(polars_io::file_cache::FILE_CACHE_PREFIX
+        .to_str()
+        .unwrap()
+        .to_string())
+}
