@@ -30,6 +30,7 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
+    issue_warning,
     parse_version,
 )
 from polars._utils.wrap import wrap_df, wrap_s
@@ -53,7 +54,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -545,6 +546,13 @@ def _sequence_of_sequence_to_pydf(
                 len(schema) != len(data)
             )
             orient = "row" if is_row_oriented else "col"
+
+            if is_row_oriented:
+                issue_warning(
+                    "Row orientation inferred during DataFrame construction."
+                    ' Explicitly specify the orientation by passing `orient="row"` to silence this warning.',
+                    DataOrientationWarning,
+                )
 
     if orient == "row":
         column_names, schema_overrides = _unpack_schema(

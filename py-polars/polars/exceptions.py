@@ -149,6 +149,46 @@ class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
 
 
+class DataOrientationWarning(PolarsWarning):  # type: ignore[misc]
+    """
+    Warning issued to indicate row orientation was inferred from the inputs.
+
+    Occurs when constructing a DataFrame from a list of rows without explicitly
+    specifying row orientation. Polars is usually able to infer the data orientation
+    from the data and schema, but there are cases where this is not possible. This is a
+    common source of confusion. Use the `orient` parameter to be explicit about the
+    data orientation.
+
+    Examples
+    --------
+    >>> pl.DataFrame([(1, 2, 3), (4, 5, 6)], schema=["a", "b", "c"])  # doctest: +SKIP
+    DataOrientationWarning: Row orientation inferred during DataFrame construction.
+    Explicitly specify the orientation by passing `orient="row"` to silence this warning.
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    │ 4   ┆ 5   ┆ 6   │
+    └─────┴─────┴─────┘
+
+    Pass `orient="row"` to silence the warning.
+
+    >>> pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"], orient="row")
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    │ 4   ┆ 5   ┆ 6   │
+    └─────┴─────┴─────┘
+    """  # noqa: W505
+
+
 class PolarsInefficientMapWarning(PerformanceWarning):  # type: ignore[misc]
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
@@ -187,6 +227,7 @@ __all__ = [
     "CategoricalRemappingWarning",
     "ChronoFormatWarning",
     "CustomUFuncWarning",
+    "DataOrientationWarning",
     "MapWithoutReturnDtypeWarning",
     "PerformanceWarning",
     "PolarsInefficientMapWarning",

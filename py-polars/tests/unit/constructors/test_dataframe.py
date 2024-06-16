@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 import pytest
 
 import polars as pl
+from polars.exceptions import DataOrientationWarning
 
 
 def test_df_mixed_dtypes_string() -> None:
@@ -196,3 +197,8 @@ def test_df_init_schema_object() -> None:
 
     assert df.columns == schema.names()
     assert df.dtypes == schema.dtypes()
+
+
+def test_df_init_data_orientation_inference_warning() -> None:
+    with pytest.warns(DataOrientationWarning):
+        pl.from_records([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
