@@ -193,6 +193,14 @@ pub trait SeriesTrait:
         polars_bail!(opq = bitxor, self._dtype());
     }
 
+    fn get_metadata_min_value(&self) -> Option<Scalar> {
+        None
+    }
+
+    fn get_metadata_max_value(&self) -> Option<Scalar> {
+        None
+    }
+
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;
 

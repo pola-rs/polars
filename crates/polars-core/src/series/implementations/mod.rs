@@ -239,6 +239,22 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
+            fn get_metadata_min_value(&self) -> Option<Scalar> {
+                let v = self.metadata()?.get_min_value()?;
+                Some(Scalar::new(
+                    private::PrivateSeries::_dtype(self).clone(),
+                    AnyValue::from(*v),
+                ))
+            }
+
+            fn get_metadata_max_value(&self) -> Option<Scalar> {
+                let v = self.metadata()?.get_max_value()?;
+                Some(Scalar::new(
+                    private::PrivateSeries::_dtype(self).clone(),
+                    AnyValue::from(*v),
+                ))
+            }
+
             fn bitand(&self, other: &Series) -> PolarsResult<Series> {
                 let other = if other.len() == 1 {
                     Cow::Owned(other.cast(self.dtype())?)
