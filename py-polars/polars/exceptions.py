@@ -159,16 +159,18 @@ class UnstableWarning(PolarsWarning):  # type: ignore[misc]
 
 __all__ = [
     # Errors
+    "PolarsError",
     "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
+    "InvalidAssert",
     "InvalidOperationError",
     "ModuleUpgradeRequired",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
-    "PolarsError",
+    "ParameterCollisionError",
     "PolarsPanicError",
     "RowsError",
     "SQLInterfaceError",
@@ -179,6 +181,7 @@ __all__ = [
     "StringCacheMismatchError",
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
+    "UnsuitableSQLError",
     # Warnings
     "PolarsWarning",
     "CategoricalRemappingWarning",
