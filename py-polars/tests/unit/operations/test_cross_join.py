@@ -1,6 +1,14 @@
+import sys
 from datetime import datetime
 
-import zoneinfo
+from polars.dependencies import _ZONEINFO_AVAILABLE
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import polars as pl
 
@@ -24,25 +32,13 @@ def test_cross_join_predicate_pushdown_block_16956() -> None:
         .select("start_datetime", "end_datetime_right")
     ).collect(predicate_pushdown=True).to_dict(as_series=False) == {
         "start_datetime": [
-            datetime(
-                2024, 6, 11, 8, 0, tzinfo=zoneinfo.ZoneInfo(key="Europe/Amsterdam")
-            ),
-            datetime(
-                2024, 6, 12, 8, 0, tzinfo=zoneinfo.ZoneInfo(key="Europe/Amsterdam")
-            ),
-            datetime(
-                2024, 6, 19, 8, 0, tzinfo=zoneinfo.ZoneInfo(key="Europe/Amsterdam")
-            ),
+            datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
+            datetime(2024, 6, 12, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
+            datetime(2024, 6, 19, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
         ],
         "end_datetime_right": [
-            datetime(
-                2024, 6, 11, 16, 0, tzinfo=zoneinfo.ZoneInfo(key="Europe/Amsterdam")
-            ),
-            datetime(
-                2024, 6, 12, 16, 0, tzinfo=zoneinfo.ZoneInfo(key="Europe/Amsterdam")
-            ),
-            datetime(
-                2024, 6, 19, 16, 0, tzinfo=zoneinfo.ZoneInfo(key="Europe/Amsterdam")
-            ),
+            datetime(2024, 6, 11, 16, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
+            datetime(2024, 6, 12, 16, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
+            datetime(2024, 6, 19, 16, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
         ],
     }
