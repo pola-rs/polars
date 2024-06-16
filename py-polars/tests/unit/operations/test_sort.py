@@ -264,7 +264,7 @@ def test_sorted_join_and_dtypes(dtype: pl.PolarsDataType) -> None:
         "a": [-2, 3, 3, 10],
     }
 
-    result_left = df_a.join(df_b, on="a", how="left", coalesce=True)
+    result_left = df_a.join(df_b, on="a", how="left")
     assert result_left.to_dict(as_series=False) == {
         "index": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],

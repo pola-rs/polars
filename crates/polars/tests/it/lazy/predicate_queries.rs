@@ -118,7 +118,7 @@ fn test_filter_block_join() -> PolarsResult<()> {
         // mean is influence by join
         .filter(col("c").mean().eq(col("d")))
         .collect()?;
-    assert_eq!(out.shape(), (1, 4));
+    assert_eq!(out.shape(), (1, 3));
 
     Ok(())
 }
