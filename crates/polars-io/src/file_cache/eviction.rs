@@ -154,9 +154,7 @@ impl EvictionManager {
     /// * `self.data_dir`
     /// * `self.metadata_dir`
     pub(super) fn run_in_background(mut self) {
-        let verbose = config::verbose();
-
-        if verbose {
+        if config::verbose() {
             eprintln!(
                 "[EvictionManager] creating cache eviction background task, self.min_ttl = {}",
                 self.min_ttl.load(std::sync::atomic::Ordering::Relaxed)
@@ -181,7 +179,7 @@ impl EvictionManager {
                     Ok(_) if self.files_to_remove.as_ref().unwrap().is_empty() => {},
                     Ok(_) => loop {
                         if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_exclusive() {
-                            if verbose {
+                            if config::verbose() {
                                 eprintln!(
                                     "[EvictionManager] got exclusive cache lock, evicting {} files",
                                     self.files_to_remove.as_ref().unwrap().len()
@@ -194,7 +192,7 @@ impl EvictionManager {
                         tokio::time::sleep(Duration::from_secs(7)).await;
                     },
                     Err(err) => {
-                        if verbose {
+                        if config::verbose() {
                             eprintln!("[EvictionManager] error updating file list: {}", err);
                         }
                     },
