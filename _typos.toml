@@ -11,6 +11,7 @@ ba = "ba"
 nd = "nd"
 opt_nd = "opt_nd"
 ser = "ser"
+ANDed = "ANDed"
 
 [default.extend-words]
 arange = "arange"

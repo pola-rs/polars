@@ -2,13 +2,14 @@ use std::borrow::Borrow;
 
 use super::*;
 
-pub(super) struct ConversionOpt {
+/// Applies expression simplification and type coercion during conversion to IR.
+pub(super) struct ConversionOptimizer {
     scratch: Vec<Node>,
     simplify: Option<SimplifyExprRule>,
     coerce: Option<TypeCoercionRule>,
 }
 
-impl ConversionOpt {
+impl ConversionOptimizer {
     pub(super) fn new(simplify: bool, type_coercion: bool) -> Self {
         let simplify = if simplify {
             Some(SimplifyExprRule {})
@@ -22,7 +23,7 @@ impl ConversionOpt {
             None
         };
 
-        ConversionOpt {
+        ConversionOptimizer {
             scratch: Vec::with_capacity(8),
             simplify,
             coerce,

@@ -1,6 +1,6 @@
 use expr_expansion::{is_regex_projection, rewrite_projections};
 
-use super::stack_opt::ConversionOpt;
+use super::stack_opt::ConversionOptimizer;
 use super::*;
 
 fn expand_expressions(
@@ -47,7 +47,7 @@ pub fn to_alp(
     simplify_expr: bool,
     type_coercion: bool,
 ) -> PolarsResult<Node> {
-    let mut convert = ConversionOpt::new(simplify_expr, type_coercion);
+    let mut convert = ConversionOptimizer::new(simplify_expr, type_coercion);
     to_alp_impl(lp, expr_arena, lp_arena, &mut convert)
 }
 
@@ -59,7 +59,7 @@ pub fn to_alp_impl(
     lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
-    convert: &mut ConversionOpt,
+    convert: &mut ConversionOptimizer,
 ) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
@@ -67,7 +67,7 @@ pub fn to_alp_impl(
         lp: IR,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
-        convert: &mut ConversionOpt,
+        convert: &mut ConversionOptimizer,
         name: &str,
     ) -> PolarsResult<Node> {
         let lp_node = lp_arena.add(lp);
@@ -182,16 +182,41 @@ pub fn to_alp_impl(
             }
         },
         DslPlan::Filter { input, predicate } => {
-            let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
+            // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
+            // push them down independently. Especially if they refer columns from different tables
+            // this will be more performant.
+            // So:
+            // filter[foo == bar & ham == spam]
+            // filter [foo == bar]
+            // filter [ham == spam]
+            let mut predicates = vec![];
+            let mut stack = vec![predicate];
+            while let Some(expr) = stack.pop() {
+                if let Expr::BinaryExpr {
+                    left,
+                    op: Operator::And | Operator::LogicalAnd,
+                    right,
+                } = expr
+                {
+                    stack.push(Arc::unwrap_or_clone(left));
+                    stack.push(Arc::unwrap_or_clone(right));
+                } else {
+                    predicates.push(expr)
+                }
+            }
+
+            let mut input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(filter)))?;
-            let predicate = expand_filter(predicate, input, lp_arena)
-                .map_err(|e| e.context(failed_here!(filter)))?;
-            let predicate = to_expr_ir(predicate, expr_arena);
 
-            convert.push_scratch(predicate.node(), expr_arena);
-
-            let lp = IR::Filter { input, predicate };
-            return run_conversion(lp, lp_arena, expr_arena, convert, "filter");
+            for predicate in predicates {
+                let predicate = expand_filter(predicate, input, lp_arena)
+                    .map_err(|e| e.context(failed_here!(filter)))?;
+                let predicate = to_expr_ir(predicate, expr_arena);
+                convert.push_scratch(predicate.node(), expr_arena);
+                let lp = IR::Filter { input, predicate };
+                input = run_conversion(lp, lp_arena, expr_arena, convert, "filter")?;
+            }
+            return Ok(input);
         },
         DslPlan::Slice { input, offset, len } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
