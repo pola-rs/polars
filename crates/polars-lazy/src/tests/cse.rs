@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use polars_ops::prelude::JoinCoalesce;
-
 use super::*;
 
 fn cached_before_root(q: LazyFrame) {
@@ -200,11 +198,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         b,
         &[col("a"), col("b")],
         &[col("a"), col("b")],
-        JoinArgs {
-            how: JoinType::Left,
-            coalesce: JoinCoalesce::CoalesceColumns,
-            ..Default::default()
-        },
+        JoinType::Left.into(),
     );
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
@@ -316,11 +310,7 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
         right.rename(["B"], ["C"]),
         [col("A"), col("C")],
         [col("A"), col("C")],
-        JoinArgs {
-            how: JoinType::Left,
-            coalesce: JoinCoalesce::CoalesceColumns,
-            ..Default::default()
-        },
+        JoinType::Left.into(),
     );
 
     let out = q.collect()?;
