@@ -95,7 +95,6 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     expected = {
         "a": [3, 4],
         "d": [3, 4],
-        "a_right": [3, 4],
         "d_right": [3, 4],
     }
     assert result.to_dict(as_series=False) == expected

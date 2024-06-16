@@ -280,7 +280,6 @@ def test_join_chunks_alignment_4720() -> None:
             df3,
             on=["index1", "index2", "index3"],
             how="left",
-            coalesce=True,
         )
     ).to_dict(as_series=False) == {
         "index1": [0, 0, 1, 1],
@@ -293,7 +292,6 @@ def test_join_chunks_alignment_4720() -> None:
             df3,
             on=["index3", "index1", "index2"],
             how="left",
-            coalesce=True,
         )
     ).to_dict(as_series=False) == {
         "index1": [0, 0, 1, 1],
@@ -328,7 +326,7 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = pd.Index(["a", "b", "b_right"])
 
         # left key sorted right is not
-        pl_result = dfa_pl.join(dfb_pl, on="a", how=how, coalesce=True).sort(
+        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(
             ["a", "b"], maintain_order=True
         )
 
@@ -343,7 +341,7 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pd_result = dfb.merge(dfa, on="a", how=how)
         pd_result.columns = pd.Index(["a", "b", "b_right"])
-        pl_result = dfb_pl.join(dfa_pl, on="a", how=how, coalesce=True).sort(
+        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(
             ["a", "b"], maintain_order=True
         )
 
@@ -591,7 +589,6 @@ def test_join_sorted_fast_paths_null() -> None:
     }
     assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
         "x": [0, 0, 1],
-        "x_right": [0, 0, None],
         "y": [0, 0, None],
     }
     assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}

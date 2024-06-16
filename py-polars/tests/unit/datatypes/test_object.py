@@ -152,7 +152,7 @@ def test_null_obj_str_13512() -> None:
     )
     df2 = pl.DataFrame({"key": [2], "a": pl.Series([1], dtype=pl.Object)})
 
-    out = df1.join(df2, on="key", how="left", coalesce=True)
+    out = df1.join(df2, on="key", how="left")
     s = str(out)
     assert s == (
         "shape: (1, 2)\n"
