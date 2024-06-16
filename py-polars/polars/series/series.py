@@ -2039,6 +2039,8 @@ class Series:
         """
         Get the quantile value of this Series.
 
+        NaN values are ignored.
+
         Parameters
         ----------
         quantile

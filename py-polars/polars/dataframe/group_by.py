@@ -695,6 +695,8 @@ class GroupBy:
         """
         Compute the quantile per group.
 
+        NaN values are ignored.
+
         Parameters
         ----------
         quantile

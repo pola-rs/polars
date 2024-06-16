@@ -600,6 +600,8 @@ class LazyGroupBy:
         """
         Compute the quantile per group.
 
+        NaN values are ignored.
+
         Parameters
         ----------
         quantile

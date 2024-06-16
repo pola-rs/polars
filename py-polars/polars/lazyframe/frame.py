@@ -5429,6 +5429,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their quantile value.
 
+        NaN values are ignored.
+
         Parameters
         ----------
         quantile

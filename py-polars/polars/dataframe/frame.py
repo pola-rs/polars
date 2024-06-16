@@ -9038,6 +9038,8 @@ class DataFrame:
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
+        NaN values are ignored.
+
         Parameters
         ----------
         quantile

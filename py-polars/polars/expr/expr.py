@@ -3762,6 +3762,8 @@ class Expr:
         """
         Get quantile value.
 
+        NaN values are ignored.
+
         Parameters
         ----------
         quantile
