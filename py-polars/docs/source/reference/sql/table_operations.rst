@@ -8,35 +8,37 @@ Table Operations
    * - Function
      - Description
    * - :ref:`CREATE TABLE <create_table>`
-     - Create a new table and its columns from a SQL query against an existing table.
+     - Create a new table and its columns from a SQL query executed against an existing table.
    * - :ref:`DROP TABLES <drop_tables>`
-     - Delete a specified table and related data.
+     - Deletes the specified table, unregistering it.
    * - :ref:`EXPLAIN <explain>`
-     - Returns logical plan of the query.
+     - Returns the Polars execution plan for a given SQL query.
    * - :ref:`SHOW TABLES <show_tables>`
-     - Returns a list of all tables in the context.
+     - Returns a list of all tables registered in the given context.
    * - :ref:`UNNEST <unnest_table_func>`
-     - Unnest one or more arrays as columns in a new table.
+     - Unnest one or more arrays as columns in a new table object.
    * - :ref:`TRUNCATE <truncate>`
-     - Remove rows from table without deleting the table from context.
+     - Remove all data from a table without actually deleting it.
+
 
 .. _create_table:
 
 CREATE TABLE
 ------------
-Create a new table and its columns from a SQL query against an existing table.
+Create a new table and its columns from a SQL query executed against an existing table.
 
 **Example:**
 
 .. code-block:: sql
 
-    CREATE TABLE new_table AS SELECT * FROM df WHERE value > 42
+    CREATE TABLE new_table AS
+    SELECT * FROM existing_table WHERE value > 42
 
 .. _drop_tables:
 
 DROP TABLES
 -----------
-Delete a specified table and related data.
+Deletes the specified table, unregistering it.
 
 **Example:**
 
@@ -48,19 +50,19 @@ Delete a specified table and related data.
 
 EXPLAIN
 -------
-Returns Logical Plan of the query.
+Returns the Polars execution plan for a given SQL query.
 
 **Example:**
 
 .. code-block:: sql
 
-    EXPLAIN SELECT * FROM df
+    EXPLAIN SELECT * FROM some_table
 
 .. _show_tables:
 
 SHOW TABLES
 -----------
-Display the list of tables in the context.
+Returns a list of all tables registered in the given context.
 
 **Example:**
 
@@ -72,7 +74,7 @@ Display the list of tables in the context.
 
 UNNEST
 ------
-Unnest one or more arrays as columns in a new table.
+Unnest one or more arrays as columns in a new table object.
 
 **Example:**
 
@@ -89,10 +91,10 @@ Unnest one or more arrays as columns in a new table.
 
 TRUNCATE
 --------
-Removes all rows from the specified table, but keeps the table.
+Remove all data from a table without actually deleting it.
 
 **Example:**
 
 .. code-block:: sql
 
-    TRUNCATE TABLE df
+    TRUNCATE TABLE some_table

@@ -15,6 +15,8 @@ This page gives an overview of all public LazyFrame methods.
    modify_select
    miscellaneous
 
+.. _lazyframe:
+
 .. currentmodule:: polars
 
 .. autoclass:: LazyFrame

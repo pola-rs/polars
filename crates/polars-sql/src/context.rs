@@ -851,7 +851,7 @@ impl SQLContext {
                 let lf = self.execute_query(query)?;
                 self.register(tbl_name, lf);
                 let out = df! {
-                    "Response" => ["Create Table"]
+                    "Response" => ["CREATE TABLE"]
                 }
                 .unwrap()
                 .lazy();
