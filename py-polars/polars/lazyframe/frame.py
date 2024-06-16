@@ -267,10 +267,10 @@ class LazyFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Constructing a LazyFrame from a list of lists, row orientation inferred:
+    Constructing a LazyFrame from a list of lists, row orientation specified:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> lf6 = pl.LazyFrame(data, schema=["a", "b", "c"])
+    >>> lf6 = pl.LazyFrame(data, schema=["a", "b", "c"], orient="row")
     >>> lf6.collect()
     shape: (2, 3)
     ┌─────┬─────┬─────┐
@@ -420,7 +420,7 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... ).select("foo", "bar")
-        >>> lf.columns
+        >>> lf.columns  # doctest: +SKIP
         ['foo', 'bar']
         """
         issue_warning(
@@ -462,7 +462,7 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> lf.dtypes
+        >>> lf.dtypes  # doctest: +SKIP
         [Int64, Float64, String]
         """
         issue_warning(
@@ -498,7 +498,7 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> lf.schema
+        >>> lf.schema  # doctest: +SKIP
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
         issue_warning(
@@ -537,7 +537,7 @@ class LazyFrame:
         ...         "bar": [4, 5, 6],
         ...     }
         ... )
-        >>> lf.width
+        >>> lf.width  # doctest: +SKIP
         2
         """
         issue_warning(

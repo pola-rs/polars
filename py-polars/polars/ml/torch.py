@@ -28,7 +28,80 @@ except ImportError:
 
 
 class PolarsDataset(TensorDataset):  # type: ignore[misc]
-    """Specialized TensorDataset for Polars DataFrames."""
+    """
+    TensorDataset class specialized for use with Polars DataFrames.
+
+    Parameters
+    ----------
+    frame
+        Polars DataFrame containing the data that will be retrieved as Tensors.
+    label
+        One or more column names or expressions that label the feature data; results
+        in `(features,label)` tuples, where all non-label columns are considered
+        to be features. If no label is designated then each returned item is a
+        simple `(features,)` tuple containing all row elements.
+    features
+        One or more column names or expressions that represent the feature data.
+        If not provided, all columns not designated as labels are considered to be
+        features.
+
+    Notes
+    -----
+    * Integer, slice, range, integer list/Tensor Dataset indexing is all supported.
+    * Designating multi-element labels is also supported.
+
+    Examples
+    --------
+    >>> from torch.utils.data import DataLoader
+    >>> df = pl.DataFrame(
+    ...     data=[
+    ...         (0, 1, 1.5),
+    ...         (1, 0, -0.5),
+    ...         (2, 0, 0.0),
+    ...         (3, 1, -2.25),
+    ...     ],
+    ...     schema=["lbl", "feat1", "feat2"],
+    ...     orient="row",
+    ... )
+
+    Create a Dataset from a Polars DataFrame, standardising the dtype and
+    distinguishing the label/feature columns.
+
+    >>> ds = df.to_torch("dataset", label="lbl", dtype=pl.Float32)
+    >>> ds  # doctest: +IGNORE_RESULT
+    <PolarsDataset [len:4, features:2, labels:1] at 0x156B033B0>
+    >>> ds.features
+    tensor([[ 1.0000,  1.5000],
+            [ 0.0000, -0.5000],
+            [ 0.0000,  0.0000],
+            [ 1.0000, -2.2500]])
+    >>> ds[0]
+    (tensor([1.0000, 1.5000]), tensor(0.))
+
+    The Dataset can be used standalone, or in conjunction with a DataLoader.
+
+    >>> dl = DataLoader(ds, batch_size=2)
+    >>> list(dl)
+    [[tensor([[ 1.0000,  1.5000],
+              [ 0.0000, -0.5000]]),
+      tensor([0., 1.])],
+     [tensor([[ 0.0000,  0.0000],
+              [ 1.0000, -2.2500]]),
+      tensor([2., 3.])]]
+
+    Note that the label can be given as an expression as well as a column name,
+    allowing for independent transform and dtype adjustment from the feature
+    columns.
+
+    >>> ds = df.to_torch(
+    ...     "dataset",
+    ...     dtype=pl.Float32,
+    ...     label=(pl.col("lbl") * 8).cast(pl.Int16),
+    ... )
+    >>> ds[:2]
+    (tensor([[ 1.0000,  1.5000],
+    [ 0.0000, -0.5000]]), tensor([0, 8], dtype=torch.int16))
+    """
 
     tensors: tuple[Tensor, ...]
     labels: Tensor | None
@@ -41,79 +114,6 @@ class PolarsDataset(TensorDataset):  # type: ignore[misc]
         label: str | Expr | Sequence[str | Expr] | None = None,
         features: str | Expr | Sequence[str | Expr] | None = None,
     ):
-        """
-        TensorDataset class specialized for use with Polars DataFrames.
-
-        Parameters
-        ----------
-        frame
-            Polars DataFrame containing the data that will be retrieved as Tensors.
-        label
-            One or more column names or expressions that label the feature data; results
-            in `(features,label)` tuples, where all non-label columns are considered
-            to be features. If no label is designated then each returned item is a
-            simple `(features,)` tuple containing all row elements.
-        features
-            One or more column names or expressions that represent the feature data.
-            If not provided, all columns not designated as labels are considered to be
-            features.
-
-        Notes
-        -----
-        * Integer, slice, range, integer list/Tensor Dataset indexing is all supported.
-        * Designating multi-element labels is also supported.
-
-        Examples
-        --------
-        >>> from torch.utils.data import DataLoader
-        >>> df = pl.DataFrame(
-        ...     data=[
-        ...         (0, 1, 1.5),
-        ...         (1, 0, -0.5),
-        ...         (2, 0, 0.0),
-        ...         (3, 1, -2.25),
-        ...     ],
-        ...     schema=["lbl", "feat1", "feat2"],
-        ... )
-
-        Create a Dataset from a Polars DataFrame, standardising the dtype and
-        distinguishing the label/feature columns.
-
-        >>> ds = df.to_torch("dataset", label="lbl", dtype=pl.Float32)
-        >>> ds  # doctest: +IGNORE_RESULT
-        <PolarsDataset [len:4, features:2, labels:1] at 0x156B033B0>
-        >>> ds.features
-        tensor([[ 1.0000,  1.5000],
-                [ 0.0000, -0.5000],
-                [ 0.0000,  0.0000],
-                [ 1.0000, -2.2500]])
-        >>> ds[0]
-        (tensor([1.0000, 1.5000]), tensor(0.))
-
-        The Dataset can be used standalone, or in conjunction with a DataLoader.
-
-        >>> dl = DataLoader(ds, batch_size=2)
-        >>> list(dl)
-        [[tensor([[ 1.0000,  1.5000],
-                  [ 0.0000, -0.5000]]),
-          tensor([0., 1.])],
-         [tensor([[ 0.0000,  0.0000],
-                  [ 1.0000, -2.2500]]),
-          tensor([2., 3.])]]
-
-        Note that the label can be given as an expression as well as a column name,
-        allowing for independent transform and dtype adjustment from the feature
-        columns.
-
-        >>> ds = df.to_torch(
-        ...     "dataset",
-        ...     dtype=pl.Float32,
-        ...     label=(pl.col("lbl") * 8).cast(pl.Int16),
-        ... )
-        >>> ds[:2]
-        (tensor([[ 1.0000,  1.5000],
-                 [ 0.0000, -0.5000]]), tensor([0, 8], dtype=torch.int16))
-        """
         if isinstance(label, (str, Expr)):
             label = [label]
 
