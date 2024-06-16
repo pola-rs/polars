@@ -62,7 +62,9 @@ def test_cum_count_multi_arg_reverse() -> None:
 
 
 def test_cum_count() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
+    df = pl.DataFrame(
+        [["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"], orient="row"
+    )
 
     out = df.group_by("A", maintain_order=True).agg(
         pl.col("A").cum_count().alias("foo")

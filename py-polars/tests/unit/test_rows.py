@@ -234,10 +234,7 @@ def test_iter_rows() -> None:
     ],
 )
 def test_row_constructor_schema(primitive: pl.DataType) -> None:
-    result = pl.DataFrame(
-        data=[[1], [2], [3]],
-        schema={"d": primitive},
-    )
+    result = pl.DataFrame(data=[[1], [2], [3]], schema={"d": primitive}, orient="row")
 
     assert result.dtypes == [primitive]
     assert result.to_dict(as_series=False) == {"d": [1, 2, 3]}
@@ -246,7 +243,6 @@ def test_row_constructor_schema(primitive: pl.DataType) -> None:
 def test_row_constructor_uint64() -> None:
     # validate init with a valid UInt64 that exceeds Int64 upper bound
     df = pl.DataFrame(
-        data=[[0], [int(2**63) + 1]],
-        schema={"x": pl.UInt64},
+        data=[[0], [int(2**63) + 1]], schema={"x": pl.UInt64}, orient="row"
     )
     assert df.rows() == [(0,), (9223372036854775809,)]

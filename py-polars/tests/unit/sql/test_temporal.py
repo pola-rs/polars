@@ -174,6 +174,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
             right=pl.DataFrame(
                 data=[expected + expected],
                 schema=["c1", "c2", "c3", "c4"],
+                orient="row",
             ).cast(pl.Int32),
         )
 

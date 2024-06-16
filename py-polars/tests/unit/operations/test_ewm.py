@@ -210,6 +210,7 @@ def test_ewm_with_multiple_chunks() -> None:
             ("z", 3.0, 4.0),
         ],
         schema=["a", "b", "c"],
+        orient="row",
     ).with_columns(
         pl.col(pl.Float64).log().diff().name.prefix("ld_"),
     )

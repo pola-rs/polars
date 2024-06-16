@@ -242,6 +242,7 @@ def test_windows_cse_excluded() -> None:
             ("b", "qqq", 0),
         ],
         schema=["a", "b", "c"],
+        orient="row",
     )
 
     result = lf.select(

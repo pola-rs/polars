@@ -380,6 +380,7 @@ def test_nan_inf_aggregation() -> None:
             ("inf and null", None),
         ],
         schema=["group", "value"],
+        orient="row",
     )
 
     assert_frame_equal(
@@ -398,6 +399,7 @@ def test_nan_inf_aggregation() -> None:
                 ("inf and null", np.inf, np.inf, np.inf),
             ],
             schema=["group", "min", "max", "mean"],
+            orient="row",
         ),
     )
 

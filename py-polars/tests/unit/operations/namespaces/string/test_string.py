@@ -265,6 +265,7 @@ def test_str_find(strict: bool) -> None:
             "pat": pl.String,
             "lit": pl.String,
         },
+        orient="row",
     )
     city, pop, pat, lit = (pl.col(c) for c in ("city", "population", "pat", "lit"))
 
@@ -791,6 +792,7 @@ def test_contains() -> None:
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
         schema=["idx", "text"],
+        orient="row",
     )
     for pattern, as_literal, expected in (
         (r"\* \*", False, [True, False, False]),

@@ -708,7 +708,9 @@ def test_dataframe_from_repr() -> None:
     )
     assert_frame_equal(
         df,
-        pl.DataFrame(data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}),
+        pl.DataFrame(
+            data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}, orient="row"
+        ),
     )
 
     df = cast(

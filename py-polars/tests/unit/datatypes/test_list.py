@@ -586,9 +586,8 @@ def test_list_null_pickle() -> None:
 
 def test_struct_with_nulls_as_list() -> None:
     df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
-    assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(
-        as_series=False
-    ) == {
+    result = df.select(pl.concat_list(pl.all()).alias("as_list"))
+    assert result.to_dict(as_series=False) == {
         "as_list": [
             [
                 {"a": 1, "b": 2, "c": None, "d": None},
@@ -833,6 +832,7 @@ def test_null_list_categorical_16405() -> None:
             "match": pl.List(pl.Categorical),
             "what": pl.Categorical,
         },
+        orient="row",
     )
 
     df = df.select(

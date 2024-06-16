@@ -663,6 +663,7 @@ def test_init_numpy_scalars() -> None:
     df_expected = pl.from_records(
         data=[(True, 16, 1234), (False, 64, 9876)],
         schema=OrderedDict([("bool", pl.Boolean), ("i8", pl.Int8), ("u32", pl.UInt32)]),
+        orient="row",
     )
     assert_frame_equal(df, df_expected)
 
@@ -837,13 +838,14 @@ def test_init_py_dtype_misc_float() -> None:
 
 def test_init_seq_of_seq() -> None:
     # List of lists
-    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
+    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"], orient="row")
     expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
     assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         [[1, 2, 3], [4, 5, 6]],
         schema=[("a", pl.Int8), ("b", pl.Int16), ("c", pl.Int32)],
+        orient="row",
     )
     assert df.schema == {"a": pl.Int8, "b": pl.Int16, "c": pl.Int32}
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
