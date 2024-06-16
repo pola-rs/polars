@@ -961,3 +961,12 @@ def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )
+
+
+def test_join_lit_panic_11410() -> None:
+    df = pl.LazyFrame({"date": [1, 2, 3], "symbol": [4, 5, 6]})
+    dates = df.select("date").unique(maintain_order=True)
+    symbols = df.select("symbol").unique(maintain_order=True)
+    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).drop(
+        "literal"
+    ).collect().to_dict(as_series=False) == {"symbol": [4], "date": [1]}
