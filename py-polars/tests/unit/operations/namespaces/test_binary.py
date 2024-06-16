@@ -28,6 +28,7 @@ def test_contains() -> None:
             (4, None),
         ],
         schema=["idx", "bin"],
+        orient="row",
     )
     for pattern, expected in (
         (b"e * ", [True, False, False, None]),

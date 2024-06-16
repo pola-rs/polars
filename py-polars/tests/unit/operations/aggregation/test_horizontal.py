@@ -24,6 +24,7 @@ def test_all_any_horizontally() -> None:
             [None, None, False],
         ],
         schema=["var1", "var2", "var3"],
+        orient="row",
     )
     result = df.select(
         any=pl.any_horizontal(pl.col("var2"), pl.col("var3")),

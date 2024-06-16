@@ -336,6 +336,7 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
             (["a"], "d"),
         ],
         schema={"li": pl.List(dtype), "x": dtype},
+        orient="row",
     )
     res = df.select(pl.col("li").list.contains(pl.col("x")))
     expected_df = pl.DataFrame({"li": [False, True, True, False, False]})
@@ -371,6 +372,7 @@ def test_cat_list_is_in_from_str() -> None:
             (["a"], "d"),
         ],
         schema={"li": pl.List(pl.Categorical), "x": pl.String},
+        orient="row",
     )
     res = df.select(pl.col("li").list.contains(pl.col("x")))
     expected_df = pl.DataFrame({"li": [False, True, True, False, False]})

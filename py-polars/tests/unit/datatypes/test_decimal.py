@@ -128,7 +128,9 @@ def test_decimal_convert_to_float_by_schema() -> None:
 
 
 def test_df_constructor_convert_decimal_to_float_9873() -> None:
-    result = pl.DataFrame([[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64})
+    result = pl.DataFrame(
+        [[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64}, orient="row"
+    )
     expected = pl.DataFrame({"a": [45.0, 45.0]})
     assert_frame_equal(result, expected)
 
