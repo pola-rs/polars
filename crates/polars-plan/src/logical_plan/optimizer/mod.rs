@@ -14,6 +14,7 @@ mod cse;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
+mod join_utils;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;

@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 
 use super::*;
+use crate::prelude::optimizer::join_utils::split_suffix;
 
 fn add_keys_to_accumulated_state(
     expr: Node,
@@ -414,8 +415,7 @@ fn process_projection(
         // suffix.
         if leaf_column_name.ends_with(suffix) && join_schema.contains(leaf_column_name.as_ref()) {
             // downwards name is the name without the _right i.e. "foo".
-            let (downwards_name, _) =
-                leaf_column_name.split_at(leaf_column_name.len() - suffix.len());
+            let downwards_name = split_suffix(leaf_column_name.as_ref(), suffix);
 
             let downwards_name_column = expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
             // project downwards and locally immediately alias to prevent wrong projections
