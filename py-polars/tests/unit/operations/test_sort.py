@@ -4,9 +4,37 @@ from datetime import date, datetime
 from typing import Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes, series
+
+
+@given(
+    s=series(
+        excluded_dtypes=pl.Struct,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+    )
+)
+def test_series_sort_idempotent(s: pl.Series) -> None:
+    print(s)
+    result = s.sort()
+    assert result.len() == s.len()
+    assert_series_equal(result, result.sort())
+
+
+@given(
+    df=dataframes(
+        excluded_dtypes=[
+            pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+        ]
+    )
+)
+def test_df_sort_idempotent(df: pl.DataFrame) -> None:
+    cols = df.columns
+    result = df.sort(cols, maintain_order=True)
+    assert result.shape == df.shape
+    assert_frame_equal(result, result.sort(cols, maintain_order=True))
 
 
 def is_sorted_any(s: pl.Series) -> bool:
