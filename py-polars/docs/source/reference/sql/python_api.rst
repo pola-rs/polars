@@ -14,8 +14,17 @@ frame-level :meth:`DataFrame.sql` and :meth:`LazyFrame.sql` methods, and the
 :func:`polars.sql_expr` function that creates native expressions from SQL.
 
 
+Querying
+--------
+
+SQL queries can be issued against compatible data structures in the current globals,
+against specific frames, or incorporated into expressions.
+
+
+.. _global_sql:
+
 Global SQL
-----------
+~~~~~~~~~~
 
 Both :class:`~polars.sql.SQLContext` and the :func:`polars.sql` function can be used
 to execute SQL queries mediated by the Polars execution engine against Polars
@@ -35,8 +44,8 @@ zero-copy if the underlying data maps cleanly to a natively-supported dtype.
 
     polars_df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [4, 5, 6, 7]})
     pandas_df = pd.DataFrame({"a": [3, 4, 5, 6], "b": [6, 7, 8, 9]})
-    pyarrow_table = polars_df.to_arrow()
     polars_series = (polars_df["a"] * 2).rename("c")
+    pyarrow_table = polars_df.to_arrow()
 
     pl.sql(
         """
@@ -46,7 +55,7 @@ zero-copy if the underlying data maps cleanly to a natively-supported dtype.
             UNION ALL SELECT * FROM pyarrow_table  -- pyarrow table
         ) all_data
         INNER JOIN polars_series
-          ON polars_series.c == all_data.b         -- join on series
+          ON polars_series.c = all_data.b          -- polars series
         GROUP BY "a", "b"
         ORDER BY "a", "b"
         """
@@ -67,9 +76,15 @@ zero-copy if the underlying data maps cleanly to a natively-supported dtype.
 
   * :meth:`polars.sql`
 
+.. seealso::
 
-Frame-level SQL
----------------
+  :ref:`SQLContext <sql_context>`
+
+
+.. _frame_sql:
+
+Frame SQL
+~~~~~~~~~
 
 Executes SQL directly against the specific underlying eager/lazy frame, referencing
 it as "self"; returns a new frame representing the query result.
@@ -105,8 +120,10 @@ it as "self"; returns a new frame representing the query result.
   * :meth:`LazyFrame.sql`
 
 
-Expressions
------------
+.. _expression_sql:
+
+Expression SQL
+~~~~~~~~~~~~~~
 
 The :func:`polars.sql_expr` function can be used to create native Polars expressions
 from SQL fragments.
@@ -142,8 +159,10 @@ from SQL fragments.
   * :meth:`polars.sql_expr`
 
 
+.. _sql_context:
+
 SQLContext
-----------
+~~~~~~~~~~
 
 Polars provides a dedicated class for querying frame data that offers additional
 control over table registration and management of state, and can also be used as
@@ -164,7 +183,7 @@ the core functionality used by the other SQL functions.
     .. automethod:: __exit__
 
 Methods
-~~~~~~~
+^^^^^^^
 
 .. autosummary::
    :toctree: api/
@@ -207,3 +226,7 @@ Methods
         # │ 2   ┆ 0.2     ┆ 53.4    │
         # │ 3   ┆ 0.3     ┆ 12.7    │
         # └─────┴─────────┴─────────┘
+
+.. seealso::
+
+  :ref:`pl.sql <global_sql>`

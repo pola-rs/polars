@@ -174,7 +174,7 @@ Combines rows from two or more tables based on a related column.
 WHERE
 -----
 
-Filter rows returned from the query based on specific condition(s).
+Filter rows returned from the query based on the given conditions.
 
 .. code-block:: python
 
@@ -229,7 +229,7 @@ Group rows that have the same values in specified columns into summary rows.
 
 HAVING
 ------
-Filter groups in a `GROUP BY` based on specific condition(s).
+Filter groups in a `GROUP BY` based on the given conditions.
 
 .. code-block:: python
 
