@@ -14,7 +14,6 @@ Errors
     ColumnNotFoundError
     ComputeError
     DuplicateError
-    InvalidAssert
     InvalidOperationError
     ModuleUpgradeRequired
     NoDataError

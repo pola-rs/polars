@@ -4,7 +4,7 @@ from typing import cast
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.dataframe import DataFrame
-from polars.exceptions import ComputeError, InvalidAssert
+from polars.exceptions import InvalidOperationError
 from polars.lazyframe import LazyFrame
 from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
@@ -192,9 +192,9 @@ def _sort_dataframes(left: DataFrame, right: DataFrame) -> tuple[DataFrame, Data
     try:
         left = left.sort(by)
         right = right.sort(by)
-    except ComputeError as exc:
+    except InvalidOperationError as exc:
         msg = "cannot set `check_row_order=False` on frame with unsortable columns"
-        raise InvalidAssert(msg) from exc
+        raise TypeError(msg) from exc
     return left, right
 
 

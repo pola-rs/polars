@@ -105,10 +105,6 @@ except ImportError:
         """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
-class InvalidAssert(PolarsError):  # type: ignore[misc]
-    """Exception raised when an unsupported testing assert is made."""
-
-
 class RowsError(PolarsError):  # type: ignore[misc]
     """Exception raised when the number of returned rows does not match expectation."""
 
@@ -203,7 +199,6 @@ __all__ = [
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
-    "InvalidAssert",
     "InvalidOperationError",
     "ModuleUpgradeRequired",
     "NoDataError",
