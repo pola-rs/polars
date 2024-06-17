@@ -13,7 +13,7 @@ from polars._utils.wrap import wrap_s
 from polars.polars import PySeries
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.mark.parametrize(

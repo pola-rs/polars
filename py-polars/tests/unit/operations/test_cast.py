@@ -12,7 +12,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_string_date() -> None:

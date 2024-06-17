@@ -15,7 +15,7 @@ from polars.testing.parametric.strategies import series
 from polars.testing.parametric.strategies.data import datetimes
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.mark.parametrize(

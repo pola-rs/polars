@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo

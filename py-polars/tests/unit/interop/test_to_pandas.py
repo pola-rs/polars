@@ -13,7 +13,7 @@ from hypothesis import given
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_df_to_pandas_empty() -> None:

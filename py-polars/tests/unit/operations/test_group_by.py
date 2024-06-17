@@ -12,7 +12,7 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_group_by() -> None:

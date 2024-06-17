@@ -16,8 +16,7 @@ from polars.testing.parametric import series
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars.type_aliases import IndexOrder
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import IndexOrder, PolarsDataType
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:

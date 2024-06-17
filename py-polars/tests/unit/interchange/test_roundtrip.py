@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 protocol_dtypes: list[PolarsDataType] = [
     pl.Int8,

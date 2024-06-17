@@ -17,7 +17,7 @@ jxn, _ = _lazy_import("jax.numpy")
 pytestmark = pytest.mark.ci_only
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.fixture()

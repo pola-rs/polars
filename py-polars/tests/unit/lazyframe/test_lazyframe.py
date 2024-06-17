@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_init_signature_match() -> None:

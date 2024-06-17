@@ -20,7 +20,7 @@ from polars.datatypes import (
 
 if TYPE_CHECKING:
     from polars.datatypes import DataTypeClass
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 SIMPLE_DTYPES: list[DataTypeClass] = list(
     pl.INTEGER_DTYPES  # type: ignore[arg-type]

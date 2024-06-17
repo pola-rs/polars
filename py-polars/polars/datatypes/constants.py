@@ -25,8 +25,12 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsIntegerType, PolarsTemporalType, TimeUnit
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import (
+        PolarsDataType,
+        PolarsIntegerType,
+        PolarsTemporalType,
+        TimeUnit,
+    )
 
 
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])

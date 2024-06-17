@@ -9,7 +9,7 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.fixture(autouse=True)

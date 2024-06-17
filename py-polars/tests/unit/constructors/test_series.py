@@ -11,7 +11,7 @@ import polars as pl
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.typing import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_series_mixed_dtypes_list() -> None:
