@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from polars.testing import assert_frame_equal
 
 import pytest
 
@@ -34,15 +35,11 @@ def test_file_cache_ttl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     metadata_file_paths = [file_cache_prefix / f"m/{x}" for x in hashes]
     data_file_dir = file_cache_prefix / "d/"
     pl.scan_csv(paths).collect()
-    pl.scan_csv(paths[1], file_cache_ttl=0).collect()
 
-    has_data_file = [False, False]
-    for data_file in data_file_dir.iterdir():
-        for i, h in enumerate(hashes):
-            has_data_file[i] |= data_file.name.startswith(h)
-
-    assert all(x.exists() for x in metadata_file_paths)
-    assert all(has_data_file)
+    assert_frame_equal(
+        pl.scan_csv(paths[1], schema=df.collect_schema(), file_cache_ttl=0).collect(),
+        df,
+    )
 
     sleep(5)
 
