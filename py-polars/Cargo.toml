@@ -15,6 +15,7 @@ polars-lazy = { workspace = true, features = ["python"] }
 polars-ops = { workspace = true }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
+polars-stream = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
