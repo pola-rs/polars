@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -160,7 +160,7 @@ def test_scan_csv_schema_new_columns_dtypes(
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
     # cannot have len(new_columns) > len(actual columns)
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],

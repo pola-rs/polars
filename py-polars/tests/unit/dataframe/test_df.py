@@ -17,7 +17,12 @@ import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    OutOfBoundsError,
+)
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -386,7 +391,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # Out of bounds error.
-    with pytest.raises(pl.OutOfBoundsError):
+    with pytest.raises(OutOfBoundsError):
         df.sort("fruits").select(
             pl.col("B").reverse().gather([1, 2]).implode().over("fruits"),
             "fruits",

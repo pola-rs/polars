@@ -11,7 +11,16 @@ import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
-from polars.exceptions import ColumnNotFoundError, ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    InvalidOperationError,
+    OutOfBoundsError,
+    PolarsPanicError,
+    SchemaError,
+    SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
+)
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -83,7 +92,7 @@ def test_error_on_invalid_series_init() -> None:
 
 
 def test_error_on_invalid_struct_field() -> None:
-    with pytest.raises(pl.StructFieldNotFoundError):
+    with pytest.raises(StructFieldNotFoundError):
         pl.struct(
             [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
         ).struct.field("z")
@@ -103,7 +112,7 @@ def test_string_numeric_comp_err() -> None:
 
 def test_panic_error() -> None:
     with pytest.raises(
-        pl.PolarsPanicError,
+        PolarsPanicError,
         match="unit: 'k' not supported",
     ):
         pl.datetime_range(
@@ -154,7 +163,7 @@ def test_projection_update_schema_missing_column() -> None:
 def test_not_found_on_rename() -> None:
     df = pl.DataFrame({"exists": [1, 2, 3]})
 
-    err_type = (pl.SchemaFieldNotFoundError, ColumnNotFoundError)
+    err_type = (SchemaFieldNotFoundError, ColumnNotFoundError)
     with pytest.raises(err_type):
         df.rename({"does_not_exist": "exists"})
 
@@ -307,7 +316,7 @@ def test_duplicate_columns_arg_csv() -> None:
 
 
 def test_datetime_time_add_err() -> None:
-    with pytest.raises(pl.SchemaError, match="failed to determine supertype"):
+    with pytest.raises(SchemaError, match="failed to determine supertype"):
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
 
 
@@ -437,7 +446,7 @@ def test_compare_different_len() -> None:
 
 def test_take_negative_index_is_oob() -> None:
     df = pl.DataFrame({"value": [1, 2, 3]})
-    with pytest.raises(pl.OutOfBoundsError):
+    with pytest.raises(OutOfBoundsError):
         df["value"].gather(-4)
 
 
@@ -663,7 +672,7 @@ def test_raise_on_sorted_multi_args() -> None:
 
 def test_err_invalid_comparison() -> None:
     with pytest.raises(
-        pl.SchemaError,
+        SchemaError,
         match="could not evalulate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
     ):
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])

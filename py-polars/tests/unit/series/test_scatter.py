@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
 from polars.testing import assert_series_equal
 
 
@@ -50,7 +50,7 @@ def test_scatter() -> None:
     assert a.to_list() == [None, 1, 2, None, 4]
 
     a = pl.Series("x", [1, 2])
-    with pytest.raises(pl.OutOfBoundsError):
+    with pytest.raises(OutOfBoundsError):
         a[-100] = None
     assert_series_equal(a, pl.Series("x", [1, 2]))
 

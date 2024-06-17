@@ -10,7 +10,12 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    OutOfBoundsError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -159,7 +164,7 @@ def test_casting_to_an_enum_oob_from_integer() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, 1, 0, 5], dtype=pl.UInt32)
     with pytest.raises(
-        pl.OutOfBoundsError, match=("index 5 is bigger than the number of categories 3")
+        OutOfBoundsError, match=("index 5 is bigger than the number of categories 3")
     ):
         s.cast(dtype)
 
@@ -222,7 +227,7 @@ def test_append_to_an_enum() -> None:
 
 def test_append_to_an_enum_with_new_category() -> None:
     with pytest.raises(
-        pl.SchemaError,
+        SchemaError,
         match=("type Enum.*is incompatible with expected type Enum.*"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(

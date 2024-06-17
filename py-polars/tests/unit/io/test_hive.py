@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import DuplicateError
+from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal
 
 
@@ -257,7 +257,7 @@ def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
 @pytest.mark.write_disk()
 def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
     with pytest.raises(
-        pl.SchemaFieldNotFoundError,
+        SchemaFieldNotFoundError,
         match='path contains column not present in the given Hive schema: "c"',
     ):
         pl.read_parquet(

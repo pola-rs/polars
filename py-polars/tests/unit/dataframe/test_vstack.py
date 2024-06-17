@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import SchemaError, ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -49,14 +50,14 @@ def test_vstack_self_in_place(df1: pl.DataFrame) -> None:
 def test_vstack_column_number_mismatch(df1: pl.DataFrame) -> None:
     df2 = df1.drop("ham")
 
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df1.vstack(df2)
 
 
 def test_vstack_column_name_mismatch(df1: pl.DataFrame) -> None:
     df2 = df1.with_columns(pl.col("foo").alias("oof"))
 
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df1.vstack(df2)
 
 
@@ -69,7 +70,7 @@ def test_vstack_with_null_column() -> None:
 
     assert_frame_equal(result, expected)
 
-    with pytest.raises(pl.SchemaError):
+    with pytest.raises(SchemaError):
         df2.vstack(df1)
 
 
