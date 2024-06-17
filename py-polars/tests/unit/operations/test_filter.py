@@ -268,3 +268,15 @@ def test_filter(dtype: PolarsDataType, size: int, selectivity: float) -> None:
     reference = pl.Series(np_payload[np_mask]).cast(dtype)
     result = payload.filter(mask)
     assert_series_equal(reference, result)
+
+
+def test_filter_group_aware_17030() -> None:
+    df = pl.DataFrame({"foo": ["1", "2", "1", "2", "1", "2"]})
+
+    trim_col = "foo"
+    group_count = pl.col(trim_col).count().over(trim_col)
+    group_cum_count = pl.col(trim_col).cum_count().over(trim_col)
+    filter_expr = (
+        (group_count > 2) & (group_cum_count > 1) & (group_cum_count < group_count)
+    )
+    assert df.filter(filter_expr)["foo"].to_list() == ["1", "2"]
