@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::metadata::MetadataTrait;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -193,11 +194,7 @@ pub trait SeriesTrait:
         polars_bail!(opq = bitxor, self._dtype());
     }
 
-    fn get_metadata_min_value(&self) -> Option<Scalar> {
-        None
-    }
-
-    fn get_metadata_max_value(&self) -> Option<Scalar> {
+    fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
         None
     }
 
@@ -376,6 +373,8 @@ pub trait SeriesTrait:
     }
 
     /// Get unique values in the Series.
+    ///
+    /// A `null` value also counts as a unique value.
     fn n_unique(&self) -> PolarsResult<usize> {
         polars_bail!(opq = n_unique, self._dtype());
     }

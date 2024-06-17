@@ -140,16 +140,6 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DateChunked> {
-    fn get_metadata_min_value(&self) -> Option<Scalar> {
-        let v = self.0.metadata()?.get_min_value()?;
-        Some(Scalar::new(DataType::Boolean, AnyValue::from(*v)))
-    }
-
-    fn get_metadata_max_value(&self) -> Option<Scalar> {
-        let v = self.0.metadata()?.get_max_value()?;
-        Some(Scalar::new(DataType::Boolean, AnyValue::from(*v)))
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

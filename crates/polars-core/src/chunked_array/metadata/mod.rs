@@ -6,7 +6,7 @@ use polars_utils::IdxSize;
 use serde::{Deserialize, Serialize};
 
 pub use self::env::MetadataEnv;
-use super::PolarsDataType;
+use super::{IntoScalar, PolarsDataType, Scalar};
 use crate::series::IsSorted;
 
 #[macro_use]
@@ -54,6 +54,15 @@ bitflags! {
     }
 }
 
+pub trait MetadataTrait {
+    fn get_flags(&self) -> MetadataFlags;
+    fn min_value(&self) -> Option<Scalar>;
+    fn max_value(&self) -> Option<Scalar>;
+
+    /// Number of unique non-null values
+    fn distinct_count(&self) -> Option<IdxSize>;
+}
+
 pub struct Metadata<T: PolarsDataType> {
     flags: MetadataFlags,
 
@@ -81,6 +90,29 @@ bitflags! {
         const SORTED_ASC = 0x01;
         const SORTED_DSC = 0x02;
         const FAST_EXPLODE_LIST = 0x04;
+    }
+}
+
+impl<T: PolarsDataType> MetadataTrait for Metadata<T>
+where
+    T::OwnedPhysical: IntoScalar + Clone,
+{
+    fn get_flags(&self) -> MetadataFlags {
+        self.get_flags()
+    }
+
+    fn min_value(&self) -> Option<Scalar> {
+        self.get_min_value()
+            .map(|v| v.clone().into_scalar(T::get_dtype()).unwrap())
+    }
+
+    fn max_value(&self) -> Option<Scalar> {
+        self.get_max_value()
+            .map(|v| v.clone().into_scalar(T::get_dtype()).unwrap())
+    }
+
+    fn distinct_count(&self) -> Option<IdxSize> {
+        self.get_distinct_count()
     }
 }
 

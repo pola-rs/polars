@@ -101,14 +101,8 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
-    fn get_metadata_min_value(&self) -> Option<Scalar> {
-        let v = self.metadata()?.get_min_value()?;
-        Some(Scalar::new(DataType::Boolean, AnyValue::from(*v)))
-    }
-
-    fn get_metadata_max_value(&self) -> Option<Scalar> {
-        let v = self.metadata()?.get_max_value()?;
-        Some(Scalar::new(DataType::Boolean, AnyValue::from(*v)))
+    fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
+        self.metadata().map(|v| v as &dyn MetadataTrait)
     }
 
     fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
