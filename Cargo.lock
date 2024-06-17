@@ -3765,6 +3765,7 @@ dependencies = [
  "polars-ops 0.40.0",
  "polars-parquet 0.40.0",
  "polars-plan 0.40.0",
+ "polars-stream 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
  "polars-time",
  "polars-utils 0.40.0",
  "pyo3",
