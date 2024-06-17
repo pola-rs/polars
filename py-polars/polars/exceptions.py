@@ -200,7 +200,6 @@ class UnstableWarning(PolarsWarning):  # type: ignore[misc]
 __all__ = [
     # Errors
     "PolarsError",
-    "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",

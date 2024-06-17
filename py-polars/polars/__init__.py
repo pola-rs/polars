@@ -247,7 +247,6 @@ __all__ = [
     "plugins",
     # exceptions - errors
     "PolarsError",
-    "ChronoFormatWarning",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
