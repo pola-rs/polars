@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 from polars._utils.construction.utils import try_get_type_hints
-from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
+from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
 from polars.testing import assert_frame_equal, assert_series_equal
 

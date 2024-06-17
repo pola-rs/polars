@@ -13,7 +13,7 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
+    from polars.typing import PolarsDataType
 
 
 def test_struct_to_list() -> None:
