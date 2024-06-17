@@ -13,11 +13,13 @@ from polars.testing.parametric import dataframes, series
 
 @given(
     s=series(
-        excluded_dtypes=pl.Struct,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+        excluded_dtypes=[
+            pl.Object,  # Unsortable type
+            pl.Struct,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+        ],
     )
 )
 def test_series_sort_idempotent(s: pl.Series) -> None:
-    print(s)
     result = s.sort()
     assert result.len() == s.len()
     assert_series_equal(result, result.sort())
@@ -26,6 +28,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
 @given(
     df=dataframes(
         excluded_dtypes=[
+            pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
         ]
