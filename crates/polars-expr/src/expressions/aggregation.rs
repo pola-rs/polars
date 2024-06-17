@@ -67,9 +67,7 @@ impl PhysicalExpr for AggregationExpr {
 
         match group_by {
             GroupByMethod::Min => {
-                let extensive_use = MetadataEnv::extensive_use();
-
-                if extensive_use {
+                if MetadataEnv::experimental_enabled() {
                     if let Some(sc) = s.get_metadata_min_value() {
                         return Ok(sc.into_series(s.name()));
                     }
@@ -102,9 +100,7 @@ impl PhysicalExpr for AggregationExpr {
                 panic!("activate 'propagate_nans' feature")
             },
             GroupByMethod::Max => {
-                let extensive_use = MetadataEnv::extensive_use();
-
-                if extensive_use {
+                if MetadataEnv::experimental_enabled() {
                     if let Some(sc) = s.get_metadata_max_value() {
                         return Ok(sc.into_series(s.name()));
                     }
