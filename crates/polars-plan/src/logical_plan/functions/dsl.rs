@@ -55,11 +55,13 @@ impl DslFunction {
                 let columns = columns
                     .iter()
                     .map(|e| {
-                        if let Expr::Column(name) = e {
-                            Ok(name.clone())
-                        } else {
+                        let Expr::Column(name) = e else {
                             polars_bail!(InvalidOperation: "expected column expression")
-                        }
+                        };
+
+                        polars_ensure!(input_schema.contains(name), ColumnNotFound: "{name}");
+
+                        Ok(name.clone())
                     })
                     .collect::<PolarsResult<Arc<[Arc<str>]>>>()?;
                 FunctionNode::Explode {
