@@ -19,6 +19,8 @@ This page gives an overview of all public DataFrame methods.
    plot
    style
 
+.. _dataframe:
+
 .. currentmodule:: polars
 
 .. autoclass:: DataFrame

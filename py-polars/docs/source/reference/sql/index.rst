@@ -21,7 +21,7 @@ and operations supported by Polars.
         ^^^^^^^^^^^^^^
 
         .. toctree::
-           :maxdepth: 2
+           :maxdepth: 3
 
            python_api
 
