@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -30,7 +31,7 @@ def test_list_arr_get() -> None:
     out = pl.select(pl.lit(a).list.last()).to_series()
     assert_series_equal(out, expected)
 
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         a.list.get(3, null_on_oob=False)
 
     # Null index.
@@ -40,10 +41,10 @@ def test_list_arr_get() -> None:
 
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
 
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         a.list.get(-3, null_on_oob=False)
 
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         pl.DataFrame(
             {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
         ).with_columns(
@@ -54,7 +55,7 @@ def test_list_arr_get() -> None:
     # get by indexes where some are out of bounds
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
 
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         df.select([pl.col("cars").list.get("indexes", null_on_oob=False)]).to_dict(
             as_series=False
         )
@@ -67,10 +68,10 @@ def test_list_arr_get() -> None:
         }
     )
 
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         df.select(pl.col("lists").list.get(3, null_on_oob=False))
 
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         df.select(pl.col("lists").list.get(pl.col("index"), null_on_oob=False))
 
 
@@ -750,15 +751,13 @@ def test_list_to_array() -> None:
 
 def test_list_to_array_wrong_lengths() -> None:
     s = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float32))
-    with pytest.raises(
-        pl.ComputeError, match="not all elements have the specified width"
-    ):
+    with pytest.raises(ComputeError, match="not all elements have the specified width"):
         s.list.to_array(3)
 
 
 def test_list_to_array_wrong_dtype() -> None:
     s = pl.Series([1.0, 2.0])
-    with pytest.raises(pl.ComputeError, match="expected List dtype"):
+    with pytest.raises(ComputeError, match="expected List dtype"):
         s.list.to_array(2)
 
 

@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -208,7 +209,7 @@ def test_expr_deserialize_file_not_found() -> None:
 
 def test_expr_deserialize_invalid_json() -> None:
     with pytest.raises(
-        pl.ComputeError, match="could not deserialize input into an expression"
+        ComputeError, match="could not deserialize input into an expression"
     ):
         pl.Expr.deserialize(io.StringIO("abcdef"))
 

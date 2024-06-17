@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -96,7 +97,7 @@ def test_lazy_map_schema() -> None:
         return df["a"]
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
@@ -108,7 +109,7 @@ def test_lazy_map_schema() -> None:
         return df.select(pl.all().cast(pl.String))
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="The output schema of 'LazyFrame.map' is incorrect. Expected",
     ):
         df.lazy().map_batches(custom2).collect()

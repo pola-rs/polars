@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -158,7 +159,7 @@ def test_datetime_range_lazy_with_expressions(
 
 
 def test_datetime_range_invalid_time_zone() -> None:
-    with pytest.raises(pl.ComputeError, match="unable to parse time zone: 'foo'"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.datetime_range(
             datetime(2001, 1, 1),
             datetime(2001, 1, 3),
@@ -257,7 +258,7 @@ def test_tzaware_datetime_range_crossing_dst_monthly() -> None:
 
 def test_datetime_range_with_unsupported_datetimes() -> None:
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
     ):
         pl.datetime_range(
@@ -268,7 +269,7 @@ def test_datetime_range_with_unsupported_datetimes() -> None:
             eager=True,
         )
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Vienna'",
     ):
         pl.datetime_range(
@@ -491,7 +492,7 @@ def test_datetime_ranges_no_alias_schema_9037() -> None:
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
 def test_datetime_range_invalid_interval(interval: timedelta) -> None:
-    with pytest.raises(pl.ComputeError, match="`interval` must be positive"):
+    with pytest.raises(ComputeError, match="`interval` must be positive"):
         pl.datetime_range(
             datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
         )

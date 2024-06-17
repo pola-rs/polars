@@ -17,6 +17,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
+from polars.exceptions import ComputeError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -76,7 +77,7 @@ def test_comparisons() -> None:
     assert_frame_equal(df >= 2, pl.DataFrame({"a": [False, True], "b": [True, True]}))
     assert_frame_equal(df <= 2, pl.DataFrame({"a": [True, True], "b": [False, False]}))
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df > "2"  # noqa: B015
 
     # Series
@@ -115,7 +116,7 @@ def test_comparisons() -> None:
         df == pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})  # noqa: B015
 
     # Type mismatch
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df == pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})  # noqa: B015
 
 
@@ -490,7 +491,7 @@ def test_file_buffer() -> None:
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_parquet(f)
 
 
@@ -1201,7 +1202,7 @@ def test_repeat_by_unequal_lengths_panic() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="repeat_by argument and the Series should have equal length, "
         "or at least one of them should have length 1",
     ):
@@ -2108,7 +2109,7 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("B").upper_bound())
     assert res_expr.item() == 9223372036854775807
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         fruits_cars.select(pl.col("fruits").upper_bound())
 
 

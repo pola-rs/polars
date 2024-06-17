@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 
@@ -56,7 +57,7 @@ def test_scatter() -> None:
 
 def test_index_with_None_errors_16905() -> None:
     s = pl.Series("s", [1, 2, 3])
-    with pytest.raises(pl.ComputeError, match="index values should not be null"):
+    with pytest.raises(ComputeError, match="index values should not be null"):
         s[[1, None]] = 5
     # The error doesn't trash the series, as it used to:
     assert_series_equal(s, pl.Series("s", [1, 2, 3]))

@@ -10,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -239,7 +240,7 @@ def test_extend_to_an_enum() -> None:
 
 def test_series_init_uninstantiated_enum() -> None:
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="can not cast / initialize Enum without categories present",
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
@@ -382,7 +383,7 @@ def test_different_enum_comparison_order() -> None:
     )
     for op in [operator.gt, operator.ge, operator.lt, operator.le]:
         with pytest.raises(
-            pl.ComputeError,
+            ComputeError,
             match="can only compare categoricals of the same type",
         ):
             df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))

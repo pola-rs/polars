@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -83,7 +84,7 @@ def test_repeat_n_empty() -> None:
 
 
 def test_repeat_n_negative() -> None:
-    with pytest.raises(pl.ComputeError, match="could not parse value '-1' as a size"):
+    with pytest.raises(ComputeError, match="could not parse value '-1' as a size"):
         pl.repeat(1, n=-1, eager=True)
 
 

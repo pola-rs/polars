@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -75,7 +76,7 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
 
 def test_extend_by_not_uint_expr() -> None:
     s = pl.Series("s", [1])
-    with pytest.raises(pl.ComputeError, match="value and n should have unit length"):
+    with pytest.raises(ComputeError, match="value and n should have unit length"):
         s.extend_constant(pl.Series([2, 3]), 3)
-    with pytest.raises(pl.ComputeError, match="value and n should have unit length"):
+    with pytest.raises(ComputeError, match="value and n should have unit length"):
         s.extend_constant(2, pl.Series([3, 4]))

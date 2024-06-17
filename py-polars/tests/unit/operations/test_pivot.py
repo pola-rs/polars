@@ -416,9 +416,7 @@ def test_pivot_negative_duration() -> None:
 
 def test_aggregate_function_default() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
-    with pytest.raises(
-        pl.ComputeError, match="found multiple elements in the same group"
-    ):
+    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
         df.pivot(index="b", columns="c", values="a")
 
 

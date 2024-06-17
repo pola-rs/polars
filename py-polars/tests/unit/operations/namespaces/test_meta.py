@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,7 +44,7 @@ def test_root_and_output_names() -> None:
     assert e.meta.output_name() == "len"
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="cannot determine output column without a context for this expression",
     ):
         pl.all().name.suffix("_").meta.output_name()

@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -161,7 +162,7 @@ def test_is_in_null() -> None:
 
 
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
 
 

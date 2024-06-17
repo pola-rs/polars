@@ -1804,7 +1804,7 @@ def test_ignore_errors_casting_dtypes() -> None:
         ignore_errors=True,
     ).to_dict(as_series=False) == {"inventory": [10, None, None, 90]}
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_csv(
             source=io.StringIO(csv),
             schema_overrides={"inventory": pl.Int8},
@@ -1814,7 +1814,7 @@ def test_ignore_errors_casting_dtypes() -> None:
 
 def test_ignore_errors_date_parser() -> None:
     data_invalid_date = "int,float,date\n3,3.4,X"
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_csv(
             source=io.StringIO(data_invalid_date),
             schema_overrides={"date": pl.Date},
@@ -1838,9 +1838,9 @@ def test_csv_ragged_lines() -> None:
     )
 
     for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
-        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+        with pytest.raises(ComputeError, match=r"found more fields than defined"):
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
-        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+        with pytest.raises(ComputeError, match=r"found more fields than defined"):
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
 
 
@@ -1936,7 +1936,7 @@ def test_csv_no_new_line_last() -> None:
 
 
 def test_invalid_csv_raise() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_csv(
             b"""
     "WellCompletionCWI","FacilityID","ProductionMonth","ReportedHoursProdInj","ProdAccountingProductType","ReportedVolume","VolumetricActivityType"
@@ -1997,7 +1997,7 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 
 
 def test_csv_invalid_escape_utf8_14960() -> None:
-    with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
+    with pytest.raises(ComputeError, match=r"field is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
 
 

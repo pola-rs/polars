@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -355,7 +356,7 @@ def test_file_list_schema_mismatch(
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         lf.collect(streaming=streaming)
 
     if len({df.width for df in dfs}) == 1:

@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import CategoricalRemappingWarning
+from polars.exceptions import CategoricalRemappingWarning, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -438,7 +438,7 @@ def test_replace_old_new_many_to_one() -> None:
 
 def test_replace_old_new_mismatched_lengths() -> None:
     s = pl.Series([1, 2, 2, 3, 4])
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s.replace([2, 3, 4], [8, 9])
 
 
@@ -496,7 +496,7 @@ def test_replace_fast_path_many_to_one_null() -> None:
 def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:
     s = pl.Series([1, 2, 3, 2, 3])
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="`old` input for `replace` must not contain duplicates",
     ):
         s.replace(old, new)

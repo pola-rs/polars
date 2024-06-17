@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -623,24 +624,24 @@ def test_join_validation() -> None:
             duplicate, on=on, how=how, validate="1:m"
         )
 
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_many_fail_inner = duplicate.join(
                 unique, on=on, how=how, validate="1:m"
             )
 
         # one to one
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_one_fail_1_inner = unique.join(
                 duplicate, on=on, how=how, validate="1:1"
             )
 
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_one_fail_2_inner = duplicate.join(
                 unique, on=on, how=how, validate="1:1"
             )
 
         # many to one
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _many_to_one_fail_inner = unique.join(
                 duplicate, on=on, how=how, validate="m:1"
             )
@@ -727,7 +728,7 @@ def test_join_validation_many_keys() -> None:
 
     for join_type in ["inner", "left", "full"]:
         for val in ["1:1", "1:m"]:
-            with pytest.raises(pl.ComputeError):
+            with pytest.raises(ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
     # many in rhs
@@ -746,7 +747,7 @@ def test_join_validation_many_keys() -> None:
 
     for join_type in ["inner", "left", "full"]:
         for val in ["m:1", "1:1"]:
-            with pytest.raises(pl.ComputeError):
+            with pytest.raises(ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
 
@@ -783,7 +784,7 @@ def test_join_on_wildcard_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="wildcard column selection not supported at this point",
     ):
         df.join(df2, on=pl.all())
@@ -793,7 +794,7 @@ def test_join_on_nth_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"nth column selection not supported at this point \(n=0\)",
     ):
         df.join(df2, on=pl.first())

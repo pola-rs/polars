@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -22,8 +22,7 @@ def test_cast_list_array() -> None:
 
     # width is incorrect
     with pytest.raises(
-        pl.ComputeError,
-        match=r"not all elements have the specified width",
+        ComputeError, match=r"not all elements have the specified width"
     ):
         s.cast(pl.Array(pl.Int64, 2))
 
