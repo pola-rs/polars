@@ -45,6 +45,7 @@ Warnings
     CategoricalRemappingWarning
     ChronoFormatWarning
     CustomUFuncWarning
+    DataOrientationWarning
     MapWithoutReturnDtypeWarning
     PerformanceWarning
     PolarsInefficientMapWarning
