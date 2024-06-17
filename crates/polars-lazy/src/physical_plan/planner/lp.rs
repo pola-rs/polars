@@ -165,12 +165,12 @@ fn create_physical_plan_impl(
             },
             SinkType::File { file_type, .. } => {
                 polars_bail!(InvalidOperation:
-                    "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
+                    "sink_{file_type} not yet supported in standard engine. Use 'collect().write_{file_type}()'"
                 )
             },
             #[cfg(feature = "cloud")]
             SinkType::Cloud { .. } => {
-                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
+                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine")
             },
         },
         Union { inputs, options } => {
