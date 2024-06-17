@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ColumnNotFoundError, ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -818,7 +818,7 @@ def test_join_projection_invalid_name_contains_suffix_15243() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).lazy()
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         (
             df1.join(df2, on="a")
             .select(pl.col("b").filter(pl.col("b") == pl.col("foo_right")))

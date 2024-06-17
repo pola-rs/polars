@@ -9,6 +9,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1027,7 +1028,7 @@ def test_schema_on_agg() -> None:
 
 def test_group_by_schema_err() -> None:
     lf = pl.LazyFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]})
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         lf.group_by("not-existent").agg(
             pl.col("bar").max().alias("max_bar")
         ).collect_schema()

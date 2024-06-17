@@ -11,7 +11,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ColumnNotFoundError, ComputeError, InvalidOperationError
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -92,7 +92,7 @@ def test_error_on_invalid_struct_field() -> None:
 def test_not_found_error() -> None:
     csv = "a,b,c\n2,1,1"
     df = pl.read_csv(io.StringIO(csv))
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         df.select("d")
 
 
@@ -138,7 +138,7 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ColumnNotFoundError,
+        ColumnNotFoundError,
         match='unable to find column "colC"',
     ):
         (
@@ -154,7 +154,7 @@ def test_projection_update_schema_missing_column() -> None:
 def test_not_found_on_rename() -> None:
     df = pl.DataFrame({"exists": [1, 2, 3]})
 
-    err_type = (pl.SchemaFieldNotFoundError, pl.ColumnNotFoundError)
+    err_type = (pl.SchemaFieldNotFoundError, ColumnNotFoundError)
     with pytest.raises(err_type):
         df.rename({"does_not_exist": "exists"})
 
@@ -602,12 +602,12 @@ def test_sort_by_error() -> None:
 
 
 def test_non_existent_expr_inputs_in_lazy() -> None:
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
 
     lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         (
             lf.select(pl.col("foo").cum_sum().alias("bar"))
             .filter(pl.col("bar") == pl.col("foo"))
@@ -624,7 +624,7 @@ def test_error_list_to_array() -> None:
 
 def test_raise_not_found_in_simplify_14974() -> None:
     df = pl.DataFrame()
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         df.select(1 / (1 + pl.col("a")))
 
 

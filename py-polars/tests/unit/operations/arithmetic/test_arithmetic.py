@@ -20,7 +20,7 @@ from polars import (
     UInt64,
 )
 from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -535,7 +535,7 @@ def test_power_series() -> None:
     ):
         2**c
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
 
     # Raising to UInt64: raises if can't be downcast safely to UInt32...
@@ -550,7 +550,7 @@ def test_power_series() -> None:
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
     assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         "hi" ** a
 
     # Series.pow() method
