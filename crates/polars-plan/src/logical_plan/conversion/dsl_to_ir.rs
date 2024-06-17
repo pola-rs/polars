@@ -182,41 +182,52 @@ pub fn to_alp_impl(
             }
         },
         DslPlan::Filter { input, predicate } => {
-            // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
-            // push them down independently. Especially if they refer columns from different tables
-            // this will be more performant.
-            // So:
-            // filter[foo == bar & ham == spam]
-            // filter [foo == bar]
-            // filter [ham == spam]
-            let mut predicates = vec![];
-            let mut stack = vec![predicate];
-            while let Some(expr) = stack.pop() {
-                if let Expr::BinaryExpr {
-                    left,
-                    op: Operator::And | Operator::LogicalAnd,
-                    right,
-                } = expr
-                {
-                    stack.push(Arc::unwrap_or_clone(left));
-                    stack.push(Arc::unwrap_or_clone(right));
-                } else {
-                    predicates.push(expr)
-                }
-            }
-
             let mut input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(filter)))?;
+            let predicate = expand_filter(predicate, input, lp_arena)
+                .map_err(|e| e.context(failed_here!(filter)))?;
 
-            for predicate in predicates {
-                let predicate = expand_filter(predicate, input, lp_arena)
-                    .map_err(|e| e.context(failed_here!(filter)))?;
-                let predicate = to_expr_ir(predicate, expr_arena);
-                convert.push_scratch(predicate.node(), expr_arena);
-                let lp = IR::Filter { input, predicate };
-                input = run_conversion(lp, lp_arena, expr_arena, convert, "filter")?;
-            }
-            return Ok(input);
+            let predicate_ae = to_expr_ir(predicate.clone(), expr_arena);
+
+            return if is_streamable(predicate_ae.node(), expr_arena, Context::Default) {
+                // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
+                // push them down independently. Especially if they refer columns from different tables
+                // this will be more performant.
+                // So:
+                // filter[foo == bar & ham == spam]
+                // filter [foo == bar]
+                // filter [ham == spam]
+                let mut predicates = vec![];
+                let mut stack = vec![predicate];
+                while let Some(expr) = stack.pop() {
+                    if let Expr::BinaryExpr {
+                        left,
+                        op: Operator::And | Operator::LogicalAnd,
+                        right,
+                    } = expr
+                    {
+                        stack.push(Arc::unwrap_or_clone(left));
+                        stack.push(Arc::unwrap_or_clone(right));
+                    } else {
+                        predicates.push(expr)
+                    }
+                }
+
+                for predicate in predicates {
+                    let predicate = to_expr_ir(predicate, expr_arena);
+                    convert.push_scratch(predicate.node(), expr_arena);
+                    let lp = IR::Filter { input, predicate };
+                    input = run_conversion(lp, lp_arena, expr_arena, convert, "filter")?;
+                }
+                Ok(input)
+            } else {
+                convert.push_scratch(predicate_ae.node(), expr_arena);
+                let lp = IR::Filter {
+                    input,
+                    predicate: predicate_ae,
+                };
+                run_conversion(lp, lp_arena, expr_arena, convert, "filter")
+            };
         },
         DslPlan::Slice { input, offset, len } => {
             let input = to_alp_impl(owned(input), expr_arena, lp_arena, convert)
