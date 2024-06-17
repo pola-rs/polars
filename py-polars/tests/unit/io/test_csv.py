@@ -17,7 +17,7 @@ import zstandard
 
 import polars as pl
 from polars._utils.various import normalize_filepath
-from polars.exceptions import ComputeError, NoDataError
+from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
 from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -2108,7 +2108,7 @@ def test_csv_float_decimal() -> None:
 
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     with pytest.raises(
-        pl.InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
+        InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
     ):
         pl.read_csv(floats, decimal_comma=True)
 

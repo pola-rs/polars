@@ -20,6 +20,7 @@ from polars import (
     UInt64,
 )
 from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -312,7 +313,7 @@ def test_bool_floordiv() -> None:
     df = pl.DataFrame({"x": [True]})
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="floor_div operation not supported for dtype `bool`",
     ):
         df.with_columns(pl.col("x").floordiv(2))
@@ -471,7 +472,7 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         a % 2
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
     ):
         a**2
     with pytest.raises(TypeError):
@@ -483,7 +484,7 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         2 % a
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
     ):
         2**a
 
@@ -518,18 +519,18 @@ def test_power_series() -> None:
     assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`pow` operation not supported for dtype `null` as exponent",
     ):
         a ** pl.lit(None)
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`pow` operation not supported for dtype `date` as base",
     ):
         c**2
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`pow` operation not supported for dtype `date` as exponent",
     ):
         2**c
@@ -539,7 +540,7 @@ def test_power_series() -> None:
 
     # Raising to UInt64: raises if can't be downcast safely to UInt32...
     with pytest.raises(
-        pl.InvalidOperationError, match="conversion from `u64` to `u32` failed"
+        InvalidOperationError, match="conversion from `u64` to `u32` failed"
     ):
         a**m
     # ... but succeeds otherwise.
@@ -656,7 +657,7 @@ def test_raise_invalid_temporal(a: pl.DataType, b: pl.DataType, op: str) -> None
     b = pl.Series("b", [], dtype=b)  # type: ignore[assignment]
     _df = pl.DataFrame([a, b])
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         eval(f"_df.select(pl.col('a') {op} pl.col('b'))")
 
 
@@ -743,7 +744,7 @@ def test_arithmetic_duration_div_multiply() -> None:
 
 def test_invalid_shapes_err() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"cannot do arithmetic operation on series of different lengths: got 2 and 3",
     ):
         pl.Series([1, 2]) + pl.Series([1, 2, 3])

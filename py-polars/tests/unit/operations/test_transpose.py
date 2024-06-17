@@ -5,7 +5,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
-from polars.exceptions import StringCacheMismatchError
+from polars.exceptions import InvalidOperationError, StringCacheMismatchError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -192,7 +192,7 @@ def test_err_transpose_object() -> None:
     class CustomObject:
         pass
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         pl.DataFrame([CustomObject()]).transpose()
 
 

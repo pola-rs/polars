@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -79,9 +80,9 @@ def test_is_first_last_distinct_list(data: list[list[Any] | None]) -> None:
 def test_is_first_last_distinct_list_inner_nested() -> None:
     df = pl.DataFrame({"a": [[[1, 2]], [[1, 2]]]})
     err_msg = "only allowed if the inner type is not nested"
-    with pytest.raises(pl.InvalidOperationError, match=err_msg):
+    with pytest.raises(InvalidOperationError, match=err_msg):
         df.select(pl.col("a").is_first_distinct())
-    with pytest.raises(pl.InvalidOperationError, match=err_msg):
+    with pytest.raises(InvalidOperationError, match=err_msg):
         df.select(pl.col("a").is_last_distinct())
 
 

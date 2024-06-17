@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -38,7 +38,7 @@ def test_enum_init_empty(categories: pl.Series | list[str] | None) -> None:
 
 def test_enum_non_existent() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=re.escape(
             "conversion from `str` to `enum` failed in column '' for 1 out of 4 values: [\"c\"]"
         ),
@@ -166,7 +166,7 @@ def test_casting_to_an_enum_oob_from_integer() -> None:
 
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"conversion from `cat` to `enum` failed in column '' for 1 out of 4 values: \[\"c\"\]"
         ),
@@ -188,7 +188,7 @@ def test_casting_to_an_enum_from_global_categorical() -> None:
 @StringCache()
 def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"conversion from `cat` to `enum` failed in column '' for 1 out of 4 values: \[\"c\"\]"
         ),
@@ -348,7 +348,7 @@ def test_compare_enum_str_single_raise(
     s2 = "NOTEXIST"
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=re.escape(
             "conversion from `str` to `enum` failed in column '' for 1 out of 1 values: [\"NOTEXIST\"]"
         ),
@@ -364,7 +364,7 @@ def test_compare_enum_str_raise() -> None:
     for s_compare in [s2, s_broadcast]:
         for op in [operator.le, operator.gt, operator.ge, operator.lt]:
             with pytest.raises(
-                pl.InvalidOperationError,
+                InvalidOperationError,
                 match="conversion from `str` to `enum` failed in column",
             ):
                 op(s, s_compare)
@@ -440,13 +440,13 @@ def test_enum_cast_from_other_integer_dtype_oob() -> None:
     enum_dtype = pl.Enum(["a", "b", "c", "d"])
     series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
     with pytest.raises(
-        pl.InvalidOperationError, match="conversion from `i8` to `u32` failed in column"
+        InvalidOperationError, match="conversion from `i8` to `u32` failed in column"
     ):
         series.cast(enum_dtype)
 
     series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="conversion from `u64` to `u32` failed in column",
     ):
         series.cast(enum_dtype)

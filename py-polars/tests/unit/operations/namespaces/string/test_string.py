@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -43,7 +43,7 @@ def test_str_slice_expr() -> None:
     assert_frame_equal(out, expected)
 
     # negative length is not allowed
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("a").str.slice(0, -1))
 
 

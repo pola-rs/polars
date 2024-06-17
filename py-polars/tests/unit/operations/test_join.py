@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -947,7 +947,7 @@ def test_join_empties(how: JoinStrategy) -> None:
 def test_join_raise_on_redundant_keys() -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+    with pytest.raises(InvalidOperationError, match="already joined on"):
         left.join(right, on=["a", "a"], how="full", coalesce=True)
 
 
@@ -955,7 +955,7 @@ def test_join_raise_on_redundant_keys() -> None:
 def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+    with pytest.raises(InvalidOperationError, match="already joined on"):
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )

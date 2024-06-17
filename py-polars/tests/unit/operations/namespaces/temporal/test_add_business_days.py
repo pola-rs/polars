@@ -12,7 +12,7 @@ from hypothesis import assume, given
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -209,11 +209,11 @@ def test_add_business_days_datetime(time_zone: str | None, time_unit: TimeUnit) 
 
 def test_add_business_days_invalid() -> None:
     df = pl.DataFrame({"start": [timedelta(1)]})
-    with pytest.raises(pl.InvalidOperationError, match="expected date or datetime"):
+    with pytest.raises(InvalidOperationError, match="expected date or datetime"):
         df.select(result=pl.col("start").dt.add_business_days(2, week_mask=[True] * 7))
     df = pl.DataFrame({"start": [date(2020, 1, 1)]})
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="expected Int64, Int32, UInt64, or UInt32, got f64",
     ):
         df.select(

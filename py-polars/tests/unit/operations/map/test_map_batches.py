@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -35,7 +35,7 @@ def test_error_on_reducing_map() -> None:
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"output length of `map` \(1\) must be equal to "
             r"the input length \(6\); consider using `apply` instead"
@@ -46,7 +46,7 @@ def test_error_on_reducing_map() -> None:
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"output length of `map` \(1\) must be equal to "
             r"the input length \(4\); consider using `apply` instead"

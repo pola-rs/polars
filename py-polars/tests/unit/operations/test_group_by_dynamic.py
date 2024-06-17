@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -348,7 +348,7 @@ def test_rolling_dynamic_sortedness_check() -> None:
 
     # no `by` argument
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"argument in operation 'group_by_dynamic' is not sorted",
     ):
         df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
@@ -976,7 +976,7 @@ def test_group_by_dynamic_invalid() -> None:
         },
     )
     with pytest.raises(
-        pl.InvalidOperationError, match="duration may not be a parsed integer"
+        InvalidOperationError, match="duration may not be a parsed integer"
     ):
         (
             df.sort("times")
@@ -984,7 +984,7 @@ def test_group_by_dynamic_invalid() -> None:
             .agg(pl.col("values").sum().alias("sum"))
         )
     with pytest.raises(
-        pl.InvalidOperationError, match="duration must be a parsed integer"
+        InvalidOperationError, match="duration must be a parsed integer"
     ):
         (
             df.with_row_index()

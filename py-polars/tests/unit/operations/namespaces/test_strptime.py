@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -127,7 +127,7 @@ def test_to_date_non_exact_strptime() -> None:
     )
     assert_series_equal(result, expected)
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         s.str.to_date(format, strict=True, exact=True)
 
 
@@ -161,7 +161,7 @@ def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) ->
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(pl.InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 
@@ -211,7 +211,7 @@ def test_to_datetime_non_exact_strptime(
     assert_series_equal(result, expected)
     assert result.dtype == pl.Datetime("us", time_zone)
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         s.str.to_datetime(format, strict=True, exact=True)
 
 
@@ -720,7 +720,7 @@ def test_strptime_ambiguous_earliest(exact: bool) -> None:
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_to_datetime_out_of_range_13401(time_unit: TimeUnit) -> None:
     s = pl.Series(["2020-January-01 12:34:66"])
-    with pytest.raises(pl.InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", time_unit=time_unit)
     assert (
         s.str.to_datetime("%Y-%B-%d %H:%M:%S", strict=False, time_unit=time_unit).item()

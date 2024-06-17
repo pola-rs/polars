@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -120,7 +121,7 @@ def test_clip_non_numeric_dtype_fails() -> None:
     msg = "`clip` only supports physical numeric types"
 
     s = pl.Series(["a", "b", "c"])
-    with pytest.raises(pl.InvalidOperationError, match=msg):
+    with pytest.raises(InvalidOperationError, match=msg):
         s.clip(pl.lit("b"), pl.lit("z"))
 
 
@@ -134,6 +135,6 @@ def test_clip_string_input() -> None:
 def test_clip_bound_invalid_for_original_dtype() -> None:
     s = pl.Series([1, 2, 3, 4], dtype=pl.UInt32)
     with pytest.raises(
-        pl.InvalidOperationError, match="conversion from `i32` to `u32` failed"
+        InvalidOperationError, match="conversion from `i32` to `u32` failed"
     ):
         s.clip(-1, 5)

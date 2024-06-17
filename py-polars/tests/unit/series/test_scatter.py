@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 
@@ -68,7 +68,7 @@ def test_object_dtype_16905() -> None:
     s = pl.Series("s", [obj, 27], dtype=pl.Object)
     # This operation is not semantically wrong, it might be supported in the
     # future, but for now it isn't.
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         s[0] = 5
     # The error doesn't trash the series, as it used to:
     assert s.dtype == pl.Object

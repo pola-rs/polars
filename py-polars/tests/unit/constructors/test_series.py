@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing.asserts.series import assert_series_equal
 
 
@@ -147,7 +148,7 @@ def test_series_init_np_temporal_with_nat_15518() -> None:
 def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=re.escape("cannot reshape empty array into shape (0, 0)"),
     ):
         pl.Series(arr)

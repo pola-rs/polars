@@ -29,7 +29,7 @@ def test_error_on_reducing_map() -> None:
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"output length of `map` \(1\) must be equal to "
             r"the input length \(6\); consider using `apply` instead"
@@ -39,7 +39,7 @@ def test_error_on_reducing_map() -> None:
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"output length of `map` \(1\) must be equal to "
             r"the input length \(4\); consider using `apply` instead"
@@ -227,7 +227,7 @@ def test_filter_not_of_type_bool() -> None:
 
 
 def test_is_nan_on_non_boolean() -> None:
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
@@ -290,7 +290,7 @@ def test_invalid_sort_by() -> None:
 
 def test_epoch_time_type() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`timestamp` operation not supported for dtype `time`",
     ):
         pl.Series([time(0, 0, 1)]).dt.epoch("s")
@@ -400,7 +400,7 @@ def test_date_string_comparison(e: pl.Expr) -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"cannot compare 'date/datetime/time' to a string value",
     ):
         df.select(e)
@@ -444,7 +444,7 @@ def test_take_negative_index_is_oob() -> None:
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        pl.InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
+        InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
     ):
         df.select(pl.col("s") + 1)
 
@@ -491,7 +491,7 @@ def test_skip_nulls_err() -> None:
 def test_cast_err_column_value_highlighting(
     test_df: pl.DataFrame, type: pl.DataType, expected_message: str
 ) -> None:
-    with pytest.raises(pl.InvalidOperationError, match=expected_message):
+    with pytest.raises(InvalidOperationError, match=expected_message):
         test_df.with_columns(pl.all().cast(type))
 
 
@@ -630,7 +630,7 @@ def test_raise_not_found_in_simplify_14974() -> None:
 
 def test_invalid_product_type() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`product` operation not supported for dtype",
     ):
         pl.Series([[1, 2, 3]]).product()
@@ -638,21 +638,19 @@ def test_invalid_product_type() -> None:
 
 def test_fill_null_invalid_supertype() -> None:
     df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
-    with pytest.raises(
-        pl.InvalidOperationError, match="could not determine supertype of"
-    ):
+    with pytest.raises(InvalidOperationError, match="could not determine supertype of"):
         df.select(pl.col("date").fill_null(1.0))
 
 
 def test_raise_array_of_cats() -> None:
-    with pytest.raises(pl.InvalidOperationError, match="is not yet supported"):
+    with pytest.raises(InvalidOperationError, match="is not yet supported"):
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
 
 
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("a") - pl.col("a"))
 
 
@@ -671,7 +669,7 @@ def test_err_invalid_comparison() -> None:
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="could not apply comparison on series of dtype 'object; operand names: 'a', 'b'",
     ):
         _ = pl.Series("a", [object()]) == pl.Series("b", [object])

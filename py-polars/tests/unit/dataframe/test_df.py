@@ -17,7 +17,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -1359,12 +1359,12 @@ def test_dot_product() -> None:
     assert result == 32.0
 
     with pytest.raises(
-        pl.InvalidOperationError, match="`dot` operation not supported for dtype `bool`"
+        InvalidOperationError, match="`dot` operation not supported for dtype `bool`"
     ):
         pl.Series([True, False, False, True]) @ pl.Series([4, 5, 6, 7])
 
     with pytest.raises(
-        pl.InvalidOperationError, match="`dot` operation not supported for dtype `str`"
+        InvalidOperationError, match="`dot` operation not supported for dtype `str`"
     ):
         pl.Series([1, 2, 3, 4]) @ pl.Series(["True", "False", "False", "True"])
 

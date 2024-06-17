@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -249,7 +250,7 @@ def test_comp_incompatible_enum_dtype() -> None:
     df = pl.DataFrame({"a": pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))})
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="conversion from `str` to `enum` failed in column 'literal'",
     ):
         df.with_columns(
