@@ -2920,17 +2920,17 @@ dependencies = [
  "ethnum",
  "futures",
  "getrandom",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
- "polars-io 0.40.0",
+ "polars-arrow",
+ "polars-core",
+ "polars-error",
+ "polars-io",
  "polars-lazy",
- "polars-ops 0.40.0",
- "polars-parquet 0.40.0",
- "polars-plan 0.40.0",
+ "polars-ops",
+ "polars-parquet",
+ "polars-plan",
  "polars-sql",
  "polars-time",
- "polars-utils 0.40.0",
+ "polars-utils",
  "proptest",
  "rand",
  "tokio",
@@ -2974,8 +2974,8 @@ dependencies = [
  "multiversion",
  "num-traits",
  "polars-arrow-format",
- "polars-error 0.40.0",
- "polars-utils 0.40.0",
+ "polars-error",
+ "polars-utils",
  "proptest",
  "rand",
  "regex",
@@ -2992,36 +2992,6 @@ dependencies = [
  "tokio-util",
  "version_check",
  "zstd",
-]
-
-[[package]]
-name = "polars-arrow"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "atoi_simd",
- "bytemuck",
- "chrono",
- "dyn-clone",
- "either",
- "ethnum",
- "fast-float",
- "foreign_vec",
- "futures",
- "getrandom",
- "hashbrown",
- "itoa",
- "multiversion",
- "num-traits",
- "polars-arrow-format",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "ryu",
- "simdutf8",
- "streaming-iterator",
- "strength_reduce",
- "version_check",
 ]
 
 [[package]]
@@ -3043,25 +3013,10 @@ dependencies = [
  "bytemuck",
  "either",
  "num-traits",
- "polars-arrow 0.40.0",
- "polars-error 0.40.0",
- "polars-utils 0.40.0",
+ "polars-arrow",
+ "polars-error",
+ "polars-utils",
  "rand",
- "strength_reduce",
- "version_check",
-]
-
-[[package]]
-name = "polars-compute"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "bytemuck",
- "either",
- "num-traits",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
  "strength_reduce",
  "version_check",
 ]
@@ -3084,44 +3039,17 @@ dependencies = [
  "ndarray",
  "num-traits",
  "once_cell",
- "polars-arrow 0.40.0",
- "polars-compute 0.40.0",
- "polars-error 0.40.0",
- "polars-row 0.40.0",
- "polars-utils 0.40.0",
+ "polars-arrow",
+ "polars-compute",
+ "polars-error",
+ "polars-row",
+ "polars-utils",
  "rand",
  "rand_distr",
  "rayon",
  "regex",
  "serde",
  "serde_json",
- "smartstring",
- "thiserror",
- "version_check",
- "xxhash-rust",
-]
-
-[[package]]
-name = "polars-core"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "bitflags 2.5.0",
- "bytemuck",
- "either",
- "hashbrown",
- "indexmap",
- "num-traits",
- "once_cell",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-compute 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-row 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "rand",
- "rand_distr",
- "rayon",
  "smartstring",
  "thiserror",
  "version_check",
@@ -3155,49 +3083,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-error"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "polars-arrow-format",
- "regex",
- "simdutf8",
- "thiserror",
-]
-
-[[package]]
 name = "polars-expr"
 version = "0.40.0"
 dependencies = [
  "ahash",
  "bitflags 2.5.0",
  "once_cell",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
- "polars-io 0.40.0",
+ "polars-arrow",
+ "polars-core",
+ "polars-io",
  "polars-json",
- "polars-ops 0.40.0",
- "polars-plan 0.40.0",
+ "polars-ops",
+ "polars-plan",
  "polars-time",
- "polars-utils 0.40.0",
- "rayon",
- "smartstring",
-]
-
-[[package]]
-name = "polars-expr"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "bitflags 2.5.0",
- "once_cell",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-core 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-io 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-ops 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-plan 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
+ "polars-utils",
  "rayon",
  "smartstring",
 ]
@@ -3206,8 +3105,8 @@ dependencies = [
 name = "polars-ffi"
 version = "0.40.0"
 dependencies = [
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
+ "polars-arrow",
+ "polars-core",
 ]
 
 [[package]]
@@ -3233,13 +3132,13 @@ dependencies = [
  "object_store",
  "once_cell",
  "percent-encoding",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
+ "polars-arrow",
+ "polars-core",
+ "polars-error",
  "polars-json",
- "polars-parquet 0.40.0",
+ "polars-parquet",
  "polars-time",
- "polars-utils 0.40.0",
+ "polars-utils",
  "rayon",
  "regex",
  "reqwest 0.11.27",
@@ -3257,33 +3156,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-io"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "async-trait",
- "bytes",
- "futures",
- "home",
- "memchr",
- "memmap2",
- "num-traits",
- "once_cell",
- "percent-encoding",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-core 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-parquet 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "rayon",
- "regex",
- "smartstring",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "polars-json"
 version = "0.40.0"
 dependencies = [
@@ -3294,9 +3166,9 @@ dependencies = [
  "indexmap",
  "itoa",
  "num-traits",
- "polars-arrow 0.40.0",
- "polars-error 0.40.0",
- "polars-utils 0.40.0",
+ "polars-arrow",
+ "polars-error",
+ "polars-utils",
  "ryu",
  "simd-json",
  "streaming-iterator",
@@ -3311,17 +3183,17 @@ dependencies = [
  "futures",
  "glob",
  "once_cell",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
- "polars-expr 0.40.0",
- "polars-io 0.40.0",
+ "polars-arrow",
+ "polars-core",
+ "polars-expr",
+ "polars-io",
  "polars-json",
- "polars-ops 0.40.0",
+ "polars-ops",
  "polars-pipe",
- "polars-plan 0.40.0",
- "polars-stream 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
+ "polars-plan",
+ "polars-stream",
  "polars-time",
- "polars-utils 0.40.0",
+ "polars-utils",
  "pyo3",
  "rayon",
  "serde_json",
@@ -3348,12 +3220,12 @@ dependencies = [
  "jsonpath_lib_polars_vendor",
  "memchr",
  "num-traits",
- "polars-arrow 0.40.0",
- "polars-compute 0.40.0",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
+ "polars-arrow",
+ "polars-compute",
+ "polars-core",
+ "polars-error",
  "polars-json",
- "polars-utils 0.40.0",
+ "polars-utils",
  "rand",
  "rand_distr",
  "rayon",
@@ -3362,30 +3234,6 @@ dependencies = [
  "serde_json",
  "smartstring",
  "unicode-reverse",
- "version_check",
-]
-
-[[package]]
-name = "polars-ops"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "argminmax",
- "bytemuck",
- "either",
- "hashbrown",
- "indexmap",
- "memchr",
- "num-traits",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-compute 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-core 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "rayon",
- "regex",
- "smartstring",
  "version_check",
 ]
 
@@ -3405,10 +3253,10 @@ dependencies = [
  "lz4_flex",
  "num-traits",
  "parquet-format-safe",
- "polars-arrow 0.40.0",
- "polars-compute 0.40.0",
- "polars-error 0.40.0",
- "polars-utils 0.40.0",
+ "polars-arrow",
+ "polars-compute",
+ "polars-error",
+ "polars-utils",
  "rand",
  "seq-macro",
  "serde",
@@ -3417,27 +3265,6 @@ dependencies = [
  "streaming-decompression",
  "xxhash-rust",
  "zstd",
-]
-
-[[package]]
-name = "polars-parquet"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "async-stream",
- "base64 0.22.1",
- "ethnum",
- "futures",
- "num-traits",
- "parquet-format-safe",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-compute 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "seq-macro",
- "simdutf8",
- "streaming-decompression",
 ]
 
 [[package]]
@@ -3450,15 +3277,15 @@ dependencies = [
  "futures",
  "hashbrown",
  "num-traits",
- "polars-arrow 0.40.0",
- "polars-compute 0.40.0",
- "polars-core 0.40.0",
- "polars-expr 0.40.0",
- "polars-io 0.40.0",
- "polars-ops 0.40.0",
- "polars-plan 0.40.0",
- "polars-row 0.40.0",
- "polars-utils 0.40.0",
+ "polars-arrow",
+ "polars-compute",
+ "polars-core",
+ "polars-expr",
+ "polars-io",
+ "polars-ops",
+ "polars-plan",
+ "polars-row",
+ "polars-utils",
  "rayon",
  "smartstring",
  "tokio",
@@ -3481,15 +3308,15 @@ dependencies = [
  "libloading",
  "once_cell",
  "percent-encoding",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
+ "polars-arrow",
+ "polars-core",
  "polars-ffi",
- "polars-io 0.40.0",
+ "polars-io",
  "polars-json",
- "polars-ops 0.40.0",
- "polars-parquet 0.40.0",
+ "polars-ops",
+ "polars-parquet",
  "polars-time",
- "polars-utils 0.40.0",
+ "polars-utils",
  "pyo3",
  "rayon",
  "recursive",
@@ -3501,47 +3328,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-plan"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "bytemuck",
- "either",
- "hashbrown",
- "once_cell",
- "percent-encoding",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-core 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-io 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-ops 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "rayon",
- "recursive",
- "smartstring",
- "strum_macros 0.26.3",
- "version_check",
-]
-
-[[package]]
 name = "polars-row"
 version = "0.40.0"
 dependencies = [
  "bytemuck",
- "polars-arrow 0.40.0",
- "polars-error 0.40.0",
- "polars-utils 0.40.0",
-]
-
-[[package]]
-name = "polars-row"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "bytemuck",
- "polars-arrow 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
+ "polars-arrow",
+ "polars-error",
+ "polars-utils",
 ]
 
 [[package]]
@@ -3550,12 +3343,12 @@ version = "0.40.0"
 dependencies = [
  "hex",
  "once_cell",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
+ "polars-arrow",
+ "polars-core",
+ "polars-error",
  "polars-lazy",
- "polars-ops 0.40.0",
- "polars-plan 0.40.0",
+ "polars-ops",
+ "polars-plan",
  "polars-time",
  "rand",
  "serde",
@@ -3572,34 +3365,12 @@ dependencies = [
  "crossbeam-utils",
  "parking_lot",
  "pin-project-lite",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
- "polars-expr 0.40.0",
- "polars-io 0.40.0",
- "polars-plan 0.40.0",
- "polars-utils 0.40.0",
- "rand",
- "recursive",
- "slotmap",
- "version_check",
-]
-
-[[package]]
-name = "polars-stream"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "atomic-waker",
- "crossbeam-deque",
- "crossbeam-utils",
- "parking_lot",
- "pin-project-lite",
- "polars-core 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-expr 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-io 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-plan 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "polars-utils 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
+ "polars-core",
+ "polars-error",
+ "polars-expr",
+ "polars-io",
+ "polars-plan",
+ "polars-utils",
  "rand",
  "recursive",
  "slotmap",
@@ -3616,11 +3387,11 @@ dependencies = [
  "chrono-tz",
  "now",
  "once_cell",
- "polars-arrow 0.40.0",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
- "polars-ops 0.40.0",
- "polars-utils 0.40.0",
+ "polars-arrow",
+ "polars-core",
+ "polars-error",
+ "polars-ops",
+ "polars-utils",
  "regex",
  "serde",
  "smartstring",
@@ -3636,32 +3407,13 @@ dependencies = [
  "indexmap",
  "num-traits",
  "once_cell",
- "polars-error 0.40.0",
+ "polars-error",
  "rand",
  "raw-cpuid",
  "rayon",
  "smartstring",
  "stacker",
  "sysinfo",
- "version_check",
-]
-
-[[package]]
-name = "polars-utils"
-version = "0.40.0"
-source = "git+https://github.com/pola-rs/polars?rev=69e3824#69e38244c36a38ace5a219991a366c821a2860ce"
-dependencies = [
- "ahash",
- "bytemuck",
- "hashbrown",
- "indexmap",
- "num-traits",
- "once_cell",
- "polars-error 0.40.0 (git+https://github.com/pola-rs/polars?rev=69e3824)",
- "raw-cpuid",
- "rayon",
- "smartstring",
- "stacker",
  "version_check",
 ]
 
@@ -3758,15 +3510,15 @@ dependencies = [
  "numpy",
  "once_cell",
  "polars",
- "polars-core 0.40.0",
- "polars-error 0.40.0",
- "polars-io 0.40.0",
+ "polars-core",
+ "polars-error",
+ "polars-io",
  "polars-lazy",
- "polars-ops 0.40.0",
- "polars-parquet 0.40.0",
- "polars-plan 0.40.0",
+ "polars-ops",
+ "polars-parquet",
+ "polars-plan",
  "polars-time",
- "polars-utils 0.40.0",
+ "polars-utils",
  "pyo3",
  "recursive",
  "serde_json",
