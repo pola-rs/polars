@@ -37,6 +37,7 @@ from polars.convert import (
     from_pandas,
     from_records,
     from_repr,
+    json_normalize,
 )
 from polars.dataframe import DataFrame
 from polars.datatypes import (
@@ -453,6 +454,7 @@ __all__ = [
     "from_pandas",
     "from_records",
     "from_repr",
+    "json_normalize",
     # polars.sql
     "SQLContext",
     "sql",

@@ -308,3 +308,58 @@ def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     df.write_ndjson(file_path)
     with open(file_path) as f:  # noqa: PTH123
         assert_frame_equal(pl.read_ndjson(f), df)
+
+
+def test_json_normalize() -> None:
+    data = [
+        {"id": 1, "name": {"first": "Coleen", "last": "Volk"}},
+        {"name": {"given": "Mark", "family": "Regner"}},
+        {"id": 2, "name": "Faye Raker"},
+    ]
+
+    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name": [
+            '{"first": "Coleen", "last": "Volk"}',
+            '{"given": "Mark", "family": "Regner"}',
+            "Faye Raker",
+        ],
+    }
+
+    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name.first": ["Coleen", None, None],
+        "name.last": ["Volk", None, None],
+        "name.given": [None, "Mark", None],
+        "name.family": [None, "Regner", None],
+        "name": [None, None, "Faye Raker"],
+    }
+
+    data = [
+        {
+            "id": 1,
+            "name": "Cole Volk",
+            "fitness": {"height": 130, "weight": 60},
+        },
+        {"name": "Mark Reg", "fitness": {"height": 130, "weight": 60}},
+        {
+            "id": 2,
+            "name": "Faye Raker",
+            "fitness": {"height": 130, "weight": 60},
+        },
+    ]
+    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness": [
+            '{"height": 130, "weight": 60}',
+            '{"height": 130, "weight": 60}',
+            '{"height": 130, "weight": 60}',
+        ],
+    }
+    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness.height": [130, 130, 130],
+        "fitness.weight": [60, 60, 60],
+    }
