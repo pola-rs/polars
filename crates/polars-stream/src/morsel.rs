@@ -1,10 +1,10 @@
-use std::cell::OnceCell;
+use std::sync::OnceLock;
 
 use polars_core::frame::DataFrame;
 
 use crate::async_primitives::wait_group::WaitToken;
 
-const IDEAL_MORSEL_SIZE: OnceCell<usize> = OnceCell::new();
+static IDEAL_MORSEL_SIZE: OnceLock<usize> = OnceLock::new();
 
 pub fn get_ideal_morsel_size() -> usize {
     *IDEAL_MORSEL_SIZE.get_or_init(|| {

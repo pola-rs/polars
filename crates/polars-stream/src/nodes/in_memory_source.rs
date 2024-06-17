@@ -59,7 +59,7 @@ impl ComputeNode for InMemorySource {
 
                 let mut morsel = Morsel::new(df, MorselSeq::new(seq));
                 morsel.set_consume_token(wait_group.token());
-                if let Err(_) = send.send(morsel).await {
+                if send.send(morsel).await.is_err() {
                     break;
                 }
                 wait_group.wait().await;

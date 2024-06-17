@@ -55,7 +55,7 @@ fn to_graph_rec<'a>(
 
         Filter { predicate, input } => {
             let phys_predicate_expr = create_physical_expr(
-                &predicate,
+                predicate,
                 Context::Default,
                 ctx.expr_arena,
                 None,
