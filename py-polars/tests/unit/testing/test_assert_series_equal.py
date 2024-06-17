@@ -61,6 +61,13 @@ def test_assert_series_equal_check_order() -> None:
         assert_series_not_equal(srs1, srs2, check_order=False)
 
 
+def test_assert_series_equal_check_order_unsortable_type() -> None:
+    s = pl.Series([object(), object()])
+
+    with pytest.raises(TypeError):
+        assert_series_equal(s, s, check_order=False)
+
+
 def test_compare_series_nans_assert_equal() -> None:
     srs1 = pl.Series([1.0, 2.0, nan, 4.0, None, 6.0])
     srs2 = pl.Series([1.0, nan, 3.0, 4.0, None, 6.0])
