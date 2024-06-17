@@ -181,7 +181,7 @@ impl SQLContext {
     }
 
     pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
-        let lf = self.process_set_expr(&query.body, query)?;
+        let lf = self.process_query(&query.body, query)?;
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
@@ -263,7 +263,7 @@ impl SQLContext {
         }
     }
 
-    fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
+    fn process_query(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
             SetExpr::Query(query) => self.execute_query_no_ctes(query),
@@ -326,8 +326,8 @@ impl SQLContext {
             } => (JoinType::Anti, "EXCEPT"),
             _ => (JoinType::Semi, "INTERSECT"),
         };
-        let mut lf = self.process_set_expr(left, query)?;
-        let mut rf = self.process_set_expr(right, query)?;
+        let mut lf = self.process_query(left, query)?;
+        let mut rf = self.process_query(right, query)?;
         let join = lf
             .clone()
             .join_builder()
@@ -364,8 +364,8 @@ impl SQLContext {
         quantifier: &SetQuantifier,
         query: &Query,
     ) -> PolarsResult<LazyFrame> {
-        let mut lf = self.process_set_expr(left, query)?;
-        let mut rf = self.process_set_expr(right, query)?;
+        let mut lf = self.process_query(left, query)?;
+        let mut rf = self.process_query(right, query)?;
         let opts = UnionArgs {
             parallel: true,
             to_supertypes: true,
@@ -586,7 +586,11 @@ impl SQLContext {
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
         } else {
-            self.execute_from_statement(select_stmt.from.first().unwrap())?
+            let from = select_stmt.clone().from;
+            if from.len() > 1 {
+                polars_bail!(SQLInterface: "multiple tables in FROM clause are not currently supported (found {}); use explicit JOIN syntax instead", from.len())
+            }
+            self.execute_from_statement(from.first().unwrap())?
         };
         let mut contains_wildcard = false;
         let mut contains_wildcard_exclude = false;

@@ -306,3 +306,20 @@ def test_non_equi_joins(constraint: str) -> None:
             LEFT JOIN tbl ON {constraint}  -- not an equi-join
             """
         )
+
+
+def test_implicit_joins() -> None:
+    # no support for this yet; ensure we catch it
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r"not currently supported .* use explicit JOIN syntax instead",
+    ), pl.SQLContext(
+        {"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2], "c": ["x", "y", "z"]})}
+    ) as ctx:
+        ctx.execute(
+            """
+            SELECT t1.*
+            FROM tbl AS t1, tbl AS t2
+            WHERE t1.a = t2.b
+            """
+        )

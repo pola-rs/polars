@@ -596,7 +596,7 @@ impl SQLExprVisitor<'_> {
                 },
             },
             other => {
-                polars_bail!(SQLInterface: "SQL operator {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)
             },
         })
     }
@@ -772,7 +772,7 @@ impl SQLExprVisitor<'_> {
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
-            other => polars_bail!(SQLInterface: "SQL value {:?} is not supported", other),
+            other => polars_bail!(SQLInterface: "value {:?} is not supported", other),
         })
     }
 
@@ -826,7 +826,7 @@ impl SQLExprVisitor<'_> {
             SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
                 AnyValue::StringOwned(s.into())
             },
-            other => polars_bail!(SQLInterface: "SQL value {:?} is not currently supported", other),
+            other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }
 
@@ -845,11 +845,11 @@ impl SQLExprVisitor<'_> {
 
         let low = self.convert_temporal_strings(&expr, &low);
         let high = self.convert_temporal_strings(&expr, &high);
-        if negated {
-            Ok(expr.clone().lt(low).or(expr.gt(high)))
+        Ok(if negated {
+            expr.clone().lt(low).or(expr.gt(high))
         } else {
-            Ok(expr.clone().gt_eq(low).and(expr.lt_eq(high)))
-        }
+            expr.clone().gt_eq(low).and(expr.lt_eq(high))
+        })
     }
 
     /// Visit a SQL `TRIM` function.
@@ -891,11 +891,11 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
-        if negated {
-            Ok(expr.is_in(subquery_result).not())
+        Ok(if negated {
+            expr.is_in(subquery_result).not()
         } else {
-            Ok(expr.is_in(subquery_result))
-        }
+            expr.is_in(subquery_result)
+        })
     }
 
     /// Visit `CASE` control flow expression.
