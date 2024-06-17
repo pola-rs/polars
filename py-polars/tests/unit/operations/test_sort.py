@@ -27,6 +27,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
     df=dataframes(
         excluded_dtypes=[
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+            pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
         ]
     )
 )
