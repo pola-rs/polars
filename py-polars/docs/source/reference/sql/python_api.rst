@@ -4,10 +4,15 @@ Python API
 
 .. currentmodule:: polars
 
-There are three primary entry points to the Polars SQL interface, each operating at a
+Introduction
+------------
+
+There are four primary entry points to the Polars SQL interface, each operating at a
 different level of granularity. There is the :class:`~polars.sql.SQLContext` object,
-a top-level :func:`polars.sql` function that operates on the global context, and
-frame-level :meth:`DataFrame.sql` and :meth:`LazyFrame.sql` methods.
+a top-level :func:`polars.sql` function that operates on the global context,
+frame-level :meth:`DataFrame.sql` and :meth:`LazyFrame.sql` methods, and the
+:func:`polars.sql_expr` function that creates native expressions from SQL.
+
 
 Global SQL
 ----------
@@ -18,8 +23,8 @@ to execute SQL queries mediated by the Polars execution engine against Polars
 data, as well as `Pandas <https://pandas.pydata.org/>`_ DataFrame and Series, and
 `PyArrow <https://arrow.apache.org/docs/python/>`_ Table and RecordBatch objects.
 Non-Polars objects are implicitly converted to DataFrame when used in a SQL query; for
-PyArrow, and Pandas data that uses PyArrow dtypes, this conversion can be zero-copy if
-the underlying data maps to a type supported by Polars.
+PyArrow, and Pandas data that uses PyArrow dtypes, this conversion can often be
+zero-copy if the underlying data maps cleanly to a natively-supported dtype.
 
 **Example:**
 
@@ -100,6 +105,43 @@ it as "self"; returns a new frame representing the query result.
   * :meth:`LazyFrame.sql`
 
 
+Expressions
+-----------
+
+The :func:`polars.sql_expr` function can be used to create native Polars expressions
+from SQL fragments.
+
+**Example:**
+
+.. code-block:: python
+
+    import polars as pl
+
+    df = pl.DataFrame({
+        "a": [1, 2, 3],
+        "b": [4, 5, 6],
+    })
+    df.with_columns(
+        pl.sql_expr("(a * a) + (b::float / 2) AS expr1"),
+        pl.sql_expr("CONCAT_WS(':',a,b) AS expr2")
+    )
+
+    # shape: (3, 4)
+    # ┌─────┬─────┬───────┬───────┐
+    # │ a   ┆ b   ┆ expr1 ┆ expr2 │
+    # │ --- ┆ --- ┆ ---   ┆ ---   │
+    # │ i64 ┆ i64 ┆ f64   ┆ str   │
+    # ╞═════╪═════╪═══════╪═══════╡
+    # │ 1   ┆ 4   ┆ 3.0   ┆ 1:4   │
+    # │ 2   ┆ 5   ┆ 6.5   ┆ 2:5   │
+    # │ 3   ┆ 6   ┆ 12.0  ┆ 3:6   │
+    # └─────┴─────┴───────┴───────┘
+
+.. topic:: Documentation
+
+  * :meth:`polars.sql_expr`
+
+
 SQLContext
 ----------
 
@@ -134,3 +176,34 @@ Methods
     SQLContext.register_many
     SQLContext.tables
     SQLContext.unregister
+
+
+**Example:**
+
+.. code-block:: python
+
+    import polars as pl
+
+    df1 = pl.DataFrame({"id": [1, 2, 3], "value": [0.1, 0.2, 0.3]})
+    df2 = pl.DataFrame({"id": [3, 2, 1], "value": [25.6, 53.4, 12.7]})
+
+    with pl.SQLContext(df_a=df1, df_b=df2, eager=True) as ctx:
+        df = ctx.execute("""
+          SELECT
+            a.id,
+            a.value AS value_a,
+            b.value AS value_b
+          FROM df_a AS a INNER JOIN df_b AS b USING (id)
+          ORDER BY id
+        """)
+
+        # shape: (3, 3)
+        # ┌─────┬─────────┬─────────┐
+        # │ id  ┆ value_a ┆ value_b │
+        # │ --- ┆ ---     ┆ ---     │
+        # │ i64 ┆ f64     ┆ f64     │
+        # ╞═════╪═════════╪═════════╡
+        # │ 1   ┆ 0.1     ┆ 25.6    │
+        # │ 2   ┆ 0.2     ┆ 53.4    │
+        # │ 3   ┆ 0.3     ┆ 12.7    │
+        # └─────┴─────────┴─────────┘
