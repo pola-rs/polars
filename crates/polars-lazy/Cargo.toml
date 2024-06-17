@@ -21,6 +21,7 @@ polars-plan = { workspace = true }
 polars-stream = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+polars-mem-engine = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
@@ -47,11 +48,11 @@ async = [
   "polars-io/cloud",
   "polars-pipe?/async",
 ]
-cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures"]
+cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures", "polars-mem-engine/cloud"]
 cloud_write = ["cloud"]
-ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe?/json"]
-csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv"]
+ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc"]
+json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe?/json", "polars-mem-engine/json"]
+csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv"]
 temporal = [
   "dtype-datetime",
   "dtype-date",
@@ -87,19 +88,19 @@ dtype-array = [
   "polars-ops/dtype-array",
   "polars-expr/dtype-array",
 ]
-dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical", "polars-expr/dtype-categorical"]
-dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal", "polars-expr/dtype-date"]
-dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal", "polars-expr/dtype-datetime"]
-dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal", "polars-expr/dtype-decimal"]
-dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-expr/dtype-duration"]
-dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16"]
-dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8"]
-dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct", "polars-expr/dtype-struct"]
-dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal", "polars-expr/dtype-time"]
-dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16"]
-dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8"]
+dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical", "polars-expr/dtype-categorical", "polars-mem-engine/dtype-categorical"]
+dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal", "polars-expr/dtype-date", "polars-mem-engine/dtype-date"]
+dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal", "polars-expr/dtype-datetime", "polars-mem-engine/dtype-datetime"]
+dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal", "polars-expr/dtype-decimal", "polars-mem-engine/dtype-decimal"]
+dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-expr/dtype-duration", "polars-mem-engine/dtype-duration"]
+dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16", "polars-mem-engine/dtype-i16"]
+dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8"]
+dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct", "polars-expr/dtype-struct", "polars-mem-engine/dtype-struct"]
+dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal", "polars-expr/dtype-time", "polars-mem-engine/dtype-time"]
+dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16", "polars-mem-engine/dtype-u16"]
+dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8"]
 
-object = ["polars-plan/object"]
+object = ["polars-plan/object", "polars-mem-engine/object"]
 month_start = ["polars-plan/month_start"]
 month_end = ["polars-plan/month_end"]
 offset_by = ["polars-plan/offset_by"]
@@ -143,7 +144,7 @@ pct_change = ["polars-plan/pct_change"]
 moment = ["polars-plan/moment", "polars-ops/moment"]
 abs = ["polars-plan/abs"]
 random = ["polars-plan/random"]
-dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "polars-expr/dynamic_group_by"]
+dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "polars-expr/dynamic_group_by", "polars-mem-engine/dynamic_group_by"]
 ewma = ["polars-plan/ewma"]
 ewma_by = ["polars-plan/ewma_by"]
 dot_diagram = ["polars-plan/dot_diagram"]
