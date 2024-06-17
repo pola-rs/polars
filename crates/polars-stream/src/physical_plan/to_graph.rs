@@ -42,7 +42,7 @@ fn to_graph_rec<'a>(
     phys_node_key: PhysNodeKey,
     ctx: &mut GraphConversionContext<'a>,
 ) -> PolarsResult<GraphNodeKey> {
-    // This will ensure we create a proper DAG/Graph instead of a tree.
+    // This will ensure we create a proper acyclic directed graph instead of a tree.
     if let Some(graph_key) = ctx.phys_to_graph.get(phys_node_key) {
         return Ok(*graph_key);
     }

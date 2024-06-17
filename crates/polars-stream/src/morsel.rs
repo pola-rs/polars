@@ -1,8 +1,18 @@
+use std::cell::OnceCell;
+
 use polars_core::frame::DataFrame;
 
 use crate::async_primitives::wait_group::WaitToken;
 
-pub const IDEAL_MORSEL_SIZE: usize = 100_000;
+const IDEAL_MORSEL_SIZE: OnceCell<usize> = OnceCell::new();
+
+pub fn get_ideal_morsel_size() -> usize {
+    *IDEAL_MORSEL_SIZE.get_or_init(|| {
+        std::env::var("POLARS_IDEAL_MORSEL_SIZE")
+            .map(|m| m.parse().unwrap())
+            .unwrap_or(100_000)
+    })
+}
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct MorselSeq(u64);

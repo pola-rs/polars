@@ -12,7 +12,7 @@ use crate::morsel::Morsel;
 pub fn execute_graph(
     graph: &mut Graph,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
-    // Get the number of threads from the rayon thread-pool as that respects the config.
+    // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipes = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipes);
 
@@ -20,8 +20,8 @@ pub fn execute_graph(
     let mut physical_senders = SecondaryMap::new();
     let mut physical_receivers = SecondaryMap::new();
 
-    // For every 'pipe' in the graph, we create `N` physical pipes; where `N` is the number of threads.
-    // This ensures morsel driven parallelism.
+    // For morsel-driven parallelism we create N independent pipelines, where N is the number of threads.
+    // The first step is to create N physical pipes for every logical pipe in the graph.
     for pipe_key in graph.pipes.keys() {
         let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
             (0..num_pipes).map(|_| pipe()).unzip();
@@ -33,8 +33,8 @@ pub fn execute_graph(
     let execution_state = ExecutionState::default();
     async_executor::task_scope(|scope| {
         // Initialize tasks.
-        // This traverses the graph in arbitrary order, but because the whole graph
-        // is connected this will ensure that aysnc/await triggers the source(s).
+        // This traverses the graph in arbitrary order. The order does not matter as the tasks will
+        // simply wait for the input from their pipes until that input is ready.
         let mut join_handles = Vec::new();
         for node in graph.nodes.values_mut() {
             node.compute.initialize(num_pipes);
@@ -63,7 +63,7 @@ pub fn execute_graph(
         }
 
         // Wait until all tasks are done.
-        futures::executor::block_on(async move {
+        polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }

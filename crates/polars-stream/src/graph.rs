@@ -8,8 +8,9 @@ slotmap::new_key_type! {
 }
 
 /// Represents the compute graph.
-/// The `nodes` do the compute and the `pipes`
-/// send the data. The pipes are connected to the nodes.
+///
+/// The `nodes` perform computation and the `pipes` form the connections between nodes
+/// that data is sent through.
 #[derive(Default)]
 pub struct Graph {
     pub nodes: SlotMap<GraphNodeKey, GraphNode>,
@@ -26,7 +27,7 @@ impl Graph {
     }
 
     /// Add a new `GraphNode` to the `Graph` and connect the inputs and outputs
-    /// with `LogicalPipe`.
+    /// to their respective `LogicalPipe`s.
     pub fn add_node<N: ComputeNode + 'static>(
         &mut self,
         node: N,
@@ -61,7 +62,8 @@ impl Graph {
     }
 }
 
-/// A node represents the compute done in the graph.
+/// A node in the graph represents a computation performed on the stream of morsels
+/// that flow through it.
 pub struct GraphNode {
     pub compute: Box<dyn ComputeNode>,
     pub inputs: Vec<LogicalPipeKey>,
