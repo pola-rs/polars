@@ -9,7 +9,7 @@ where
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     fn collect_cheap_metadata(&mut self) {
-        if !MetadataEnv::extensive_use() {
+        if !MetadataEnv::experimental_enabled() {
             return;
         }
 
