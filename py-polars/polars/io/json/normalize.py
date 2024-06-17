@@ -7,6 +7,7 @@ from collections import abc
 from typing import TYPE_CHECKING, Any, Sequence
 
 from polars.dataframe import DataFrame
+from polars.datatypes.constants import N_INFER_DEFAULT
 
 if TYPE_CHECKING:
     from polars.schema import Schema
@@ -74,6 +75,7 @@ def json_normalize(
     max_level: int | None = None,
     schema: Schema | None = None,
     strict: bool = True,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
     Normalize semi-structured deserialized JSON data into a flat table.
@@ -97,6 +99,8 @@ def json_normalize(
         the `DataFrame` constructor.
     strict
         Whether Polars should be strict when constructing the DataFrame.
+    infer_schema_length
+        Number of rows to take into consideration to determine the schema.
 
     Examples
     --------
@@ -154,6 +158,7 @@ def json_normalize(
         _simple_json_normalize(data, separator=separator, max_level=max_level),
         schema=schema,
         strict=strict,
+        infer_schema_length=infer_schema_length,
     )
 
 
