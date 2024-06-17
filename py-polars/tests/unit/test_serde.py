@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -121,7 +122,7 @@ def test_pickle_udf_expression() -> None:
 
     # tests that 'GetOutput' is also deserialized
     with pytest.raises(
-        pl.SchemaError,
+        SchemaError,
         match=r"expected output type 'String', got 'Int64'; set `return_dtype` to the proper datatype",
     ):
         df.select(e)
@@ -208,7 +209,7 @@ def test_expr_deserialize_file_not_found() -> None:
 
 def test_expr_deserialize_invalid_json() -> None:
     with pytest.raises(
-        pl.ComputeError, match="could not deserialize input into an expression"
+        ComputeError, match="could not deserialize input into an expression"
     ):
         pl.Expr.deserialize(io.StringIO("abcdef"))
 

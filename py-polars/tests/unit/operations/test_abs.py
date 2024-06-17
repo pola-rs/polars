@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -89,7 +90,7 @@ def test_abs_unsigned_int() -> None:
 def test_abs_non_numeric() -> None:
     df = pl.DataFrame({"a": ["p", "q", "r"]})
     with pytest.raises(
-        pl.InvalidOperationError, match="`abs` operation not supported for dtype `str`"
+        InvalidOperationError, match="`abs` operation not supported for dtype `str`"
     ):
         df.select(pl.col("a").abs())
 
@@ -98,7 +99,7 @@ def test_abs_date() -> None:
     df = pl.DataFrame({"date": [date(1960, 1, 1), date(1970, 1, 1), date(1980, 1, 1)]})
 
     with pytest.raises(
-        pl.InvalidOperationError, match="`abs` operation not supported for dtype `date`"
+        InvalidOperationError, match="`abs` operation not supported for dtype `date`"
     ):
         df.select(pl.col("date").abs())
 

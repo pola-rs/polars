@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 
 
 def test_get_buffer_info_numeric() -> None:
@@ -38,5 +39,5 @@ def test_get_buffer_info_chunked() -> None:
     s2 = pl.Series([3, 4])
     s = pl.concat([s1, s2], rechunk=False)
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s._get_buffer_info()

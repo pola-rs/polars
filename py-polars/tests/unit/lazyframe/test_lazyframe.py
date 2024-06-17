@@ -14,7 +14,11 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import PerformanceWarning, PolarsInefficientMapWarning
+from polars.exceptions import (
+    InvalidOperationError,
+    PerformanceWarning,
+    PolarsInefficientMapWarning,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -618,7 +622,7 @@ def test_cast_frame() -> None:
     # test 'strict' mode
     lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
 
-    with pytest.raises(pl.InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
         lf.cast(pl.UInt8).collect()
 
     assert lf.cast(pl.UInt8, strict=False).collect().rows() == [
@@ -1236,7 +1240,7 @@ def test_from_epoch_str() -> None:
         ]
     )
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         ldf.select(
             pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
             pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),

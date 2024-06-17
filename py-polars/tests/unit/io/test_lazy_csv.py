@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -159,7 +160,7 @@ def test_scan_csv_schema_new_columns_dtypes(
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
     # cannot have len(new_columns) > len(actual columns)
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],
@@ -355,7 +356,7 @@ def test_file_list_schema_mismatch(
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         lf.collect(streaming=streaming)
 
     if len({df.width for df in dfs}) == 1:

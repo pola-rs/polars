@@ -5,6 +5,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -196,7 +197,7 @@ def test_explode_invalid_element_count() -> None:
         }
     ).with_row_index()
     with pytest.raises(
-        pl.ShapeError, match=r"exploded columns must have matching element counts"
+        ShapeError, match=r"exploded columns must have matching element counts"
     ):
         df.explode(["col1", "col2"])
 

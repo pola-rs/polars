@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ def test_datetime_time_zone(time_zone: str | None) -> None:
 def test_datetime_ambiguous_time_zone() -> None:
     expr = pl.datetime(2018, 10, 28, 2, 30, time_zone="Europe/Brussels")
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.select(expr)
 
 
@@ -128,7 +129,7 @@ def test_concat_list_with_lit() -> None:
 
 
 def test_concat_list_empty_raises() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.concat_list([]))
 
 
@@ -297,7 +298,7 @@ def test_struct_with_lit() -> None:
 
 
 def test_eager_struct() -> None:
-    with pytest.raises(pl.DuplicateError, match="multiple fields with name '' found"):
+    with pytest.raises(DuplicateError, match="multiple fields with name '' found"):
         s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
 
     s = pl.struct(

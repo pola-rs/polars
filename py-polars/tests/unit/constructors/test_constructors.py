@@ -16,6 +16,7 @@ import polars as pl
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -961,11 +962,11 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
 def test_init_errors() -> None:
     # Length mismatch
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
 
     # Columns don't match data dimensions
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.DataFrame([[1, 2], [3, 4]], schema=["a", "b", "c"])
 
     # Unmatched input

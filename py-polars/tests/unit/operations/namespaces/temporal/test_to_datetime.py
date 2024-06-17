@@ -10,6 +10,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if sys.version_info >= (3, 9):
@@ -117,12 +118,12 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
     # If there's an exception, check that it's either:
     # - something which polars can't parse at all: missing day or month
     # - something on which polars intentionally raises
-    except pl.InvalidOperationError as exc:
+    except InvalidOperationError as exc:
         assert "failed in column" in str(exc)  # noqa: PT017
         assert not any(day in fmt for day in ("%d", "%j")) or not any(
             month in fmt for month in ("%b", "%B", "%m")
         )
-    except pl.ComputeError as exc:
+    except ComputeError as exc:
         assert "Invalid format string" in str(exc)  # noqa: PT017
         assert (
             (("%H" in fmt) ^ ("%M" in fmt))

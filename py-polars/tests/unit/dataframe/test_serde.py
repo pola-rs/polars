@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -170,8 +171,5 @@ def test_serde_validation() -> None:
     }
     """
     )
-    with pytest.raises(
-        pl.ComputeError,
-        match=r"lengths don't match",
-    ):
+    with pytest.raises(ComputeError, match=r"lengths don't match"):
         pl.DataFrame.deserialize(f)

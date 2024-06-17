@@ -9,6 +9,12 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -623,24 +629,24 @@ def test_join_validation() -> None:
             duplicate, on=on, how=how, validate="1:m"
         )
 
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_many_fail_inner = duplicate.join(
                 unique, on=on, how=how, validate="1:m"
             )
 
         # one to one
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_one_fail_1_inner = unique.join(
                 duplicate, on=on, how=how, validate="1:1"
             )
 
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_one_fail_2_inner = duplicate.join(
                 unique, on=on, how=how, validate="1:1"
             )
 
         # many to one
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _many_to_one_fail_inner = unique.join(
                 duplicate, on=on, how=how, validate="m:1"
             )
@@ -727,7 +733,7 @@ def test_join_validation_many_keys() -> None:
 
     for join_type in ["inner", "left", "full"]:
         for val in ["1:1", "1:m"]:
-            with pytest.raises(pl.ComputeError):
+            with pytest.raises(ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
     # many in rhs
@@ -746,7 +752,7 @@ def test_join_validation_many_keys() -> None:
 
     for join_type in ["inner", "left", "full"]:
         for val in ["m:1", "1:1"]:
-            with pytest.raises(pl.ComputeError):
+            with pytest.raises(ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
 
@@ -783,7 +789,7 @@ def test_join_on_wildcard_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="wildcard column selection not supported at this point",
     ):
         df.join(df2, on=pl.all())
@@ -793,7 +799,7 @@ def test_join_on_nth_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"nth column selection not supported at this point \(n=0\)",
     ):
         df.join(df2, on=pl.first())
@@ -809,7 +815,7 @@ def test_join_results_in_duplicate_names() -> None:
         }
     )
     rhs = lhs.clone()
-    with pytest.raises(pl.DuplicateError, match="'c_right' already exists"):
+    with pytest.raises(DuplicateError, match="'c_right' already exists"):
         lhs.join(rhs, on=["a", "b"], how="left")
 
 
@@ -817,7 +823,7 @@ def test_join_projection_invalid_name_contains_suffix_15243() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).lazy()
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         (
             df1.join(df2, on="a")
             .select(pl.col("b").filter(pl.col("b") == pl.col("foo_right")))
@@ -946,7 +952,7 @@ def test_join_empties(how: JoinStrategy) -> None:
 def test_join_raise_on_redundant_keys() -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+    with pytest.raises(InvalidOperationError, match="already joined on"):
         left.join(right, on=["a", "a"], how="full", coalesce=True)
 
 
@@ -954,7 +960,7 @@ def test_join_raise_on_redundant_keys() -> None:
 def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+    with pytest.raises(InvalidOperationError, match="already joined on"):
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )

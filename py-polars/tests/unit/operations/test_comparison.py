@@ -7,6 +7,7 @@ from typing import Any, ContextManager
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -371,7 +372,7 @@ def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
 def test_cat_compare_with_bool() -> None:
     data = pl.DataFrame([pl.Series("col1", ["a", "b"], dtype=pl.Categorical)])
 
-    with pytest.raises(pl.ComputeError, match="cannot compare categorical with bool"):
+    with pytest.raises(ComputeError, match="cannot compare categorical with bool"):
         data.filter(pl.col("col1") == True)  # noqa: E712
 
 

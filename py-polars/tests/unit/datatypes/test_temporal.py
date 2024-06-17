@@ -1351,7 +1351,7 @@ def test_replace_time_zone_ambiguous_with_ambiguous(
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="Please use `ambiguous` to tell how it should be localized",
     ):
         ts.dt.replace_time_zone("Europe/Brussels")

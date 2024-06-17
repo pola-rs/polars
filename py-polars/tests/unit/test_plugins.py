@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.plugins import (
     _is_dynamic_lib,
     _resolve_plugin_path,
@@ -24,7 +25,7 @@ def test_register_plugin_function_invalid_plugin_path(tmp_path: Path) -> None:
         plugin_path=plugin_path, function_name="hello", args=5
     )
 
-    with pytest.raises(pl.ComputeError, match="error loading dynamic library"):
+    with pytest.raises(ComputeError, match="error loading dynamic library"):
         pl.select(expr)
 
 

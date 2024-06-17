@@ -11,6 +11,7 @@ import polars as pl
 from polars import StringCache
 from polars.exceptions import (
     CategoricalRemappingWarning,
+    ComputeError,
     StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -472,7 +473,7 @@ def test_cast_inner_categorical() -> None:
     assert out.to_list() == [["a"], ["a", "b"]]
 
     with pytest.raises(
-        pl.ComputeError, match=r"casting to categorical not allowed in `list.eval`"
+        ComputeError, match=r"casting to categorical not allowed in `list.eval`"
     ):
         pl.Series("foo", [["a", "b"], ["a", "b"]]).list.eval(
             pl.element().cast(pl.Categorical)

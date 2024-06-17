@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, NoDataError
 
 
 def test_from_records_schema_inference() -> None:
@@ -33,7 +34,7 @@ def test_from_dicts_nested_nulls() -> None:
 
 
 def test_from_dicts_empty() -> None:
-    with pytest.raises(pl.NoDataError, match="no data, cannot infer schema"):
+    with pytest.raises(NoDataError, match="no data, cannot infer schema"):
         pl.from_dicts([])
 
 
@@ -41,7 +42,7 @@ def test_from_dicts_all_cols_6716() -> None:
     dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
 
     with pytest.raises(
-        pl.ComputeError, match="make sure that all rows have the same schema"
+        ComputeError, match="make sure that all rows have the same schema"
     ):
         pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.String]

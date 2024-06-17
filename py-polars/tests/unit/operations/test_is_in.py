@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -84,7 +85,7 @@ def test_is_in_null_prop() -> None:
         is None
     )
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`is_in` cannot check for Int64 values in Boolean data",
     ):
         _res = pl.Series([None], dtype=pl.Boolean).is_in(pl.Series([42])).item()
@@ -140,7 +141,7 @@ def test_is_in_series() -> None:
     assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False] * df.height
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"`is_in` cannot check for String values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
@@ -161,7 +162,7 @@ def test_is_in_null() -> None:
 
 
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
 
 
@@ -213,7 +214,7 @@ def test_is_in_expr_list_series(
     if matches:
         assert df.select(expr_is_in).to_series().to_list() == matches
     else:
-        with pytest.raises(pl.InvalidOperationError, match=expected_error):
+        with pytest.raises(InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
 
 

@@ -7,6 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal
 
 
@@ -185,7 +186,7 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     root.mkdir()
     df.write_parquet(root / "file.parquet")
 
-    with pytest.raises(pl.DuplicateError, match="invalid Hive partition schema"):
+    with pytest.raises(DuplicateError, match="invalid Hive partition schema"):
         pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True).collect()
 
 
@@ -256,7 +257,7 @@ def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
 @pytest.mark.write_disk()
 def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
     with pytest.raises(
-        pl.SchemaFieldNotFoundError,
+        SchemaFieldNotFoundError,
         match='path contains column not present in the given Hive schema: "c"',
     ):
         pl.read_parquet(

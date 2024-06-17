@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -112,7 +113,7 @@ def test_streaming_group_by_types() -> None:
             "date_max": [date(2022, 1, 1)],
         }
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         (
             df.lazy()
             .group_by("person_id")

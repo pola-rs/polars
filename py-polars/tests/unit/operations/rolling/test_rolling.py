@@ -972,7 +972,7 @@ def test_rolling_invalid() -> None:
         },
     )
     with pytest.raises(
-        pl.InvalidOperationError, match="duration may not be a parsed integer"
+        InvalidOperationError, match="duration may not be a parsed integer"
     ):
         (
             df.sort("times")
@@ -980,7 +980,7 @@ def test_rolling_invalid() -> None:
             .agg(pl.col("values").sum().alias("sum"))
         )
     with pytest.raises(
-        pl.InvalidOperationError, match="duration must be a parsed integer"
+        InvalidOperationError, match="duration must be a parsed integer"
     ):
         (
             df.with_row_index()

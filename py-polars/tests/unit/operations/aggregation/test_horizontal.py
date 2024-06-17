@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -121,13 +122,13 @@ def test_nested_min_max() -> None:
 
 def test_empty_inputs_raise() -> None:
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="cannot return empty fold because the number of output rows is unknown",
     ):
         pl.select(pl.any_horizontal())
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="cannot return empty fold because the number of output rows is unknown",
     ):
         pl.select(pl.all_horizontal())
@@ -389,7 +390,7 @@ def test_mean_horizontal() -> None:
 def test_mean_horizontal_no_columns() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]})
 
-    with pytest.raises(pl.ComputeError, match="number of output rows is unknown"):
+    with pytest.raises(ComputeError, match="number of output rows is unknown"):
         lf.select(pl.mean_horizontal())
 
 

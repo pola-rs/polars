@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -247,7 +248,7 @@ def test_err_on_implode_and_agg() -> None:
 
     # this would OOB
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"'implode' followed by an aggregation is not allowed",
     ):
         df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
@@ -262,7 +263,7 @@ def test_err_on_implode_and_agg() -> None:
 
     # but not during a window function as the groups cannot be mapped back
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"'implode' followed by an aggregation is not allowed",
     ):
         df.lazy().select(pl.col("type").implode().list.head(1).over("type")).collect()
