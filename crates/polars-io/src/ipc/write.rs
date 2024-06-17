@@ -45,7 +45,7 @@ pub struct IpcWriter<W> {
     pub(super) pl_flavor: bool,
 }
 
-impl<W: Write> IpcWriter<W> {
+impl<W> IpcWriter<W> {
     /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<IpcCompression>) -> Self {
         self.compression = compression;
@@ -56,7 +56,9 @@ impl<W: Write> IpcWriter<W> {
         self.pl_flavor = pl_flavor;
         self
     }
+}
 
+impl<W: Write> IpcWriter<W> {
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, self.pl_flavor, "ipc")?;
         let mut writer = write::FileWriter::new(

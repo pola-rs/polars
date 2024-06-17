@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use polars_core::error::ErrString;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
@@ -12,6 +11,11 @@ use polars_io::prelude::*;
 
 use crate::executors::sinks::get_base_temp_dir;
 use crate::pipeline::morsels_per_sink;
+use tokio::sync::mpsc::{
+    unbounded_channel, UnboundedReceiver, UnboundedSender, channel, Sender, Receiver
+};
+use polars_io::pl_async::get_runtime;
+use tokio_util::compat::*;
 
 pub(in crate::executors::sinks) type DfIter =
     Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Send>;
@@ -21,7 +25,7 @@ type Payload = (Option<IdxCa>, DfIter);
 /// A helper that can be used to spill to disk
 pub(crate) struct IOThread {
     payload_tx: Sender<Payload>,
-    cleanup_tx: Sender<PathBuf>,
+    cleanup_tx: UnboundedSender<PathBuf>,
     _lockfile: Arc<LockFile>,
     pub(in crate::executors::sinks) dir: PathBuf,
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
@@ -73,7 +77,7 @@ fn clean_after_delay(time: Option<SystemTime>, secs: u64, path: &Path) {
 
 /// Starts a new thread that will clean up operations of directories that don't
 /// have a lockfile (opened with 'w' permissions).
-fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
+fn gc_thread(operation_name: &'static str, mut rx: UnboundedReceiver<PathBuf>) {
     let _ = std::thread::spawn(move || {
         // First clean all existing
         let mut dir = std::path::PathBuf::from(get_base_temp_dir());
@@ -112,7 +116,7 @@ fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
         }
 
         // Clean on receive
-        while let Ok(path) = rx.recv() {
+        while let Some(path) = rx.blocking_recv() {
             if path.is_file() {
                 let res = std::fs::remove_file(path);
                 debug_assert!(res.is_ok());
@@ -137,13 +141,13 @@ impl IOThread {
         let lockfile_path = get_lockfile_path(&dir);
         let lockfile = Arc::new(LockFile::new(lockfile_path)?);
 
-        let (cleanup_tx, rx) = unbounded::<PathBuf>();
+        let (cleanup_tx, rx) = unbounded_channel::<PathBuf>();
         // start a thread that will clean up old dumps.
         // TODO: if we will have more ooc in the future  we will have a dedicated GC thread
         gc_thread(operation_name, rx);
 
         // we need some pushback otherwise we still could go OOM.
-        let (tx, rx) = bounded::<Payload>(morsels_per_sink() * 2);
+        let (payload_tx, mut payload_rx) = channel::<Payload>(morsels_per_sink() * 2);
 
         let sent: Arc<AtomicUsize> = Default::default();
         let total: Arc<AtomicUsize> = Default::default();
@@ -153,7 +157,9 @@ impl IOThread {
         let total2 = total.clone();
         let lockfile2 = lockfile.clone();
         let schema2 = schema.clone();
-        std::thread::spawn(move || {
+
+        get_runtime().spawn(async move {
+
             let schema = schema2;
             // this moves the lockfile in the thread
             // we keep one in the thread and one in the `IoThread` struct
@@ -166,7 +172,7 @@ impl IOThread {
             //    This will dump to `dir/count.ipc`
             // 2. (Some(partitions), DfIter)
             //    This will dump to `dir/partition/count.ipc`
-            while let Ok((partitions, iter)) = rx.recv() {
+            while let Some((partitions, iter)) = payload_rx.recv().await {
                 if let Some(partitions) = partitions {
                     for (part, mut df) in partitions.into_no_null_iter().zip(iter) {
                         df.shrink_to_fit();
@@ -176,35 +182,46 @@ impl IOThread {
                         let _ = std::fs::create_dir(&path);
                         path.push(format!("{count}.ipc"));
 
-                        let file = File::create(path).unwrap();
-                        let writer = IpcWriter::new(file).with_pl_flavor(true);
-                        let mut writer = writer.batched(&schema).unwrap();
-                        writer.write_batch(&df).unwrap();
-                        writer.finish().unwrap();
+                        let file = tokio::fs::File::create(path).await.unwrap().compat();
+                        let writer = IpcWriter::new_async(file).with_pl_flavor(true);
+
+                        let schema = schema.clone();
+                        let total2 = total2.clone();
+                        tokio::spawn(async move {
+                            let mut writer = writer.batched_async(&schema).unwrap();
+                            writer.write_batch(&df).await.unwrap();
+                            writer.finish().await.unwrap();
+                            total2.fetch_add(1, Ordering::Relaxed)
+                        });
                         count += 1;
                     }
                 } else {
                     let mut path = dir2.clone();
                     path.push(format!("{count}_0_pass.ipc"));
 
-                    let file = File::create(path).unwrap();
-                    let writer = IpcWriter::new(file).with_pl_flavor(true);
-                    let mut writer = writer.batched(&schema).unwrap();
+                    let file = tokio::fs::File::create(path).await.unwrap().compat();
+                    let writer = IpcWriter::new_async(file).with_pl_flavor(true);
 
-                    for mut df in iter {
-                        df.shrink_to_fit();
-                        writer.write_batch(&df).unwrap();
-                    }
-                    writer.finish().unwrap();
+                    let schema = schema.clone();
+                    let total2 = total2.clone();
+                    tokio::spawn(async move {
+                        let mut writer = writer.batched_async(&schema).unwrap();
+                        for mut df in iter {
+                            df.shrink_to_fit();
+                            writer.write_batch(&df).await.unwrap();
+                        }
+                        writer.finish().await.unwrap();
+                        total2.fetch_add(1, Ordering::Relaxed)
+                    });
 
                     count += 1;
                 }
-                total2.store(count, Ordering::Relaxed);
+                // total2.store(count, Ordering::Relaxed);
             }
         });
 
         Ok(Self {
-            payload_tx: tx,
+            payload_tx,
             cleanup_tx,
             dir,
             sent,
@@ -216,23 +233,25 @@ impl IOThread {
     }
 
     pub(in crate::executors::sinks) fn dump_chunk(&self, mut df: DataFrame) {
-        // if IO thread is blocked
-        // we write locally on this thread
-        if self.payload_tx.is_full() {
-            df.shrink_to_fit();
-            let mut path = self.dir.clone();
-            let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
-            // thread local name we start with an underscore to ensure we don't get
-            // duplicates
-            path.push(format!("_{count}_full.ipc"));
-
-            let file = File::create(path).unwrap();
-            let mut writer = IpcWriter::new(file).with_pl_flavor(true);
-            writer.finish(&mut df).unwrap();
-        } else {
-            let iter = Box::new(std::iter::once(df));
-            self.dump_iter(None, iter)
-        }
+        // // if IO thread is blocked
+        // // we write locally on this thread
+        // if self.payload_tx.is_full() {
+        //     df.shrink_to_fit();
+        //     let mut path = self.dir.clone();
+        //     let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+        //     // thread local name we start with an underscore to ensure we don't get
+        //     // duplicates
+        //     path.push(format!("_{count}_full.ipc"));
+        //
+        //     let file = File::create(path).unwrap();
+        //     let mut writer = IpcWriter::new(file).with_pl_flavor(true);
+        //     writer.finish(&mut df).unwrap();
+        // } else {
+        //     let iter = Box::new(std::iter::once(df));
+        //     self.dump_iter(None, iter)
+        // }
+        let iter = Box::new(std::iter::once(df));
+        self.dump_iter(None, iter)
     }
 
     pub(in crate::executors::sinks) fn clean(&self, path: PathBuf) {
@@ -268,7 +287,7 @@ impl IOThread {
 
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
         let add = iter.size_hint().1.unwrap();
-        self.payload_tx.send((partition, iter)).unwrap();
+        self.payload_tx.blocking_send((partition, iter)).unwrap();
         self.sent.fetch_add(add, Ordering::Relaxed);
     }
 }
