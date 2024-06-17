@@ -6,6 +6,7 @@ import json
 from collections import abc
 from typing import TYPE_CHECKING, Any, Sequence
 
+from polars._utils.unstable import unstable
 from polars.dataframe import DataFrame
 from polars.datatypes.constants import N_INFER_DEFAULT
 
@@ -81,6 +82,7 @@ def _normalize_json_ordered(
     return {**top_dict_, **nested_dict_}
 
 
+@unstable()
 def json_normalize(
     data: dict[Any, Any] | Sequence[dict[Any, Any] | Any],
     *,
@@ -96,6 +98,10 @@ def json_normalize(
     Dictionary objects that will not be unnested/normalized are encoded
     as json string data. Unlike it pandas' counterpart, this function will
     not encode dictionaries as objects at any level.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------
@@ -117,19 +123,18 @@ def json_normalize(
 
     Examples
     --------
-    >>> data = [{
-    ...     "id": 1,
-    ...     "name": "Cole Volk",
-    ...     "fitness": {"height": 130, "weight": 60},
-    ... },
-
-    ... {"name": "Mark Reg", "fitness": {"height": 130, "weight": 60}},
-
-    ... {
-    ...     "id": 2,
-    ...     "name": "Faye Raker",
-    ...     "fitness": {"height": 130, "weight": 60},
-    ... },
+    >>> data = [
+    ...     {
+    ...         "id": 1,
+    ...         "name": "Cole Volk",
+    ...         "fitness": {"height": 130, "weight": 60},
+    ...     },
+    ...     {"name": "Mark Reg", "fitness": {"height": 130, "weight": 60}},
+    ...     {
+    ...         "id": 2,
+    ...         "name": "Faye Raker",
+    ...         "fitness": {"height": 130, "weight": 60},
+    ...     },
     ... ]
     >>> pl.json_normalize(data, max_level=1)
     shape: (3, 4)
