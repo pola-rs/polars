@@ -91,6 +91,7 @@ JSON
 .. autosummary::
    :toctree: api/
 
+   json_normalize
    read_json
    read_ndjson
    scan_ndjson

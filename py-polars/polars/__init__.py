@@ -182,6 +182,7 @@ from polars.functions import (
     zeros,
 )
 from polars.io import (
+    json_normalize,
     read_avro,
     read_clipboard,
     read_csv,
@@ -302,6 +303,7 @@ __all__ = [
     # polars.type_aliases
     "PolarsDataType",
     # polars.io
+    "json_normalize",
     "read_avro",
     "read_clipboard",
     "read_csv",
