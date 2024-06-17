@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
-from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -21,6 +19,8 @@ from typing import (
 
 if TYPE_CHECKING:
     import sys
+    from datetime import date, datetime, time, timedelta
+    from decimal import Decimal
 
     from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.orm import Session
@@ -47,14 +47,14 @@ PythonDataType: TypeAlias = Union[
     Type[float],
     Type[bool],
     Type[str],
-    Type[date],
-    Type[time],
-    Type[datetime],
-    Type[timedelta],
+    Type["date"],
+    Type["time"],
+    Type["datetime"],
+    Type["timedelta"],
     Type[List[Any]],
     Type[Tuple[Any, ...]],
     Type[bytes],
-    Type[Decimal],
+    Type["Decimal"],
     Type[None],
 ]
 
@@ -64,8 +64,8 @@ SchemaDefinition: TypeAlias = Union[
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
-NumericLiteral: TypeAlias = Union[int, float, Decimal]
-TemporalLiteral: TypeAlias = Union[date, time, datetime, timedelta]
+NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
+TemporalLiteral: TypeAlias = Union["date", "time", "datetime", "timedelta"]
 NonNestedLiteral: TypeAlias = Union[NumericLiteral, TemporalLiteral, str, bool, bytes]
 # Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[NonNestedLiteral, List[Any]]
