@@ -1732,7 +1732,7 @@ def test_csv_9929() -> None:
     f = io.BytesIO()
     df.write_csv(f)
     f.seek(0)
-    with pytest.raises(pl.NoDataError):
+    with pytest.raises(NoDataError):
         pl.read_csv(f, skip_rows=10**6)
 
 
