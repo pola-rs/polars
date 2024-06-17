@@ -9,7 +9,12 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -810,7 +815,7 @@ def test_join_results_in_duplicate_names() -> None:
         }
     )
     rhs = lhs.clone()
-    with pytest.raises(pl.DuplicateError, match="'c_right' already exists"):
+    with pytest.raises(DuplicateError, match="'c_right' already exists"):
         lhs.join(rhs, on=["a", "b"], how="left")
 
 

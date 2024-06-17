@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
 
 
@@ -64,7 +65,7 @@ def test_value_counts_duplicate_name() -> None:
 
     # default name is 'count' ...
     with pytest.raises(
-        pl.DuplicateError,
+        DuplicateError,
         match="duplicate column names; change `name` to fix",
     ):
         s.value_counts()

@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -470,7 +470,7 @@ def test_pivot_struct() -> None:
 
 def test_duplicate_column_names_which_should_raise_14305() -> None:
     df = pl.DataFrame({"a": [1, 3, 2], "c": ["a", "a", "a"], "d": [7, 8, 9]})
-    with pytest.raises(pl.DuplicateError, match="has more than one occurrences"):
+    with pytest.raises(DuplicateError, match="has more than one occurrences"):
         df.pivot(index="a", columns="c", values="d")
 
 

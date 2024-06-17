@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -298,7 +298,7 @@ def test_struct_with_lit() -> None:
 
 
 def test_eager_struct() -> None:
-    with pytest.raises(pl.DuplicateError, match="multiple fields with name '' found"):
+    with pytest.raises(DuplicateError, match="multiple fields with name '' found"):
         s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
 
     s = pl.struct(

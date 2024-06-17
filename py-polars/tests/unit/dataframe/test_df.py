@@ -17,7 +17,7 @@ import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -1716,10 +1716,10 @@ def test_schema_equality() -> None:
 
 def test_df_schema_unique() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         df.columns = ["a", "a"]
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         df.rename({"b": "a"})
 
 

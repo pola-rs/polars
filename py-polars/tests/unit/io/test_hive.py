@@ -7,6 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
 
 
@@ -185,7 +186,7 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     root.mkdir()
     df.write_parquet(root / "file.parquet")
 
-    with pytest.raises(pl.DuplicateError, match="invalid Hive partition schema"):
+    with pytest.raises(DuplicateError, match="invalid Hive partition schema"):
         pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True).collect()
 
 
