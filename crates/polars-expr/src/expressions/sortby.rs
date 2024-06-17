@@ -217,6 +217,15 @@ impl PhysicalExpr for SortByExpr {
                     .with_order_descending_multi(descending)
                     .with_nulls_last_multi(nulls_last);
 
+                for i in 1..s_sort_by.len() {
+                    polars_ensure!(
+                        s_sort_by[0].len() == s_sort_by[i].len(),
+                        expr = self.expr, ComputeError:
+                        "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
+                        s_sort_by[0].len(), s_sort_by[i].len()
+                    );
+                }
+
                 s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))

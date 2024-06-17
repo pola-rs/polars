@@ -812,3 +812,9 @@ def test_sort_string_nulls() -> None:
         None,
         None,
     ]
+
+
+def test_sort_by_unequal_lengths_7207() -> None:
+    df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col.a.sort_by(["a", 1]))
