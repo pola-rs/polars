@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from polars.testing import assert_frame_equal
 
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.mark.slow()
