@@ -9,7 +9,7 @@ use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{Morsel, MorselSeq, IDEAL_MORSEL_SIZE};
+use crate::morsel::{get_ideal_morsel_size, Morsel, MorselSeq};
 
 pub struct InMemorySource {
     source: Arc<DataFrame>,
@@ -30,7 +30,7 @@ impl InMemorySource {
 impl ComputeNode for InMemorySource {
     fn initialize(&mut self, num_pipelines: usize) {
         let len = self.source.height();
-        let ideal_block_count = len / IDEAL_MORSEL_SIZE;
+        let ideal_block_count = (len / get_ideal_morsel_size()).max(1);
         let block_count = ideal_block_count.next_multiple_of(num_pipelines);
         self.morsel_size = len.div_ceil(block_count).max(1);
         self.seq = AtomicU64::new(0);
@@ -59,7 +59,7 @@ impl ComputeNode for InMemorySource {
 
                 let mut morsel = Morsel::new(df, MorselSeq::new(seq));
                 morsel.set_consume_token(wait_group.token());
-                if let Err(_) = send.send(morsel).await {
+                if send.send(morsel).await.is_err() {
                     break;
                 }
                 wait_group.wait().await;

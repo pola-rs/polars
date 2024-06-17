@@ -42,7 +42,7 @@ impl ComputeNode for FilterNode {
                     continue;
                 }
 
-                if let Err(_) = send.send(morsel).await {
+                if send.send(morsel).await.is_err() {
                     break;
                 }
             }

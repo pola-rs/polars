@@ -687,7 +687,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "new-streaming")]
+        #[cfg(feature = "new_streaming")]
         {
             if self.opt_state.new_streaming {
                 let alp_plan = self.to_alp_optimized()?;

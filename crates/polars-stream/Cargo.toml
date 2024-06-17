@@ -14,6 +14,7 @@ crossbeam-deque = { workspace = true }
 crossbeam-utils = { workspace = true }
 parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
+polars-io = { workspace = true, features = ["async"] }
 polars-utils = { workspace = true }
 rand = { workspace = true }
 recursive = { workspace = true }

@@ -1,5 +1,6 @@
 use polars_error::PolarsResult;
 use polars_plan::logical_plan::{AExpr, Context, IR};
+use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
 
@@ -35,7 +36,7 @@ pub fn lower_ir(
                 }
             }
 
-            let mut phys_node = phys_sm.insert(PhysNode::DataFrameScan { df: df.clone() });
+            let mut phys_node = phys_sm.insert(PhysNode::InMemorySource { df: df.clone() });
 
             if let Some(schema) = output_schema {
                 phys_node = phys_sm.insert(PhysNode::SimpleProjection {
@@ -52,6 +53,15 @@ pub fn lower_ir(
             }
 
             Ok(phys_node)
+        },
+
+        IR::Sink { input, payload } => {
+            if *payload == SinkType::Memory {
+                let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
+                return Ok(phys_sm.insert(PhysNode::InMemorySink { input }));
+            }
+
+            todo!()
         },
 
         _ => Ok(phys_sm.insert(PhysNode::Fallback(node))),
