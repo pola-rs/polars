@@ -12,7 +12,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars import PolarsDataType
+    from polars.typing import PolarsDataType
 
 
 def test_string_date() -> None:
@@ -172,8 +172,8 @@ def test_leading_plus_zero_float(dtype: pl.DataType) -> None:
 
 def _cast_series(
     val: int | datetime | date | time | timedelta,
-    dtype_in: pl.PolarsDataType,
-    dtype_out: pl.PolarsDataType,
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
     strict: bool,
 ) -> int | datetime | date | time | timedelta | None:
     return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict).item()  # type: ignore[no-any-return]
@@ -181,8 +181,8 @@ def _cast_series(
 
 def _cast_expr(
     val: int | datetime | date | time | timedelta,
-    dtype_in: pl.PolarsDataType,
-    dtype_out: pl.PolarsDataType,
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
     strict: bool,
 ) -> int | datetime | date | time | timedelta | None:
     return (  # type: ignore[no-any-return]
@@ -195,8 +195,8 @@ def _cast_expr(
 
 def _cast_lit(
     val: int | datetime | date | time | timedelta,
-    dtype_in: pl.PolarsDataType,
-    dtype_out: pl.PolarsDataType,
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
     strict: bool,
 ) -> int | datetime | date | time | timedelta | None:
     return pl.select(pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)).item()  # type: ignore[no-any-return]
@@ -221,8 +221,8 @@ def _cast_lit(
 )
 def test_strict_cast_int(
     value: int,
-    from_dtype: pl.PolarsDataType,
-    to_dtype: pl.PolarsDataType,
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
     should_succeed: bool,
     expected_value: Any,
 ) -> None:
@@ -259,8 +259,8 @@ def test_strict_cast_int(
 )
 def test_cast_int(
     value: int,
-    from_dtype: pl.PolarsDataType,
-    to_dtype: pl.PolarsDataType,
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
     expected_value: Any,
 ) -> None:
     args = [value, from_dtype, to_dtype, False]
@@ -271,8 +271,8 @@ def test_cast_int(
 
 def _cast_series_t(
     val: int | datetime | date | time | timedelta,
-    dtype_in: pl.PolarsDataType,
-    dtype_out: pl.PolarsDataType,
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
     strict: bool,
 ) -> pl.Series:
     return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict)
@@ -280,8 +280,8 @@ def _cast_series_t(
 
 def _cast_expr_t(
     val: int | datetime | date | time | timedelta,
-    dtype_in: pl.PolarsDataType,
-    dtype_out: pl.PolarsDataType,
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
     strict: bool,
 ) -> pl.Series:
     return (
@@ -294,8 +294,8 @@ def _cast_expr_t(
 
 def _cast_lit_t(
     val: int | datetime | date | time | timedelta,
-    dtype_in: pl.PolarsDataType,
-    dtype_out: pl.PolarsDataType,
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
     strict: bool,
 ) -> pl.Series:
     return pl.select(
@@ -354,8 +354,8 @@ def _cast_lit_t(
 )
 def test_strict_cast_temporal(
     value: int,
-    from_dtype: pl.PolarsDataType,
-    to_dtype: pl.PolarsDataType,
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
     should_succeed: bool,
     expected_value: Any,
 ) -> None:
@@ -429,8 +429,8 @@ def test_strict_cast_temporal(
 )
 def test_cast_temporal(
     value: int,
-    from_dtype: pl.PolarsDataType,
-    to_dtype: pl.PolarsDataType,
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
     expected_value: Any,
 ) -> None:
     args = [value, from_dtype, to_dtype, False]
@@ -489,8 +489,8 @@ def test_cast_temporal(
 )
 def test_cast_string_and_binary(
     value: int,
-    from_dtype: pl.PolarsDataType,
-    to_dtype: pl.PolarsDataType,
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
     expected_value: Any,
 ) -> None:
     args = [value, from_dtype, to_dtype, False]
@@ -550,8 +550,8 @@ def test_cast_string_and_binary(
 )
 def test_strict_cast_string_and_binary(
     value: int,
-    from_dtype: pl.PolarsDataType,
-    to_dtype: pl.PolarsDataType,
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
     should_succeed: bool,
     expected_value: Any,
 ) -> None:
@@ -685,7 +685,7 @@ def test_all_null_cast_5826() -> None:
     "dtype",
     [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
 )
-def test_bool_numeric_supertype(dtype: pl.PolarsDataType) -> None:
+def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
     assert result.item() - 0.3333333 <= 0.00001

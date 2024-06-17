@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import given
@@ -9,6 +9,9 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 @given(
@@ -276,7 +279,7 @@ def test_sort_aggregation_fast_paths() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
-def test_sorted_join_and_dtypes(dtype: pl.PolarsDataType) -> None:
+def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
         .with_row_index()

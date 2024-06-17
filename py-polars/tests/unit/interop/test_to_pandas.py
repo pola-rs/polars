@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import hypothesis.strategies as st
 import numpy as np
@@ -11,6 +11,9 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 def test_df_to_pandas_empty() -> None:
@@ -180,7 +183,7 @@ def test_object_to_pandas_series(use_pyarrow_extension_array: bool) -> None:
 
 
 @pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
-def test_series_to_pandas_categorical(polars_dtype: pl.PolarsDataType) -> None:
+def test_series_to_pandas_categorical(polars_dtype: PolarsDataType) -> None:
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas()
     expected = pd.Series(["a", "b", "a"], name="x", dtype="category")
@@ -188,7 +191,7 @@ def test_series_to_pandas_categorical(polars_dtype: pl.PolarsDataType) -> None:
 
 
 @pytest.mark.parametrize("polars_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
-def test_series_to_pandas_categorical_pyarrow(polars_dtype: pl.PolarsDataType) -> None:
+def test_series_to_pandas_categorical_pyarrow(polars_dtype: PolarsDataType) -> None:
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas(use_pyarrow_extension_array=True)
     assert s.to_list() == result.to_list()

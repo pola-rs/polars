@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
     from polars.type_aliases import IndexOrder
+    from polars.typing import PolarsDataType
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
@@ -203,7 +204,7 @@ def test_df_to_numpy_not_zero_copy() -> None:
     ],
 )
 def test_df_to_numpy_empty_dtype_viewable(
-    schema: dict[str, pl.PolarsDataType], expected_dtype: npt.DTypeLike
+    schema: dict[str, PolarsDataType], expected_dtype: npt.DTypeLike
 ) -> None:
     df = pl.DataFrame(schema=schema)
     result = df.to_numpy(allow_copy=False)

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import math
 from contextlib import nullcontext
-from typing import Any, ContextManager
+from typing import TYPE_CHECKING, Any, ContextManager
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 def test_comparison_order_null_broadcasting() -> None:
@@ -199,7 +202,7 @@ def reference_ordering_missing(lhs: Any, rhs: Any) -> str:
 
 
 def verify_total_ordering(
-    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+    lhs: Any, rhs: Any, dummy: Any, dtype: PolarsDataType
 ) -> None:
     ref = reference_ordering_propagating(lhs, rhs)
     refmiss = reference_ordering_missing(lhs, rhs)
@@ -239,7 +242,7 @@ def verify_total_ordering(
 
 
 def verify_total_ordering_broadcast(
-    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+    lhs: Any, rhs: Any, dummy: Any, dtype: PolarsDataType
 ) -> None:
     ref = reference_ordering_propagating(lhs, rhs)
     refmiss = reference_ordering_missing(lhs, rhs)

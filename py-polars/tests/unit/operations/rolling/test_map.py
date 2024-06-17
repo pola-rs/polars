@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -57,7 +62,7 @@ def test_rolling_map_np_nansum() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-def test_rolling_map_std(dtype: pl.PolarsDataType) -> None:
+def test_rolling_map_std(dtype: PolarsDataType) -> None:
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=dtype)
     result = s.rolling_map(function=lambda s: s.std(), window_size=3)
 
@@ -66,7 +71,7 @@ def test_rolling_map_std(dtype: pl.PolarsDataType) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-def test_rolling_map_std_weights(dtype: pl.PolarsDataType) -> None:
+def test_rolling_map_std_weights(dtype: PolarsDataType) -> None:
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=dtype)
 
     result = s.rolling_map(

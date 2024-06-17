@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
@@ -13,7 +14,10 @@ import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
-protocol_dtypes: list[pl.PolarsDataType] = [
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
+
+protocol_dtypes: list[PolarsDataType] = [
     pl.Int8,
     pl.Int16,
     pl.Int32,

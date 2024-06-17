@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -13,6 +13,9 @@ import polars as pl
 from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies import series
 from polars.testing.parametric.strategies.data import datetimes
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -90,7 +93,7 @@ def test_list_datetime_11571() -> None:
         pytest.param(2**63, pl.UInt64, id="above i64 max"),
     ],
 )
-def test_lit_int_return_type(input: int, dtype: pl.PolarsDataType) -> None:
+def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
     assert pl.select(pl.lit(input)).to_series().dtype == dtype
 
 

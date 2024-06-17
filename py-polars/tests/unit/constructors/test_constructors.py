@@ -23,7 +23,8 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars.datatypes import PolarsDataType
+    from polars.typing import PolarsDataType
+
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -1299,7 +1300,7 @@ def test_from_records_nullable_structs() -> None:
         {"id": 1, "items": [{"item_id": 100, "description": "hi"}]},
     ]
 
-    schema: list[tuple[str, pl.PolarsDataType]] = [
+    schema: list[tuple[str, PolarsDataType]] = [
         ("id", pl.UInt16),
         (
             "items",
@@ -1311,7 +1312,7 @@ def test_from_records_nullable_structs() -> None:
         ),
     ]
 
-    schema_options: list[list[tuple[str, pl.PolarsDataType]] | None] = [schema, None]
+    schema_options: list[list[tuple[str, PolarsDataType]] | None] = [schema, None]
     for s in schema_options:
         result = pl.DataFrame(records, schema=s, orient="row")
         expected = {
@@ -1329,7 +1330,7 @@ def test_from_records_nullable_structs() -> None:
     assert df.to_dict(as_series=False) == {"id": [], "items": []}
     assert df.schema == dict_schema
 
-    dtype: pl.PolarsDataType = dict_schema["items"]
+    dtype: PolarsDataType = dict_schema["items"]
     series = pl.Series("items", dtype=dtype)
     assert series.to_frame().to_dict(as_series=False) == {"items": []}
     assert series.dtype == dict_schema["items"]

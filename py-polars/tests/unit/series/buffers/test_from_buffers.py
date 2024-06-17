@@ -10,14 +10,17 @@ import polars as pl
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
+
 # TODO: Define data type groups centrally somewhere in the test suite
-DATETIME_DTYPES: set[pl.PolarsDataType] = {
+DATETIME_DTYPES: set[PolarsDataType] = {
     pl.Datetime,
     pl.Datetime("ms"),
     pl.Datetime("us"),
     pl.Datetime("ns"),
 }
-TEMPORAL_DTYPES: set[pl.PolarsDataType] = (
+TEMPORAL_DTYPES: set[PolarsDataType] = (
     {pl.Date, pl.Time} | pl.DURATION_DTYPES | DATETIME_DTYPES
 )
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -23,7 +26,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
         (timedelta(hours=7, seconds=123), pl.Duration("ms")),
     ],
 )
-def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
+def test_extend_constant(const: Any, dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": pl.Series("s", [None], dtype=dtype)})
 
     expected_df = pl.DataFrame(
@@ -59,7 +62,7 @@ def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
         (timedelta(hours=7, seconds=123), pl.Duration("ms")),
     ],
 )
-def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
+def test_extend_constant_arr(const: Any, dtype: PolarsDataType) -> None:
     """
     Test extend_constant in pl.List array.
 

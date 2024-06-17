@@ -20,6 +20,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+
+    from polars.typing import PolarsDataType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -466,7 +468,7 @@ def test_logical_boolean() -> None:
 
 
 def test_lit_dtypes() -> None:
-    def lit_series(value: Any, dtype: pl.PolarsDataType | None) -> pl.Series:
+    def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
         return pl.select(pl.lit(value, dtype=dtype)).to_series()
 
     d = datetime(2049, 10, 5, 1, 2, 3, 987654)

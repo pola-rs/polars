@@ -29,7 +29,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
+    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.typing import PolarsDataType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -1486,7 +1487,7 @@ def test_is_finite_is_infinite() -> None:
 
 
 @pytest.mark.parametrize("float_type", [pl.Float32, pl.Float64])
-def test_is_nan_is_not_nan(float_type: pl.PolarsDataType) -> None:
+def test_is_nan_is_not_nan(float_type: PolarsDataType) -> None:
     s = pl.Series([1.0, np.nan, None], dtype=float_type)
 
     assert_series_equal(s.is_nan(), pl.Series([False, True, None]))
@@ -1875,7 +1876,7 @@ def test_from_epoch_expr(
     value: int,
     time_unit: EpochTimeUnit,
     exp: date | datetime,
-    exp_type: pl.PolarsDataType,
+    exp_type: PolarsDataType,
 ) -> None:
     s = pl.Series("timestamp", [value, None])
     result = pl.from_epoch(s, time_unit=time_unit)
@@ -1966,7 +1967,7 @@ def test_is_between() -> None:
     ],
 )
 def test_upper_lower_bounds(
-    dtype: pl.PolarsDataType, upper: int | float, lower: int | float
+    dtype: PolarsDataType, upper: int | float, lower: int | float
 ) -> None:
     s = pl.Series("s", dtype=dtype)
     assert s.lower_bound().item() == lower

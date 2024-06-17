@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars import PolarsDataType
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 def test_simplify_expression_lit_true_4376() -> None:

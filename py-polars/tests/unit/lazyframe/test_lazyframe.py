@@ -20,6 +20,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
+    from polars.typing import PolarsDataType
+
 
 def test_init_signature_match() -> None:
     # eager/lazy init signatures are expected to match; if this test fails, it
@@ -1191,7 +1193,7 @@ def test_quadratic_behavior_4736() -> None:
 
 
 @pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64])
-def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
+def test_from_epoch(input_dtype: PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [
             pl.Series("timestamp_d", [13285]).cast(input_dtype),
@@ -1338,7 +1340,7 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
     ],
 )
 def test_compare_aggregation_between_lazy_and_eager_6904(
-    dtype: pl.PolarsDataType, func: pl.Expr
+    dtype: PolarsDataType, func: pl.Expr
 ) -> None:
     df = pl.DataFrame(
         {

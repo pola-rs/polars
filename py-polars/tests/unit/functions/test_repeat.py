@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -35,8 +38,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 def test_repeat(
     value: Any,
     n: int,
-    dtype: pl.PolarsDataType,
-    expected_dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
+    expected_dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("repeat", [value] * n).cast(expected_dtype)
 
@@ -105,7 +108,7 @@ def test_repeat_n_negative() -> None:
 def test_ones(
     n: int,
     value: Any,
-    dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("ones", [value] * n, dtype=dtype)
 
@@ -134,7 +137,7 @@ def test_ones(
 def test_zeros(
     n: int,
     value: Any,
-    dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("zeros", [value] * n, dtype=dtype)
 

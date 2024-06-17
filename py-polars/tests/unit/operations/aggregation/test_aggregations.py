@@ -12,7 +12,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars.type_aliases import PolarsDataType
+    from polars.typing import PolarsDataType
 
 
 def test_quantile_expr_input() -> None:
@@ -405,7 +405,7 @@ def test_nan_inf_aggregation() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Int16, pl.UInt16])
-def test_int16_max_12904(dtype: pl.PolarsDataType) -> None:
+def test_int16_max_12904(dtype: PolarsDataType) -> None:
     s = pl.Series([None, 1], dtype=dtype)
 
     assert s.min() == 1

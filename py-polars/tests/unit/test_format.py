@@ -9,7 +9,7 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars.typing import PolarsDataType
 
 
 @pytest.fixture(autouse=True)
@@ -108,7 +108,7 @@ Series: 'foo' [str]
     "dtype", [pl.String, pl.Categorical, pl.Enum(["abc", "abcd", "abcde"])]
 )
 def test_fmt_series_string_truncate_cat(
-    dtype: pl.PolarsDataType, capfd: pytest.CaptureFixture[str]
+    dtype: PolarsDataType, capfd: pytest.CaptureFixture[str]
 ) -> None:
     s = pl.Series(name="foo", values=["abc", "abcd", "abcde"], dtype=dtype)
     with pl.Config(fmt_str_lengths=4):
