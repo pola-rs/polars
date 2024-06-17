@@ -11,7 +11,6 @@ Errors
     :nosignatures:
 
     PolarsError
-    ChronoFormatWarning
     ColumnNotFoundError
     ComputeError
     DuplicateError
