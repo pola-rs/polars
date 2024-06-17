@@ -40,7 +40,7 @@ impl Graph {
             outputs: Vec::new(),
         });
 
-        /// Create and add pipes that connect input to output.
+        // Create and add pipes that connect input to output.
         for (recv_port, sender) in inputs.into_iter().enumerate() {
             let send_port = self.nodes[sender].outputs.len();
             let pipe = LogicalPipe {

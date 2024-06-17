@@ -83,7 +83,7 @@ fn to_graph_rec<'a>(
         },
 
         // Fallback to the in-memory engine.
-        Fallback(node) => {
+        Fallback(_node) => {
             todo!()
         },
     };

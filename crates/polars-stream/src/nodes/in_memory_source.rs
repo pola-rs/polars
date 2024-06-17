@@ -9,7 +9,7 @@ use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{Morsel, MorselSeq, get_ideal_morsel_size};
+use crate::morsel::{get_ideal_morsel_size, Morsel, MorselSeq};
 
 pub struct InMemorySource {
     source: Arc<DataFrame>,
