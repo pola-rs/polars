@@ -150,6 +150,7 @@ pub struct FunctionOptions {
     pub check_lengths: UnsafeBool,
     // Raise if use in group by
     pub allow_group_aware: bool,
+    pub allow_schema_validation: bool,
 }
 
 impl FunctionOptions {
@@ -183,6 +184,7 @@ impl Default for FunctionOptions {
             changes_length: false,
             check_lengths: UnsafeBool(true),
             allow_group_aware: true,
+            allow_schema_validation: true,
         }
     }
 }
