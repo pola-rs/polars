@@ -15,7 +15,7 @@ Errors
     ComputeError
     DuplicateError
     InvalidOperationError
-    ModuleUpgradeRequired
+    ModuleUpgradeRequiredError
     NoDataError
     NoRowsReturnedError
     OutOfBoundsError

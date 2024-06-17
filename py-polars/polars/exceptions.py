@@ -117,7 +117,7 @@ class TooManyRowsReturnedError(RowsError):
     """Exception raised when more rows than expected are returned."""
 
 
-class ModuleUpgradeRequired(ModuleNotFoundError):
+class ModuleUpgradeRequiredError(ModuleNotFoundError):
     """Exception raised when a module is installed but needs to be upgraded."""
 
 
@@ -200,7 +200,7 @@ __all__ = [
     "ComputeError",
     "DuplicateError",
     "InvalidOperationError",
-    "ModuleUpgradeRequired",
+    "ModuleUpgradeRequiredError",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",

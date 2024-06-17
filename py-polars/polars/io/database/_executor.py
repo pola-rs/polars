@@ -12,7 +12,7 @@ from polars.convert import from_arrow
 from polars.datatypes import (
     N_INFER_DEFAULT,
 )
-from polars.exceptions import ModuleUpgradeRequired, UnsuitableSQLError
+from polars.exceptions import ModuleUpgradeRequiredError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
 from polars.io.database._inference import _infer_dtype_from_cursor_description
@@ -147,7 +147,7 @@ class ConnectionExecutor:
                     break
             if module_version and module_version < parse_version(minimum_version):
                 msg = f"`read_database` queries require at least {module_name} version {minimum_version}"
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
 
     def _fetch_arrow(
         self,

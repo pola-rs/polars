@@ -265,7 +265,7 @@ def import_optional(
     Please install it using the command `pip install definitely_a_real_module`.
     """
     from polars._utils.various import parse_version
-    from polars.exceptions import ModuleUpgradeRequired
+    from polars.exceptions import ModuleUpgradeRequiredError
 
     module_root = module_name.split(".", 1)[0]
     try:
@@ -288,7 +288,7 @@ def import_optional(
                 f"{'.'.join(str(v) for v in min_version)} or higher"
                 f" (found {'.'.join(str(v) for v in mod_version)})"
             )
-            raise ModuleUpgradeRequired(msg)
+            raise ModuleUpgradeRequiredError(msg)
 
     return module
 
