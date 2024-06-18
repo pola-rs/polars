@@ -831,3 +831,16 @@ def test_cat_append_lexical_sorted_flag() -> None:
     df2 = pl.concat([part.sort("y") for part in df.partition_by("x")])
 
     assert not (df2["y"].is_sorted())
+
+
+def test_get_cat_categories_multiple_chunks() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("e", ["a", "b"], pl.Enum(["a", "b"])),
+        ]
+    )
+    df = pl.concat(
+        [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
+    )
+    df_cat = df.lazy().select(pl.col("e").cat.get_categories()).collect()
+    assert len(df_cat) == 2
