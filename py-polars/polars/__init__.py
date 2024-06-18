@@ -240,6 +240,7 @@ __all__ = [
     # modules
     "api",
     "exceptions",
+    "selectors",
     "plugins",
     # exceptions - errors
     "PolarsError",
@@ -401,8 +402,8 @@ __all__ = [
     "cum_reduce",
     "cumfold",
     "cumreduce",
-    "date",  # named date_, see import above
-    "datetime",  # named datetime_, see import above
+    "date",
+    "datetime",
     "duration",
     "exclude",
     "field",
@@ -431,7 +432,7 @@ __all__ = [
     "std",
     "struct",
     "tail",
-    "time",  # named time_, see import above
+    "time",
     "var",
     # polars.functions.len
     "len",
@@ -447,17 +448,15 @@ __all__ = [
     "from_records",
     "from_repr",
     "json_normalize",
-    # polars.sql
-    "SQLContext",
-    "sql",
-    # polars.utils
+    # polars.meta
     "build_info",
     "get_index_type",
     "show_versions",
     "thread_pool_size",
     "threadpool_size",
-    # selectors
-    "selectors",
+    # polars.sql
+    "SQLContext",
+    "sql",
     "sql_expr",
 ]
 
