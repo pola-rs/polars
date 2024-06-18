@@ -46,13 +46,6 @@ use pyo3::{wrap_pyfunction, wrap_pymodule};
 use crate::batched_csv::PyBatchedCsv;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
-use crate::exceptions::{
-    CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
-    InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
-    PanicException, PerformanceWarning, PolarsBaseError, PolarsBaseWarning, SQLInterfaceError,
-    SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError, StringCacheMismatchError,
-    StructFieldNotFoundError,
-};
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::{PyInProcessQuery, PyLazyFrame};
@@ -312,75 +305,102 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Exceptions - Errors
-    m.add("PolarsError", py.get_type_bound::<PolarsBaseError>())
-        .unwrap();
+    m.add(
+        "PolarsError",
+        py.get_type_bound::<exceptions::PolarsBaseError>(),
+    )
+    .unwrap();
     m.add(
         "ColumnNotFoundError",
-        py.get_type_bound::<ColumnNotFoundError>(),
+        py.get_type_bound::<exceptions::ColumnNotFoundError>(),
     )
     .unwrap();
-    m.add("ComputeError", py.get_type_bound::<ComputeError>())
-        .unwrap();
-    m.add("DuplicateError", py.get_type_bound::<DuplicateError>())
-        .unwrap();
+    m.add(
+        "ComputeError",
+        py.get_type_bound::<exceptions::ComputeError>(),
+    )
+    .unwrap();
+    m.add(
+        "DuplicateError",
+        py.get_type_bound::<exceptions::DuplicateError>(),
+    )
+    .unwrap();
     m.add(
         "InvalidOperationError",
-        py.get_type_bound::<InvalidOperationError>(),
+        py.get_type_bound::<exceptions::InvalidOperationError>(),
     )
     .unwrap();
-    m.add("NoDataError", py.get_type_bound::<NoDataError>())
-        .unwrap();
-    m.add("OutOfBoundsError", py.get_type_bound::<OutOfBoundsError>())
-        .unwrap();
+    m.add(
+        "NoDataError",
+        py.get_type_bound::<exceptions::NoDataError>(),
+    )
+    .unwrap();
+    m.add(
+        "OutOfBoundsError",
+        py.get_type_bound::<exceptions::OutOfBoundsError>(),
+    )
+    .unwrap();
     m.add(
         "SQLInterfaceError",
-        py.get_type_bound::<SQLInterfaceError>(),
+        py.get_type_bound::<exceptions::SQLInterfaceError>(),
     )
     .unwrap();
-    m.add("SQLSyntaxError", py.get_type_bound::<SQLSyntaxError>())
-        .unwrap();
-    m.add("SchemaError", py.get_type_bound::<SchemaError>())
-        .unwrap();
+    m.add(
+        "SQLSyntaxError",
+        py.get_type_bound::<exceptions::SQLSyntaxError>(),
+    )
+    .unwrap();
+    m.add(
+        "SchemaError",
+        py.get_type_bound::<exceptions::SchemaError>(),
+    )
+    .unwrap();
     m.add(
         "SchemaFieldNotFoundError",
-        py.get_type_bound::<SchemaFieldNotFoundError>(),
+        py.get_type_bound::<exceptions::SchemaFieldNotFoundError>(),
     )
     .unwrap();
-    m.add("ShapeError", py.get_type_bound::<ShapeError>())
+    m.add("ShapeError", py.get_type_bound::<exceptions::ShapeError>())
         .unwrap();
     m.add(
         "StringCacheMismatchError",
-        py.get_type_bound::<StringCacheMismatchError>(),
+        py.get_type_bound::<exceptions::StringCacheMismatchError>(),
     )
     .unwrap();
     m.add(
         "StructFieldNotFoundError",
-        py.get_type_bound::<StructFieldNotFoundError>(),
+        py.get_type_bound::<exceptions::StructFieldNotFoundError>(),
     )
     .unwrap();
 
     // Exceptions - Warnings
-    m.add("PolarsWarning", py.get_type_bound::<PolarsBaseWarning>())
-        .unwrap();
+    m.add(
+        "PolarsWarning",
+        py.get_type_bound::<exceptions::PolarsBaseWarning>(),
+    )
+    .unwrap();
     m.add(
         "PerformanceWarning",
-        py.get_type_bound::<PerformanceWarning>(),
+        py.get_type_bound::<exceptions::PerformanceWarning>(),
     )
     .unwrap();
     m.add(
         "CategoricalRemappingWarning",
-        py.get_type_bound::<CategoricalRemappingWarning>(),
+        py.get_type_bound::<exceptions::CategoricalRemappingWarning>(),
     )
     .unwrap();
     m.add(
         "MapWithoutReturnDtypeWarning",
-        py.get_type_bound::<MapWithoutReturnDtypeWarning>(),
+        py.get_type_bound::<exceptions::MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
 
     // Exceptions - Panic
-    m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
-        .unwrap();
+    m.add(
+        "PolarsPanicError",
+        py.get_type_bound::<exceptions::PanicException>(),
+    )
+    .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
