@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fs4::FileExt;
-use polars_core::config;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::cache_lock::{GlobalFileCacheGuardExclusive, GLOBAL_FILE_CACHE_LOCK};
@@ -154,7 +153,9 @@ impl EvictionManager {
     /// * `self.data_dir`
     /// * `self.metadata_dir`
     pub(super) fn run_in_background(mut self) {
-        if config::verbose() {
+        let verbose = false;
+
+        if verbose {
             eprintln!(
                 "[EvictionManager] creating cache eviction background task, self.min_ttl = {}",
                 self.min_ttl.load(std::sync::atomic::Ordering::Relaxed)
@@ -179,7 +180,7 @@ impl EvictionManager {
                     Ok(_) if self.files_to_remove.as_ref().unwrap().is_empty() => {},
                     Ok(_) => loop {
                         if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_exclusive() {
-                            if config::verbose() {
+                            if verbose {
                                 eprintln!(
                                     "[EvictionManager] got exclusive cache lock, evicting {} files",
                                     self.files_to_remove.as_ref().unwrap().len()
@@ -192,7 +193,7 @@ impl EvictionManager {
                         tokio::time::sleep(Duration::from_secs(7)).await;
                     },
                     Err(err) => {
-                        if config::verbose() {
+                        if verbose {
                             eprintln!("[EvictionManager] error updating file list: {}", err);
                         }
                     },
@@ -320,7 +321,7 @@ impl EvictionManager {
     /// # Panics
     /// Panics if `self.files_to_remove` is `None`.
     fn evict_files(&mut self, _guard: &GlobalFileCacheGuardExclusive) {
-        let verbose = config::verbose();
+        let verbose = false;
         let mut files_to_remove = self.files_to_remove.take().unwrap();
         let now = &SystemTime::now();
 

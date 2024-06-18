@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use fs4::FileExt;
 use once_cell::sync::Lazy;
-use polars_core::config;
 
 use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
@@ -32,22 +31,23 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: Lazy<GlobalLock> = Lazy::new(|| {
     pl_async::get_runtime().spawn(async move {
         let access_tracker = at_bool;
         let notify_lock_acquired = notify_lock_acquired_2;
+        let verbose = false;
 
         loop {
-            if config::verbose() {
+            if verbose {
                 eprintln!("file cache background unlock: waiting for acquisition notification");
             }
 
             notify_lock_acquired.notified().await;
 
-            if config::verbose() {
+            if verbose {
                 eprintln!("file cache background unlock: got acquisition notification");
             }
 
             loop {
                 if !access_tracker.swap(false, std::sync::atomic::Ordering::Relaxed) {
                     if let Some(unlocked_by_this_call) = GLOBAL_FILE_CACHE_LOCK.try_unlock() {
-                        if unlocked_by_this_call && config::verbose() {
+                        if unlocked_by_this_call && verbose {
                             eprintln!(
                                 "file cache background unlock: unlocked global file cache lockfile"
                             );
