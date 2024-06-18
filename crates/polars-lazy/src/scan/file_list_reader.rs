@@ -12,6 +12,9 @@ use crate::prelude::*;
 
 pub type PathIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
 
+/// Recursively traverses directories and expands globs if `glob` is `true`.
+/// Returns the expanded paths and the index at which to start parsing hive
+/// partitions from the path.
 fn expand_paths(
     paths: &[PathBuf],
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
@@ -237,7 +240,7 @@ pub trait LazyFileListReader: Clone {
     }
 
     /// Returns a list of paths after resolving globs and directories, as well as
-    /// the hive start index.
+    /// the string index at which to start parsing hive partitions.
     fn expand_paths(&self) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
         expand_paths(self.paths(), self.cloud_options(), self.glob())
     }
