@@ -237,7 +237,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
-  "new_streaming"
+  # "new_streaming",
 ]
 
 # we cannot conditionally activate simd
