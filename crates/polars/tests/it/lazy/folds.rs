@@ -10,7 +10,7 @@ fn test_fold_wildcard() -> PolarsResult<()> {
     let out = df1
         .clone()
         .lazy()
-        .select([fold_exprs(lit(0), |a, b| Ok(Some(&a + &b)), [col("*")]).alias("foo")])
+        .select([fold_exprs(lit(0), |a, b| (&a + &b).map(Some), [col("*")]).alias("foo")])
         .collect()?;
 
     assert_eq!(

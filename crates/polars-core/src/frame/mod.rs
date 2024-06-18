@@ -2486,7 +2486,7 @@ impl DataFrame {
                 let acc: Series = apply_null_strategy(acc, null_strategy)?;
                 let s = apply_null_strategy(s, null_strategy)?;
                 // This will do owned arithmetic and can be mutable
-                Ok(acc + s)
+                std::ops::Add::add(acc, s)
             };
 
         let non_null_cols = self
@@ -2566,9 +2566,13 @@ impl DataFrame {
                         .map(|s| {
                             s.is_null()
                                 .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
-                                .unwrap()
                         })
-                        .reduce_with(|l, r| &l + &r)
+                        .reduce_with(|l, r| {
+                            let l = l?;
+                            let r = r?;
+                            let result = std::ops::Add::add(&l, &r)?;
+                            PolarsResult::Ok(result)
+                        })
                         // we can unwrap the option, because we are certain there is a column
                         // we started this operation on 2 columns
                         .unwrap()
@@ -2576,6 +2580,7 @@ impl DataFrame {
 
                 let (sum, null_count) = POOL.install(|| rayon::join(sum, null_count));
                 let sum = sum?;
+                let null_count = null_count?;
 
                 // value lengths: len - null_count
                 let value_length: UInt32Chunked =
@@ -2588,7 +2593,8 @@ impl DataFrame {
                     .into_series()
                     .cast(&DataType::Float64)?;
 
-                Ok(sum.map(|sum| &sum / &value_length))
+                sum.map(|sum| std::ops::Div::div(&sum, &value_length))
+                    .transpose()
             },
         }
     }
