@@ -12,6 +12,9 @@ else:
     BaseSchema = OrderedDict
 
 
+__all__ = ["Schema"]
+
+
 class Schema(BaseSchema):
     """
     Ordered mapping of column names to their data type.
