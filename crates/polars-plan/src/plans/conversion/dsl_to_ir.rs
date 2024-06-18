@@ -122,6 +122,11 @@ pub fn to_alp_impl(
                         scans::csv_file_info(&paths, &file_options, options, cloud_options.as_ref())
                             .map_err(|e| e.context(failed_here!(csv scan)))?
                     },
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { options } => {
+                        scans::ndjson_file_info(&paths, &file_options, options)
+                            .map_err(|e| e.context(failed_here!(ndjson scan)))?
+                    },
                     // FileInfo should be set.
                     FileScan::Anonymous { .. } => unreachable!(),
                 }

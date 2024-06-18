@@ -311,6 +311,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 FileScan::Csv { .. } => "csv".into_py(py),
                 FileScan::Parquet { .. } => "parquet".into_py(py),
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
+                FileScan::NDJson { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
                 FileScan::Anonymous { .. } => {
                     return Err(PyNotImplementedError::new_err("anonymous scan"))
                 },

@@ -1,9 +1,9 @@
 use std::path::PathBuf;
+
+pub(crate) use polars_plan::plans::ArenaLpIter;
 use polars_plan::plans::IR;
-use polars_plan::plans::IR::Scan;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
-pub(crate) use polars_plan::plans::{ArenaLpIter, ArenaExprIter};
 
 /// Get a set of the data source paths in this LogicalPlan
 pub(crate) fn agg_source_paths(

@@ -289,6 +289,13 @@ fn create_physical_plan_impl(
                     file_options,
                     metadata,
                 ))),
+                #[cfg(feature = "json")]
+                FileScan::NDJson { options } => Ok(Box::new(executors::JsonExec::new(
+                    paths,
+                    options,
+                    file_options,
+                    file_info,
+                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,

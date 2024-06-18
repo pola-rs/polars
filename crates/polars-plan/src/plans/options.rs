@@ -1,3 +1,5 @@
+#[cfg(feature = "json")]
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
@@ -322,4 +324,16 @@ impl From<UnionArgs> for UnionOptions {
             rechunk: args.rechunk,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg(feature = "json")]
+pub struct NDJsonReadOptions {
+    pub n_threads: Option<usize>,
+    pub infer_schema_length: Option<NonZeroUsize>,
+    pub chunk_size: NonZeroUsize,
+    pub low_memory: bool,
+    pub ignore_errors: bool,
+    pub schema: Option<SchemaRef>,
 }

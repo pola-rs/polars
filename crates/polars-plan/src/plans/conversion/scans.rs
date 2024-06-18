@@ -17,11 +17,23 @@ fn get_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
 }
 
 #[cfg(any(feature = "parquet", feature = "ipc"))]
-fn prepare_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
+fn prepare_output_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
     if let Some(rc) = row_index {
         let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
     }
     Arc::new(schema)
+}
+
+#[cfg(any(feature = "json", feature = "csv"))]
+fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaRef, SchemaRef) {
+    if let Some(rc) = row_index {
+        let reader_schema = schema.clone();
+        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
+        (Arc::new(reader_schema), Arc::new(schema))
+    } else {
+        let schema = Arc::new(schema);
+        (schema.clone(), schema)
+    }
 }
 
 #[cfg(feature = "parquet")]
@@ -47,7 +59,7 @@ pub(super) fn parquet_file_info(
                 let metadata = reader.get_metadata().await?.clone();
 
                 let schema =
-                    prepare_schema((&reader_schema).into(), file_options.row_index.as_ref());
+                    prepare_output_schema((&reader_schema).into(), file_options.row_index.as_ref());
                 PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
             })?
         }
@@ -55,7 +67,8 @@ pub(super) fn parquet_file_info(
         let file = polars_utils::open_file(path)?;
         let mut reader = ParquetReader::new(file);
         let reader_schema = reader.schema()?;
-        let schema = prepare_schema((&reader_schema).into(), file_options.row_index.as_ref());
+        let schema =
+            prepare_output_schema((&reader_schema).into(), file_options.row_index.as_ref());
         (
             schema,
             reader_schema,
@@ -106,7 +119,7 @@ pub(super) fn ipc_file_info(
         ))?
     };
     let file_info = FileInfo::new(
-        prepare_schema(
+        prepare_output_schema(
             metadata.schema.as_ref().into(),
             file_options.row_index.as_ref(),
         ),
@@ -262,5 +275,37 @@ pub(super) fn csv_file_info(
         schema,
         Some(Either::Right(reader_schema)),
         (None, estimated_n_rows),
+    ))
+}
+
+#[cfg(feature = "json")]
+pub(super) fn ndjson_file_info(
+    paths: &[PathBuf],
+    file_options: &FileScanOptions,
+    ndjson_options: &mut NDJsonReadOptions,
+) -> PolarsResult<FileInfo> {
+    let path = get_path(paths)?;
+
+    let f = polars_utils::open_file(path)?;
+    let mut reader = std::io::BufReader::new(f);
+
+    let (reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
+        if file_options.row_index.is_none() {
+            (schema.clone(), schema.clone())
+        } else {
+            prepare_schemas(
+                Arc::unwrap_or_clone(schema),
+                file_options.row_index.as_ref(),
+            )
+        }
+    } else {
+        let schema =
+            polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
+        prepare_schemas(schema, file_options.row_index.as_ref())
+    };
+    Ok(FileInfo::new(
+        schema,
+        Some(Either::Right(reader_schema)),
+        (None, usize::MAX),
     ))
 }

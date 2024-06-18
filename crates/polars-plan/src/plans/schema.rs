@@ -34,7 +34,7 @@ pub struct FileInfo {
     /// extra hive columns.
     pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
     /// - known size
-    /// - estimated size
+    /// - estimated size (set to unsize::max if unknown).
     pub row_estimation: (Option<usize>, usize),
     pub hive_parts: Option<Arc<HivePartitions>>,
 }

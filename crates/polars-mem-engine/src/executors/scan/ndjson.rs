@@ -1,44 +1,76 @@
-use std::num::NonZeroUsize;
+use std::path::PathBuf;
+
+use polars_core::utils::accumulate_dataframes_vertical;
 
 use super::*;
 
-// impl AnonymousScan for LazyJsonLineReader {
-//     fn as_any(&self) -> &dyn std::any::Any {
-//         self
-//     }
-//     fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
-//         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
-//         JsonLineReader::from_path(&self.path)?
-//             .with_schema(schema)
-//             .with_rechunk(self.rechunk)
-//             .with_chunk_size(self.batch_size)
-//             .low_memory(self.low_memory)
-//             .with_n_rows(scan_opts.n_rows)
-//             .with_ignore_errors(self.ignore_errors)
-//             .finish()
-//     }
-//
-//     fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
-//         polars_ensure!(infer_schema_length != Some(0), InvalidOperation: "JSON requires positive 'infer_schema_length'");
-//         // Short-circuit schema inference if the schema has been explicitly provided,
-//         // or already inferred
-//         if let Some(schema) = &(*self.schema.read().unwrap()) {
-//             return Ok(schema.clone());
-//         }
-//
-//         let f = polars_utils::open_file(&self.path)?;
-//         let mut reader = std::io::BufReader::new(f);
-//
-//         let schema = Arc::new(polars_io::ndjson::infer_schema(
-//             &mut reader,
-//             infer_schema_length.and_then(NonZeroUsize::new),
-//         )?);
-//         let mut guard = self.schema.write().unwrap();
-//         *guard = Some(schema.clone());
-//
-//         Ok(schema)
-//     }
-//     fn allows_projection_pushdown(&self) -> bool {
-//         true
-//     }
-// }
+pub struct JsonExec {
+    paths: Arc<[PathBuf]>,
+    options: NDJsonReadOptions,
+    file_scan_options: FileScanOptions,
+    file_info: FileInfo,
+}
+
+impl JsonExec {
+    pub fn new(
+        paths: Arc<[PathBuf]>,
+        options: NDJsonReadOptions,
+        file_scan_options: FileScanOptions,
+        file_info: FileInfo,
+    ) -> Self {
+        Self {
+            paths,
+            options,
+            file_scan_options,
+            file_info,
+        }
+    }
+
+    fn read(&mut self) -> PolarsResult<DataFrame> {
+        let schema = self
+            .file_info
+            .reader_schema
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap_right();
+
+        let dfs = self
+            .paths
+            .iter()
+            .map(|p| {
+                let df = JsonLineReader::from_path(p)?
+                    .with_schema(schema.clone())
+                    .with_rechunk(self.file_scan_options.rechunk)
+                    .with_chunk_size(Some(self.options.chunk_size))
+                    .low_memory(self.options.low_memory)
+                    .with_n_rows(self.file_scan_options.n_rows)
+                    .with_ignore_errors(self.options.ignore_errors)
+                    .finish()?;
+
+                if let Some(row_index) = &mut self.file_scan_options.row_index {
+                    let offset = row_index.offset;
+                    row_index.offset += df.height() as IdxSize;
+                    df.with_row_index(row_index.name.as_ref(), Some(offset))
+                } else {
+                    Ok(df)
+                }
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        accumulate_dataframes_vertical(dfs)
+    }
+}
+
+impl Executor for JsonExec {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        let profile_name = if state.has_node_timer() {
+            let ids = vec![self.paths[0].to_string_lossy().into()];
+            let name = comma_delimited("ndjson".to_string(), &ids);
+            Cow::Owned(name)
+        } else {
+            Cow::Borrowed("")
+        };
+
+        state.record(|| self.read(), profile_name)
+    }
+}

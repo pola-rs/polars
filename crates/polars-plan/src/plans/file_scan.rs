@@ -33,6 +33,8 @@ pub enum FileScan {
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<arrow::io::ipc::read::FileMetadata>,
     },
+    #[cfg(feature = "json")]
+    NDJson { options: NDJsonReadOptions },
     #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -80,6 +82,8 @@ impl PartialEq for FileScan {
                     ..
                 },
             ) => l == r && c_l == c_r,
+            #[cfg(feature = "json")]
+            (FileScan::NDJson { options: l }, FileScan::NDJson { options: r }) => l == r,
             _ => false,
         }
     }
@@ -117,6 +121,8 @@ impl Hash for FileScan {
                 options.hash(state);
                 cloud_options.hash(state);
             },
+            #[cfg(feature = "json")]
+            FileScan::NDJson { options } => options.hash(state),
             FileScan::Anonymous { options, .. } => options.hash(state),
         }
     }
@@ -127,6 +133,10 @@ impl FileScan {
         match self {
             #[cfg(feature = "parquet")]
             Self::Parquet { metadata, .. } => {
+                *metadata = None;
+            },
+            #[cfg(feature = "ipc")]
+            Self::Ipc { metadata, .. } => {
                 *metadata = None;
             },
             _ => {},
@@ -154,6 +164,8 @@ impl FileScan {
             Self::Ipc { .. } => false,
             #[cfg(feature = "parquet")]
             Self::Parquet { .. } => true,
+            #[cfg(feature = "json")]
+            Self::NDJson { .. } => false,
             #[allow(unreachable_patterns)]
             _ => false,
         }

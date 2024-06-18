@@ -15,6 +15,8 @@ use std::mem;
 pub(crate) use csv::CsvExec;
 #[cfg(feature = "ipc")]
 pub(crate) use ipc::IpcExec;
+#[cfg(feature = "json")]
+pub(crate) use ndjson::JsonExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
