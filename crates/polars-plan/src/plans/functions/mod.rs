@@ -22,7 +22,7 @@ use smartstring::alias::String as SmartString;
 #[cfg(feature = "python")]
 use crate::dsl::python_udf::PythonFunction;
 #[cfg(feature = "merge_sorted")]
-use crate::logical_plan::functions::merge_sorted::merge_sorted;
+use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::prelude::*;
 
 #[derive(Clone)]

@@ -15,7 +15,7 @@ use strum_macros::IntoStaticStr;
 pub use utils::*;
 
 use crate::constants::LEN;
-use crate::logical_plan::Context;
+use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]

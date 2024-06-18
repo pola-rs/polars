@@ -1,5 +1,5 @@
 use super::*;
-use crate::logical_plan::conversion::rewrite_projections;
+use crate::plans::conversion::rewrite_projections;
 
 // Except for Opaque functions, this only has the DSL name of the function.
 #[derive(Clone)]

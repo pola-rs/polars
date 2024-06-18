@@ -1,5 +1,5 @@
 use super::*;
-use crate::logical_plan::optimizer::join_utils::split_suffix;
+use crate::plans::optimizer::join_utils::split_suffix;
 
 // Information concerning individual sides of a join.
 #[derive(PartialEq, Eq)]

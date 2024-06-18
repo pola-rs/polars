@@ -18,7 +18,7 @@ use polars_io::prelude::materialize_projection;
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::{check_projected_arrow_schema, is_cloud_url};
 use polars_io::SerReader;
-use polars_plan::logical_plan::FileInfo;
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::IdxSize;

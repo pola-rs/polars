@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
-use polars_plan::logical_plan::{AExpr, Context};
+use polars_plan::plans::{AExpr, Context};
 use polars_utils::arena::Arena;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};

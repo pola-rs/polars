@@ -47,4 +47,4 @@ use into::IntoExpr;
 #[cfg(feature = "list_eval")]
 pub use list::*;
 pub use polars_plan::dsl::*;
-pub use polars_plan::logical_plan::UdfSchema;
+pub use polars_plan::plans::UdfSchema;

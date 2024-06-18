@@ -1,5 +1,5 @@
 use polars_error::PolarsResult;
-use polars_plan::logical_plan::{AExpr, Context, IR};
+use polars_plan::plans::{AExpr, Context, IR};
 use polars_plan::prelude::SinkType;
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
@@ -7,7 +7,7 @@ use slotmap::SlotMap;
 use super::{PhysNode, PhysNodeKey};
 
 fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
-    polars_plan::logical_plan::is_streamable(node, arena, Context::Default)
+    polars_plan::plans::is_streamable(node, arena, Context::Default)
 }
 
 #[recursive::recursive]

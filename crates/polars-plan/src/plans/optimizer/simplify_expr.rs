@@ -1,7 +1,7 @@
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 
-use crate::logical_plan::*;
+use crate::plans::*;
 use crate::prelude::optimizer::simplify_functions::optimize_functions;
 
 macro_rules! eval_binary_same_type {

@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::logical_plan::expr_ir::ExprIR;
+use polars_plan::plans::expr_ir::ExprIR;
 
 use super::super::executors::{self, Executor};
 use super::*;

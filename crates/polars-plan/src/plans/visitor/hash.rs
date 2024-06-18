@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_utils::arena::Arena;
 
 use super::*;
-use crate::logical_plan::{AExpr, IR};
+use crate::plans::{AExpr, IR};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
 

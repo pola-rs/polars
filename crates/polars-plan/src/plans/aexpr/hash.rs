@@ -2,7 +2,7 @@ use std::hash::{Hash, Hasher};
 
 use polars_utils::arena::{Arena, Node};
 
-use crate::logical_plan::ArenaExprIter;
+use crate::plans::ArenaExprIter;
 use crate::prelude::AExpr;
 
 impl Hash for AExpr {

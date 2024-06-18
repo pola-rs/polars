@@ -5,8 +5,8 @@ use polars_core::error::*;
 use regex::Regex;
 
 use crate::constants;
-use crate::logical_plan::ir::IRPlanRef;
-use crate::logical_plan::visitor::{VisitRecursion, Visitor};
+use crate::plans::ir::IRPlanRef;
+use crate::plans::visitor::{VisitRecursion, Visitor};
 use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::visitor::AexprNode;
 use crate::prelude::*;

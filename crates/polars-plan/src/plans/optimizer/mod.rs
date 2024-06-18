@@ -35,15 +35,15 @@ pub use stack_opt::{OptimizationRule, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
-pub use crate::logical_plan::conversion::type_coercion::TypeCoercionRule;
-use crate::logical_plan::optimizer::count_star::CountStar;
+pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
+use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::logical_plan::optimizer::cse::prune_unused_caches;
+use crate::plans::optimizer::cse::prune_unused_caches;
 #[cfg(feature = "cse")]
-use crate::logical_plan::optimizer::cse::CommonSubExprOptimizer;
-use crate::logical_plan::optimizer::predicate_pushdown::HiveEval;
+use crate::plans::optimizer::cse::CommonSubExprOptimizer;
+use crate::plans::optimizer::predicate_pushdown::HiveEval;
 #[cfg(feature = "cse")]
-use crate::logical_plan::visitor::*;
+use crate::plans::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
 
 pub trait Optimize {

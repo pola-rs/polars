@@ -1,6 +1,6 @@
 use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
-use polars_plan::logical_plan::IR;
+use polars_plan::plans::IR;
 use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
