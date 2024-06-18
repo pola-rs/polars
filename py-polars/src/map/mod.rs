@@ -14,8 +14,9 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
 use smartstring::alias::String as SmartString;
 
+use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
-use crate::{PyPolarsErr, PySeries, Wrap};
+use crate::{PySeries, Wrap};
 
 pub trait PyArrowPrimitiveType: PolarsNumericType {}
 
@@ -41,7 +42,7 @@ fn iterator_to_struct<'a>(
         av @ AnyValue::Struct(_, _, flds) => (av._iter_struct_av().collect::<Vec<_>>(), &**flds),
         AnyValue::StructOwned(payload) => (payload.0.clone(), &*payload.1),
         _ => {
-            return Err(crate::error::ComputeError::new_err(format!(
+            return Err(crate::exceptions::ComputeError::new_err(format!(
                 "expected struct got {first_value:?}",
             )))
         },

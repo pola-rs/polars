@@ -91,7 +91,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
-    ModuleUpgradeRequired,
+    ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
 )
@@ -607,7 +607,7 @@ class DataFrame:
             "0.9.1"
         ):
             msg = "hvplot>=0.9.1 is required for `.plot`"
-            raise ModuleUpgradeRequired(msg)
+            raise ModuleUpgradeRequiredError(msg)
         hvplot.post_patch()
         return hvplot.plotting.core.hvPlotTabularPolars(self)
 
@@ -2163,12 +2163,12 @@ class DataFrame:
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
             if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
                 msg = "pyarrow>=8.0.0 is required for `to_pandas(use_pyarrow_extension_array=True)`"
                 if _PYARROW_AVAILABLE:
                     msg += f", found pyarrow {pa.__version__!r}."
-                    raise ModuleUpgradeRequired(msg)
+                    raise ModuleUpgradeRequiredError(msg)
                 else:
                     raise ModuleNotFoundError(msg)
 
@@ -3208,7 +3208,7 @@ class DataFrame:
             xlv = xlsxwriter.__version__
             if parse_version(xlv) < (3, 0, 8):
                 msg = f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
             ws.autofit()
 
         if freeze_panes:
@@ -3638,7 +3638,7 @@ class DataFrame:
                 if adbc_version < (0, 7):
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
                     msg = f"`if_table_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
-                    raise ModuleUpgradeRequired(msg)
+                    raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
                 mode = "append"
@@ -3675,7 +3675,7 @@ class DataFrame:
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
                     msg = f"use of schema-qualified table names requires ADBC version >= 0.8, found {adbc_str_version}"
-                    raise ModuleUpgradeRequired(
+                    raise ModuleUpgradeRequiredError(
                         # https://github.com/apache/arrow-adbc/issues/1000
                         # https://github.com/apache/arrow-adbc/issues/1109
                         msg
@@ -3696,7 +3696,7 @@ class DataFrame:
                 raise ModuleNotFoundError(msg)
             elif (pd_version := parse_version(pd.__version__)) < (1, 5):
                 msg = f"writing with 'sqlalchemy' engine requires pandas >= 1.5; found {pd.__version__!r}"
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
 
             import_optional(
                 module_name="sqlalchemy",

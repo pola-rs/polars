@@ -97,7 +97,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ModuleUpgradeRequired, ShapeError
+from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -4431,9 +4431,9 @@ class Series:
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
             if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
-                raise ModuleUpgradeRequired(
+                raise ModuleUpgradeRequiredError(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
                     f", found pyarrow {pa.__version__!r}"
                     if _PYARROW_AVAILABLE
@@ -7227,7 +7227,7 @@ class Series:
             "0.9.1"
         ):
             msg = "hvplot>=0.9.1 is required for `.plot`"
-            raise ModuleUpgradeRequired(msg)
+            raise ModuleUpgradeRequiredError(msg)
         hvplot.post_patch()
         return hvplot.plotting.core.hvPlotTabularPolars(self)
 

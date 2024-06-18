@@ -8,9 +8,9 @@ try:
         MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
+        PanicException,
         PerformanceWarning,
         PolarsError,
-        PolarsPanicError,
         PolarsWarning,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -68,7 +68,7 @@ except ImportError:
     class OutOfBoundsError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when the given index is out of bounds."""
 
-    class PolarsPanicError(PolarsError):  # type: ignore[no-redef, misc]
+    class PanicException(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
@@ -105,10 +105,6 @@ except ImportError:
         """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
-class InvalidAssert(PolarsError):  # type: ignore[misc]
-    """Exception raised when an unsupported testing assert is made."""
-
-
 class RowsError(PolarsError):  # type: ignore[misc]
     """Exception raised when the number of returned rows does not match expectation."""
 
@@ -121,7 +117,7 @@ class TooManyRowsReturnedError(RowsError):
     """Exception raised when more rows than expected are returned."""
 
 
-class ModuleUpgradeRequired(ModuleNotFoundError):
+class ModuleUpgradeRequiredError(ModuleNotFoundError):
     """Exception raised when a module is installed but needs to be upgraded."""
 
 
@@ -203,14 +199,13 @@ __all__ = [
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
-    "InvalidAssert",
     "InvalidOperationError",
-    "ModuleUpgradeRequired",
+    "ModuleUpgradeRequiredError",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "ParameterCollisionError",
-    "PolarsPanicError",
+    "PanicException",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",

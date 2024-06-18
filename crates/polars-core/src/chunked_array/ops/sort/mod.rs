@@ -707,7 +707,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(
                 phys.dtype().is_numeric(),
-                ComputeError: "cannot sort column of dtype `{}`", s.dtype()
+                InvalidOperation: "cannot sort column of dtype `{}`", s.dtype()
             );
             phys
         },

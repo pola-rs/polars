@@ -16,7 +16,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
-    PolarsPanicError,
+    PanicException,
     SchemaError,
     SchemaFieldNotFoundError,
     StructFieldNotFoundError,
@@ -112,7 +112,7 @@ def test_string_numeric_comp_err() -> None:
 
 def test_panic_error() -> None:
     with pytest.raises(
-        PolarsPanicError,
+        PanicException,
         match="unit: 'k' not supported",
     ):
         pl.datetime_range(

@@ -14,14 +14,13 @@ Errors
     ColumnNotFoundError
     ComputeError
     DuplicateError
-    InvalidAssert
     InvalidOperationError
-    ModuleUpgradeRequired
+    ModuleUpgradeRequiredError
     NoDataError
     NoRowsReturnedError
     OutOfBoundsError
     ParameterCollisionError
-    PolarsPanicError
+    PanicException
     RowsError
     SQLInterfaceError
     SQLSyntaxError

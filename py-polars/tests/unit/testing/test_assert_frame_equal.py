@@ -7,7 +7,6 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import InvalidAssert
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 from polars.testing.parametric import dataframes
 
@@ -348,8 +347,7 @@ def test_assert_frame_equal_check_row_order_unsortable() -> None:
     df1 = pl.DataFrame({"a": [object(), object()], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [object(), object()], "b": [4, 3]})
     with pytest.raises(
-        InvalidAssert,
-        match="cannot set `check_row_order=False`.*unsortable columns",
+        TypeError, match="cannot set `check_row_order=False`.*unsortable columns"
     ):
         assert_frame_equal(df1, df2, check_row_order=False)
 
