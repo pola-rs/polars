@@ -88,11 +88,11 @@ impl TotalEqKernel for FixedSizeBinaryArray {
         assert!(self.len() == other.len());
 
         if self.size() != other.size() {
-            return Bitmap::new_zeroed(self.len());
+            return Bitmap::new_with_value(true, self.len());
         }
 
         (0..self.len())
-            .map(|i| self.value(i) == other.value(i))
+            .map(|i| self.value(i) != other.value(i))
             .collect()
     }
 
@@ -106,7 +106,7 @@ impl TotalEqKernel for FixedSizeBinaryArray {
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         if self.size() != other.len() {
-            return Bitmap::new_zeroed(self.len());
+            return Bitmap::new_with_value(true, self.len());
         }
 
         (0..self.len()).map(|i| self.value(i) != other).collect()
