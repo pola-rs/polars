@@ -98,6 +98,7 @@ where
     FilteredRequired(FilteredRequiredValues<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
     RequiredByteStreamSplit(byte_stream_split::Decoder<'a>),
+    OptionalByteStreamSplit(OptionalPageValidity<'a>, byte_stream_split::Decoder<'a>),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -113,6 +114,7 @@ where
             State::FilteredRequired(values) => values.len(),
             State::FilteredOptional(optional, _) => optional.len(),
             State::RequiredByteStreamSplit(decoder) => decoder.len(),
+            State::OptionalByteStreamSplit(optional, _) => optional.len(),
         }
     }
 }
@@ -199,6 +201,14 @@ where
                     byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
                 ))
             },
+            (Encoding::ByteStreamSplit, _, true, false) => {
+                let validity = OptionalPageValidity::try_new(page)?;
+                let values = split_buffer(page)?.values;
+                Ok(State::OptionalByteStreamSplit(
+                    validity,
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -271,6 +281,13 @@ where
             State::RequiredByteStreamSplit(decoder) => {
                 values.extend(decoder.iter_converted(decode).map(self.op).take(remaining));
             },
+            State::OptionalByteStreamSplit(page_validity, decoder) => utils::extend_from_decoder(
+                validity,
+                page_validity,
+                Some(remaining),
+                values,
+                decoder.iter_converted(decode).map(self.op),
+            ),
         }
         Ok(())
     }
