@@ -8,9 +8,9 @@ try:
         MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
+        PanicException,
         PerformanceWarning,
         PolarsError,
-        PolarsPanicError,
         PolarsWarning,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -68,7 +68,7 @@ except ImportError:
     class OutOfBoundsError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when the given index is out of bounds."""
 
-    class PolarsPanicError(PolarsError):  # type: ignore[no-redef, misc]
+    class PanicException(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
@@ -205,7 +205,7 @@ __all__ = [
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "ParameterCollisionError",
-    "PolarsPanicError",
+    "PanicException",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",

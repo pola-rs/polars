@@ -7,7 +7,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import PolarsPanicError
+from polars.exceptions import PanicException
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
@@ -179,7 +179,7 @@ def test_series_from_buffers_offsets_do_not_match_data() -> None:
     offsets = pl.Series([0, 1, 3, 3, 9, 11], dtype=pl.Int64)
 
     msg = "offsets must not exceed the values length"
-    with pytest.raises(PolarsPanicError, match=msg):
+    with pytest.raises(PanicException, match=msg):
         pl.Series._from_buffers(pl.String, data=[data, offsets])
 
 

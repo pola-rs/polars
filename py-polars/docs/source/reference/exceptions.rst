@@ -20,7 +20,7 @@ Errors
     NoRowsReturnedError
     OutOfBoundsError
     ParameterCollisionError
-    PolarsPanicError
+    PanicException
     RowsError
     SQLInterfaceError
     SQLSyntaxError

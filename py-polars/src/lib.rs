@@ -397,7 +397,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
 
     // Exceptions - Panic
     m.add(
-        "PolarsPanicError",
+        "PanicException",
         py.get_type_bound::<pyo3::panic::PanicException>(),
     )
     .unwrap();

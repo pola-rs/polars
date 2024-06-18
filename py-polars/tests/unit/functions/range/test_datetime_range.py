@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError, PolarsPanicError, SchemaError
+from polars.exceptions import ComputeError, PanicException, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -95,7 +95,7 @@ def test_datetime_range_precision(
 
 
 def test_datetime_range_invalid_time_unit() -> None:
-    with pytest.raises(PolarsPanicError, match="'x' not supported"):
+    with pytest.raises(PanicException, match="'x' not supported"):
         pl.datetime_range(
             start=datetime(2021, 12, 16),
             end=datetime(2021, 12, 16, 3),
