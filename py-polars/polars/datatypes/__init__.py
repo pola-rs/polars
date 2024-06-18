@@ -5,7 +5,6 @@ from polars.datatypes.classes import (
     Categorical,
     DataType,
     DataTypeClass,
-    DataTypeGroup,
     Date,
     Datetime,
     Decimal,
@@ -34,17 +33,8 @@ from polars.datatypes.classes import (
     Utf8,
 )
 from polars.datatypes.constants import (
-    DATETIME_DTYPES,
     DTYPE_TEMPORAL_UNITS,
-    DURATION_DTYPES,
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     N_INFER_DEFAULT,
-    NESTED_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
 )
 from polars.datatypes.constructor import (
     numpy_type_to_constructor,
@@ -63,6 +53,18 @@ from polars.datatypes.convert import (
     supported_numpy_char_code,
     unpack_dtypes,
 )
+from polars.datatypes.group import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NESTED_DTYPES,
+    NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
+    TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
+    DataTypeGroup,
+)
 
 __all__ = [
     # classes
@@ -72,7 +74,6 @@ __all__ = [
     "Categorical",
     "DataType",
     "DataTypeClass",
-    "DataTypeGroup",
     "Date",
     "Datetime",
     "Decimal",
@@ -100,14 +101,16 @@ __all__ = [
     "Unknown",
     "Utf8",
     # constants
-    "DATETIME_DTYPES",
+    "N_INFER_DEFAULT",
     "DTYPE_TEMPORAL_UNITS",
+    # group
+    "DataTypeGroup",
+    "DATETIME_DTYPES",
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",
     "NESTED_DTYPES",
     "NUMERIC_DTYPES",
-    "N_INFER_DEFAULT",
     "SIGNED_INTEGER_DTYPES",
     "TEMPORAL_DTYPES",
     "UNSIGNED_INTEGER_DTYPES",
