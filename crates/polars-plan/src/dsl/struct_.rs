@@ -1,5 +1,5 @@
 use super::*;
-use crate::logical_plan::conversion::is_regex_projection;
+use crate::plans::conversion::is_regex_projection;
 
 /// Specialized expressions for Struct dtypes.
 pub struct StructNameSpace(pub(crate) Expr);

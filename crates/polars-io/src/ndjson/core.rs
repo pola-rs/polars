@@ -91,6 +91,24 @@ where
         self.ignore_errors = ignore_errors;
         self
     }
+
+    pub fn count(mut self) -> PolarsResult<usize> {
+        let reader_bytes = get_reader_bytes(&mut self.reader)?;
+        let json_reader = CoreJsonReader::new(
+            reader_bytes,
+            self.n_rows,
+            self.schema,
+            self.schema_overwrite,
+            self.n_threads,
+            1024, // sample size
+            self.chunk_size,
+            self.low_memory,
+            self.infer_schema_len,
+            self.ignore_errors,
+        )?;
+
+        json_reader.count()
+    }
 }
 
 impl<'a> JsonLineReader<'a, File> {
@@ -195,6 +213,21 @@ impl<'a> CoreJsonReader<'a> {
             ignore_errors,
         })
     }
+
+    fn count(mut self) -> PolarsResult<usize> {
+        let bytes = self.reader_bytes.take().unwrap();
+        let n_threads = self.n_threads.unwrap_or(POOL.current_num_threads());
+        let file_chunks = get_file_chunks_json(bytes.as_ref(), n_threads);
+
+        let iter = file_chunks.par_iter().map(|(start_pos, stop_at_nbytes)| {
+            let bytes = &bytes[*start_pos..*stop_at_nbytes];
+            let iter = serde_json::Deserializer::from_slice(bytes)
+                .into_iter::<Box<serde_json::value::RawValue>>();
+            iter.count()
+        });
+        Ok(POOL.install(|| iter.sum()))
+    }
+
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let mut bytes = bytes;
         let mut total_rows = 128;

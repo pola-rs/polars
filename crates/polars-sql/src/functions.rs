@@ -4,7 +4,7 @@ use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
-use polars_plan::logical_plan::{typed_lit, LiteralValue};
+use polars_plan::plans::{typed_lit, LiteralValue};
 #[cfg(feature = "list_eval")]
 use polars_plan::prelude::col;
 use polars_plan::prelude::LiteralValue::Null;

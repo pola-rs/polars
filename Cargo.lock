@@ -3188,6 +3188,7 @@ dependencies = [
  "polars-expr",
  "polars-io",
  "polars-json",
+ "polars-mem-engine",
  "polars-ops",
  "polars-pipe",
  "polars-plan",
@@ -3200,6 +3201,26 @@ dependencies = [
  "smartstring",
  "tokio",
  "version_check",
+]
+
+[[package]]
+name = "polars-mem-engine"
+version = "0.40.0"
+dependencies = [
+ "futures",
+ "polars-arrow",
+ "polars-core",
+ "polars-error",
+ "polars-expr",
+ "polars-io",
+ "polars-json",
+ "polars-ops",
+ "polars-plan",
+ "polars-time",
+ "polars-utils",
+ "pyo3",
+ "rayon",
+ "tokio",
 ]
 
 [[package]]

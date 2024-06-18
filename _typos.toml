@@ -18,6 +18,7 @@ strat = "strat"
 '"r0ot"' = "r0ot"
 wee = "wee"
 ser = "ser"
+ND = "ND"
 
 [type.csv]
 extend-glob = ["*.csv"]

@@ -1,6 +1,6 @@
 use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
-use polars_plan::logical_plan::IR;
+use polars_plan::plans::IR;
 use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
@@ -311,6 +311,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 FileScan::Csv { .. } => "csv".into_py(py),
                 FileScan::Parquet { .. } => "parquet".into_py(py),
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
+                FileScan::NDJson { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
                 FileScan::Anonymous { .. } => {
                     return Err(PyNotImplementedError::new_err("anonymous scan"))
                 },

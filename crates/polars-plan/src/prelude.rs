@@ -12,7 +12,7 @@ pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::dsl::*;
 #[cfg(feature = "debugging")]
-pub use crate::logical_plan::debug::*;
-pub use crate::logical_plan::options::*;
-pub use crate::logical_plan::*;
+pub use crate::plans::debug::*;
+pub use crate::plans::options::*;
+pub use crate::plans::*;
 pub use crate::utils::*;

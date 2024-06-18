@@ -124,7 +124,7 @@ impl PyLazyFrame {
         };
 
         let lf = r
-            .with_infer_schema_length(infer_schema_length)
+            .with_infer_schema_length(infer_schema_length.and_then(NonZeroUsize::new))
             .with_batch_size(batch_size)
             .with_n_rows(n_rows)
             .low_memory(low_memory)

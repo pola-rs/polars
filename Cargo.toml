@@ -102,6 +102,7 @@ polars-ffi = { version = "0.40.0", path = "crates/polars-ffi", default-features 
 polars-io = { version = "0.40.0", path = "crates/polars-io", default-features = false }
 polars-json = { version = "0.40.0", path = "crates/polars-json", default-features = false }
 polars-lazy = { version = "0.40.0", path = "crates/polars-lazy", default-features = false }
+polars-mem-engine = { version = "0.40.0", path = "crates/polars-mem-engine", default-features = false }
 polars-ops = { version = "0.40.0", path = "crates/polars-ops", default-features = false }
 polars-parquet = { version = "0.40.0", path = "crates/polars-parquet", default-features = false }
 polars-pipe = { version = "0.40.0", path = "crates/polars-pipe", default-features = false }

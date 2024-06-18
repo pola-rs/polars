@@ -69,7 +69,7 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 
 use crate::constants::MAP_LIST_NAME;
-pub use crate::logical_plan::lit;
+pub use crate::plans::lit;
 use crate::prelude::*;
 
 impl Expr {

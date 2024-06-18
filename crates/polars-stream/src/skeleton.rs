@@ -2,14 +2,14 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
-use polars_plan::logical_plan::{Context, IR};
+use polars_plan::plans::{Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::AExpr;
 use polars_utils::arena::{Arena, Node};
 use slotmap::{SecondaryMap, SlotMap};
 
 fn is_streamable(node: Node, arena: &Arena<AExpr>) -> bool {
-    polars_plan::logical_plan::is_streamable(node, arena, Context::Default)
+    polars_plan::plans::is_streamable(node, arena, Context::Default)
 }
 
 pub fn run_query(
