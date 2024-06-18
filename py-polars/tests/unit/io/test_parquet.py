@@ -1117,17 +1117,30 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
-def test_read_byte_stream_split() -> None:
+@pytest.mark.parametrize("nullable", [True, False])
+def test_read_byte_stream_split(nullable: bool) -> None:
     rng = np.random.default_rng(123)
-    values = rng.uniform(-1.0e6, 1.0e6, 1_000)
-    table = pa.table({
-        "floats": pa.array(values, type=pa.float32()),
-        "doubles": pa.array(values, type=pa.float64()),
-    })
+    num_rows = 1_000
+    values = rng.uniform(-1.0e6, 1.0e6, num_rows)
+    if nullable:
+        validity_mask = rng.integers(0, 2, num_rows).astype(np.bool_)
+    else:
+        validity_mask = None
+
+    schema = pa.schema(
+        [
+            pa.field("floats", type=pa.float32(), nullable=nullable),
+            pa.field("doubles", type=pa.float64(), nullable=nullable),
+        ]
+    )
+    arrays = [pa.array(values, type=field.type, mask=validity_mask) for field in schema]
+    table = pa.Table.from_arrays(arrays, schema=schema)
     df = pl.from_arrow(table)
 
     f = io.BytesIO()
-    pq.write_table(table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True)
+    pq.write_table(
+        table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True
+    )
 
     f.seek(0)
     read = pl.read_parquet(f)
