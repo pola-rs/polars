@@ -1,6 +1,6 @@
 use polars::datatypes::TimeUnit;
+use polars_core::prelude::{NonExistent, QuantileInterpolOptions};
 use polars_core::series::IsSorted;
-use polars_core::utils::arrow::legacy::kernels::NonExistent;
 use polars_ops::prelude::ClosedInterval;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
@@ -321,7 +321,7 @@ pub struct Agg {
     #[pyo3(get)]
     name: PyObject,
     #[pyo3(get)]
-    arguments: usize,
+    arguments: Vec<usize>,
     #[pyo3(get)]
     // Arbitrary control options
     options: PyObject,
@@ -635,7 +635,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 propagate_nans,
             } => Agg {
                 name: "min".to_object(py),
-                arguments: input.0,
+                arguments: vec![input.0],
                 options: propagate_nans.to_object(py),
             },
             IRAggExpr::Max {
@@ -643,59 +643,78 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 propagate_nans,
             } => Agg {
                 name: "max".to_object(py),
-                arguments: input.0,
+                arguments: vec![input.0],
                 options: propagate_nans.to_object(py),
             },
             IRAggExpr::Median(n) => Agg {
                 name: "median".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::NUnique(n) => Agg {
                 name: "n_unique".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::First(n) => Agg {
                 name: "first".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::Last(n) => Agg {
                 name: "last".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::Mean(n) => Agg {
                 name: "mean".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Implode(_) => return Err(PyNotImplementedError::new_err("implode")),
-            IRAggExpr::Quantile { .. } => return Err(PyNotImplementedError::new_err("quantile")),
+            IRAggExpr::Implode(n) => Agg {
+                name: "implode".to_object(py),
+                arguments: vec![n.0],
+                options: py.None(),
+            },
+            IRAggExpr::Quantile {
+                expr,
+                quantile,
+                interpol,
+            } => Agg {
+                name: "quantile".to_object(py),
+                arguments: vec![expr.0, quantile.0],
+                options: match interpol {
+                    QuantileInterpolOptions::Nearest => "nearest",
+                    QuantileInterpolOptions::Lower => "lower",
+                    QuantileInterpolOptions::Higher => "higher",
+                    QuantileInterpolOptions::Midpoint => "midpoint",
+                    QuantileInterpolOptions::Linear => "linear",
+                }
+                .to_object(py),
+            },
             IRAggExpr::Sum(n) => Agg {
                 name: "sum".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::Count(n, include_null) => Agg {
                 name: "count".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: include_null.to_object(py),
             },
             IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: ddof.to_object(py),
             },
             IRAggExpr::Var(n, ddof) => Agg {
                 name: "var".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: ddof.to_object(py),
             },
             IRAggExpr::AggGroups(n) => Agg {
                 name: "agg_groups".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
         }
