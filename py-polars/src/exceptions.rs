@@ -1,7 +1,7 @@
 //! Define the Polars exception hierarchy.
 
+use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyWarning};
-use pyo3::{create_exception, panic};
 
 // Errors
 create_exception!(polars.exceptions, PolarsError, PyException);
@@ -32,6 +32,3 @@ create_exception!(
     MapWithoutReturnDtypeWarning,
     PolarsWarning
 );
-
-// Panic
-create_exception!(polars.exceptions, PanicException, panic::PanicException);
