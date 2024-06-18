@@ -973,3 +973,25 @@ def test_join_lit_panic_11410() -> None:
     assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).drop(
         "literal"
     ).collect().to_dict(as_series=False) == {"symbol": [4], "date": [1]}
+
+
+def test_join_empty_literal_17027() -> None:
+    df1 = pl.DataFrame({"a": [1]})
+    df2 = pl.DataFrame(schema={"a": pl.Int64})
+
+    assert df1.join(df2, on=pl.lit(0), how="left").height == 1
+    assert df1.join(df2, on=pl.lit(0), how="inner").height == 0
+    assert (
+        df1.lazy()
+        .join(df2.lazy(), on=pl.lit(0), how="inner")
+        .collect(streaming=True)
+        .height
+        == 0
+    )
+    assert (
+        df1.lazy()
+        .join(df2.lazy(), on=pl.lit(0), how="left")
+        .collect(streaming=True)
+        .height
+        == 1
+    )
