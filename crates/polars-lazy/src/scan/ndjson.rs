@@ -114,8 +114,9 @@ impl LazyFileListReader for LazyJsonLineReader {
         let scan_type = FileScan::NDJson { options };
 
         Ok(LazyFrame::from(DslPlan::Scan {
-            paths: Arc::from([self.path.clone()]),
+            paths: self.paths,
             file_info: None,
+            hive_parts: None,
             predicate: None,
             file_options,
             scan_type,
