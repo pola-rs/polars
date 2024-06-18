@@ -10,13 +10,13 @@ import polars as pl
 from polars import datatypes
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
-    DataTypeGroup,
     Field,
     Int64,
     List,
     Struct,
     py_type_to_dtype,
 )
+from polars.datatypes.group import DataTypeGroup
 
 if TYPE_CHECKING:
     from polars.datatypes import DataTypeClass

@@ -52,7 +52,6 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
-    DataTypeGroup,
     Date,
     Datetime,
     Duration,
@@ -75,6 +74,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.group_by import LazyGroupBy

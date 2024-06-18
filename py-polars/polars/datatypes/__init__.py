@@ -63,7 +63,6 @@ from polars.datatypes.group import (
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
-    DataTypeGroup,
 )
 
 __all__ = [
@@ -104,7 +103,6 @@ __all__ = [
     "N_INFER_DEFAULT",
     "DTYPE_TEMPORAL_UNITS",
     # group
-    "DataTypeGroup",
     "DATETIME_DTYPES",
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
