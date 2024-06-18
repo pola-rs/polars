@@ -5,7 +5,7 @@ use strength_reduce::*;
 
 use super::PrimitiveArithmeticKernelImpl;
 use crate::arity::{prim_binary_values, prim_unary_values};
-use crate::comparisons::TotalOrdKernel;
+use crate::comparisons::TotalEqKernel;
 
 macro_rules! impl_signed_arith_kernel {
     ($T:ty, $StrRed:ty) => {

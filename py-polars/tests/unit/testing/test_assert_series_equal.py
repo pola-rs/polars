@@ -24,7 +24,7 @@ def test_assert_series_equal_parametric(s: pl.Series) -> None:
 
 @given(data=st.data())
 def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
-    inner = data.draw(dtypes(excluded_dtypes=[pl.Struct, pl.Categorical]))
+    inner = data.draw(dtypes(excluded_dtypes=[pl.Categorical]))
     shape = data.draw(st.integers(min_value=1, max_value=3))
     dtype = pl.Array(inner, shape=shape)
     s = data.draw(series(dtype=dtype))
