@@ -88,6 +88,12 @@ impl Debug for PyPolarsErr {
     }
 }
 
+create_exception!(
+    polars.exceptions,
+    PanicException,
+    pyo3::panic::PanicException
+);
+
 create_exception!(polars.exceptions, PolarsBaseError, PyException);
 create_exception!(polars.exceptions, ColumnNotFoundError, PolarsBaseError);
 create_exception!(polars.exceptions, ComputeError, PolarsBaseError);

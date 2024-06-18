@@ -38,7 +38,6 @@ mod series;
 mod sql;
 mod utils;
 
-use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
@@ -49,8 +48,9 @@ use crate::dataframe::PyDataFrame;
 use crate::error::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
-    PerformanceWarning, PolarsBaseError, PolarsBaseWarning, PyPolarsErr, SQLInterfaceError,
-    SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    PanicException, PerformanceWarning, PolarsBaseError, PolarsBaseWarning, PyPolarsErr,
+    SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::PyStringCacheHolder;
