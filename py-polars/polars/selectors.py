@@ -49,7 +49,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 
-
 __all__ = [
     "all",
     "alpha",
