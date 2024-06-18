@@ -4,24 +4,24 @@ use pyo3::exceptions::{PyException, PyWarning};
 use pyo3::{create_exception, panic};
 
 // Errors
-create_exception!(polars.exceptions, PolarsBaseError, PyException);
-create_exception!(polars.exceptions, ColumnNotFoundError, PolarsBaseError);
-create_exception!(polars.exceptions, ComputeError, PolarsBaseError);
-create_exception!(polars.exceptions, DuplicateError, PolarsBaseError);
-create_exception!(polars.exceptions, InvalidOperationError, PolarsBaseError);
-create_exception!(polars.exceptions, NoDataError, PolarsBaseError);
-create_exception!(polars.exceptions, OutOfBoundsError, PolarsBaseError);
-create_exception!(polars.exceptions, SQLInterfaceError, PolarsBaseError);
-create_exception!(polars.exceptions, SQLSyntaxError, PolarsBaseError);
-create_exception!(polars.exceptions, SchemaError, PolarsBaseError);
-create_exception!(polars.exceptions, SchemaFieldNotFoundError, PolarsBaseError);
-create_exception!(polars.exceptions, ShapeError, PolarsBaseError);
-create_exception!(polars.exceptions, StringCacheMismatchError, PolarsBaseError);
-create_exception!(polars.exceptions, StructFieldNotFoundError, PolarsBaseError);
+create_exception!(polars.exceptions, PolarsError, PyException);
+create_exception!(polars.exceptions, ColumnNotFoundError, PolarsError);
+create_exception!(polars.exceptions, ComputeError, PolarsError);
+create_exception!(polars.exceptions, DuplicateError, PolarsError);
+create_exception!(polars.exceptions, InvalidOperationError, PolarsError);
+create_exception!(polars.exceptions, NoDataError, PolarsError);
+create_exception!(polars.exceptions, OutOfBoundsError, PolarsError);
+create_exception!(polars.exceptions, SQLInterfaceError, PolarsError);
+create_exception!(polars.exceptions, SQLSyntaxError, PolarsError);
+create_exception!(polars.exceptions, SchemaError, PolarsError);
+create_exception!(polars.exceptions, SchemaFieldNotFoundError, PolarsError);
+create_exception!(polars.exceptions, ShapeError, PolarsError);
+create_exception!(polars.exceptions, StringCacheMismatchError, PolarsError);
+create_exception!(polars.exceptions, StructFieldNotFoundError, PolarsError);
 
 // Warnings
-create_exception!(polars.exceptions, PolarsBaseWarning, PyWarning);
-create_exception!(polars.exceptions, PerformanceWarning, PolarsBaseWarning);
+create_exception!(polars.exceptions, PolarsWarning, PyWarning);
+create_exception!(polars.exceptions, PerformanceWarning, PolarsWarning);
 create_exception!(
     polars.exceptions,
     CategoricalRemappingWarning,
@@ -30,7 +30,7 @@ create_exception!(
 create_exception!(
     polars.exceptions,
     MapWithoutReturnDtypeWarning,
-    PolarsBaseWarning
+    PolarsWarning
 );
 
 // Panic

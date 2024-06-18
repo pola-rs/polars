@@ -307,7 +307,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Exceptions - Errors
     m.add(
         "PolarsError",
-        py.get_type_bound::<exceptions::PolarsBaseError>(),
+        py.get_type_bound::<exceptions::PolarsError>(),
     )
     .unwrap();
     m.add(
@@ -376,7 +376,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Exceptions - Warnings
     m.add(
         "PolarsWarning",
-        py.get_type_bound::<exceptions::PolarsBaseWarning>(),
+        py.get_type_bound::<exceptions::PolarsWarning>(),
     )
     .unwrap();
     m.add(
