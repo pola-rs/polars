@@ -16,9 +16,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import (
         __register_startup_deps,
     )
-    from polars.polars import (
-        get_file_cache_prefix as _get_file_cache_prefix,
-    )
 
     __register_startup_deps()
 
@@ -462,8 +459,6 @@ __all__ = [
     # selectors
     "selectors",
     "sql_expr",
-    # internal
-    "_get_file_cache_prefix",
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
