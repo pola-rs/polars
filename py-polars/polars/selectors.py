@@ -50,6 +50,41 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
+__all__ = [
+    "all",
+    "alpha",
+    "alphanumeric",
+    "binary",
+    "boolean",
+    "by_dtype",
+    "by_index",
+    "by_name",
+    "categorical",
+    "contains",
+    "date",
+    "datetime",
+    "decimal",
+    "digit",
+    "duration",
+    "ends_with",
+    "exclude",
+    "expand_selector",
+    "first",
+    "float",
+    "integer",
+    "is_selector",
+    "last",
+    "matches",
+    "numeric",
+    "signed_integer",
+    "starts_with",
+    "string",
+    "temporal",
+    "time",
+    "unsigned_integer",
+]
+
+
 @overload
 def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
     ...
@@ -2630,38 +2665,3 @@ def time() -> SelectorType:
     └─────────────────────┴────────────┘
     """
     return _selector_proxy_(F.col(Time), name="time")
-
-
-__all__ = [
-    "all",
-    "alpha",
-    "alphanumeric",
-    "binary",
-    "boolean",
-    "by_dtype",
-    "by_index",
-    "by_name",
-    "categorical",
-    "contains",
-    "date",
-    "datetime",
-    "decimal",
-    "digit",
-    "duration",
-    "ends_with",
-    "exclude",
-    "expand_selector",
-    "first",
-    "float",
-    "integer",
-    "is_selector",
-    "last",
-    "matches",
-    "numeric",
-    "signed_integer",
-    "starts_with",
-    "string",
-    "temporal",
-    "time",
-    "unsigned_integer",
-]

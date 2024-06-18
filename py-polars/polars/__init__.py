@@ -240,8 +240,8 @@ __all__ = [
     # modules
     "api",
     "exceptions",
-    "selectors",
     "plugins",
+    "selectors",
     # exceptions - errors
     "PolarsError",
     "ColumnNotFoundError",
@@ -253,7 +253,6 @@ __all__ = [
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "ParameterCollisionError",
-    "PanicException",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",
@@ -274,6 +273,8 @@ __all__ = [
     "PerformanceWarning",
     "PolarsInefficientMapWarning",
     "UnstableWarning",
+    # exceptions - panic
+    "PanicException",
     # core classes
     "DataFrame",
     "Expr",

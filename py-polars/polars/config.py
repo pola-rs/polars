@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+__all__ = ["Config"]
 
 TableFormatNames: TypeAlias = Literal[
     "ASCII_FULL",
