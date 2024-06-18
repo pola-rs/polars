@@ -400,11 +400,19 @@ impl ProjectionPushDown {
                 mut file_options,
                 mut output_schema,
             } => {
-                let mut do_optimization = true;
-                #[allow(irrefutable_let_patterns)]
-                if let FileScan::Anonymous { ref function, .. } = scan_type {
-                    do_optimization = function.allows_projection_pushdown();
-                }
+                let do_optimization = match scan_type {
+                    FileScan::Anonymous { ref function, .. } => {
+                        function.allows_projection_pushdown()
+                    },
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { .. } => false,
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc { .. } => true,
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv { .. } => true,
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { .. } => true,
+                };
 
                 if do_optimization {
                     file_options.with_columns = get_scan_columns(
@@ -445,7 +453,13 @@ impl ProjectionPushDown {
                     predicate,
                     file_options,
                 };
-                Ok(lp)
+                if !do_optimization {
+                    let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
+                    let builder = builder.project_simple_nodes(acc_projections)?;
+                    Ok(builder.build())
+                } else {
+                    Ok(lp)
+                }
             },
             Sort {
                 input,
