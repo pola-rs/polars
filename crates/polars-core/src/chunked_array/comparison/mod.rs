@@ -9,7 +9,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
-use polars_compute::comparisons::TotalOrdKernel;
+use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -18,7 +18,7 @@ use crate::series::IsSorted;
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Array: TotalOrdKernel<Scalar = T::Native>,
+    T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 

@@ -485,6 +485,24 @@ impl Bitmap {
     pub fn num_intersections_with(&self, other: &Self) -> usize {
         num_intersections_with(self, other)
     }
+
+    /// Select between `truthy` and `falsy` based on `self`.
+    ///
+    /// This essentially performs:
+    ///
+    /// `out[i] = if self[i] { truthy[i] } else { falsy[i] }`
+    pub fn select(&self, truthy: &Self, falsy: &Self) -> Self {
+        super::bitmap_ops::select(self, truthy, falsy)
+    }
+
+    /// Select between `truthy` and constant `falsy` based on `self`.
+    ///
+    /// This essentially performs:
+    ///
+    /// `out[i] = if self[i] { truthy[i] } else { falsy }`
+    pub fn select_constant(&self, truthy: &Self, falsy: bool) -> Self {
+        super::bitmap_ops::select_constant(self, truthy, falsy)
+    }
 }
 
 impl<P: AsRef<[bool]>> From<P> for Bitmap {

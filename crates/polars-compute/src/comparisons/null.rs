@@ -1,9 +1,9 @@
 use arrow::array::{Array, NullArray};
 use arrow::bitmap::Bitmap;
 
-use super::TotalOrdKernel;
+use super::{TotalEqKernel, TotalOrdKernel};
 
-impl TotalOrdKernel for NullArray {
+impl TotalEqKernel for NullArray {
     type Scalar = Box<dyn Array>;
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
@@ -16,20 +16,24 @@ impl TotalOrdKernel for NullArray {
         Bitmap::new_zeroed(self.len())
     }
 
-    fn tot_lt_kernel(&self, _other: &Self) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_le_kernel(&self, _other: &Self) -> Bitmap {
-        unimplemented!()
-    }
-
     fn tot_eq_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
         todo!()
     }
 
     fn tot_ne_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
         todo!()
+    }
+}
+
+impl TotalOrdKernel for NullArray {
+    type Scalar = Box<dyn Array>;
+
+    fn tot_lt_kernel(&self, _other: &Self) -> Bitmap {
+        unimplemented!()
+    }
+
+    fn tot_le_kernel(&self, _other: &Self) -> Bitmap {
+        unimplemented!()
     }
 
     fn tot_lt_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
