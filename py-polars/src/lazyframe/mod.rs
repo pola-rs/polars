@@ -1159,9 +1159,14 @@ impl PyLazyFrame {
             .into()
     }
 
-    fn drop(&self, columns: Vec<String>) -> Self {
+    fn drop(&self, columns: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop(columns).into()
+        if strict {
+            ldf.drop(columns)
+        } else {
+            ldf.drop_no_validate(columns)
+        }
+        .into()
     }
 
     fn cast(&self, dtypes: HashMap<PyBackedStr, Wrap<DataType>>, strict: bool) -> Self {

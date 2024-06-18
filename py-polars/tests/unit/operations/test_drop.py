@@ -125,3 +125,15 @@ def test_drop_without_parameters() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     assert_frame_equal(df.drop(), df)
     assert_frame_equal(df.lazy().drop(*[]), df.lazy())
+
+
+def test_drop_strict() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+
+    df.drop("a")
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match="b"):
+        df.drop("b")
+
+    df.drop("a", strict=False)
+    df.drop("b", strict=False)

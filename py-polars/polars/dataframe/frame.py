@@ -6954,7 +6954,9 @@ class DataFrame:
         return self
 
     def drop(
-        self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
+        self,
+        *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+        strict: bool = True,
     ) -> DataFrame:
         """
         Remove columns from the dataframe.
@@ -6964,6 +6966,9 @@ class DataFrame:
         *columns
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
+        strict
+            Validate that all column names exist in the schema and throw an
+            exception if a column name does not exist in the schema.
 
         Examples
         --------
@@ -7031,7 +7036,7 @@ class DataFrame:
         │ 8.0 │
         └─────┘
         """
-        return self.lazy().drop(*columns).collect(_eager=True)
+        return self.lazy().drop(*columns, strict=strict).collect(_eager=True)
 
     def drop_in_place(self, name: str) -> Series:
         """

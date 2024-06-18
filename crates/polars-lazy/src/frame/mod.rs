@@ -437,7 +437,10 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop<I, T>(self, columns: I) -> Self
+    ///
+    /// If `strict` is `true`, then any given columns that are not in the schema will
+    /// give a [`PolarsError::ColumnNotFound`] error while materializing the [`LazyFrame`].
+    fn _drop<I, T>(self, columns: I, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -448,8 +451,37 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop, strict).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Removes columns from the DataFrame.
+    /// Note that it's better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    ///
+    /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
+    /// error while materializing the [`LazyFrame`].
+    #[inline]
+    pub fn drop<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self._drop(columns, true)
+    }
+
+    /// Removes columns from the DataFrame.
+    /// Note that it's better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    ///
+    /// If a column name does not exist in the schema, it will quietly be ignored.
+    #[inline]
+    pub fn drop_no_validate<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self._drop(columns, false)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
