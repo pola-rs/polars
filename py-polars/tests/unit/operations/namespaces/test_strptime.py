@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -650,7 +650,7 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
 
 def test_to_time_format_warning() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(pl.ChronoFormatWarning, match=".%f"):
+    with pytest.warns(ChronoFormatWarning, match=".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
 
