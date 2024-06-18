@@ -17,6 +17,7 @@ mod conversion;
 mod dataframe;
 mod datatypes;
 mod error;
+mod exceptions;
 mod expr;
 mod file;
 mod functions;
@@ -45,11 +46,11 @@ use pyo3::{wrap_pyfunction, wrap_pymodule};
 use crate::batched_csv::PyBatchedCsv;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
-use crate::error::{
+use crate::exceptions::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
-    PanicException, PerformanceWarning, PolarsBaseError, PolarsBaseWarning, PyPolarsErr,
-    SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError,
+    PanicException, PerformanceWarning, PolarsBaseError, PolarsBaseWarning, SQLInterfaceError,
+    SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError, StringCacheMismatchError,
     StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
@@ -331,8 +332,6 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add("OutOfBoundsError", py.get_type_bound::<OutOfBoundsError>())
         .unwrap();
-    m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
-        .unwrap();
     m.add(
         "SQLInterfaceError",
         py.get_type_bound::<SQLInterfaceError>(),
@@ -347,14 +346,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         py.get_type_bound::<SchemaFieldNotFoundError>(),
     )
     .unwrap();
-    m.add(
-        "ShapeError",
-        py.get_type_bound::<crate::error::ShapeError>(),
-    )
-    .unwrap();
+    m.add("ShapeError", py.get_type_bound::<ShapeError>())
+        .unwrap();
     m.add(
         "StringCacheMismatchError",
-        py.get_type_bound::<crate::error::StringCacheMismatchError>(),
+        py.get_type_bound::<StringCacheMismatchError>(),
     )
     .unwrap();
     m.add(
@@ -381,6 +377,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         py.get_type_bound::<MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
+
+    // Exceptions - Panic
+    m.add("PolarsPanicError", py.get_type_bound::<PanicException>())
+        .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
