@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal as D
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -10,11 +11,14 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
+
 
 @pytest.mark.parametrize(
     "dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64]
 )
-def test_neg_operator(dtype: pl.PolarsDataType) -> None:
+def test_neg_operator(dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"a": [-1, 0, 1, None]}, schema={"a": dtype})
     result = lf.select(-pl.col("a"))
     expected = pl.LazyFrame({"a": [1, 0, -1, None]}, schema={"a": dtype})

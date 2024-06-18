@@ -109,7 +109,7 @@ Series: 'foo' [str]
     "dtype", [pl.String, pl.Categorical, pl.Enum(["abc", "abcd", "abcde"])]
 )
 def test_fmt_series_string_truncate_cat(
-    dtype: pl.PolarsDataType, capfd: pytest.CaptureFixture[str]
+    dtype: PolarsDataType, capfd: pytest.CaptureFixture[str]
 ) -> None:
     s = pl.Series(name="foo", values=["abc", "abcd", "abcde"], dtype=dtype)
     with pl.Config(fmt_str_lengths=4):

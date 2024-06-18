@@ -12,7 +12,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_dtype() -> None:

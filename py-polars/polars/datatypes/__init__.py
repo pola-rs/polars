@@ -63,14 +63,6 @@ from polars.datatypes.convert import (
     supported_numpy_char_code,
     unpack_dtypes,
 )
-from polars.type_aliases import (
-    OneOrMoreDataTypes,
-    PolarsDataType,
-    PolarsTemporalType,
-    PythonDataType,
-    SchemaDefinition,
-    SchemaDict,
-)
 
 __all__ = [
     # classes
@@ -134,11 +126,4 @@ __all__ = [
     "py_type_to_dtype",
     "supported_numpy_char_code",
     "unpack_dtypes",
-    # type_aliases
-    "OneOrMoreDataTypes",
-    "PolarsDataType",
-    "PolarsTemporalType",
-    "PythonDataType",
-    "SchemaDefinition",
-    "SchemaDict",
 ]

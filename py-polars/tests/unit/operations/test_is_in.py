@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -8,6 +9,9 @@ import polars as pl
 from polars import StringCache
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 def test_struct_logical_is_in() -> None:
@@ -167,7 +171,7 @@ def test_is_in_invalid_shape() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-def test_is_in_float(dtype: pl.PolarsDataType) -> None:
+def test_is_in_float(dtype: PolarsDataType) -> None:
     s = pl.Series([float("nan"), 0.0], dtype=dtype)
     result = s.is_in([-0.0, -float("nan")])
     expected = pl.Series([True, True], dtype=pl.Boolean)

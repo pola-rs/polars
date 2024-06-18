@@ -20,6 +20,7 @@ from polars.datatypes import (
 
 if TYPE_CHECKING:
     from polars.datatypes import DataTypeClass
+    from polars.type_aliases import PolarsDataType
 
 SIMPLE_DTYPES: list[DataTypeClass] = list(
     pl.INTEGER_DTYPES  # type: ignore[arg-type]
@@ -135,7 +136,7 @@ def test_dtypes_hashable() -> None:
         ),
     ],
 )
-def test_repr(dtype: pl.PolarsDataType, representation: str) -> None:
+def test_repr(dtype: PolarsDataType, representation: str) -> None:
     assert repr(dtype) == representation
 
 

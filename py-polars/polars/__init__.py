@@ -235,7 +235,6 @@ from polars.string_cache import (
     enable_string_cache,
     using_string_cache,
 )
-from polars.type_aliases import PolarsDataType
 
 __version__: str = _get_polars_version()
 del _get_polars_version
@@ -323,8 +322,6 @@ __all__ = [
     "NESTED_DTYPES",
     "NUMERIC_DTYPES",
     "TEMPORAL_DTYPES",
-    # polars.type_aliases
-    "PolarsDataType",
     # polars.io
     "read_avro",
     "read_clipboard",

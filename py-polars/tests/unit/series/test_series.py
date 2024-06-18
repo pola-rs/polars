@@ -1490,7 +1490,7 @@ def test_is_finite_is_infinite() -> None:
 
 
 @pytest.mark.parametrize("float_type", [pl.Float32, pl.Float64])
-def test_is_nan_is_not_nan(float_type: pl.PolarsDataType) -> None:
+def test_is_nan_is_not_nan(float_type: PolarsDataType) -> None:
     s = pl.Series([1.0, np.nan, None], dtype=float_type)
 
     assert_series_equal(s.is_nan(), pl.Series([False, True, None]))
@@ -1879,7 +1879,7 @@ def test_from_epoch_expr(
     value: int,
     time_unit: EpochTimeUnit,
     exp: date | datetime,
-    exp_type: pl.PolarsDataType,
+    exp_type: PolarsDataType,
 ) -> None:
     s = pl.Series("timestamp", [value, None])
     result = pl.from_epoch(s, time_unit=time_unit)
@@ -1970,7 +1970,7 @@ def test_is_between() -> None:
     ],
 )
 def test_upper_lower_bounds(
-    dtype: pl.PolarsDataType, upper: int | float, lower: int | float
+    dtype: PolarsDataType, upper: int | float, lower: int | float
 ) -> None:
     s = pl.Series("s", dtype=dtype)
     assert s.lower_bound().item() == lower

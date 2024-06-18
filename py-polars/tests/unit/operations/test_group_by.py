@@ -644,7 +644,7 @@ def test_group_by_binary_agg_with_literal() -> None:
 
 @pytest.mark.slow()
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
-def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> None:
+def test_overflow_mean_partitioned_group_by_5194(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(
         [
             pl.Series("data", [10_00_00_00] * 100_000, dtype=dtype),
@@ -1060,8 +1060,8 @@ def test_group_by_schema_err() -> None:
 def test_schemas(
     data: dict[str, list[Any]],
     expr: pl.Expr,
-    expected_select: dict[str, pl.PolarsDataType],
-    expected_gb: dict[str, pl.PolarsDataType],
+    expected_select: dict[str, PolarsDataType],
+    expected_gb: dict[str, PolarsDataType],
 ) -> None:
     df = pl.DataFrame(data)
 
