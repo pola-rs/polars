@@ -1115,3 +1115,21 @@ def test_parquet_statistics_uint64_16683() -> None:
 
     assert statistics.min == 0
     assert statistics.max == u64_max
+
+
+def test_read_byte_stream_split() -> None:
+    rng = np.random.default_rng(123)
+    values = rng.uniform(-1.0e6, 1.0e6, 1_000)
+    table = pa.table({
+        "floats": pa.array(values, type=pa.float32()),
+        "doubles": pa.array(values, type=pa.float64()),
+    })
+    df = pl.from_arrow(table)
+
+    f = io.BytesIO()
+    pq.write_table(table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True)
+
+    f.seek(0)
+    read = pl.read_parquet(f)
+
+    assert_frame_equal(read, df)
