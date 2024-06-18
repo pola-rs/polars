@@ -11,8 +11,7 @@ use crate::prelude::LazyFrame;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) path: PathBuf,
-    paths: Arc<[PathBuf]>,
+    pub(crate) paths: Arc<[PathBuf]>,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
@@ -30,8 +29,7 @@ impl LazyJsonLineReader {
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
-            path: path.as_ref().to_path_buf(),
-            paths: Arc::new([]),
+            paths: Arc::new([path.as_ref().to_path_buf()]),
             batch_size: None,
             low_memory: false,
             rechunk: false,
@@ -116,25 +114,17 @@ impl LazyFileListReader for LazyJsonLineReader {
         let scan_type = FileScan::NDJson { options };
 
         Ok(LazyFrame::from(DslPlan::Scan {
-            paths: Arc::from([self.path.clone()]),
+            paths: self.paths,
             file_info: None,
+            hive_parts: None,
             predicate: None,
             file_options,
             scan_type,
         }))
     }
 
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
     fn paths(&self) -> &[PathBuf] {
         &self.paths
-    }
-
-    fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
-        self
     }
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {

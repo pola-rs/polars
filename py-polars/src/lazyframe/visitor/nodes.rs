@@ -294,6 +294,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Scan {
             paths,
             file_info: _,
+            hive_parts: _,
             predicate,
             output_schema: _,
             scan_type,

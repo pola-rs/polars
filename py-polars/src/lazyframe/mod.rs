@@ -334,6 +334,7 @@ impl PyLazyFrame {
         });
         let hive_options = HiveOptions {
             enabled: hive_partitioning,
+            hive_start_idx: 0,
             schema: hive_schema,
         };
 

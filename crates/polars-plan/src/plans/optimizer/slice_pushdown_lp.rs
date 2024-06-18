@@ -165,6 +165,7 @@ impl SlicePushDown {
             (Scan {
                 paths,
                 file_info,
+                hive_parts,
                 output_schema,
                 mut file_options,
                 predicate,
@@ -175,6 +176,7 @@ impl SlicePushDown {
                 let lp = Scan {
                     paths,
                     file_info,
+                    hive_parts,
                     output_schema,
                     scan_type: FileScan::Csv { options, cloud_options },
                     file_options,
@@ -187,6 +189,7 @@ impl SlicePushDown {
             (Scan {
                 paths,
                 file_info,
+                hive_parts,
                 output_schema,
                 file_options: mut options,
                 predicate,
@@ -196,6 +199,7 @@ impl SlicePushDown {
                 let lp = Scan {
                     paths,
                     file_info,
+                    hive_parts,
                     output_schema,
                     predicate,
                     file_options: options,

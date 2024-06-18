@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use hive::HivePartitions;
 use polars_core::config;
 #[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
@@ -15,6 +16,7 @@ use super::*;
 pub struct ParquetExec {
     paths: Arc<[PathBuf]>,
     file_info: FileInfo,
+    hive_parts: Option<Vec<Arc<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     #[allow(dead_code)]
@@ -25,9 +27,11 @@ pub struct ParquetExec {
 }
 
 impl ParquetExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         paths: Arc<[PathBuf]>,
         file_info: FileInfo,
+        hive_parts: Option<Vec<Arc<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
@@ -37,6 +41,7 @@ impl ParquetExec {
         ParquetExec {
             paths,
             file_info,
+            hive_parts,
             predicate,
             options,
             cloud_options,
@@ -57,12 +62,14 @@ impl ParquetExec {
 
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_index = self.file_options.row_index.take();
-
         // Limit no. of files at a time to prevent open file limits.
-        for paths in self
-            .paths
-            .chunks(std::cmp::min(POOL.current_num_threads(), 128))
-        {
+        let step = std::cmp::min(POOL.current_num_threads(), 128);
+
+        for i in (0..self.paths.len()).step_by(step) {
+            let end = std::cmp::min(i.saturating_add(step), self.paths.len());
+            let paths = &self.paths[i..end];
+            let hive_parts = self.hive_parts.as_ref().map(|x| &x[i..end]);
+
             if remaining_rows_to_read == 0 && !result.is_empty() {
                 return Ok(result);
             }
@@ -70,16 +77,10 @@ impl ParquetExec {
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
             // files in parallel even if we add row index columns or slices.
-            let readers_and_metadata = paths
-                .iter()
-                .map(|path| {
-                    let mut file_info = self.file_info.clone();
-                    file_info.update_hive_partitions(path)?;
-
-                    let hive_partitions = file_info
-                        .hive_parts
-                        .as_ref()
-                        .map(|hive| hive.materialize_partition_columns());
+            let readers_and_metadata = (0..paths.len())
+                .map(|i| {
+                    let path = &paths[i];
+                    let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
 
                     let file = std::fs::File::open(path)?;
                     let (projection, predicate) = prepare_scan_args(
@@ -251,16 +252,16 @@ impl ParquetExec {
                 eprintln!("reading of {}/{} file...", processed, self.paths.len());
             }
 
-            let iter = readers_and_metadata
-                .into_iter()
-                .zip(rows_statistics.iter())
-                .zip(paths.as_ref().iter())
-                .map(
-                    |(
-                        ((num_rows_this_file, reader), (remaining_rows_to_read, cumulative_read)),
-                        path,
-                    )| async move {
-                        let mut file_info = file_info.clone();
+            let iter = readers_and_metadata.into_iter().enumerate().map(
+                |(i, (num_rows_this_file, reader))| {
+                    let (remaining_rows_to_read, cumulative_read) = &rows_statistics[i];
+                    let hive_partitions = self
+                        .hive_parts
+                        .as_ref()
+                        .map(|x| x[i].materialize_partition_columns());
+
+                    async move {
+                        let file_info = file_info.clone();
                         let remaining_rows_to_read = *remaining_rows_to_read;
                         let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read
                         {
@@ -272,13 +273,6 @@ impl ParquetExec {
                             name: rc.name.clone(),
                             offset: rc.offset + *cumulative_read as IdxSize,
                         });
-
-                        file_info.update_hive_partitions(path)?;
-
-                        let hive_partitions = file_info
-                            .hive_parts
-                            .as_ref()
-                            .map(|hive| hive.materialize_partition_columns());
 
                         let (projection, predicate) = prepare_scan_args(
                             predicate.clone(),
@@ -299,8 +293,9 @@ impl ParquetExec {
                             .finish()
                             .await
                             .map(Some)
-                    },
-                );
+                    }
+                },
+            );
 
             let dfs = futures::future::try_join_all(iter).await?;
             let n_read = dfs
@@ -333,10 +328,10 @@ impl ParquetExec {
             Some(p) => is_cloud_url(p.as_path()),
             None => {
                 let hive_partitions = self
-                    .file_info
                     .hive_parts
                     .as_ref()
-                    .map(|hive| hive.materialize_partition_columns());
+                    .filter(|x| !x.is_empty())
+                    .map(|x| x.first().unwrap().materialize_partition_columns());
                 let (projection, _) = prepare_scan_args(
                     None,
                     &mut self.file_options.with_columns,

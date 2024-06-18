@@ -104,6 +104,7 @@ impl IR {
             Scan {
                 paths,
                 file_info,
+                hive_parts,
                 output_schema,
                 predicate,
                 file_options: options,
@@ -116,6 +117,7 @@ impl IR {
                 Scan {
                     paths: paths.clone(),
                     file_info: file_info.clone(),
+                    hive_parts: hive_parts.clone(),
                     output_schema: output_schema.clone(),
                     file_options: options.clone(),
                     predicate: new_predicate,

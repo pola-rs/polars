@@ -17,6 +17,7 @@ pub struct RowIndex {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HiveOptions {
     pub enabled: bool,
+    pub hive_start_idx: usize,
     pub schema: Option<SchemaRef>,
 }
 
@@ -24,6 +25,7 @@ impl Default for HiveOptions {
     fn default() -> Self {
         Self {
             enabled: true,
+            hive_start_idx: 0,
             schema: None,
         }
     }

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 pub use dot::IRDotDisplay;
 pub use format::{ExprIRDisplay, IRDisplay};
+use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
@@ -50,6 +51,7 @@ pub enum IR {
     Scan {
         paths: Arc<[PathBuf]>,
         file_info: FileInfo,
+        hive_parts: Option<Vec<Arc<HivePartitions>>>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,

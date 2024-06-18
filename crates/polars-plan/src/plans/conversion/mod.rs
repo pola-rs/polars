@@ -45,6 +45,7 @@ impl IR {
             IR::Scan {
                 paths,
                 file_info,
+                hive_parts,
                 predicate,
                 scan_type,
                 output_schema: _,
@@ -52,6 +53,7 @@ impl IR {
             } => DslPlan::Scan {
                 paths,
                 file_info: Some(file_info),
+                hive_parts,
                 predicate: predicate.map(|e| e.to_expr(expr_arena)),
                 scan_type,
                 file_options: options,

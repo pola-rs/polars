@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use hive::HivePartitions;
 use polars_core::prelude::*;
 use recursive::recursive;
 
@@ -22,7 +23,7 @@ pub mod expr_ir;
 mod file_scan;
 mod format;
 mod functions;
-pub(super) mod hive;
+pub mod hive;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
@@ -80,6 +81,7 @@ pub enum DslPlan {
         paths: Arc<[PathBuf]>,
         // Option as this is mostly materialized on the IR phase.
         file_info: Option<FileInfo>,
+        hive_parts: Option<Vec<Arc<HivePartitions>>>,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
         scan_type: FileScan,
@@ -186,7 +188,7 @@ impl Clone for DslPlan {
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
             Self::Cache { input, id, cache_hits } => Self::Cache { input: input.clone(), id: id.clone(), cache_hits: cache_hits.clone() },
-            Self::Scan { paths, file_info, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
+            Self::Scan { paths, file_info, hive_parts, predicate, file_options, scan_type } => Self::Scan { paths: paths.clone(), file_info: file_info.clone(), hive_parts: hive_parts.clone(), predicate: predicate.clone(), file_options: file_options.clone(), scan_type: scan_type.clone() },
             Self::DataFrameScan { df, schema, output_schema, filter: selection } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(), output_schema: output_schema.clone(), filter: selection.clone() },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
             Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },

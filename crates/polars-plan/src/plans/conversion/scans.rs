@@ -77,15 +77,11 @@ pub(super) fn parquet_file_info(
         )
     };
 
-    let mut file_info = FileInfo::new(
+    let file_info = FileInfo::new(
         schema,
         Some(Either::Left(reader_schema)),
         (num_rows, num_rows.unwrap_or(0)),
     );
-
-    if file_options.hive_options.enabled {
-        file_info.init_hive_partitions(path.as_path(), file_options.hive_options.schema.clone())?
-    }
 
     Ok((file_info, metadata))
 }

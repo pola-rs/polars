@@ -245,6 +245,7 @@ impl<'a> IRDotDisplay<'a> {
             Scan {
                 paths,
                 file_info,
+                hive_parts: _,
                 predicate,
                 scan_type,
                 file_options: options,

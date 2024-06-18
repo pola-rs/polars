@@ -395,6 +395,7 @@ impl ProjectionPushDown {
             Scan {
                 paths,
                 file_info,
+                hive_parts,
                 scan_type,
                 predicate,
                 mut file_options,
@@ -433,8 +434,9 @@ impl ProjectionPushDown {
                         // Hive partitions are created AFTER the projection, so the output
                         // schema is incorrect. Here we ensure the columns that are projected and hive
                         // parts are added at the proper place in the schema, which is at the end.
-                        if let Some(parts) = file_info.hive_parts.as_deref() {
-                            let partition_schema = parts.schema();
+                        if let Some(ref hive_parts) = hive_parts {
+                            let partition_schema = hive_parts.first().unwrap().schema();
+
                             for (name, _) in partition_schema.iter() {
                                 if let Some(dt) = schema.shift_remove(name) {
                                     schema.with_column(name.clone(), dt);
@@ -448,6 +450,7 @@ impl ProjectionPushDown {
                 let lp = Scan {
                     paths,
                     file_info,
+                    hive_parts,
                     output_schema,
                     scan_type,
                     predicate,

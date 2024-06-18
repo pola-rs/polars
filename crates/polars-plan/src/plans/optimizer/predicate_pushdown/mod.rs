@@ -320,7 +320,8 @@ impl<'a> PredicatePushDown<'a> {
             },
             Scan {
                 mut paths,
-                mut file_info,
+                file_info,
+                hive_parts: mut scan_hive_parts,
                 ref predicate,
                 mut scan_type,
                 file_options: options,
@@ -350,23 +351,20 @@ impl<'a> PredicatePushDown<'a> {
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
-                if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), &predicate) {
+                if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
                     if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena)
                     {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                             let mut new_paths = Vec::with_capacity(paths.len());
+                            let mut new_hive_parts = Vec::with_capacity(paths.len());
 
-                            for path in paths.as_ref().iter() {
-                                file_info.update_hive_partitions(path)?;
-                                let hive_part_stats = file_info.hive_parts.as_deref().ok_or_else(|| {
-                                    polars_err!(
-                                        ComputeError:
-                                        "cannot combine hive partitioned directories with non-hive partitioned ones"
-                                    )
-                                })?;
+                            for i in 0..paths.len() {
+                                let path = &paths[i];
+                                let hive_parts = &hive_parts[i];
 
-                                if stats_evaluator.should_read(hive_part_stats.get_statistics())? {
+                                if stats_evaluator.should_read(hive_parts.get_statistics())? {
                                     new_paths.push(path.clone());
+                                    new_hive_parts.push(hive_parts.clone());
                                 }
                             }
 
@@ -391,7 +389,8 @@ impl<'a> PredicatePushDown<'a> {
                                     filter: None,
                                 });
                             } else {
-                                paths = Arc::from(new_paths)
+                                paths = Arc::from(new_paths);
+                                scan_hive_parts = Some(new_hive_parts);
                             }
                         }
                     }
@@ -408,10 +407,13 @@ impl<'a> PredicatePushDown<'a> {
                 };
                 do_optimization &= predicate.is_some();
 
+                let hive_parts = scan_hive_parts;
+
                 let lp = if do_optimization {
                     Scan {
                         paths,
                         file_info,
+                        hive_parts,
                         predicate,
                         file_options: options,
                         output_schema,
@@ -421,6 +423,7 @@ impl<'a> PredicatePushDown<'a> {
                     let lp = Scan {
                         paths,
                         file_info,
+                        hive_parts,
                         predicate: None,
                         file_options: options,
                         output_schema,

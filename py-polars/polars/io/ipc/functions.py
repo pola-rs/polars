@@ -137,7 +137,7 @@ def _read_ipc_impl(
     memory_map: bool = True,
 ) -> DataFrame:
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
 
@@ -261,7 +261,7 @@ def _read_ipc_stream_impl(
     rechunk: bool = True,
 ) -> DataFrame:
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
 
@@ -294,7 +294,7 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
         Dictionary mapping column names to datatypes
     """
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
 
     return _read_ipc_schema(source)
 
@@ -353,11 +353,13 @@ def scan_ipc(
     """
     if isinstance(source, (str, Path)):
         can_use_fsspec = True
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
         sources = []
     else:
         can_use_fsspec = False
-        sources = [normalize_filepath(source) for source in source]
+        sources = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
         source = None  # type: ignore[assignment]
 
     # try fsspec scanner
