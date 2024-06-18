@@ -20,7 +20,6 @@ Errors
     NoRowsReturnedError
     OutOfBoundsError
     ParameterCollisionError
-    PanicException
     RowsError
     SQLInterfaceError
     SQLSyntaxError
@@ -48,3 +47,12 @@ Warnings
     PerformanceWarning
     PolarsInefficientMapWarning
     UnstableWarning
+
+Panic
+~~~~~
+
+.. autosummary::
+    :toctree: api/
+    :nosignatures:
+
+    PanicException

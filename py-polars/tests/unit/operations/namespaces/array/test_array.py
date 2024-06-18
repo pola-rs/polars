@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars import ComputeError
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 

@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+__all__ = ["Config"]
+
 
 TableFormatNames: TypeAlias = Literal[
     "ASCII_FULL",
@@ -35,7 +37,6 @@ TableFormatNames: TypeAlias = Literal[
     "UTF8_HORIZONTAL_ONLY",
     "NOTHING",
 ]
-
 
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognized, as there are other lower-level

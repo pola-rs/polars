@@ -16,9 +16,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import (
         __register_startup_deps,
     )
-    from polars.polars import (
-        get_file_cache_prefix as _get_file_cache_prefix,
-    )
 
     __register_startup_deps()
 
@@ -244,6 +241,7 @@ __all__ = [
     "api",
     "exceptions",
     "plugins",
+    "selectors",
     # exceptions - errors
     "PolarsError",
     "ColumnNotFoundError",
@@ -255,7 +253,6 @@ __all__ = [
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "ParameterCollisionError",
-    "PanicException",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",
@@ -276,6 +273,8 @@ __all__ = [
     "PerformanceWarning",
     "PolarsInefficientMapWarning",
     "UnstableWarning",
+    # exceptions - panic
+    "PanicException",
     # core classes
     "DataFrame",
     "Expr",
@@ -404,8 +403,8 @@ __all__ = [
     "cum_reduce",
     "cumfold",
     "cumreduce",
-    "date",  # named date_, see import above
-    "datetime",  # named datetime_, see import above
+    "date",
+    "datetime",
     "duration",
     "exclude",
     "field",
@@ -434,7 +433,7 @@ __all__ = [
     "std",
     "struct",
     "tail",
-    "time",  # named time_, see import above
+    "time",
     "var",
     # polars.functions.len
     "len",
@@ -450,20 +449,16 @@ __all__ = [
     "from_records",
     "from_repr",
     "json_normalize",
-    # polars.sql
-    "SQLContext",
-    "sql",
-    # polars.utils
+    # polars.meta
     "build_info",
     "get_index_type",
     "show_versions",
     "thread_pool_size",
     "threadpool_size",
-    # selectors
-    "selectors",
+    # polars.sql
+    "SQLContext",
+    "sql",
     "sql_expr",
-    # internal
-    "_get_file_cache_prefix",
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

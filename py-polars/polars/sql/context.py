@@ -54,6 +54,9 @@ if TYPE_CHECKING:
     ]
 
 
+__all__ = ["SQLContext"]
+
+
 def _compatible_frame(obj: Any) -> bool:
     """Check if the object can be converted to DataFrame."""
     return (
@@ -668,6 +671,3 @@ class SQLContext(Generic[FrameType]):
         ['foo_bar', 'hello_data']
         """
         return sorted(self._ctxt.get_tables())
-
-
-__all__ = ["SQLContext"]

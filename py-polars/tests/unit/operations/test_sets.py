@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import CategoricalRemappingWarning
 
 
 def test_set_intersection_13765() -> None:
@@ -31,7 +32,7 @@ def test_set_intersection_13765() -> None:
     ],
 )
 def test_set_operations_cats(set_operation: str, outcome: list[set[str]]) -> None:
-    with pytest.warns(pl.CategoricalRemappingWarning):
+    with pytest.warns(CategoricalRemappingWarning):
         df = pl.DataFrame(
             {
                 "a": [

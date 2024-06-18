@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Sequence
 
+from polars._utils.unstable import issue_unstable_warning
 from polars.dataframe import DataFrame
 from polars.expr import Expr
 from polars.selectors import exclude
@@ -27,9 +28,16 @@ except ImportError:
     raise ImportError(msg) from None
 
 
+__all__ = ["PolarsDataset"]
+
+
 class PolarsDataset(TensorDataset):  # type: ignore[misc]
     """
     TensorDataset class specialized for use with Polars DataFrames.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------
@@ -114,6 +122,7 @@ class PolarsDataset(TensorDataset):  # type: ignore[misc]
         label: str | Expr | Sequence[str | Expr] | None = None,
         features: str | Expr | Sequence[str | Expr] | None = None,
     ):
+        issue_unstable_warning("`PolarsDataset` is considered unstable.")
         if isinstance(label, (str, Expr)):
             label = [label]
 

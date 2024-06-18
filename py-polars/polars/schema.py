@@ -11,6 +11,8 @@ else:
     # Python 3.8 does not support generic OrderedDict at runtime
     BaseSchema = OrderedDict
 
+__all__ = ["Schema"]
+
 
 class Schema(BaseSchema):
     """

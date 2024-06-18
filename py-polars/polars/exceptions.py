@@ -205,7 +205,6 @@ __all__ = [
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "ParameterCollisionError",
-    "PanicException",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",
@@ -226,4 +225,6 @@ __all__ = [
     "PerformanceWarning",
     "PolarsInefficientMapWarning",
     "UnstableWarning",
+    # Panic
+    "PanicException",
 ]
