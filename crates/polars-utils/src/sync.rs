@@ -37,7 +37,7 @@ impl<T> SyncPtr<T> {
     }
 }
 
-impl<T> Copy for SyncPtr<T> { }
+impl<T> Copy for SyncPtr<T> {}
 impl<T> Clone for SyncPtr<T> {
     fn clone(&self) -> SyncPtr<T> {
         *self

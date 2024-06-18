@@ -40,7 +40,7 @@ impl ComputeNode for FilterNode {
                             ComputeError: "filter predicate must be of type `Boolean`, got `{}`", mask.dtype()
                         )
                     })?;
-                    
+
                     // We already parallelize, call the sequential filter.
                     df._filter_seq(mask)
                 })?;

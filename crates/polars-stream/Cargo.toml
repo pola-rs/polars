@@ -17,8 +17,8 @@ pin-project-lite = { workspace = true }
 polars-io = { workspace = true, features = ["async"] }
 polars-utils = { workspace = true }
 rand = { workspace = true }
-recursive = { workspace = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 slotmap = { workspace = true }
 
 polars-core = { workspace = true }

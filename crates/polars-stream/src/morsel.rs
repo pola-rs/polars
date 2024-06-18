@@ -23,12 +23,12 @@ impl MorselSeq {
     pub fn new(seq: u64) -> Self {
         Self(seq.checked_mul(2).unwrap())
     }
-    
+
     // The morsel sequence id which comes after this morsel.
     pub fn successor(self) -> Self {
         Self(self.0.checked_add(2).unwrap())
     }
-    
+
     pub fn to_u64(self) -> u64 {
         self.0
     }
