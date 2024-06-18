@@ -68,7 +68,7 @@ impl PhysicalExpr for AggregationExpr {
         match group_by {
             GroupByMethod::Min => {
                 if MetadataEnv::experimental_enabled() {
-                    if let Some(sc) = s.get_metadata_min_value() {
+                    if let Some(sc) = s.get_metadata().and_then(|v| v.min_value()) {
                         return Ok(sc.into_series(s.name()));
                     }
                 }
@@ -101,7 +101,7 @@ impl PhysicalExpr for AggregationExpr {
             },
             GroupByMethod::Max => {
                 if MetadataEnv::experimental_enabled() {
-                    if let Some(sc) = s.get_metadata_max_value() {
+                    if let Some(sc) = s.get_metadata().and_then(|v| v.max_value()) {
                         return Ok(sc.into_series(s.name()));
                     }
                 }
@@ -150,9 +150,17 @@ impl PhysicalExpr for AggregationExpr {
                 allow_threading,
             ),
             GroupByMethod::Groups => unreachable!(),
-            GroupByMethod::NUnique => s
-                .n_unique()
-                .map(|count| UInt32Chunked::from_slice(s.name(), &[count as u32]).into_series()),
+            GroupByMethod::NUnique => {
+                if MetadataEnv::experimental_enabled() {
+                    if let Some(count) = s.get_metadata().and_then(|v| v.distinct_count()) {
+                        let count = count + IdxSize::from(s.null_count() > 0);
+                        return Ok(IdxCa::from_slice(s.name(), &[count]).into_series());
+                    }
+                }
+
+                s.n_unique()
+                    .map(|count| IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series())
+            },
             GroupByMethod::Count { include_nulls } => {
                 let count = s.len() - s.null_count() * !include_nulls as usize;
 
