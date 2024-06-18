@@ -200,8 +200,8 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn drop(self, to_drop: PlHashSet<String>) -> Self {
-        self.map_private(DslFunction::Drop(to_drop))
+    pub fn drop(self, to_drop: PlHashSet<String>, strict: bool) -> Self {
+        self.map_private(DslFunction::Drop(DropFunction { to_drop, strict }))
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {

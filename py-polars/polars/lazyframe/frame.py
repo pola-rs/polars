@@ -4371,7 +4371,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
     def drop(
-        self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
+        self,
+        *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+        strict: bool = True,
     ) -> Self:
         """
         Remove columns from the DataFrame.
@@ -4381,6 +4383,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *columns
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
+        strict
+            Validate that all column names exist in the schema and throw an
+            exception if a column name does not exist in the schema.
 
         Examples
         --------
@@ -4435,7 +4440,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┘
         """
         drop_cols = _expand_selectors(self, *columns)
-        return self._from_pyldf(self._ldf.drop(drop_cols))
+        return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
     def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> Self:
         """

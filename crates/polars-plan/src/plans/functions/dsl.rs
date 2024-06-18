@@ -23,7 +23,17 @@ pub enum DslFunction {
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
-    Drop(PlHashSet<String>),
+    Drop(DropFunction),
+}
+
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct DropFunction {
+    /// Columns that are going to be dropped
+    pub(crate) to_drop: PlHashSet<String>,
+    /// If `true`, performs a check for each item in `to_drop` against the schema. Returns an
+    /// `ColumnNotFound` error if the column does not exist in the schema.
+    pub(crate) strict: bool,
 }
 
 #[derive(Clone)]

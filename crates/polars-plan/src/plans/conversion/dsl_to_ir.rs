@@ -472,7 +472,13 @@ pub fn to_alp_impl(
                     };
                     return run_conversion(lp, lp_arena, expr_arena, convert, "fill_nan");
                 },
-                DslFunction::Drop(to_drop) => {
+                DslFunction::Drop(DropFunction { to_drop, strict }) => {
+                    if strict {
+                        for col_name in to_drop.iter() {
+                            polars_ensure!(input_schema.contains(col_name), ColumnNotFound: "{col_name}");
+                        }
+                    }
+
                     let mut output_schema =
                         Schema::with_capacity(input_schema.len().saturating_sub(to_drop.len()));
 
