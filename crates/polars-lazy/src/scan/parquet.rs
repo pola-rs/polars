@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
+use polars_io::prelude::resolve_homedir;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
@@ -112,11 +113,17 @@ impl LazyFileListReader for LazyParquetReader {
     }
 
     fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
+        self.path = resolve_homedir(&path);
         self
     }
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+        let paths = paths
+            .iter()
+            .map(|p| resolve_homedir(p))
+            .collect::<Vec<_>>()
+            .into();
+
         self.paths = paths;
         self
     }

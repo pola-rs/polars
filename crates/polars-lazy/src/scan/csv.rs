@@ -5,6 +5,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
+use polars_io::prelude::resolve_homedir;
 use polars_io::utils::get_reader_bytes;
 use polars_io::RowIndex;
 
@@ -35,7 +36,7 @@ impl LazyCsvReader {
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
-            path: path.as_ref().to_owned(),
+            path: resolve_homedir(path.as_ref()),
             paths: Arc::new([]),
             glob: true,
             cache: true,
@@ -305,11 +306,17 @@ impl LazyFileListReader for LazyCsvReader {
     }
 
     fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
+        self.path = resolve_homedir(&path);
         self
     }
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
+        let paths = paths
+            .iter()
+            .map(|p| resolve_homedir(p))
+            .collect::<Vec<_>>()
+            .into();
+
         self.paths = paths;
         self
     }
