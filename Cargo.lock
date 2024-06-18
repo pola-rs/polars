@@ -3182,6 +3182,7 @@ dependencies = [
  "bitflags 2.5.0",
  "futures",
  "glob",
+ "memchr",
  "once_cell",
  "polars-arrow",
  "polars-core",

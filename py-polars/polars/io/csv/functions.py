@@ -487,7 +487,7 @@ def _read_csv_impl(
 ) -> DataFrame:
     path: str | None
     if isinstance(source, (str, Path)):
-        path = normalize_filepath(source)
+        path = normalize_filepath(source, check_not_directory=False)
     else:
         path = None
         if isinstance(source, BytesIO):
@@ -1141,9 +1141,11 @@ def scan_csv(
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     else:
-        source = [normalize_filepath(source) for source in source]
+        source = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
 
     return _scan_csv_impl(
         source,

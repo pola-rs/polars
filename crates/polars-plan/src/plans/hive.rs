@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
@@ -90,6 +90,46 @@ impl HivePartitions {
             .map(|cs| cs.get_min_state().unwrap().clone())
             .collect()
     }
+}
+
+/// # Safety
+/// `hive_start_idx <= [min path length]`
+pub fn hive_partitions_from_paths(
+    paths: &[PathBuf],
+    hive_start_idx: usize,
+    schema: Option<SchemaRef>,
+) -> PolarsResult<Option<Vec<Arc<HivePartitions>>>> {
+    let Some(path) = paths.first() else {
+        return Ok(None);
+    };
+
+    let Some(hive_parts) = HivePartitions::try_from_path(
+        &PathBuf::from(&path.to_str().unwrap()[hive_start_idx..]),
+        schema.clone(),
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let mut results = Vec::with_capacity(paths.len());
+    results.push(Arc::new(hive_parts));
+
+    for path in &paths[1..] {
+        let Some(hive_parts) = HivePartitions::try_from_path(
+            &PathBuf::from(&path.to_str().unwrap()[hive_start_idx..]),
+            schema.clone(),
+        )?
+        else {
+            polars_bail!(
+                ComputeError: "expected Hive partitioned path, got {}\n\n\
+                This error occurs if some paths are Hive partitioned and some paths are not.",
+                path.display()
+            )
+        };
+        results.push(Arc::new(hive_parts));
+    }
+
+    Ok(Some(results))
 }
 
 /// Determine the path separator for identifying Hive partitions.

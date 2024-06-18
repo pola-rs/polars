@@ -76,6 +76,7 @@ impl Hash for HashableEqLP<'_> {
             IR::Scan {
                 paths,
                 file_info: _,
+                hive_parts: _,
                 predicate,
                 output_schema: _,
                 scan_type,
@@ -255,6 +256,7 @@ impl HashableEqLP<'_> {
                 IR::Scan {
                     paths: pl,
                     file_info: _,
+                    hive_parts: _,
                     predicate: pred_l,
                     output_schema: _,
                     scan_type: stl,
@@ -263,6 +265,7 @@ impl HashableEqLP<'_> {
                 IR::Scan {
                     paths: pr,
                     file_info: _,
+                    hive_parts: _,
                     predicate: pred_r,
                     output_schema: _,
                     scan_type: str,

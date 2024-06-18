@@ -76,6 +76,7 @@ where
         Scan {
             paths,
             file_info,
+            hive_parts,
             file_options,
             predicate,
             output_schema,
@@ -144,6 +145,7 @@ where
                         metadata,
                         file_options,
                         file_info,
+                        hive_parts,
                         verbose,
                         predicate,
                     )?;

@@ -233,6 +233,7 @@ fn create_physical_plan_impl(
         Scan {
             paths,
             file_info,
+            hive_parts,
             output_schema,
             scan_type,
             predicate,
@@ -283,6 +284,7 @@ fn create_physical_plan_impl(
                 } => Ok(Box::new(executors::ParquetExec::new(
                     paths,
                     file_info,
+                    hive_parts,
                     predicate,
                     options,
                     cloud_options,

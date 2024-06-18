@@ -1,4 +1,5 @@
 use expr_expansion::{is_regex_projection, rewrite_projections};
+use hive::hive_partitions_from_paths;
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -81,6 +82,7 @@ pub fn to_alp_impl(
     let v = match lp {
         DslPlan::Scan {
             file_info,
+            hive_parts,
             paths,
             predicate,
             mut scan_type,
@@ -132,6 +134,22 @@ pub fn to_alp_impl(
                 }
             };
 
+            let hive_parts = if hive_parts.is_some() {
+                hive_parts
+            } else if file_options.hive_options.enabled {
+                hive_partitions_from_paths(
+                    paths.as_ref(),
+                    file_options.hive_options.hive_start_idx,
+                    file_options.hive_options.schema.clone(),
+                )?
+            } else {
+                None
+            };
+
+            if let Some(ref hive_parts) = hive_parts {
+                file_info.update_schema_with_hive_schema(hive_parts[0].schema().clone())?;
+            }
+
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
                 *schema = schema
@@ -140,8 +158,9 @@ pub fn to_alp_impl(
             }
 
             IR::Scan {
-                file_info,
                 paths,
+                file_info,
+                hive_parts,
                 output_schema: None,
                 predicate: predicate.map(|expr| to_expr_ir(expr, expr_arena)),
                 scan_type,
