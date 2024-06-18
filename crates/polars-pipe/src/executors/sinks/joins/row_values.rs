@@ -50,7 +50,10 @@ impl RowValues {
 
         for phys_e in self.join_column_eval.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
-            let s = s.to_physical_repr().rechunk();
+            let mut s = s.to_physical_repr().rechunk();
+            if chunk.data.is_empty() {
+                s = s.clear()
+            };
             if determine_idx {
                 names.push(s.name().to_string());
             }
