@@ -38,10 +38,13 @@ use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
 use crate::frame::cached_arenas::CachedArena;
-use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::{
-    create_physical_expr, create_physical_plan, ExpressionConversionState,
+use polars_mem_engine::{
+    Executor,
+    create_physical_plan
 };
+use polars_expr::{create_physical_expr, ExpressionConversionState};
+
+
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;

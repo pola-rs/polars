@@ -22,6 +22,7 @@ tokio = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 rayon = {workspace = true}
 polars-error = {workspace = true}
+pyo3 = { workspace = true, optional = true }
 
 
 [features]
@@ -29,6 +30,7 @@ async = [
     "polars-plan/async",
     "polars-io/cloud",
 ]
+python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 ipc = ["polars-io/ipc", "polars-plan/ipc",]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
 csv = ["polars-io/csv", "polars-plan/csv"]
@@ -57,3 +59,5 @@ dtype-u16 = ["polars-plan/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8"]
 object = ["polars-core/object"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "polars-expr/dynamic_group_by", ]
+asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
+cse = ["polars-plan/cse"]

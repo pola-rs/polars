@@ -1,6 +1,5 @@
 use polars_core::prelude::*;
-
-use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use crate::prelude::*;
 
 #[cfg(feature = "pivot")]

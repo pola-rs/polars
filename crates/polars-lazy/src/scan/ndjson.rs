@@ -102,7 +102,8 @@ impl LazyFileListReader for LazyJsonLineReader {
             ..ScanArgsAnonymous::default()
         };
 
-        LazyFrame::anonymous_scan(std::sync::Arc::new(self), options)
+        // LazyFrame::anonymous_scan(std::sync::Arc::new(self), options)
+        todo!()
     }
 
     fn path(&self) -> &Path {

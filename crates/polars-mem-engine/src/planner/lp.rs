@@ -5,7 +5,7 @@ use polars_plan::logical_plan::expr_ir::ExprIR;
 
 use super::super::executors::{self, Executor};
 use super::*;
-// use crate::utils::*;
+use crate::utils::*;
 
 fn partitionable_gb(
     keys: &[ExprIR],

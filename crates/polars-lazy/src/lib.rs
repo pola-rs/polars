@@ -209,4 +209,3 @@ pub mod prelude;
 mod scan;
 #[cfg(test)]
 mod tests;
-pub mod utils;

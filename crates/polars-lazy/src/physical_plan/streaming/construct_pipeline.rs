@@ -11,7 +11,7 @@ use polars_pipe::pipeline::{
 };
 use polars_plan::prelude::expr_ir::ExprIR;
 
-use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::streaming::tree::{PipelineNode, Tree};
 use crate::prelude::*;
 
