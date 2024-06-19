@@ -571,6 +571,7 @@ def test_asof_join_tolerance_grouper() -> None:
         {
             "date": [date(2020, 1, 5), date(2020, 1, 10)],
             "by": [1, 1],
+            "date_right": [date(2020, 1, 5), None],
             "values": [100, None],
         }
     )

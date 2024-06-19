@@ -152,9 +152,9 @@ def test_join_on_expressions() -> None:
 
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]})
 
-    assert df_a.join(df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b"))[
-        "a"
-    ].to_list() == [1, 4, 9, 9]
+    assert df_a.join(
+        df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b")
+    ).to_dict(as_series=False) == {"a": [1, 2, 3, 3], "b": [1, 4, 9, 9]}
 
 
 def test_join() -> None:
@@ -249,12 +249,14 @@ def test_join_on_cast() -> None:
     assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
+        "a_right": [-2, 3, 3, 10],
     }
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
+        "a_right": [-2, 3, 3, 10],
     }
 
 
@@ -365,7 +367,7 @@ def test_join_panic_on_binary_expr_5915() -> None:
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]}).lazy()
 
     z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
-    assert z.collect().to_dict(as_series=False) == {"a": [4]}
+    assert z.collect().to_dict(as_series=False) == {"a": [3], "b": [4]}
 
 
 def test_semi_join_projection_pushdown_6423() -> None:
@@ -970,9 +972,9 @@ def test_join_lit_panic_11410() -> None:
     df = pl.LazyFrame({"date": [1, 2, 3], "symbol": [4, 5, 6]})
     dates = df.select("date").unique(maintain_order=True)
     symbols = df.select("symbol").unique(maintain_order=True)
-    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).drop(
-        "literal"
-    ).collect().to_dict(as_series=False) == {"symbol": [4], "date": [1]}
+    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).collect().to_dict(
+        as_series=False
+    ) == {"symbol": [4], "date": [1]}
 
 
 def test_join_empty_literal_17027() -> None:
