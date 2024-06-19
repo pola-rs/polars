@@ -406,7 +406,7 @@ impl ProjectionPushDown {
                         function.allows_projection_pushdown()
                     },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => false,
+                    FileScan::NDJson { .. } => true,
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc { .. } => true,
                     #[cfg(feature = "csv")]

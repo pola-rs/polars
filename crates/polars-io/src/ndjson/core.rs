@@ -12,7 +12,9 @@ use rayon::prelude::*;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
+use crate::RowIndex;
 const NEWLINE: u8 = b'\n';
 const RETURN: u8 = b'\r';
 const CLOSING_BRACKET: u8 = b'}';
@@ -33,6 +35,9 @@ where
     path: Option<PathBuf>,
     low_memory: bool,
     ignore_errors: bool,
+    row_index: Option<&'a mut RowIndex>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    projection: Option<Arc<[String]>>,
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -55,6 +60,21 @@ where
 
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
+        self
+    }
+
+    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+        self.predicate = predicate;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: Option<Arc<[String]>>) -> Self {
+        self.projection = projection;
+        self
+    }
+
+    pub fn with_row_index(mut self, row_index: Option<&'a mut RowIndex>) -> Self {
+        self.row_index = row_index;
         self
     }
 
@@ -105,6 +125,9 @@ where
             self.low_memory,
             self.infer_schema_len,
             self.ignore_errors,
+            self.row_index,
+            self.predicate,
+            self.projection,
         )?;
 
         json_reader.count()
@@ -137,6 +160,9 @@ where
             chunk_size: NonZeroUsize::new(1 << 18).unwrap(),
             low_memory: false,
             ignore_errors: false,
+            row_index: None,
+            predicate: None,
+            projection: None,
         }
     }
     fn finish(mut self) -> PolarsResult<DataFrame> {
@@ -153,6 +179,9 @@ where
             self.low_memory,
             self.infer_schema_len,
             self.ignore_errors,
+            self.row_index,
+            self.predicate,
+            self.projection,
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
@@ -172,6 +201,9 @@ pub(crate) struct CoreJsonReader<'a> {
     chunk_size: NonZeroUsize,
     low_memory: bool,
     ignore_errors: bool,
+    row_index: Option<&'a mut RowIndex>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    projection: Option<Arc<[String]>>,
 }
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
@@ -186,6 +218,9 @@ impl<'a> CoreJsonReader<'a> {
         low_memory: bool,
         infer_schema_len: Option<NonZeroUsize>,
         ignore_errors: bool,
+        row_index: Option<&'a mut RowIndex>,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        projection: Option<Arc<[String]>>,
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
@@ -211,6 +246,9 @@ impl<'a> CoreJsonReader<'a> {
             chunk_size,
             low_memory,
             ignore_errors,
+            row_index,
+            predicate,
+            projection,
         })
     }
 
@@ -262,23 +300,50 @@ impl<'a> CoreJsonReader<'a> {
             std::cmp::min(rows_per_thread, max_proxy)
         };
         let file_chunks = get_file_chunks_json(bytes, n_threads);
-        let dfs = POOL.install(|| {
+
+        let row_index = self.row_index.as_ref().map(|ri| ri as &RowIndex);
+        let (mut dfs, prepredicate_heights) = POOL.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity, self.ignore_errors)?;
                     parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
-                    DataFrame::new(
+                    let mut local_df = DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
                             .collect::<_>(),
-                    )
+                    )?;
+
+                    let prepredicate_height = local_df.height() as IdxSize;
+                    if let Some(row_index) = row_index {
+                        local_df = local_df
+                            .with_row_index(row_index.name.as_ref(), Some(row_index.offset))?;
+                    }
+
+                    if let Some(projection) = &self.projection {
+                        local_df = local_df.select(projection.as_ref())?;
+                    }
+
+                    if let Some(predicate) = &self.predicate {
+                        let s = predicate.evaluate_io(&local_df)?;
+                        let mask = s.bool()?;
+                        local_df = local_df.filter(mask)?;
+                    }
+
+                    Ok((local_df, prepredicate_height))
                 })
-                .collect::<PolarsResult<Vec<_>>>()
+                .collect::<PolarsResult<(Vec<_>, Vec<_>)>>()
         })?;
+
+        if let Some(ref mut row_index) = self.row_index {
+            update_row_counts3(&mut dfs, &prepredicate_heights, 0);
+            row_index.offset += prepredicate_heights.iter().copied().sum::<IdxSize>();
+        }
+
         accumulate_dataframes_vertical(dfs)
     }
+
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
