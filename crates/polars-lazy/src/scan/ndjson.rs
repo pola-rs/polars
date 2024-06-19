@@ -91,6 +91,44 @@ impl LazyJsonLineReader {
 }
 
 impl LazyFileListReader for LazyJsonLineReader {
+    fn finish(self) -> PolarsResult<LazyFrame> {
+        if !self.glob() {
+            return self.finish_no_glob();
+        }
+
+        let paths = self.expand_paths()?.0;
+
+        let file_options = FileScanOptions {
+            n_rows: self.n_rows,
+            with_columns: None,
+            cache: false,
+            row_index: self.row_index,
+            rechunk: self.rechunk,
+            file_counter: 0,
+            hive_options: Default::default(),
+        };
+
+        let options = NDJsonReadOptions {
+            n_threads: None,
+            infer_schema_length: self.infer_schema_length,
+            chunk_size: NonZeroUsize::new(1 << 18).unwrap(),
+            low_memory: self.low_memory,
+            ignore_errors: self.ignore_errors,
+            schema: self.schema,
+        };
+
+        let scan_type = FileScan::NDJson { options };
+
+        Ok(LazyFrame::from(DslPlan::Scan {
+            paths,
+            file_info: None,
+            hive_parts: None,
+            predicate: None,
+            file_options,
+            scan_type,
+        }))
+    }
+
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let file_options = FileScanOptions {
             n_rows: self.n_rows,
