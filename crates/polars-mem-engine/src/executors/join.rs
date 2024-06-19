@@ -68,8 +68,8 @@ impl Executor for JoinExec {
             (input_left.execute(state), input_right.execute(state))
         };
 
-        let mut df_left = df_left?;
-        let mut df_right = df_right?;
+        let df_left = df_left?;
+        let df_right = df_right?;
 
         let profile_name = if state.has_node_timer() {
             let by = self
@@ -96,14 +96,6 @@ impl Executor for JoinExec {
                 .iter()
                 .map(|e| e.evaluate(&df_right, state))
                 .collect::<PolarsResult<Vec<_>>>()?;
-
-            // make sure that we can join on evaluated expressions
-            for s in &left_on_series {
-                df_left.with_column(s.clone())?;
-            }
-            for s in &right_on_series {
-                df_right.with_column(s.clone())?;
-            }
 
             // prepare the tolerance
             // we must ensure that we use the right units

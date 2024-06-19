@@ -132,7 +132,7 @@ pub trait DataFrameJoinOps: IntoDf {
             clear(&mut selected_right);
         }
 
-        let should_coalesce = args.coalesce.coalesce(&args.how);
+        let should_coalesce = args.should_coalesce();
         assert_eq!(selected_left.len(), selected_right.len());
 
         #[cfg(feature = "chunked_ids")]
@@ -229,35 +229,32 @@ pub trait DataFrameJoinOps: IntoDf {
                     args.join_nulls,
                 ),
                 #[cfg(feature = "asof_join")]
-                JoinType::AsOf(options) => {
-                    let left_on = selected_left[0].name();
-                    let right_on = selected_right[0].name();
-
-                    match (options.left_by, options.right_by) {
-                        (Some(left_by), Some(right_by)) => left_df._join_asof_by(
-                            other,
-                            left_on,
-                            right_on,
-                            left_by,
-                            right_by,
-                            options.strategy,
-                            options.tolerance,
-                            args.suffix.as_deref(),
-                            args.slice,
-                        ),
-                        (None, None) => left_df._join_asof(
-                            other,
-                            left_on,
-                            right_on,
-                            options.strategy,
-                            options.tolerance,
-                            args.suffix,
-                            args.slice,
-                        ),
-                        _ => {
-                            panic!("expected by arguments on both sides")
-                        },
-                    }
+                JoinType::AsOf(options) => match (options.left_by, options.right_by) {
+                    (Some(left_by), Some(right_by)) => left_df._join_asof_by(
+                        other,
+                        s_left,
+                        s_right,
+                        left_by,
+                        right_by,
+                        options.strategy,
+                        options.tolerance,
+                        args.suffix.as_deref(),
+                        args.slice,
+                        should_coalesce,
+                    ),
+                    (None, None) => left_df._join_asof(
+                        other,
+                        s_left,
+                        s_right,
+                        options.strategy,
+                        options.tolerance,
+                        args.suffix,
+                        args.slice,
+                        should_coalesce,
+                    ),
+                    _ => {
+                        panic!("expected by arguments on both sides")
+                    },
                 },
                 JoinType::Cross => {
                     unreachable!()

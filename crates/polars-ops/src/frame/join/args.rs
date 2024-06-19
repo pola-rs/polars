@@ -35,7 +35,7 @@ impl JoinArgs {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinCoalesce {
     #[default]
@@ -56,7 +56,7 @@ impl JoinCoalesce {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]
-            AsOf(_) => false,
+            AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
             Cross => false,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => false,

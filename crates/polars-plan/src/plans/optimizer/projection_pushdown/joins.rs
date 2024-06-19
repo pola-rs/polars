@@ -266,12 +266,18 @@ pub(super) fn process_join(
             );
         }
 
-        // For left and innner joins we can set `coalesce` to `true` if the rhs key columns are not projected.
+        // For left and inner joins we can set `coalesce` to `true` if the rhs key columns are not projected.
         // This saves a materialization.
         if !options.args.should_coalesce()
             && matches!(options.args.how, JoinType::Left | JoinType::Inner)
         {
+            let mut allow_opt = true;
             let non_coalesced_key_is_used = right_on.iter().any(|e| {
+                // Inline expressions other than col should not coalesce.
+                if !matches!(expr_arena.get(e.node()), AExpr::Column(_)) {
+                    allow_opt = false;
+                    return true;
+                }
                 let key_name = e.output_name();
 
                 // If the name is in the lhs table, a suffix is added.
@@ -285,7 +291,7 @@ pub(super) fn process_join(
             });
 
             // If they key is not used, coalesce the columns as that is often cheaper.
-            if !non_coalesced_key_is_used {
+            if !non_coalesced_key_is_used && allow_opt {
                 let options = Arc::make_mut(&mut options);
                 options.args.coalesce = JoinCoalesce::CoalesceColumns;
             }

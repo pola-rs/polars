@@ -54,6 +54,12 @@ def test_asof_join_inline_cast_6438() -> None:
             datetime(2020, 1, 1, 9, 3),
             datetime(2020, 1, 1, 9, 6),
         ],
+        "time_right": [
+            datetime(2020, 1, 1, 9, 0),
+            None,
+            datetime(2020, 1, 1, 9, 2),
+            datetime(2020, 1, 1, 9, 3),
+        ],
         "stock": ["A", "B", "B", "C"],
         "trade": [101, 299, 301, 500],
         "quote": [100, None, 300, 501],
@@ -169,6 +175,7 @@ def test_join_asof_floats() -> None:
     expected = {
         "a": [1.0, 2.0, 3.0],
         "b": ["lrow1", "lrow2", "lrow3"],
+        "a_right": [0.59, 1.49, 2.89],
         "b_right": ["rrow1", "rrow2", "rrow3"],
     }
     assert result.to_dict(as_series=False) == expected
@@ -183,8 +190,8 @@ def test_join_asof_floats() -> None:
             "val": [0.0, 2.5, 2.6, 2.7, 3.4, 4.0, 5.0],
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
-    ).with_columns(pl.col("val").alias("b"))
-    assert df1.join_asof(df2, on=pl.col("b").set_sorted(), by="c").to_dict(
+    ).with_columns(pl.col("val").alias("b").set_sorted())
+    assert df1.set_sorted("b").join_asof(df2, on=pl.col("b"), by="c").to_dict(
         as_series=False
     ) == {
         "b": [
@@ -394,6 +401,7 @@ def test_asof_join_by_logical_types() -> None:
         ],
         "b": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         "c": ["1", "2", "3", "1", "2", "3", "1", "2", "3"],
+        "b_right": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
     }
     assert result.to_dict(as_series=False) == expected
 

@@ -372,8 +372,9 @@ pub fn to_alp_impl(
             input_right,
             left_on,
             right_on,
-            options,
+            mut options,
         } => {
+            let mut turn_off_coalesce = false;
             for e in left_on.iter().chain(right_on.iter()) {
                 if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
                     polars_bail!(
@@ -381,6 +382,12 @@ pub fn to_alp_impl(
                         "'alias' is not allowed in a join key, use 'with_columns' first",
                     )
                 }
+                // Any expression that is not a simple column expression will turn of coalescing.
+                turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
+            }
+            if turn_off_coalesce {
+                let options = Arc::make_mut(&mut options);
+                options.args.coalesce = JoinCoalesce::KeepColumns;
             }
 
             options.args.validation.is_valid_join(&options.args.how)?;

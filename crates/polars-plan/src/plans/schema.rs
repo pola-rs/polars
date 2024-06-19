@@ -241,17 +241,18 @@ pub(crate) fn det_join_schema(
     right_on: &[Expr],
     options: &JoinOptions,
 ) -> PolarsResult<SchemaRef> {
-    match options.args.how {
+    match &options.args.how {
         // semi and anti joins are just filtering operations
         // the schema will never change.
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
-        _ => {
+        _how => {
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
             for (name, dtype) in schema_left.iter() {
                 new_schema.with_column(name.clone(), dtype.clone());
             }
+            let should_coalesce = options.args.should_coalesce();
 
             // make sure that expression are assigned to the schema
             // an expression can have an alias, and change a dtype.
@@ -267,13 +268,13 @@ pub(crate) fn det_join_schema(
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if !options.args.coalesce.coalesce(&options.args.how) {
+            if matches!(_how, JoinType::AsOf(_)) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
                     let field_right =
                         right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
-                    if field_left.name != field_right.name {
+                    if should_coalesce && field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
                             new_schema.with_column(
                                 _join_suffix_name(&field_right.name, options.args.suffix()).into(),
@@ -292,12 +293,9 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
-            let are_coalesced = options.args.coalesce.coalesce(&options.args.how);
-            let is_asof = options.args.how.is_asof();
-
             // Asof joins are special, if the names are equal they will not be coalesced.
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str()) || (!are_coalesced && !is_asof)
+                if !join_on_right.contains(name.as_str()) || (!should_coalesce)
                 // The names that are joined on are merged
                 {
                     if schema_left.contains(name.as_str()) {
