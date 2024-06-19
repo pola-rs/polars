@@ -597,20 +597,26 @@ pub trait AsofJoinBy: IntoDf {
         slice: Option<(i64, usize)>,
         coalesce: bool,
     ) -> PolarsResult<DataFrame> {
-        let (self_sliced_slot, other_sliced_slot); // Keeps temporaries alive.
-        let (self_df, other_df);
+        let (self_sliced_slot, other_sliced_slot, left_slice_s, right_slice_s); // Keeps temporaries alive.
+        let (self_df, other_df, left_key, right_key);
         if let Some((offset, len)) = slice {
             self_sliced_slot = self.to_df().slice(offset, len);
             other_sliced_slot = other.slice(offset, len);
+            left_slice_s = left_on.slice(offset, len);
+            right_slice_s = right_on.slice(offset, len);
+            left_key = &left_slice_s;
+            right_key = &right_slice_s;
             self_df = &self_sliced_slot;
             other_df = &other_sliced_slot;
         } else {
             self_df = self.to_df();
             other_df = other;
+            left_key = left_on;
+            right_key = right_on;
         }
 
-        let left_asof = left_on.to_physical_repr();
-        let right_asof = right_on.to_physical_repr();
+        let left_asof = left_key.to_physical_repr();
+        let right_asof = right_key.to_physical_repr();
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
         check_asof_columns(
@@ -692,7 +698,7 @@ pub trait AsofJoinBy: IntoDf {
         let left_key = self_df.column(left_on)?;
         let right_key = other.column(right_on)?;
         self_df._join_asof_by(
-            other, right_key, left_key, left_by, right_by, strategy, tolerance, None, None, true,
+            other, left_key, right_key, left_by, right_by, strategy, tolerance, None, None, true,
         )
     }
 }
