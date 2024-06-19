@@ -401,7 +401,7 @@ impl<'a> PredicatePushDown<'a> {
                     FileScan::Csv { .. } => options.n_rows.is_none(),
                     FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => false,
+                    FileScan::NDJson { .. } => true,
                     #[allow(unreachable_patterns)]
                     _ => true,
                 };

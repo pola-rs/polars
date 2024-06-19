@@ -327,6 +327,9 @@ where
                     false,
                     self.infer_schema_len,
                     self.ignore_errors,
+                    None,
+                    None,
+                    None,
                 )?;
                 let mut df: DataFrame = json_reader.as_df()?;
                 if self.rechunk {

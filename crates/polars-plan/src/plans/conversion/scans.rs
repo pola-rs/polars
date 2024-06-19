@@ -299,6 +299,7 @@ pub(super) fn ndjson_file_info(
             polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
         prepare_schemas(schema, file_options.row_index.as_ref())
     };
+
     Ok(FileInfo::new(
         schema,
         Some(Either::Right(reader_schema)),

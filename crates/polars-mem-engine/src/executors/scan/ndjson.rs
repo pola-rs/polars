@@ -9,6 +9,7 @@ pub struct JsonExec {
     options: NDJsonReadOptions,
     file_scan_options: FileScanOptions,
     file_info: FileInfo,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
 impl JsonExec {
@@ -17,12 +18,14 @@ impl JsonExec {
         options: NDJsonReadOptions,
         file_scan_options: FileScanOptions,
         file_info: FileInfo,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
     ) -> Self {
         Self {
             paths,
             options,
             file_scan_options,
             file_info,
+            predicate,
         }
     }
 
@@ -50,10 +53,15 @@ impl JsonExec {
                     Err(e) => return Some(Err(e)),
                 };
 
+                let row_index = self.file_scan_options.row_index.as_mut();
+
                 let df = reader
                     .with_schema(schema.clone())
                     .with_rechunk(self.file_scan_options.rechunk)
                     .with_chunk_size(Some(self.options.chunk_size))
+                    .with_row_index(row_index)
+                    .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
+                    .with_projection(self.file_scan_options.with_columns.clone())
                     .low_memory(self.options.low_memory)
                     .with_n_rows(n_rows)
                     .with_ignore_errors(self.options.ignore_errors)
@@ -68,14 +76,7 @@ impl JsonExec {
                     *n_rows -= df.height();
                 }
 
-                Some(match self.file_scan_options.row_index {
-                    Some(ref mut row_index) => {
-                        let offset = row_index.offset;
-                        row_index.offset += df.height() as IdxSize;
-                        df.with_row_index(row_index.name.as_ref(), Some(offset))
-                    },
-                    None => Ok(df),
-                })
+                Some(Ok(df))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 

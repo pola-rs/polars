@@ -297,6 +297,7 @@ fn create_physical_plan_impl(
                     options,
                     file_options,
                     file_info,
+                    predicate,
                 ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
