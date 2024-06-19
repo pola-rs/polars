@@ -5005,7 +5005,7 @@ class Expr:
 
     def eq_missing(self, other: Any) -> Self:
         """
-        Equality operator where `None` is treated as a distinct value.
+        Equality operator where null is treated as a distinct value.
 
         This differs from default `eq` where null values are propagated.
         With this method, `None == None` returns `True` instead of `None`,
