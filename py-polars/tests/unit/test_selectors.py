@@ -111,11 +111,11 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         ~cs.by_dtype(*INTEGER_DTYPES, *TEMPORAL_DTYPES)
     ).schema == pl.Schema(
         {
-            "cde": pl.Float64,
-            "def": pl.Float32,
-            "eee": pl.Boolean,
-            "fgg": pl.Boolean,
-            "qqR": pl.String,
+            "cde": pl.Float64(),
+            "def": pl.Float32(),
+            "eee": pl.Boolean(),
+            "fgg": pl.Boolean(),
+            "qqR": pl.String(),
         }
     )
     assert df.select(cs.by_dtype()).schema == {}

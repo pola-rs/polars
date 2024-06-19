@@ -20,10 +20,11 @@ from polars.datatypes.group import DataTypeGroup
 from tests.unit.conftest import DATETIME_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from polars.datatypes.classes import DataTypeClass
     from polars.type_aliases import PolarsDataType
 
-SIMPLE_DTYPES: list[PolarsDataType] = [
-    *NUMERIC_DTYPES,
+SIMPLE_DTYPES: list[DataTypeClass] = [
+    *[dt.base_type() for dt in NUMERIC_DTYPES],
     pl.Boolean,
     pl.String,
     pl.Binary,
@@ -36,7 +37,7 @@ SIMPLE_DTYPES: list[PolarsDataType] = [
 
 
 @pytest.mark.parametrize("dtype", SIMPLE_DTYPES)
-def test_simple_dtype_init_takes_no_args(dtype: PolarsDataType) -> None:
+def test_simple_dtype_init_takes_no_args(dtype: DataTypeClass) -> None:
     with pytest.raises(TypeError):
         dtype(10)
 

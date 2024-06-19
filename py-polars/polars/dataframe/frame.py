@@ -61,7 +61,6 @@ from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
-    INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
     Float32,
@@ -75,6 +74,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
 )
+from polars.datatypes.group import INTEGER_DTYPES
 from polars.dependencies import (
     _GREAT_TABLES_AVAILABLE,
     _HVPLOT_AVAILABLE,

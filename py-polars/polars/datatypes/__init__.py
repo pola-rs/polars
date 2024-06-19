@@ -53,17 +53,6 @@ from polars.datatypes.convert import (
     supported_numpy_char_code,
     unpack_dtypes,
 )
-from polars.datatypes.group import (
-    DATETIME_DTYPES,
-    DURATION_DTYPES,
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NESTED_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
-)
 
 __all__ = [
     # classes
@@ -102,16 +91,6 @@ __all__ = [
     # constants
     "N_INFER_DEFAULT",
     "DTYPE_TEMPORAL_UNITS",
-    # group
-    "DATETIME_DTYPES",
-    "DURATION_DTYPES",
-    "FLOAT_DTYPES",
-    "INTEGER_DTYPES",
-    "NESTED_DTYPES",
-    "NUMERIC_DTYPES",
-    "SIGNED_INTEGER_DTYPES",
-    "TEMPORAL_DTYPES",
-    "UNSIGNED_INTEGER_DTYPES",
     # constructor
     "numpy_type_to_constructor",
     "numpy_values_and_dtype",

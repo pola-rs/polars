@@ -40,13 +40,6 @@ from polars.convert import (
 )
 from polars.dataframe import DataFrame
 from polars.datatypes import (
-    DATETIME_DTYPES,
-    DURATION_DTYPES,
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NESTED_DTYPES,
-    NUMERIC_DTYPES,
-    TEMPORAL_DTYPES,
     Array,
     Binary,
     Boolean,
@@ -250,14 +243,6 @@ __all__ = [
     "UInt64",
     "Unknown",
     "Utf8",
-    # polars.datatypes: dtype groups
-    "DATETIME_DTYPES",
-    "DURATION_DTYPES",
-    "FLOAT_DTYPES",
-    "INTEGER_DTYPES",
-    "NESTED_DTYPES",
-    "NUMERIC_DTYPES",
-    "TEMPORAL_DTYPES",
     # polars.io
     "read_avro",
     "read_clipboard",

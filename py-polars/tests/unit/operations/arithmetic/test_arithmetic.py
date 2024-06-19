@@ -21,7 +21,7 @@ from polars import (
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import NUMERIC_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 
 def test_sqrt_neg_inf() -> None:
@@ -613,14 +613,14 @@ def test_literal_subtract_schema_13284() -> None:
     ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
 
 
-def test_int_operator_stability() -> None:
-    for dt in pl.datatypes.INTEGER_DTYPES:
-        s = pl.Series(values=[10], dtype=dt)
-        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
-        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
-        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
-        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
-        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_int_operator_stability(dtype: pl.DataType) -> None:
+    s = pl.Series(values=[10], dtype=dtype)
+    assert pl.select(pl.lit(s) // 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) + 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) - 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) * 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
 
 
 def test_duration_division_schema() -> None:

@@ -16,7 +16,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
     ComputeError,
     DuplicateError,
@@ -28,6 +28,7 @@ from polars.testing import (
     assert_frame_not_equal,
     assert_series_equal,
 )
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
