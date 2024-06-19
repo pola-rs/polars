@@ -544,6 +544,9 @@ pub trait ArrowArrayRef: std::fmt::Debug {
 
     fn n_buffers(&self) -> usize;
 
+    fn offset(&self) -> usize;
+    fn length(&self) -> usize;
+
     fn parent(&self) -> &InternalArrowArray;
     fn array(&self) -> &ArrowArray;
     fn data_type(&self) -> &ArrowDataType;
@@ -602,6 +605,14 @@ impl ArrowArrayRef for InternalArrowArray {
     fn n_buffers(&self) -> usize {
         self.array.n_buffers as usize
     }
+
+    fn offset(&self) -> usize {
+        self.array.offset as usize
+    }
+
+    fn length(&self) -> usize {
+        self.array.length as usize
+    }
 }
 
 #[derive(Debug)]
@@ -627,6 +638,14 @@ impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
 
     fn n_buffers(&self) -> usize {
         self.array.n_buffers as usize
+    }
+
+    fn offset(&self) -> usize {
+        self.array.offset as usize
+    }
+
+    fn length(&self) -> usize {
+        self.array.length as usize
     }
 }
 
