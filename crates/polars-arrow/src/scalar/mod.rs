@@ -34,7 +34,7 @@ mod union;
 
 pub use union::UnionScalar;
 
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// Trait object declaring an optional value with a [`ArrowDataType`].
 /// This strait is often used in APIs that accept multiple scalar types.
@@ -119,7 +119,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
             };
             Box::new(BooleanScalar::new(value))
         },
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<$T>>()
