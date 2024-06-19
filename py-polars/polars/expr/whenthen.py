@@ -53,7 +53,7 @@ class Then(Expr):
         self._then = then
 
     @classmethod
-    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:  # type: ignore[override]
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         return wrap_expr(pyexpr)
 
     @property
@@ -137,7 +137,7 @@ class ChainedThen(Expr):
         self._chained_then = chained_then
 
     @classmethod
-    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:  # type: ignore[override]
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         return wrap_expr(pyexpr)
 
     @property

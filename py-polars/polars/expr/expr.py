@@ -97,9 +97,9 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 11):
-        from typing import Concatenate, ParamSpec, Self
+        from typing import Concatenate, ParamSpec
     else:
-        from typing_extensions import Concatenate, ParamSpec, Self
+        from typing_extensions import Concatenate, ParamSpec
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -125,7 +125,7 @@ class Expr:
     }
 
     @classmethod
-    def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
+    def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         expr = cls.__new__(cls)
         expr._pyexpr = pyexpr
         return expr
@@ -154,98 +154,98 @@ class Expr:
         )
         raise TypeError(msg)
 
-    def __abs__(self) -> Self:
+    def __abs__(self) -> Expr:
         return self.abs()
 
     # operators
-    def __add__(self, other: IntoExpr) -> Self:
+    def __add__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr + other)
 
-    def __radd__(self, other: IntoExpr) -> Self:
+    def __radd__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(other + self._pyexpr)
 
-    def __and__(self, other: IntoExprColumn | int | bool) -> Self:
+    def __and__(self, other: IntoExprColumn | int | bool) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.and_(other))
 
-    def __rand__(self, other: IntoExprColumn | int | bool) -> Self:
+    def __rand__(self, other: IntoExprColumn | int | bool) -> Expr:
         other_expr = parse_into_expression(other)
         return self._from_pyexpr(other_expr.and_(self._pyexpr))
 
-    def __eq__(self, other: IntoExpr) -> Self:  # type: ignore[override]
+    def __eq__(self, other: IntoExpr) -> Expr:  # type: ignore[override]
         warn_null_comparison(other)
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.eq(other))
 
-    def __floordiv__(self, other: IntoExpr) -> Self:
+    def __floordiv__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr // other)
 
-    def __rfloordiv__(self, other: IntoExpr) -> Self:
+    def __rfloordiv__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(other // self._pyexpr)
 
-    def __ge__(self, other: IntoExpr) -> Self:
+    def __ge__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.gt_eq(other))
 
-    def __gt__(self, other: IntoExpr) -> Self:
+    def __gt__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.gt(other))
 
-    def __invert__(self) -> Self:
+    def __invert__(self) -> Expr:
         return self.not_()
 
-    def __le__(self, other: IntoExpr) -> Self:
+    def __le__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.lt_eq(other))
 
-    def __lt__(self, other: IntoExpr) -> Self:
+    def __lt__(self, other: IntoExpr) -> Expr:
         warn_null_comparison(other)
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.lt(other))
 
-    def __mod__(self, other: IntoExpr) -> Self:
+    def __mod__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr % other)
 
-    def __rmod__(self, other: IntoExpr) -> Self:
+    def __rmod__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(other % self._pyexpr)
 
-    def __mul__(self, other: IntoExpr) -> Self:
+    def __mul__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr * other)
 
-    def __rmul__(self, other: IntoExpr) -> Self:
+    def __rmul__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(other * self._pyexpr)
 
-    def __ne__(self, other: IntoExpr) -> Self:  # type: ignore[override]
+    def __ne__(self, other: IntoExpr) -> Expr:  # type: ignore[override]
         warn_null_comparison(other)
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq(other))
 
-    def __neg__(self) -> Self:
+    def __neg__(self) -> Expr:
         return self._from_pyexpr(-self._pyexpr)
 
-    def __or__(self, other: IntoExprColumn | int | bool) -> Self:
+    def __or__(self, other: IntoExprColumn | int | bool) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.or_(other))
 
-    def __ror__(self, other: IntoExprColumn | int | bool) -> Self:
+    def __ror__(self, other: IntoExprColumn | int | bool) -> Expr:
         other_expr = parse_into_expression(other)
         return self._from_pyexpr(other_expr.or_(self._pyexpr))
 
     def __pos__(self) -> Expr:
         return self
 
-    def __pow__(self, exponent: IntoExprColumn | int | float) -> Self:
+    def __pow__(self, exponent: IntoExprColumn | int | float) -> Expr:
         exponent = parse_into_expression(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent))
 
@@ -253,27 +253,27 @@ class Expr:
         base = parse_into_expression(base)
         return self._from_pyexpr(base) ** self
 
-    def __sub__(self, other: IntoExpr) -> Self:
+    def __sub__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr - other)
 
-    def __rsub__(self, other: IntoExpr) -> Self:
+    def __rsub__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(other - self._pyexpr)
 
-    def __truediv__(self, other: IntoExpr) -> Self:
+    def __truediv__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr / other)
 
-    def __rtruediv__(self, other: IntoExpr) -> Self:
+    def __rtruediv__(self, other: IntoExpr) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(other / self._pyexpr)
 
-    def __xor__(self, other: IntoExprColumn | int | bool) -> Self:
+    def __xor__(self, other: IntoExprColumn | int | bool) -> Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.xor_(other))
 
-    def __rxor__(self, other: IntoExprColumn | int | bool) -> Self:
+    def __rxor__(self, other: IntoExprColumn | int | bool) -> Expr:
         other_expr = parse_into_expression(other)
         return self._from_pyexpr(other_expr.xor_(self._pyexpr))
 
@@ -286,7 +286,7 @@ class Expr:
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
-    ) -> Self:
+    ) -> Expr:
         """Numpy universal functions."""
         if method != "__call__":
             msg = f"Only call is implemented not {method}"
@@ -332,7 +332,7 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> Self:
+    def deserialize(cls, source: str | Path | IOBase) -> Expr:
         """
         Read a serialized expression from a file.
 
@@ -370,7 +370,7 @@ class Expr:
         expr._pyexpr = PyExpr.deserialize(source)
         return expr
 
-    def to_physical(self) -> Self:
+    def to_physical(self) -> Expr:
         """
         Cast to physical representation of the logical dtype.
 
@@ -411,7 +411,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self, *, ignore_nulls: bool = True) -> Self:
+    def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Return whether any of the values in the column are `True`.
 
@@ -466,7 +466,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
 
-    def all(self, *, ignore_nulls: bool = True) -> Self:
+    def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Return whether all values in the column are `True`.
 
@@ -525,7 +525,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.all(ignore_nulls))
 
-    def arg_true(self) -> Self:
+    def arg_true(self) -> Expr:
         """
         Return indices where expression evaluates `True`.
 
@@ -555,7 +555,7 @@ class Expr:
         """
         return self._from_pyexpr(py_arg_where(self._pyexpr))
 
-    def sqrt(self) -> Self:
+    def sqrt(self) -> Expr:
         """
         Compute the square root of the elements.
 
@@ -576,7 +576,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sqrt())
 
-    def cbrt(self) -> Self:
+    def cbrt(self) -> Expr:
         """
         Compute the cube root of the elements.
 
@@ -597,7 +597,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cbrt())
 
-    def log10(self) -> Self:
+    def log10(self) -> Expr:
         """
         Compute the base 10 logarithm of the input array, element-wise.
 
@@ -618,7 +618,7 @@ class Expr:
         """
         return self.log(10.0)
 
-    def exp(self) -> Self:
+    def exp(self) -> Expr:
         """
         Compute the exponential, element-wise.
 
@@ -639,7 +639,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.exp())
 
-    def alias(self, name: str) -> Self:
+    def alias(self, name: str) -> Expr:
         """
         Rename the expression.
 
@@ -703,7 +703,7 @@ class Expr:
         self,
         columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
         *more_columns: str | PolarsDataType,
-    ) -> Self:
+    ) -> Expr:
         """
         Exclude columns from a multi-column expression.
 
@@ -862,7 +862,7 @@ class Expr:
         '''
         return function(self, *args, **kwargs)
 
-    def not_(self) -> Self:
+    def not_(self) -> Expr:
         """
         Negate a boolean expression.
 
@@ -899,7 +899,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.not_())
 
-    def is_null(self) -> Self:
+    def is_null(self) -> Expr:
         """
         Returns a boolean Series indicating which values are null.
 
@@ -927,7 +927,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_null())
 
-    def is_not_null(self) -> Self:
+    def is_not_null(self) -> Expr:
         """
         Returns a boolean Series indicating which values are not null.
 
@@ -957,7 +957,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_not_null())
 
-    def is_finite(self) -> Self:
+    def is_finite(self) -> Expr:
         """
         Returns a boolean Series indicating which values are finite.
 
@@ -987,7 +987,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_finite())
 
-    def is_infinite(self) -> Self:
+    def is_infinite(self) -> Expr:
         """
         Returns a boolean Series indicating which values are infinite.
 
@@ -1017,7 +1017,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_infinite())
 
-    def is_nan(self) -> Self:
+    def is_nan(self) -> Expr:
         """
         Returns a boolean Series indicating which values are NaN.
 
@@ -1050,7 +1050,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_nan())
 
-    def is_not_nan(self) -> Self:
+    def is_not_nan(self) -> Expr:
         """
         Returns a boolean Series indicating which values are not NaN.
 
@@ -1083,7 +1083,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_not_nan())
 
-    def agg_groups(self) -> Self:
+    def agg_groups(self) -> Expr:
         """
         Get the group indexes of the group by operation.
 
@@ -1117,7 +1117,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.agg_groups())
 
-    def count(self) -> Self:
+    def count(self) -> Expr:
         """
         Return the number of non-null elements in the column.
 
@@ -1145,7 +1145,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.count())
 
-    def len(self) -> Self:
+    def len(self) -> Expr:
         """
         Return the number of elements in the column.
 
@@ -1175,7 +1175,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.len())
 
-    def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Self:
+    def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Expr:
         """
         Get a slice of this expression.
 
@@ -1212,7 +1212,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: IntoExpr, *, upcast: bool = True) -> Self:
+    def append(self, other: IntoExpr, *, upcast: bool = True) -> Expr:
         """
         Append expressions.
 
@@ -1247,7 +1247,7 @@ class Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.append(other, upcast))
 
-    def rechunk(self) -> Self:
+    def rechunk(self) -> Expr:
         """
         Create a single chunk of memory for this Series.
 
@@ -1274,7 +1274,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rechunk())
 
-    def drop_nulls(self) -> Self:
+    def drop_nulls(self) -> Expr:
         """
         Drop all null values.
 
@@ -1306,7 +1306,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nulls())
 
-    def drop_nans(self) -> Self:
+    def drop_nans(self) -> Expr:
         """
         Drop all floating point NaN values.
 
@@ -1338,7 +1338,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cum_sum(self, *, reverse: bool = False) -> Self:
+    def cum_sum(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1399,7 +1399,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cum_sum(reverse))
 
-    def cum_prod(self, *, reverse: bool = False) -> Self:
+    def cum_prod(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1434,7 +1434,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cum_prod(reverse))
 
-    def cum_min(self, *, reverse: bool = False) -> Self:
+    def cum_min(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1464,7 +1464,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
-    def cum_max(self, *, reverse: bool = False) -> Self:
+    def cum_max(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1517,7 +1517,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cum_max(reverse))
 
-    def cum_count(self, *, reverse: bool = False) -> Self:
+    def cum_count(self, *, reverse: bool = False) -> Expr:
         """
         Return the cumulative count of the non-null values in the column.
 
@@ -1547,7 +1547,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cum_count(reverse))
 
-    def floor(self) -> Self:
+    def floor(self) -> Expr:
         """
         Rounds down to the nearest integer value.
 
@@ -1571,7 +1571,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.floor())
 
-    def ceil(self) -> Self:
+    def ceil(self) -> Expr:
         """
         Rounds up to the nearest integer value.
 
@@ -1595,7 +1595,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.ceil())
 
-    def round(self, decimals: int = 0) -> Self:
+    def round(self, decimals: int = 0) -> Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -1622,7 +1622,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.round(decimals))
 
-    def round_sig_figs(self, digits: int) -> Self:
+    def round_sig_figs(self, digits: int) -> Expr:
         """
         Round to a number of significant figures.
 
@@ -1648,7 +1648,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.round_sig_figs(digits))
 
-    def dot(self, other: Expr | str) -> Self:
+    def dot(self, other: Expr | str) -> Expr:
         """
         Compute the dot/inner product between two Expressions.
 
@@ -1678,7 +1678,7 @@ class Expr:
         other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.dot(other))
 
-    def mode(self) -> Self:
+    def mode(self) -> Expr:
         """
         Compute the most occurring value(s).
 
@@ -1711,7 +1711,7 @@ class Expr:
         *,
         strict: bool = True,
         wrap_numerical: bool = False,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Cast between data types.
 
@@ -1751,7 +1751,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
 
-    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort this column.
 
@@ -1830,7 +1830,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int | IntoExprColumn = 5) -> Self:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Expr:
         r"""
         Return the `k` largest elements.
 
@@ -1885,7 +1885,7 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         reverse: bool | Sequence[bool] = False,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Return the elements corresponding to the `k` largest elements of the `by` column(s).
 
@@ -2001,7 +2001,7 @@ class Expr:
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyexpr(self._pyexpr.top_k_by(by, k=k, reverse=reverse))
 
-    def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Expr:
         r"""
         Return the `k` smallest elements.
 
@@ -2058,7 +2058,7 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         reverse: bool | Sequence[bool] = False,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Return the elements corresponding to the `k` smallest elements of the `by` column(s).
 
@@ -2174,7 +2174,7 @@ class Expr:
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyexpr(self._pyexpr.bottom_k_by(by, k=k, reverse=reverse))
 
-    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
+    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Get the index values that would sort this column.
 
@@ -2231,7 +2231,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_sort(descending, nulls_last))
 
-    def arg_max(self) -> Self:
+    def arg_max(self) -> Expr:
         """
         Get the index of the maximal value.
 
@@ -2254,7 +2254,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_max())
 
-    def arg_min(self) -> Self:
+    def arg_min(self) -> Expr:
         """
         Get the index of the minimal value.
 
@@ -2279,7 +2279,7 @@ class Expr:
 
     def search_sorted(
         self, element: IntoExpr | np.ndarray[Any, Any], side: SearchSortedSide = "any"
-    ) -> Self:
+    ) -> Expr:
         """
         Find indices where elements should be inserted to maintain order.
 
@@ -2328,7 +2328,7 @@ class Expr:
         nulls_last: bool | Sequence[bool] = False,
         multithreaded: bool = True,
         maintain_order: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Sort this column by the ordering of other columns.
 
@@ -2464,7 +2464,7 @@ class Expr:
 
     def gather(
         self, indices: int | Sequence[int] | Expr | Series | np.ndarray[Any, Any]
-    ) -> Self:
+    ) -> Expr:
         """
         Take values by index.
 
@@ -2518,7 +2518,7 @@ class Expr:
             indices_lit = parse_into_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.gather(indices_lit))
 
-    def get(self, index: int | Expr) -> Self:
+    def get(self, index: int | Expr) -> Expr:
         """
         Return a single value by index.
 
@@ -2563,7 +2563,7 @@ class Expr:
 
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
-    ) -> Self:
+    ) -> Expr:
         """
         Shift values by the given number of indices.
 
@@ -2643,7 +2643,7 @@ class Expr:
         value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Fill null values using the specified value or strategy.
 
@@ -2746,7 +2746,7 @@ class Expr:
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
             )
 
-    def fill_nan(self, value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Expr:
         """
         Fill floating point NaN value with a fill value.
 
@@ -2787,7 +2787,7 @@ class Expr:
         fill_value = parse_into_expression(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
-    def forward_fill(self, limit: int | None = None) -> Self:
+    def forward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the latest seen values.
 
@@ -2823,7 +2823,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.forward_fill(limit))
 
-    def backward_fill(self, limit: int | None = None) -> Self:
+    def backward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the next to be seen values.
 
@@ -2871,7 +2871,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.backward_fill(limit))
 
-    def reverse(self) -> Self:
+    def reverse(self) -> Expr:
         """
         Reverse the selection.
 
@@ -2906,7 +2906,7 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.reverse())
 
-    def std(self, ddof: int = 1) -> Self:
+    def std(self, ddof: int = 1) -> Expr:
         """
         Get standard deviation.
 
@@ -2932,7 +2932,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.std(ddof))
 
-    def var(self, ddof: int = 1) -> Self:
+    def var(self, ddof: int = 1) -> Expr:
         """
         Get variance.
 
@@ -2958,7 +2958,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.var(ddof))
 
-    def max(self) -> Self:
+    def max(self) -> Expr:
         """
         Get maximum value.
 
@@ -2977,7 +2977,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.max())
 
-    def min(self) -> Self:
+    def min(self) -> Expr:
         """
         Get minimum value.
 
@@ -2996,7 +2996,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.min())
 
-    def nan_max(self) -> Self:
+    def nan_max(self) -> Expr:
         """
         Get maximum value, but propagate/poison encountered NaN values.
 
@@ -3018,7 +3018,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.nan_max())
 
-    def nan_min(self) -> Self:
+    def nan_min(self) -> Expr:
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
@@ -3040,7 +3040,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.nan_min())
 
-    def sum(self) -> Self:
+    def sum(self) -> Expr:
         """
         Get sum value.
 
@@ -3064,7 +3064,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sum())
 
-    def mean(self) -> Self:
+    def mean(self) -> Expr:
         """
         Get mean value.
 
@@ -3083,7 +3083,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.mean())
 
-    def median(self) -> Self:
+    def median(self) -> Expr:
         """
         Get median value using linear interpolation.
 
@@ -3102,7 +3102,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.median())
 
-    def product(self) -> Self:
+    def product(self) -> Expr:
         """
         Compute the product of an expression.
 
@@ -3121,7 +3121,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.product())
 
-    def n_unique(self) -> Self:
+    def n_unique(self) -> Expr:
         """
         Count unique values.
 
@@ -3147,7 +3147,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
-    def approx_n_unique(self) -> Self:
+    def approx_n_unique(self) -> Expr:
         """
         Approximate count of unique values.
 
@@ -3181,7 +3181,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.approx_n_unique())
 
-    def null_count(self) -> Self:
+    def null_count(self) -> Expr:
         """
         Count null values.
 
@@ -3231,7 +3231,7 @@ class Expr:
         """
         return self.null_count() > 0
 
-    def arg_unique(self) -> Self:
+    def arg_unique(self) -> Expr:
         """
         Get index of first unique value.
 
@@ -3267,7 +3267,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_unique())
 
-    def unique(self, *, maintain_order: bool = False) -> Self:
+    def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get unique values of this expression.
 
@@ -3304,7 +3304,7 @@ class Expr:
             return self._from_pyexpr(self._pyexpr.unique_stable())
         return self._from_pyexpr(self._pyexpr.unique())
 
-    def first(self) -> Self:
+    def first(self) -> Expr:
         """
         Get the first value.
 
@@ -3323,7 +3323,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.first())
 
-    def last(self) -> Self:
+    def last(self) -> Expr:
         """
         Get the last value.
 
@@ -3348,7 +3348,7 @@ class Expr:
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
-    ) -> Self:
+    ) -> Expr:
         """
         Compute expressions over the given groups.
 
@@ -3505,7 +3505,7 @@ class Expr:
         period: str | timedelta,
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Create rolling groups based on a temporal or integer column.
 
@@ -3605,7 +3605,7 @@ class Expr:
             self._pyexpr.rolling(index_column, period, offset, closed)
         )
 
-    def is_unique(self) -> Self:
+    def is_unique(self) -> Expr:
         """
         Get mask of unique values.
 
@@ -3626,7 +3626,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_unique())
 
-    def is_first_distinct(self) -> Self:
+    def is_first_distinct(self) -> Expr:
         """
         Return a boolean mask indicating the first occurrence of each distinct value.
 
@@ -3654,7 +3654,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_first_distinct())
 
-    def is_last_distinct(self) -> Self:
+    def is_last_distinct(self) -> Expr:
         """
         Return a boolean mask indicating the last occurrence of each distinct value.
 
@@ -3682,7 +3682,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_last_distinct())
 
-    def is_duplicated(self) -> Self:
+    def is_duplicated(self) -> Expr:
         """
         Return a boolean mask indicating duplicated values.
 
@@ -3708,7 +3708,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_duplicated())
 
-    def peak_max(self) -> Self:
+    def peak_max(self) -> Expr:
         """
         Get a boolean mask of the local maximum peaks.
 
@@ -3731,7 +3731,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.peak_max())
 
-    def peak_min(self) -> Self:
+    def peak_min(self) -> Expr:
         """
         Get a boolean mask of the local minimum peaks.
 
@@ -3758,7 +3758,7 @@ class Expr:
         self,
         quantile: float | Expr,
         interpolation: RollingInterpolationMethod = "nearest",
-    ) -> Self:
+    ) -> Expr:
         """
         Get quantile value.
 
@@ -3829,7 +3829,7 @@ class Expr:
         labels: Sequence[str] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Bin continuous values into discrete categories.
 
@@ -3913,7 +3913,7 @@ class Expr:
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Bin continuous values into discrete categories based on their quantiles.
 
@@ -4021,7 +4021,7 @@ class Expr:
 
         return self._from_pyexpr(pyexpr)
 
-    def rle(self) -> Self:
+    def rle(self) -> Expr:
         """
         Compress the column data using run-length encoding.
 
@@ -4058,7 +4058,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rle())
 
-    def rle_id(self) -> Self:
+    def rle_id(self) -> Expr:
         """
         Get a distinct integer ID for each run of identical values.
 
@@ -4110,7 +4110,7 @@ class Expr:
         self,
         *predicates: IntoExprColumn | Iterable[IntoExprColumn],
         **constraints: Any,
-    ) -> Self:
+    ) -> Expr:
         """
         Filter the expression based on one or more predicate expressions.
 
@@ -4183,7 +4183,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.filter(predicate))
 
     @deprecate_function("Use `filter` instead.", version="0.20.4")
-    def where(self, predicate: Expr) -> Self:
+    def where(self, predicate: Expr) -> Expr:
         """
         Filter a single column.
 
@@ -4246,7 +4246,7 @@ class Expr:
         agg_list: bool = False,
         is_elementwise: bool = False,
         returns_scalar: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a custom python function to a whole Series or sequence of Series.
 
@@ -4398,7 +4398,7 @@ class Expr:
         skip_nulls: bool = True,
         pass_name: bool = False,
         strategy: MapElementsStrategy = "thread_local",
-    ) -> Self:
+    ) -> Expr:
         """
         Map a custom/user-defined function (UDF) to each element of a column.
 
@@ -4669,7 +4669,7 @@ class Expr:
             msg = f"strategy {strategy!r} is not supported"
             raise ValueError(msg)
 
-    def flatten(self) -> Self:
+    def flatten(self) -> Expr:
         """
         Flatten a list or string column.
 
@@ -4696,7 +4696,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.explode())
 
-    def explode(self) -> Self:
+    def explode(self) -> Expr:
         """
         Explode a list expression.
 
@@ -4737,7 +4737,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.explode())
 
-    def implode(self) -> Self:
+    def implode(self) -> Expr:
         """
         Aggregate values into a list.
 
@@ -4761,7 +4761,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
-    def gather_every(self, n: int, offset: int = 0) -> Self:
+    def gather_every(self, n: int, offset: int = 0) -> Expr:
         """
         Take every nth value in the Series and return as a new Series.
 
@@ -4801,7 +4801,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.gather_every(n, offset))
 
-    def head(self, n: int | Expr = 10) -> Self:
+    def head(self, n: int | Expr = 10) -> Expr:
         """
         Get the first `n` rows.
 
@@ -4827,7 +4827,7 @@ class Expr:
         """
         return self.slice(0, n)
 
-    def tail(self, n: int | Expr = 10) -> Self:
+    def tail(self, n: int | Expr = 10) -> Expr:
         """
         Get the last `n` rows.
 
@@ -4858,7 +4858,7 @@ class Expr:
         )
         return self.slice(offset, n)
 
-    def limit(self, n: int | Expr = 10) -> Self:
+    def limit(self, n: int | Expr = 10) -> Expr:
         """
         Get the first `n` rows (alias for :func:`Expr.head`).
 
@@ -4884,7 +4884,7 @@ class Expr:
         """
         return self.head(n)
 
-    def and_(self, *others: Any) -> Self:
+    def and_(self, *others: Any) -> Expr:
         """
         Method equivalent of bitwise "and" operator `expr & other & ...`.
 
@@ -4927,7 +4927,7 @@ class Expr:
         """
         return reduce(operator.and_, (self, *others))
 
-    def or_(self, *others: Any) -> Self:
+    def or_(self, *others: Any) -> Expr:
         """
         Method equivalent of bitwise "or" operator `expr | other | ...`.
 
@@ -4969,7 +4969,7 @@ class Expr:
         """
         return reduce(operator.or_, (self,) + others)
 
-    def eq(self, other: Any) -> Self:
+    def eq(self, other: Any) -> Expr:
         """
         Method equivalent of equality operator `expr == other`.
 
@@ -5003,7 +5003,7 @@ class Expr:
         """
         return self.__eq__(other)
 
-    def eq_missing(self, other: Any) -> Self:
+    def eq_missing(self, other: Any) -> Expr:
         """
         Method equivalent of equality operator `expr == other` where `None == None`.
 
@@ -5043,7 +5043,7 @@ class Expr:
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.eq_missing(other))
 
-    def ge(self, other: Any) -> Self:
+    def ge(self, other: Any) -> Expr:
         """
         Method equivalent of "greater than or equal" operator `expr >= other`.
 
@@ -5077,7 +5077,7 @@ class Expr:
         """
         return self.__ge__(other)
 
-    def gt(self, other: Any) -> Self:
+    def gt(self, other: Any) -> Expr:
         """
         Method equivalent of "greater than" operator `expr > other`.
 
@@ -5111,7 +5111,7 @@ class Expr:
         """
         return self.__gt__(other)
 
-    def le(self, other: Any) -> Self:
+    def le(self, other: Any) -> Expr:
         """
         Method equivalent of "less than or equal" operator `expr <= other`.
 
@@ -5145,7 +5145,7 @@ class Expr:
         """
         return self.__le__(other)
 
-    def lt(self, other: Any) -> Self:
+    def lt(self, other: Any) -> Expr:
         """
         Method equivalent of "less than" operator `expr < other`.
 
@@ -5179,7 +5179,7 @@ class Expr:
         """
         return self.__lt__(other)
 
-    def ne(self, other: Any) -> Self:
+    def ne(self, other: Any) -> Expr:
         """
         Method equivalent of inequality operator `expr != other`.
 
@@ -5213,7 +5213,7 @@ class Expr:
         """
         return self.__ne__(other)
 
-    def ne_missing(self, other: Any) -> Self:
+    def ne_missing(self, other: Any) -> Expr:
         """
         Method equivalent of equality operator `expr != other` where `None == None`.
 
@@ -5253,7 +5253,7 @@ class Expr:
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq_missing(other))
 
-    def add(self, other: Any) -> Self:
+    def add(self, other: Any) -> Expr:
         """
         Method equivalent of addition operator `expr + other`.
 
@@ -5299,7 +5299,7 @@ class Expr:
         """
         return self.__add__(other)
 
-    def floordiv(self, other: Any) -> Self:
+    def floordiv(self, other: Any) -> Expr:
         """
         Method equivalent of integer division operator `expr // other`.
 
@@ -5386,7 +5386,7 @@ class Expr:
         """
         return self.__floordiv__(other)
 
-    def mod(self, other: Any) -> Self:
+    def mod(self, other: Any) -> Expr:
         """
         Method equivalent of modulus operator `expr % other`.
 
@@ -5414,7 +5414,7 @@ class Expr:
         """
         return self.__mod__(other)
 
-    def mul(self, other: Any) -> Self:
+    def mul(self, other: Any) -> Expr:
         """
         Method equivalent of multiplication operator `expr * other`.
 
@@ -5445,7 +5445,7 @@ class Expr:
         """
         return self.__mul__(other)
 
-    def sub(self, other: Any) -> Self:
+    def sub(self, other: Any) -> Expr:
         """
         Method equivalent of subtraction operator `expr - other`.
 
@@ -5476,7 +5476,7 @@ class Expr:
         """
         return self.__sub__(other)
 
-    def neg(self) -> Self:
+    def neg(self) -> Expr:
         """
         Method equivalent of unary minus operator `-expr`.
 
@@ -5498,7 +5498,7 @@ class Expr:
         """
         return self.__neg__()
 
-    def truediv(self, other: Any) -> Self:
+    def truediv(self, other: Any) -> Expr:
         """
         Method equivalent of float division operator `expr / other`.
 
@@ -5542,7 +5542,7 @@ class Expr:
         """
         return self.__truediv__(other)
 
-    def pow(self, exponent: IntoExprColumn | int | float) -> Self:
+    def pow(self, exponent: IntoExprColumn | int | float) -> Expr:
         """
         Method equivalent of exponentiation operator `expr ** exponent`.
 
@@ -5595,7 +5595,7 @@ class Expr:
         """
         return self.__pow__(exponent)
 
-    def xor(self, other: Any) -> Self:
+    def xor(self, other: Any) -> Expr:
         """
         Method equivalent of bitwise exclusive-or operator `expr ^ other`.
 
@@ -5656,7 +5656,7 @@ class Expr:
         """
         return self.__xor__(other)
 
-    def is_in(self, other: Expr | Collection[Any] | Series) -> Self:
+    def is_in(self, other: Expr | Collection[Any] | Series) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
@@ -5695,7 +5695,7 @@ class Expr:
             other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
 
-    def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
+    def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:
         """
         Repeat the elements in this Series as specified in the given expression.
 
@@ -5742,7 +5742,7 @@ class Expr:
         lower_bound: IntoExpr,
         upper_bound: IntoExpr,
         closed: ClosedInterval = "both",
-    ) -> Self:
+    ) -> Expr:
         """
         Check if this expression is between the given lower and upper bounds.
 
@@ -5857,7 +5857,7 @@ class Expr:
         seed_1: int | None = None,
         seed_2: int | None = None,
         seed_3: int | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Hash the elements in the selection.
 
@@ -5906,7 +5906,7 @@ class Expr:
         k3 = seed_3 if seed_3 is not None else seed
         return self._from_pyexpr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, *, signed: bool = True) -> Self:
+    def reinterpret(self, *, signed: bool = True) -> Expr:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -5941,7 +5941,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> Self:
+    def inspect(self, fmt: str = "{}") -> Expr:
         """
         Print the value that this expression evaluates to and pass on the value.
 
@@ -5974,7 +5974,7 @@ class Expr:
 
         return self.map_batches(inspect, return_dtype=None, agg_list=True)
 
-    def interpolate(self, method: InterpolationMethod = "linear") -> Self:
+    def interpolate(self, method: InterpolationMethod = "linear") -> Expr:
         """
         Fill null values using interpolation.
 
@@ -6051,7 +6051,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
-    def interpolate_by(self, by: IntoExpr) -> Self:
+    def interpolate_by(self, by: IntoExpr) -> Expr:
         """
         Fill null values using interpolation based on another column.
 
@@ -6094,7 +6094,7 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling min based on another column.
 
@@ -6215,7 +6215,7 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling max based on another column.
 
@@ -6362,7 +6362,7 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling mean based on another column.
 
@@ -6516,7 +6516,7 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling sum based on another column.
 
@@ -6664,7 +6664,7 @@ class Expr:
         min_periods: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling standard deviation based on another column.
 
@@ -6820,7 +6820,7 @@ class Expr:
         min_periods: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling variance based on another column.
 
@@ -6975,7 +6975,7 @@ class Expr:
         *,
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling median based on another column.
 
@@ -7100,7 +7100,7 @@ class Expr:
         interpolation: RollingInterpolationMethod = "nearest",
         min_periods: int = 1,
         closed: ClosedInterval = "right",
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling quantile based on another column.
 
@@ -7234,7 +7234,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
 
@@ -7345,7 +7345,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
 
@@ -7456,7 +7456,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
 
@@ -7567,7 +7567,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
 
@@ -7679,7 +7679,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         ddof: int = 1,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling standard deviation.
 
@@ -7794,7 +7794,7 @@ class Expr:
         min_periods: int | None = None,
         center: bool = False,
         ddof: int = 1,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling variance.
 
@@ -7908,7 +7908,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling median.
 
@@ -8021,7 +8021,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a rolling quantile.
 
@@ -8159,7 +8159,7 @@ class Expr:
         )
 
     @unstable()
-    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
+    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Expr:
         """
         Compute a rolling skew.
 
@@ -8209,7 +8209,7 @@ class Expr:
         *,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Compute a custom rolling window function.
 
@@ -8263,7 +8263,7 @@ class Expr:
             )
         )
 
-    def abs(self) -> Self:
+    def abs(self) -> Expr:
         """
         Compute absolute values.
 
@@ -8297,7 +8297,7 @@ class Expr:
         *,
         descending: bool = False,
         seed: int | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -8381,7 +8381,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
-    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the first discrete difference between shifted items.
 
@@ -8437,7 +8437,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.diff(n, null_behavior))
 
-    def pct_change(self, n: int | IntoExprColumn = 1) -> Self:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Expr:
         """
         Computes percentage change between values.
 
@@ -8475,7 +8475,7 @@ class Expr:
         n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
-    def skew(self, *, bias: bool = True) -> Self:
+    def skew(self, *, bias: bool = True) -> Expr:
         r"""
         Compute the sample skewness of a data set.
 
@@ -8528,7 +8528,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.skew(bias))
 
-    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Self:
+    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Expr:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
 
@@ -8567,7 +8567,7 @@ class Expr:
         self,
         lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
         upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Set values outside the given boundaries to the boundary value.
 
@@ -8628,7 +8628,7 @@ class Expr:
             upper_bound = parse_into_expression(upper_bound)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def lower_bound(self) -> Self:
+    def lower_bound(self) -> Expr:
         """
         Calculate the lower bound.
 
@@ -8650,7 +8650,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.lower_bound())
 
-    def upper_bound(self) -> Self:
+    def upper_bound(self) -> Expr:
         """
         Calculate the upper bound.
 
@@ -8672,7 +8672,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.upper_bound())
 
-    def sign(self) -> Self:
+    def sign(self) -> Expr:
         """
         Compute the element-wise indication of the sign.
 
@@ -8703,7 +8703,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sign())
 
-    def sin(self) -> Self:
+    def sin(self) -> Expr:
         """
         Compute the element-wise value for the sine.
 
@@ -8727,7 +8727,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sin())
 
-    def cos(self) -> Self:
+    def cos(self) -> Expr:
         """
         Compute the element-wise value for the cosine.
 
@@ -8751,7 +8751,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cos())
 
-    def tan(self) -> Self:
+    def tan(self) -> Expr:
         """
         Compute the element-wise value for the tangent.
 
@@ -8775,7 +8775,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.tan())
 
-    def cot(self) -> Self:
+    def cot(self) -> Expr:
         """
         Compute the element-wise value for the cotangent.
 
@@ -8799,7 +8799,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cot())
 
-    def arcsin(self) -> Self:
+    def arcsin(self) -> Expr:
         """
         Compute the element-wise value for the inverse sine.
 
@@ -8823,7 +8823,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arcsin())
 
-    def arccos(self) -> Self:
+    def arccos(self) -> Expr:
         """
         Compute the element-wise value for the inverse cosine.
 
@@ -8847,7 +8847,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arccos())
 
-    def arctan(self) -> Self:
+    def arctan(self) -> Expr:
         """
         Compute the element-wise value for the inverse tangent.
 
@@ -8871,7 +8871,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctan())
 
-    def sinh(self) -> Self:
+    def sinh(self) -> Expr:
         """
         Compute the element-wise value for the hyperbolic sine.
 
@@ -8895,7 +8895,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sinh())
 
-    def cosh(self) -> Self:
+    def cosh(self) -> Expr:
         """
         Compute the element-wise value for the hyperbolic cosine.
 
@@ -8919,7 +8919,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cosh())
 
-    def tanh(self) -> Self:
+    def tanh(self) -> Expr:
         """
         Compute the element-wise value for the hyperbolic tangent.
 
@@ -8943,7 +8943,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.tanh())
 
-    def arcsinh(self) -> Self:
+    def arcsinh(self) -> Expr:
         """
         Compute the element-wise value for the inverse hyperbolic sine.
 
@@ -8967,7 +8967,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arcsinh())
 
-    def arccosh(self) -> Self:
+    def arccosh(self) -> Expr:
         """
         Compute the element-wise value for the inverse hyperbolic cosine.
 
@@ -8991,7 +8991,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arccosh())
 
-    def arctanh(self) -> Self:
+    def arctanh(self) -> Expr:
         """
         Compute the element-wise value for the inverse hyperbolic tangent.
 
@@ -9015,7 +9015,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
-    def degrees(self) -> Self:
+    def degrees(self) -> Expr:
         """
         Convert from radians to degrees.
 
@@ -9048,7 +9048,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.degrees())
 
-    def radians(self) -> Self:
+    def radians(self) -> Expr:
         """
         Convert from degrees to radians.
 
@@ -9080,7 +9080,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.radians())
 
-    def reshape(self, dimensions: tuple[int, ...]) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Expr:
         """
         Reshape this Expr to a flat column or an Array column.
 
@@ -9137,7 +9137,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
-    def shuffle(self, seed: int | None = None) -> Self:
+    def shuffle(self, seed: int | None = None) -> Expr:
         """
         Shuffle the contents of this expression.
 
@@ -9172,7 +9172,7 @@ class Expr:
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Sample from this expression.
 
@@ -9233,7 +9233,7 @@ class Expr:
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool = False,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Exponentially-weighted moving average.
 
@@ -9315,7 +9315,7 @@ class Expr:
         by: str | IntoExpr,
         *,
         half_life: str | timedelta,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Calculate time-based exponentially weighted moving average.
 
@@ -9412,7 +9412,7 @@ class Expr:
         bias: bool = False,
         min_periods: int = 1,
         ignore_nulls: bool = False,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Exponentially-weighted moving standard deviation.
 
@@ -9503,7 +9503,7 @@ class Expr:
         bias: bool = False,
         min_periods: int = 1,
         ignore_nulls: bool = False,
-    ) -> Self:
+    ) -> Expr:
         r"""
         Exponentially-weighted moving variance.
 
@@ -9583,7 +9583,7 @@ class Expr:
             self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
-    def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Self:
+    def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Expr:
         """
         Extremely fast method for extending the Series with 'n' copies of a value.
 
@@ -9623,7 +9623,7 @@ class Expr:
         parallel: bool = False,
         name: str | None = None,
         normalize: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Count the occurrences of unique values.
 
@@ -9704,7 +9704,7 @@ class Expr:
             self._pyexpr.value_counts(sort, parallel, name, normalize)
         )
 
-    def unique_counts(self) -> Self:
+    def unique_counts(self) -> Expr:
         """
         Return a count of the unique values in the order of appearance.
 
@@ -9736,7 +9736,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.unique_counts())
 
-    def log(self, base: float = math.e) -> Self:
+    def log(self, base: float = math.e) -> Expr:
         """
         Compute the logarithm to a given base.
 
@@ -9762,7 +9762,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
-    def log1p(self) -> Self:
+    def log1p(self) -> Expr:
         """
         Compute the natural logarithm of each element plus one.
 
@@ -9785,7 +9785,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log1p())
 
-    def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
         Computes the entropy.
 
@@ -9825,7 +9825,7 @@ class Expr:
     @unstable()
     def cumulative_eval(
         self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
-    ) -> Self:
+    ) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
 
@@ -9876,7 +9876,7 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    def set_sorted(self, *, descending: bool = False) -> Self:
+    def set_sorted(self, *, descending: bool = False) -> Expr:
         """
         Flags the expression as 'sorted'.
 
@@ -9907,7 +9907,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.set_sorted_flag(descending))
 
-    def shrink_dtype(self) -> Self:
+    def shrink_dtype(self) -> Expr:
         """
         Shrink numeric columns to the minimal required datatype.
 
@@ -9949,7 +9949,7 @@ class Expr:
         bin_count: int | None = None,
         include_category: bool = False,
         include_breakpoint: bool = False,
-    ) -> Self:
+    ) -> Expr:
         """
         Bin values into buckets and count their occurrences.
 
@@ -10021,7 +10021,7 @@ class Expr:
         *,
         default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Replace values by different values.
 
@@ -10272,7 +10272,7 @@ class Expr:
         )
 
     @classmethod
-    def from_json(cls, value: str) -> Self:
+    def from_json(cls, value: str) -> Expr:
         """
         Read an expression from a JSON encoded string to construct an Expression.
 

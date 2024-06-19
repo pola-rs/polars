@@ -727,20 +727,6 @@ def test_selector_expr_dispatch() -> None:
         ),
     )
 
-    # check that "as_expr" behaves, both explicitly and implicitly
-    for nan_or_inf in (
-        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),
-        cs.float().is_nan().as_expr() | cs.float().is_infinite(),
-        cs.float().is_nan() | cs.float().is_infinite(),
-    ):
-        assert_frame_equal(
-            expected,
-            df.with_columns(
-                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).name.keep()
-            ).fill_null(0),
-        )
-
-
 def test_regex_expansion_group_by_9947() -> None:
     df = pl.DataFrame({"g": [3], "abc": [1], "abcd": [3]})
     assert df.group_by("g").agg(pl.col("^ab.*$")).columns == ["g", "abc", "abcd"]
