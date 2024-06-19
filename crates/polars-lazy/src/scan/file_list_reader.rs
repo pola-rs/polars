@@ -54,6 +54,7 @@ fn expand_paths(
                 } else if !path.ends_with("/")
                     && is_file_cloud(path.to_str().unwrap(), cloud_options)?
                 {
+                    expand_start_idx = 0;
                     out_paths.push(path.clone());
                     continue;
                 } else if !glob {
@@ -120,14 +121,11 @@ fn expand_paths(
                     out_paths.push(path.map_err(to_compute_err)?);
                 }
             } else {
+                expand_start_idx = 0;
                 out_paths.push(path.clone());
             }
         }
     }
-
-    // Todo:
-    // This maintains existing behavior - will remove very soon.
-    expand_start_idx = 0;
 
     Ok((
         out_paths.into_iter().collect::<Arc<[_]>>(),
