@@ -5008,7 +5008,6 @@ class Expr:
         Equality operator where null is treated as a distinct value.
 
         This differs from default `eq` where null values are propagated.
-        Equality operator where null is treated as a distinct value.
         With this method, null is equal to null and is not equal to any other value.
 
 
