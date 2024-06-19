@@ -5008,8 +5008,10 @@ class Expr:
         Equality operator where null is treated as a distinct value.
 
         This differs from default `eq` where null values are propagated.
-        With this method, `None == None` returns `True` instead of `None`,
-        and `x == None` returns `False` instead of `None` where `x` is not `None`.
+        Equality operator where null is treated as a distinct value.
+        With this method, null is equal to null and is not equal to any other value.
+
+
 
         Parameters
         ----------
