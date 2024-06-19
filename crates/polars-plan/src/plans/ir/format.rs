@@ -5,8 +5,10 @@ use std::path::PathBuf;
 
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
+use polars_io::RowIndex;
 use recursive::recursive;
 
+use super::ir::dot::PathsDisplay;
 use crate::prelude::*;
 
 pub struct IRDisplay<'a> {
@@ -60,18 +62,11 @@ fn write_scan(
     total_columns: usize,
     predicate: &Option<ExprIRDisplay<'_>>,
     n_rows: Option<usize>,
+    row_index: Option<&RowIndex>,
 ) -> fmt::Result {
-    let path_fmt = match path.len() {
-        1 => path[0].to_string_lossy(),
-        0 => "".into(),
-        _ => Cow::Owned(format!(
-            "{} files: first file: {}",
-            path.len(),
-            path[0].to_string_lossy()
-        )),
-    };
+    write!(f, "{:indent$}{name} SCAN {}", "", PathsDisplay(path))?;
 
-    write!(f, "{:indent$}{name} SCAN {path_fmt}", "")?;
+    let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns > 0 {
         write!(
             f,
@@ -86,6 +81,12 @@ fn write_scan(
     }
     if let Some(n_rows) = n_rows {
         write!(f, "\n{:indent$}N_ROWS: {n_rows}", "")?;
+    }
+    if let Some(row_index) = row_index {
+        write!(f, "\n{:indent$}ROW_INDEX: {}", "", row_index.name)?;
+        if row_index.offset != 0 {
+            write!(f, " (offset: {})", row_index.offset)?;
+        }
     }
     Ok(())
 }
@@ -167,11 +168,12 @@ impl<'a> IRDisplay<'a> {
                     f,
                     "PYTHON",
                     &[],
-                    sub_indent,
+                    indent,
                     n_columns,
                     total_columns,
                     &predicate,
                     options.n_rows,
+                    None,
                 )
             },
             Union { inputs, options } => {
@@ -234,11 +236,12 @@ impl<'a> IRDisplay<'a> {
                     f,
                     scan_type.into(),
                     paths,
-                    sub_indent,
+                    indent,
                     n_columns,
                     file_info.schema.len(),
                     &predicate,
                     file_options.n_rows,
+                    file_options.row_index.as_ref(),
                 )
             },
             Filter { predicate, input } => {
