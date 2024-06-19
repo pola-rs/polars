@@ -283,7 +283,7 @@ def test_read_parquet_hive_schema_with_pyarrow() -> None:
     ],
 )
 @pytest.mark.parametrize(
-    ["append_glob", "glob"],
+    ("append_glob", "glob"),
     [
         ("**/*.bin", True),
         ("", True),
