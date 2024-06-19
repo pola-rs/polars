@@ -301,6 +301,11 @@ impl<'a> CoreJsonReader<'a> {
         };
         let file_chunks = get_file_chunks_json(bytes, n_threads);
 
+        let column_names = self
+            .projection
+            .as_ref()
+            .map(|p| p.iter().map(|s| &s[..]).collect::<PlHashSet<&str>>());
+
         let row_index = self.row_index.as_ref().map(|ri| ri as &RowIndex);
         let (mut dfs, prepredicate_heights) = POOL.install(|| {
             file_chunks
@@ -308,21 +313,25 @@ impl<'a> CoreJsonReader<'a> {
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity, self.ignore_errors)?;
                     parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
-                    let mut local_df = DataFrame::new(
-                        buffers
-                            .into_values()
-                            .map(|buf| buf.into_series())
-                            .collect::<_>(),
-                    )?;
+                    let values = buffers.into_values();
+
+                    let series = match &column_names {
+                        Some(column_names) => {
+                            // This handles the projection pushdown
+                            values
+                                .filter(|v| column_names.contains(v.name()))
+                                .map(Buffer::into_series)
+                                .collect()
+                        },
+                        None => values.map(Buffer::into_series).collect(),
+                    };
+
+                    let mut local_df = DataFrame::new(series)?;
 
                     let prepredicate_height = local_df.height() as IdxSize;
                     if let Some(row_index) = row_index {
                         local_df = local_df
                             .with_row_index(row_index.name.as_ref(), Some(row_index.offset))?;
-                    }
-
-                    if let Some(projection) = &self.projection {
-                        local_df = local_df.select(projection.as_ref())?;
                     }
 
                     if let Some(predicate) = &self.predicate {

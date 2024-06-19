@@ -26,7 +26,7 @@ pub(crate) struct Buffer<'a> {
     buf: AnyValueBuffer<'a>,
 }
 
-impl Buffer<'_> {
+impl<'a> Buffer<'a> {
     pub fn into_series(self) -> Series {
         let mut s = self.buf.into_series();
         s.rename(self.name);
@@ -126,6 +126,10 @@ impl Buffer<'_> {
     }
     pub fn add_null(&mut self) {
         self.buf.add(AnyValue::Null).expect("should not fail");
+    }
+
+    pub fn name(&self) -> &'a str {
+        self.name
     }
 }
 pub(crate) fn init_buffers(
