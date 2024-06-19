@@ -10,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -401,20 +402,22 @@ def test_list_any() -> None:
     }
 
 
-def test_list_min_max() -> None:
-    for dt in pl.INTEGER_DTYPES | pl.FLOAT_DTYPES:
-        df = pl.DataFrame(
-            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
-            schema={"a": pl.List(dt)},
-        )
-        result = df.select(pl.col("a").list.min())
-        expected = df.select(pl.col("a").list.first())
-        assert_frame_equal(result, expected)
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_list_min_max(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
+        schema={"a": pl.List(dtype)},
+    )
+    result = df.select(pl.col("a").list.min())
+    expected = df.select(pl.col("a").list.first())
+    assert_frame_equal(result, expected)
 
-        result = df.select(pl.col("a").list.max())
-        expected = df.select(pl.col("a").list.last())
-        assert_frame_equal(result, expected)
+    result = df.select(pl.col("a").list.max())
+    expected = df.select(pl.col("a").list.last())
+    assert_frame_equal(result, expected)
 
+
+def test_list_min_max2() -> None:
     df = pl.DataFrame(
         {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
     )

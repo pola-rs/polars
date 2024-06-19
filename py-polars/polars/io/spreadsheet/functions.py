@@ -14,10 +14,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.various import normalize_filepath, parse_version
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     N_INFER_DEFAULT,
-    NUMERIC_DTYPES,
     Boolean,
     Date,
     Datetime,
@@ -26,6 +23,7 @@ from polars.datatypes import (
     Null,
     String,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
 from polars.dependencies import import_optional
 from polars.exceptions import (
     ModuleUpgradeRequiredError,

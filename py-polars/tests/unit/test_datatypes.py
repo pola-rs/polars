@@ -17,31 +17,28 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
+from tests.unit.conftest import DATETIME_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars.datatypes import DataTypeClass
     from polars.type_aliases import PolarsDataType
 
-SIMPLE_DTYPES: list[DataTypeClass] = list(
-    pl.INTEGER_DTYPES  # type: ignore[arg-type]
-    | pl.FLOAT_DTYPES
-    | {
-        pl.Boolean,
-        pl.String,
-        pl.Binary,
-        pl.Time,
-        pl.Date,
-        pl.Object,
-        pl.Null,
-        pl.Unknown,
-    }
-)
+SIMPLE_DTYPES: list[PolarsDataType] = [
+    *NUMERIC_DTYPES,
+    pl.Boolean,
+    pl.String,
+    pl.Binary,
+    pl.Time,
+    pl.Date,
+    pl.Object,
+    pl.Null,
+    pl.Unknown,
+]
 
 
-def test_simple_dtype_init_takes_no_args() -> None:
-    for dtype in SIMPLE_DTYPES:
-        with pytest.raises(TypeError):
-            dtype(10)
+@pytest.mark.parametrize("dtype", SIMPLE_DTYPES)
+def test_simple_dtype_init_takes_no_args(dtype: PolarsDataType) -> None:
+    with pytest.raises(TypeError):
+        dtype(10)
 
 
 def test_simple_dtype_init_returns_instance() -> None:
@@ -55,7 +52,7 @@ def test_complex_dtype_init_returns_instance() -> None:
     assert dtype.time_unit == "us"
 
 
-def test_dtype_temporal_units() -> None:
+def test_dtype_time_units() -> None:
     # check (in)equality behaviour of temporal types that take units
     for time_unit in DTYPE_TEMPORAL_UNITS:
         assert pl.Datetime == pl.Datetime(time_unit)
@@ -85,7 +82,7 @@ def test_dtype_base_type() -> None:
         pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
         is pl.Struct
     )
-    for dtype in pl.DATETIME_DTYPES:
+    for dtype in DATETIME_DTYPES:
         assert dtype.base_type() is pl.Datetime
 
 

@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars import NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 def test_regex_exclude() -> None:

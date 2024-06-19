@@ -2,12 +2,13 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
-def test_get_buffer_info_numeric() -> None:
-    for dtype in list(pl.FLOAT_DTYPES) + list(pl.INTEGER_DTYPES):
-        s = pl.Series([1, 2, 3], dtype=dtype)
-        assert s._get_buffer_info()[0] > 0
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_get_buffer_info_numeric(dtype: pl.DataType) -> None:
+    s = pl.Series([1, 2, 3], dtype=dtype)
+    assert s._get_buffer_info()[0] > 0
 
 
 def test_get_buffer_info_bool() -> None:

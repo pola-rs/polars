@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import (
+from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import (
     DATETIME_DTYPES,
     DURATION_DTYPES,
     FLOAT_DTYPES,
@@ -16,7 +17,6 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
 )
-from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo

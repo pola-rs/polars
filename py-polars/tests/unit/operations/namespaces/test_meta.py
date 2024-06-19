@@ -7,6 +7,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ComputeError
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -88,7 +89,7 @@ def test_is_column() -> None:
         # columns
         (pl.col("foo"), True),
         (pl.col("foo", "bar"), True),
-        (pl.col(pl.NUMERIC_DTYPES), True),
+        (pl.col(NUMERIC_DTYPES), True),
         # column expressions
         (pl.col("foo") + 100, False),
         (pl.col("foo").floordiv(10), False),

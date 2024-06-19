@@ -10,7 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
@@ -21,6 +21,7 @@ from polars.testing import (
     assert_series_equal,
     assert_series_not_equal,
 )
+from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -2310,13 +2311,13 @@ def test_year_null_backed_by_out_of_range_15313() -> None:
     assert_series_equal(result, expected)
 
 
-def test_series_is_temporal() -> None:
-    for tp in TEMPORAL_DTYPES | {
-        pl.Datetime("ms", "UTC"),
-        pl.Datetime("ns", "Europe/Amsterdam"),
-    }:
-        s = pl.Series([None], dtype=tp)
-        assert s.dtype.is_temporal() is True
+@pytest.mark.parametrize(
+    "dtype",
+    [*TEMPORAL_DTYPES, pl.Datetime("ms", "UTC"), pl.Datetime("ns", "Europe/Amsterdam")],
+)
+def test_series_is_temporal(dtype: pl.DataType) -> None:
+    s = pl.Series([None], dtype=dtype)
+    assert s.dtype.is_temporal() is True
 
 
 @pytest.mark.parametrize(

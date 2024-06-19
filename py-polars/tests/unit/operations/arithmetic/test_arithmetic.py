@@ -19,9 +19,9 @@ from polars import (
     UInt32,
     UInt64,
 )
-from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 def test_sqrt_neg_inf() -> None:
@@ -266,24 +266,24 @@ def test_arithmetic_null_count() -> None:
         operator.sub,
     ],
 )
-def test_operator_arithmetic_with_nulls(op: Any) -> None:
-    for dtype in FLOAT_DTYPES | INTEGER_DTYPES:
-        df = pl.DataFrame({"n": [2, 3]}, schema={"n": dtype})
-        s = df.to_series()
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_operator_arithmetic_with_nulls(op: Any, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"n": [2, 3]}, schema={"n": dtype})
+    s = df.to_series()
 
-        df_expected = pl.DataFrame({"n": [None, None]}, schema={"n": dtype})
-        s_expected = df_expected.to_series()
+    df_expected = pl.DataFrame({"n": [None, None]}, schema={"n": dtype})
+    s_expected = df_expected.to_series()
 
-        # validate expr, frame, and series behaviour with null value arithmetic
-        op_name = op.__name__
-        for null_expr in (None, pl.lit(None)):
-            assert_frame_equal(df_expected, df.select(op(pl.col("n"), null_expr)))
-            assert_frame_equal(
-                df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
-            )
+    # validate expr, frame, and series behaviour with null value arithmetic
+    op_name = op.__name__
+    for null_expr in (None, pl.lit(None)):
+        assert_frame_equal(df_expected, df.select(op(pl.col("n"), null_expr)))
+        assert_frame_equal(
+            df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
+        )
 
-        assert_frame_equal(df_expected, op(df, None))
-        assert_series_equal(s_expected, op(s, None))
+    assert_frame_equal(df_expected, op(df, None))
+    assert_series_equal(s_expected, op(s, None))
 
 
 @pytest.mark.parametrize(

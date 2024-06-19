@@ -18,12 +18,6 @@ from polars import functions as F
 from polars._utils.parse.expr import _parse_inputs_as_iterable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Binary,
     Boolean,
     Categorical,
@@ -35,6 +29,14 @@ from polars.datatypes import (
     String,
     Time,
     is_polars_dtype,
+)
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
+    TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
 )
 from polars.expr import Expr
 
