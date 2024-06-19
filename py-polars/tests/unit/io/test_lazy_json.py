@@ -138,3 +138,13 @@ def test_ndjson_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
+
+
+def test_glob_single_scan(io_files_path: Path) -> None:
+    file_path = io_files_path / "foods*.ndjson"
+    df = pl.scan_ndjson(file_path, n_rows=40)
+
+    explain = df.explain()
+
+    assert explain.count("SCAN") == 1
+    assert "UNION" not in explain

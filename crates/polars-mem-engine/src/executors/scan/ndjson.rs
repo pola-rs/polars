@@ -35,28 +35,50 @@ impl JsonExec {
             .as_ref()
             .unwrap_right();
 
+        let mut n_rows = self.file_scan_options.n_rows;
+
         let dfs = self
             .paths
             .iter()
-            .map(|p| {
-                let df = JsonLineReader::from_path(p)?
+            .map_while(|p| {
+                if n_rows == Some(0) {
+                    return None;
+                }
+
+                let reader = match JsonLineReader::from_path(p) {
+                    Ok(r) => r,
+                    Err(e) => return Some(Err(e)),
+                };
+
+                let df = reader
                     .with_schema(schema.clone())
                     .with_rechunk(self.file_scan_options.rechunk)
                     .with_chunk_size(Some(self.options.chunk_size))
                     .low_memory(self.options.low_memory)
-                    .with_n_rows(self.file_scan_options.n_rows)
+                    .with_n_rows(n_rows)
                     .with_ignore_errors(self.options.ignore_errors)
-                    .finish()?;
+                    .finish();
 
-                if let Some(row_index) = &mut self.file_scan_options.row_index {
-                    let offset = row_index.offset;
-                    row_index.offset += df.height() as IdxSize;
-                    df.with_row_index(row_index.name.as_ref(), Some(offset))
-                } else {
-                    Ok(df)
+                let df = match df {
+                    Ok(df) => df,
+                    Err(e) => return Some(Err(e)),
+                };
+
+                if let Some(ref mut n_rows) = n_rows {
+                    *n_rows -= df.height();
                 }
+
+                Some(match self.file_scan_options.row_index {
+                    Some(ref mut row_index) => {
+                        let offset = row_index.offset;
+                        row_index.offset += df.height() as IdxSize;
+                        df.with_row_index(row_index.name.as_ref(), Some(offset))
+                    },
+                    None => Ok(df),
+                })
             })
             .collect::<PolarsResult<Vec<_>>>()?;
+
         accumulate_dataframes_vertical(dfs)
     }
 }
