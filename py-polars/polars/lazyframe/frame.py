@@ -3099,18 +3099,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.select(
-        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.Int64) % 2 == 1).name.suffix("_is_odd"),
         ...     ).collect()
         shape: (3, 1)
-        ┌───────────┐
-        │ is_odd    │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,0}     │
-        │ {0,1}     │
-        │ {1,0}     │
-        └───────────┘
+        ┌──────────────┐
+        │ is_odd       │
+        │ ---          │
+        │ struct[2]    │
+        ╞══════════════╡
+        │ {true,false} │
+        │ {false,true} │
+        │ {true,false} │
+        └──────────────┘
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 

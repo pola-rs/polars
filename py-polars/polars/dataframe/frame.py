@@ -2769,9 +2769,7 @@ class DataFrame:
         dtype_formats : dict
             A `{dtype:str,}` dictionary that sets the default Excel format for the
             given dtype. (This can be overridden on a per-column basis by the
-            `column_formats` param). It is also valid to use dtype groups such as
-            `pl.FLOAT_DTYPES` as the dtype/format key, to simplify setting uniform
-            integer and float formats.
+            `column_formats` param).
         conditional_formats : dict
             A dictionary of colname (or selector) keys to a format str, dict, or list
             that defines conditional formatting options for the specified columns.
@@ -3007,7 +3005,7 @@ class DataFrame:
         >>> df.write_excel(  # doctest: +SKIP
         ...     table_style="Table Style Light 2",
         ...     # apply accounting format to all flavours of integer
-        ...     dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
+        ...     dtype_formats={dt: "#,##0_);(#,##0)" for dt in [pl.Int32, pl.Int64]},
         ...     sparklines={
         ...         # default options; just provide source cols
         ...         "trend": ["q1", "q2", "q3", "q4"],
@@ -8422,18 +8420,18 @@ class DataFrame:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.select(
-        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.Int64) % 2 == 1).name.suffix("_is_odd"),
         ...     )
         shape: (3, 1)
-        ┌───────────┐
-        │ is_odd    │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,0}     │
-        │ {0,1}     │
-        │ {1,0}     │
-        └───────────┘
+        ┌──────────────┐
+        │ is_odd       │
+        │ ---          │
+        │ struct[2]    │
+        ╞══════════════╡
+        │ {true,false} │
+        │ {false,true} │
+        │ {true,false} │
+        └──────────────┘
         """
         return self.lazy().select(*exprs, **named_exprs).collect(_eager=True)
 

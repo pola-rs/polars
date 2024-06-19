@@ -897,33 +897,33 @@ def by_dtype(
     ...     }
     ... )
 
-    Select all columns with date or integer dtypes:
+    Select all columns with date or string dtypes:
 
-    >>> df.select(cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
+    >>> df.select(cs.by_dtype(pl.Date, pl.String))
     shape: (3, 2)
-    ┌────────────┬──────────┐
-    │ dt         ┆ value    │
-    │ ---        ┆ ---      │
-    │ date       ┆ i64      │
-    ╞════════════╪══════════╡
-    │ 1999-12-31 ┆ 1234500  │
-    │ 2024-01-01 ┆ 5000555  │
-    │ 2010-07-05 ┆ -4500000 │
-    └────────────┴──────────┘
+    ┌────────────┬───────┐
+    │ dt         ┆ other │
+    │ ---        ┆ ---   │
+    │ date       ┆ str   │
+    ╞════════════╪═══════╡
+    │ 1999-12-31 ┆ foo   │
+    │ 2024-01-01 ┆ bar   │
+    │ 2010-07-05 ┆ foo   │
+    └────────────┴───────┘
 
-    Select all columns that are not of date or integer dtype:
+    Select all columns that are not of date or string dtype:
 
-    >>> df.select(~cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
+    >>> df.select(~cs.by_dtype(pl.Date, pl.String))
     shape: (3, 1)
-    ┌───────┐
-    │ other │
-    │ ---   │
-    │ str   │
-    ╞═══════╡
-    │ foo   │
-    │ bar   │
-    │ foo   │
-    └───────┘
+    ┌──────────┐
+    │ value    │
+    │ ---      │
+    │ i64      │
+    ╞══════════╡
+    │ 1234500  │
+    │ 5000555  │
+    │ -4500000 │
+    └──────────┘
 
     Group by string columns and sum the numeric columns:
 
