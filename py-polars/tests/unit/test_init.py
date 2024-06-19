@@ -20,3 +20,10 @@ def test_init_exceptions_deprecated() -> None:
     msg = "nope"
     with pytest.raises(ComputeError, match=msg):
         raise exc(msg)
+
+
+def test_dtype_groups_deprecated() -> None:
+    with pytest.deprecated_call(match="`INTEGER_DTYPES` is deprecated."):
+        dtypes = pl.INTEGER_DTYPES
+
+    assert pl.Int8 in dtypes

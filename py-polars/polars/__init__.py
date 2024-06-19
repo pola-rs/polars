@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import contextlib
 import os
 
@@ -386,7 +384,7 @@ __all__ = [
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
 
 
-def __getattr__(name: str) -> type[Exception]:
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
     # Deprecate re-export of exceptions at top-level
     if name in dir(exceptions):
         from polars._utils.deprecation import issue_deprecation_warning
@@ -400,6 +398,21 @@ def __getattr__(name: str) -> type[Exception]:
             version="1.0.0",
         )
         return getattr(exceptions, name)
+
+    # Deprecate data type groups at top-level
+    import polars.datatypes.group as dtgroup
+
+    if name in dir(dtgroup):
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            message=(
+                f"`{name}` is deprecated. Define your own data type groups or use the"
+                " `polars.selectors` module for selecting columns of a certain data type."
+            ),
+            version="1.0.0",
+        )
+        return getattr(dtgroup, name)
 
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
