@@ -39,13 +39,13 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+# ------------------------
+# specific package extras
+# ------------------------
 adbc = ["adbc_driver_manager", "adbc_driver_sqlite"]
-async = ["gevent", "nest_asyncio"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx >= 0.3.2"]
-database = ["adbc_driver_manager", "adbc_driver_sqlite", "connectorx >= 0.3.2", "nest_asyncio", "pandas", "sqlalchemy"]
 deltalake = ["deltalake >= 0.15.0"]
-excel = ["fastexcel >= 0.9", "openpyxl >= 3.0.0", "xlsx2csv >= 0.8.0", "xlsxwriter"]
 fastexcel = ["fastexcel >= 0.9"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
@@ -56,14 +56,22 @@ matplotlib = ["matplotlib"]
 numpy = ["numpy >= 1.16.0, < 2.0.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
 pandas = ["pyarrow >= 7.0.0", "pandas"]
-plot = ["hvplot >= 0.9.1", "matplotlib"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 style = ["great-tables >= 0.8.0"]
-timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
+# ------------------------
+# feature bundles
+# ------------------------
+excel = ["fastexcel", "openpyxl", "xlsx2csv", "xlsxwriter"]
+database = ["adbc_driver_manager", "adbc_driver_sqlite", "connectorx", "nest_asyncio", "pandas", "sqlalchemy"]
+plot = ["hvplot", "matplotlib"]
+timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+# ------------------------
+# everything
+# ------------------------
 all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
