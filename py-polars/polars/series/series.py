@@ -820,9 +820,9 @@ class Series:
 
     def eq_missing(self, other: Any) -> Series | Expr:
         """
-        Method equivalent of equality operator `series == other` where `None == None`.
-
-        This differs from the standard `ne` where null values are propagated.
+        This differs from default `eq` where null values are propagated.
+        Equality operator where null is treated as a distinct value.
+        With this method, null is equal to null and is not equal to any other value.
 
         Parameters
         ----------
@@ -836,14 +836,16 @@ class Series:
 
         Examples
         --------
-        >>> s1 = pl.Series("a", [333, 200, None])
-        >>> s2 = pl.Series("a", [100, 200, None])
+        >>> s1 = pl.Series("a", [333, 200, None, 100, None])
+        >>> s2 = pl.Series("a", [100, 200, None, None, 100])
         >>> s1.eq(s2)
         shape: (3,)
         Series: 'a' [bool]
         [
             false
             true
+            null
+            null
             null
         ]
         >>> s1.eq_missing(s2)
@@ -853,6 +855,8 @@ class Series:
             false
             true
             true
+            false
+            false
         ]
         """
         if isinstance(other, pl.Expr):
