@@ -6216,6 +6216,7 @@ class DataFrame:
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
+        coalesce: bool | None = None,
     ) -> DataFrame:
         """
         Perform an asof join.
@@ -6292,6 +6293,15 @@ class DataFrame:
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
+        coalesce
+            Coalescing behavior (merging of join columns).
+
+            - None: -> join specific.
+            - True: -> Always coalesce join columns.
+            - False: -> Never coalesce join columns.
+
+            Note that joining on any other expressions than `col`
+            will turn off coalescing.
 
         Examples
         --------
@@ -6509,6 +6519,7 @@ class DataFrame:
                 tolerance=tolerance,
                 allow_parallel=allow_parallel,
                 force_parallel=force_parallel,
+                coalesce=coalesce,
             )
             .collect(_eager=True)
         )
