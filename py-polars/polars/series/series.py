@@ -841,7 +841,7 @@ class Series:
         >>> s1 = pl.Series("a", [333, 200, None, 100, None])
         >>> s2 = pl.Series("a", [100, 200, None, None, 100])
         >>> s1.eq(s2)
-        shape: (3,)
+        shape: (5,)
         Series: 'a' [bool]
         [
             false
@@ -851,7 +851,7 @@ class Series:
             null
         ]
         >>> s1.eq_missing(s2)
-        shape: (3,)
+        shape: (5,)
         Series: 'a' [bool]
         [
             false
