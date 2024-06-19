@@ -326,33 +326,29 @@ def test_hive_partition_directory_scan(
     ).collect()
     assert_frame_equal(out, df)
 
-    out = scan(
-        tmp_path / append_glob, hive_partitioning=False, hive_schema=hive_schema
-    ).collect()
+    out = scan(tmp_path / append_glob, hive_partitioning=False).collect()
     assert_frame_equal(out, df.drop("a", "b"))
 
     out = scan(
         tmp_path / "a=1" / append_glob,
         hive_partitioning=True,
-        hive_schema=hive_schema,
     ).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a"))
 
     out = scan(
         tmp_path / "a=1" / append_glob,
         hive_partitioning=False,
-        hive_schema=hive_schema,
     ).collect()
     assert_frame_equal(out, df.filter(a=1).drop("a", "b"))
 
     path = tmp_path / "a=1/b=1/data.bin"
 
     df = dfs[0]
-    out = scan(path, hive_partitioning=True, hive_schema=hive_schema).collect()
+    out = scan(path, hive_partitioning=True).collect()
 
     assert_frame_equal(out, df)
 
     df = dfs[0].drop("a", "b")
-    out = scan(path, hive_partitioning=False, hive_schema=hive_schema).collect()
+    out = scan(path, hive_partitioning=False).collect()
 
     assert_frame_equal(out, df)
