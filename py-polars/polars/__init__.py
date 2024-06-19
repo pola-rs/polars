@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import os
 
@@ -74,38 +76,6 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     Utf8,
-)
-from polars.exceptions import (
-    CategoricalRemappingWarning,
-    ChronoFormatWarning,
-    ColumnNotFoundError,
-    ComputeError,
-    CustomUFuncWarning,
-    DataOrientationWarning,
-    DuplicateError,
-    InvalidOperationError,
-    MapWithoutReturnDtypeWarning,
-    ModuleUpgradeRequiredError,
-    NoDataError,
-    NoRowsReturnedError,
-    OutOfBoundsError,
-    PanicException,
-    ParameterCollisionError,
-    PerformanceWarning,
-    PolarsError,
-    PolarsInefficientMapWarning,
-    PolarsWarning,
-    RowsError,
-    SchemaError,
-    SchemaFieldNotFoundError,
-    ShapeError,
-    SQLInterfaceError,
-    SQLSyntaxError,
-    StringCacheMismatchError,
-    StructFieldNotFoundError,
-    TooManyRowsReturnedError,
-    UnstableWarning,
-    UnsuitableSQLError,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -242,39 +212,6 @@ __all__ = [
     "exceptions",
     "plugins",
     "selectors",
-    # exceptions - errors
-    "PolarsError",
-    "ColumnNotFoundError",
-    "ComputeError",
-    "DuplicateError",
-    "InvalidOperationError",
-    "ModuleUpgradeRequiredError",
-    "NoDataError",
-    "NoRowsReturnedError",
-    "OutOfBoundsError",
-    "ParameterCollisionError",
-    "RowsError",
-    "SQLInterfaceError",
-    "SQLSyntaxError",
-    "SchemaError",
-    "SchemaFieldNotFoundError",
-    "ShapeError",
-    "StringCacheMismatchError",
-    "StructFieldNotFoundError",
-    "TooManyRowsReturnedError",
-    "UnsuitableSQLError",
-    # exceptions - warnings
-    "PolarsWarning",
-    "CategoricalRemappingWarning",
-    "ChronoFormatWarning",
-    "CustomUFuncWarning",
-    "DataOrientationWarning",
-    "MapWithoutReturnDtypeWarning",
-    "PerformanceWarning",
-    "PolarsInefficientMapWarning",
-    "UnstableWarning",
-    # exceptions - panic
-    "PanicException",
     # core classes
     "DataFrame",
     "Expr",
@@ -462,3 +399,22 @@ __all__ = [
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
+
+
+def __getattr__(name: str) -> type[Exception]:
+    # Deprecate re-export of exceptions at top-level
+    if name in dir(exceptions):
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            message=(
+                f"Accessing `{name}` from the top-level `polars` module is deprecated."
+                " Import it directly from the `polars.exceptions` module instead:"
+                f" from polars.exceptions import {name}"
+            ),
+            version="1.0.0",
+        )
+        return getattr(exceptions, name)
+
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

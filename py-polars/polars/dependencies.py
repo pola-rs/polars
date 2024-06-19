@@ -71,30 +71,30 @@ class _LazyModule(ModuleType):
         self.__dict__.update(module.__dict__)
         return module
 
-    def __getattr__(self, attr: Any) -> Any:
+    def __getattr__(self, name: str) -> Any:
         # have "hasattr('__wrapped__')" return False without triggering import
         # (it's for decorators, not modules, but keeps "make doctest" happy)
-        if attr == "__wrapped__":
-            msg = f"{self._module_name!r} object has no attribute {attr!r}"
+        if name == "__wrapped__":
+            msg = f"{self._module_name!r} object has no attribute {name!r}"
             raise AttributeError(msg)
 
         # accessing the proxy module's attributes triggers import of the real thing
         if self._module_available:
             # import the module and return the requested attribute
             module = self._import()
-            return getattr(module, attr)
+            return getattr(module, name)
 
         # user has not installed the proxied/lazy module
-        elif attr == "__name__":
+        elif name == "__name__":
             return self._module_name
-        elif re.match(r"^__\w+__$", attr) and attr != "__version__":
+        elif re.match(r"^__\w+__$", name) and name != "__version__":
             # allow some minimal introspection on private module
             # attrs to avoid unnecessary error-handling elsewhere
             return None
         else:
             # all other attribute access raises a helpful exception
             pfx = self._mod_pfx.get(self._module_name, "")
-            msg = f"{pfx}{attr} requires {self._module_name!r} module to be installed"
+            msg = f"{pfx}{name} requires {self._module_name!r} module to be installed"
             raise ModuleNotFoundError(msg) from None
 
 
