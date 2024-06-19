@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import os
 
@@ -397,3 +399,22 @@ __all__ = [
 ]
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
+
+
+def __getattr__(name: str) -> type[Exception]:
+    # Deprecate re-export of exceptions at top-level
+    if name in dir(exceptions):
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            message=(
+                f"Accessing `{name}` from the top-level `polars` module is deprecated."
+                " Import it directly from the `polars.exceptions` module instead:"
+                f" from polars.exceptions import {name}"
+            ),
+            version="1.0.0",
+        )
+        return getattr(exceptions, name)
+
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
