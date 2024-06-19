@@ -53,13 +53,18 @@ impl HivePartitions {
         }
 
         let schema = match schema {
-            Some(s) => {
-                polars_ensure!(
-                    s.len() == partitions.len(),
-                    SchemaMismatch: "path does not match the provided Hive schema"
-                );
-                s
-            },
+            Some(schema) => Arc::new(
+                partitions
+                    .iter()
+                    .map(|s| {
+                        let mut field = s.field().into_owned();
+                        if let Some(dtype) = schema.get(field.name()) {
+                            field.dtype = dtype.clone();
+                        };
+                        field
+                    })
+                    .collect::<Schema>(),
+            ),
             None => Arc::new(partitions.as_slice().into()),
         };
 

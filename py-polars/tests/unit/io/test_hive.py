@@ -187,7 +187,7 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     df.write_parquet(root / "file.parquet")
 
     with pytest.raises(DuplicateError, match="invalid Hive partition schema"):
-        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True).collect()
+        pl.scan_parquet(tmp_path, hive_partitioning=True).collect()
 
 
 @pytest.mark.write_disk()
@@ -273,3 +273,64 @@ def test_read_parquet_hive_schema_with_pyarrow() -> None:
         match="cannot use `hive_partitions` with `use_pyarrow=True`",
     ):
         pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
+
+
+def test_hive_partition_directory_scan(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    dfs = [
+        pl.DataFrame({'x': 5 * [1], 'a': 1, 'b': 1}),
+        pl.DataFrame({'x': 5 * [2], 'a': 1, 'b': 2}),
+        pl.DataFrame({'x': 5 * [3], 'a': 2, 'b': 1}),
+        pl.DataFrame({'x': 5 * [4], 'a': 2, 'b': 2}),
+    ]  # fmt: skip
+
+    for df in dfs:
+        a = df.item(0, "a")
+        b = df.item(0, "b")
+        path = tmp_path / f"a={a}/b={b}/data.bin"
+        path.parent.mkdir(exist_ok=True, parents=True)
+        df.drop("a", "b").write_parquet(path)
+
+    df = pl.concat(dfs)
+    hive_schema = df.lazy().select("a", "b").collect_schema()
+
+    out = pl.scan_parquet(
+        tmp_path, hive_partitioning=True, hive_schema=hive_schema
+    ).collect()
+    assert_frame_equal(out, df)
+
+    out = pl.scan_parquet(
+        tmp_path, hive_partitioning=False, hive_schema=hive_schema
+    ).collect()
+    assert_frame_equal(out, df.drop("a", "b"))
+
+    out = pl.scan_parquet(
+        tmp_path / "a=1",
+        hive_partitioning=True,
+        hive_schema=hive_schema,
+    ).collect()
+    assert_frame_equal(out, df.filter(a=1).drop("a"))
+
+    out = pl.scan_parquet(
+        tmp_path / "a=1",
+        hive_partitioning=False,
+        hive_schema=hive_schema,
+    ).collect()
+    assert_frame_equal(out, df.filter(a=1).drop("a", "b"))
+
+    path = tmp_path / "a=1/b=1/data.bin"
+
+    df = dfs[0]
+    out = pl.scan_parquet(
+        path, hive_partitioning=True, hive_schema=hive_schema
+    ).collect()
+
+    assert_frame_equal(out, df)
+
+    df = dfs[0].drop("a", "b")
+    out = pl.scan_parquet(
+        path, hive_partitioning=False, hive_schema=hive_schema
+    ).collect()
+
+    assert_frame_equal(out, df)
