@@ -456,7 +456,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
     match array.data_type().to_physical_type() {
         Null => to_data_dyn!(array, NullArray),
         Boolean => to_data_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             to_data_dyn!(array, PrimitiveArray<$T>)
         }),
         Binary => to_data_dyn!(array, BinaryArray<i32>),
@@ -487,7 +487,7 @@ pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::from_data(data)),
         Boolean => Box::new(BooleanArray::from_data(data)),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::from_data(data))
         }),
         Binary => Box::new(BinaryArray::<i32>::from_data(data)),
@@ -786,7 +786,7 @@ pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIt
 pub use values::ValueSize;
 
 pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
-use crate::{match_integer_type, with_match_primitive_type, with_match_primitive_type_full};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.
