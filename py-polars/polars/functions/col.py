@@ -269,7 +269,7 @@ class Col:
     """
 
     def __call__(
-        cls,
+        self,
         name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
         *more_names: str | PolarsDataType,
     ) -> Expr:
