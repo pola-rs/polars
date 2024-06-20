@@ -63,7 +63,7 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(&mut self, future: bool) -> PyResult<Vec<PyObject>> {
         self.df.align_chunks();
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
@@ -71,7 +71,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks(false)
+                .iter_chunks(future, true)
                 .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)

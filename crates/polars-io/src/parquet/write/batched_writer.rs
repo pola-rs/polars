@@ -27,7 +27,7 @@ impl<W: Write> BatchedWriter<W> {
         &'a self,
         df: &'a DataFrame,
     ) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
-        let rb_iter = df.iter_chunks(true);
+        let rb_iter = df.iter_chunks(true, false);
         rb_iter.filter_map(move |batch| match batch.len() {
             0 => None,
             _ => {
@@ -95,7 +95,7 @@ fn prepare_rg_iter<'a>(
     options: WriteOptions,
     parallel: bool,
 ) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
-    let rb_iter = df.iter_chunks(true);
+    let rb_iter = df.iter_chunks(true, false);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
         _ => {

@@ -2360,12 +2360,25 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self, pl_flavor: bool) -> RecordBatchIter {
+    pub fn iter_chunks(&self, pl_flavor: bool, parallel: bool) -> RecordBatchIter {
+        // If any of the columns is binview and we don't convert `pl_flavor` we allow parallelism
+        // as we must allocate arrow strings/binaries.
+        let parallel = if parallel && !pl_flavor {
+            self.columns.len() > 1
+                && self
+                    .columns
+                    .iter()
+                    .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary))
+        } else {
+            false
+        };
+
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
             n_chunks: self.n_chunks(),
             pl_flavor,
+            parallel,
         }
     }
 
@@ -2984,6 +2997,7 @@ pub struct RecordBatchIter<'a> {
     idx: usize,
     n_chunks: usize,
     pl_flavor: bool,
+    parallel: bool,
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
@@ -2993,12 +3007,19 @@ impl<'a> Iterator for RecordBatchIter<'a> {
         if self.idx >= self.n_chunks {
             None
         } else {
-            // create a batch of the columns with the same chunk no.
-            let batch_cols = self
-                .columns
-                .iter()
-                .map(|s| s.to_arrow(self.idx, self.pl_flavor))
-                .collect();
+            // Create a batch of the columns with the same chunk no.
+            let batch_cols = if self.parallel {
+                let iter = self
+                    .columns
+                    .par_iter()
+                    .map(|s| s.to_arrow(self.idx, self.pl_flavor));
+                POOL.install(|| iter.collect())
+            } else {
+                self.columns
+                    .iter()
+                    .map(|s| s.to_arrow(self.idx, self.pl_flavor))
+                    .collect()
+            };
             self.idx += 1;
 
             Some(RecordBatch::new(batch_cols))
@@ -3074,7 +3095,7 @@ mod test {
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_chunks(true);
+        let mut iter = df.iter_chunks(true, false);
         assert_eq!(5, iter.next().unwrap().len());
         assert!(iter.next().is_none());
     }

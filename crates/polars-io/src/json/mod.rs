@@ -150,7 +150,7 @@ where
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
-            .iter_chunks(true)
+            .iter_chunks(true, false)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
 
         match self.json_format {
@@ -194,7 +194,7 @@ where
                 Ok(s.field().to_arrow(true))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let chunks = df.iter_chunks(true);
+        let chunks = df.iter_chunks(true, false);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
