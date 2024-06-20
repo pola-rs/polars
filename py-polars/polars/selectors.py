@@ -353,7 +353,7 @@ class _selector_proxy_(Expr):
                 ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
-    @overload  # type: ignore[override]
+    @overload
     def __sub__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -373,7 +373,7 @@ class _selector_proxy_(Expr):
         msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
         raise TypeError(msg)
 
-    @overload  # type: ignore[override]
+    @overload
     def __and__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -396,7 +396,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__and__(other)
 
-    @overload  # type: ignore[override]
+    @overload
     def __or__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -414,7 +414,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    @overload  # type: ignore[override]
+    @overload
     def __xor__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -432,7 +432,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __rand__(self, other: Any) -> Expr:
         if is_column(other):
             colname = other.meta.output_name()
             if self._attrs["name"] == "by_name" and (
@@ -442,12 +442,12 @@ class _selector_proxy_(Expr):
             other = by_name(colname)
         return self.as_expr().__rand__(other)
 
-    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __ror__(self, other: Any) -> Expr:
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
 
-    def __rxor__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __rxor__(self, other: Any) -> Expr:
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__rxor__(other)
