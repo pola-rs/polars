@@ -509,3 +509,21 @@ def test_list_pivot() -> None:
         "x": [1, 2, None],
         "y": [4, None, 3],
     }
+
+
+def test_pivot_string_17081() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["1", "2", "3"],
+            "b": ["4", "5", "6"],
+            "c": ["7", "8", "9"],
+        }
+    )
+    assert df.pivot(
+        index="a", columns="b", values="c", aggregate_function="min"
+    ).to_dict(as_series=False) == {
+        "a": ["1", "2", "3"],
+        "4": ["7", None, None],
+        "5": [None, "8", None],
+        "6": [None, None, "9"],
+    }
