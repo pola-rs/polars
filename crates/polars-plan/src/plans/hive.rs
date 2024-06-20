@@ -94,8 +94,7 @@ pub fn hive_partitions_from_paths(
                 *hive_schema.try_get_mut(name).unwrap() = dtype;
             }
         }
-        let hive_schema = Arc::new(hive_schema);
-        hive_schema
+        Arc::new(hive_schema)
     };
 
     let mut hive_partitions = Vec::with_capacity(paths.len());
