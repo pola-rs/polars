@@ -65,7 +65,7 @@ xlsxwriter = ["xlsxwriter"]
 # ------------------------
 # feature bundles
 # ------------------------
-excel = ["fastexcel", "openpyxl", "xlsx2csv", "xlsxwriter"]
+excel = ["polars[fastexcel,openpyxl,xlsx2csv,xlsxwriter]"]
 database = ["adbc_driver_manager", "adbc_driver_sqlite", "connectorx", "nest_asyncio", "pandas", "sqlalchemy"]
 plot = ["hvplot", "matplotlib"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
