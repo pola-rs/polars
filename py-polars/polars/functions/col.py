@@ -307,7 +307,8 @@ class Col:
         │ 6   │
         └─────┘
         """
-        if name.startswith("__"):
+        # For autocomplete to work with iPython
+        if name.startswith("__wrapped__"):
             return getattr(type(self), name)
 
         return _create_col(name)
