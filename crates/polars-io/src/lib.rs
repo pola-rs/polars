@@ -5,6 +5,7 @@
 #[cfg(feature = "avro")]
 pub mod avro;
 pub mod cloud;
+#[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
 #[cfg(feature = "file_cache")]
 pub mod file_cache;
