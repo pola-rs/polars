@@ -132,7 +132,7 @@ fn replace_by_single(
 /// Fast path for replacing by a single value in strict mode
 fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
     let mask = get_replacement_mask(s, old)?;
-    ensure_all_replaced(&mask, s, old.null_count() > 0)?;
+    ensure_all_replaced(&mask, s, old.null_count() > 0, true)?;
 
     let mut out = new.new_from_index(0, s.len());
 
@@ -224,7 +224,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
         .unwrap()
         .bool()
         .unwrap();
-    ensure_all_replaced(mask, s, old_has_null)?;
+    ensure_all_replaced(mask, s, old_has_null, false)?;
 
     Ok(replaced.clone())
 }
@@ -254,12 +254,21 @@ fn validate_new(new: &Series, old: &Series) -> PolarsResult<()> {
 }
 
 /// Ensure that all values were replaced.
-fn ensure_all_replaced(mask: &BooleanChunked, s: &Series, old_has_null: bool) -> PolarsResult<()> {
-    let all_replaced = if old_has_null {
+fn ensure_all_replaced(
+    mask: &BooleanChunked,
+    s: &Series,
+    old_has_null: bool,
+    check_all: bool,
+) -> PolarsResult<()> {
+    let nulls_check = if old_has_null {
         mask.null_count() == 0
     } else {
         mask.null_count() == s.null_count()
     };
+    // Checking booleans is only relevant for the 'replace_by_single' path.
+    let bools_check = !check_all || mask.all();
+
+    let all_replaced = bools_check && nulls_check;
     polars_ensure!(
         all_replaced,
         InvalidOperation: "incomplete mapping specified for `replace_strict`\n\nHint: Pass a `default` value to set unmapped values."

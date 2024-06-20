@@ -17,6 +17,48 @@ def test_replace_strict_incomplete_mapping() -> None:
         lf.select(pl.col("a").replace_strict({2: 200, 3: 300})).collect()
 
 
+def test_replace_strict_incomplete_mapping_null_raises() -> None:
+    s = pl.Series("a", [1, 2, 2, None, None])
+    with pytest.raises(InvalidOperationError):
+        s.replace_strict({1: 10})
+
+
+def test_replace_strict_mapping_null_not_specified() -> None:
+    s = pl.Series("a", [1, 2, 2, None, None])
+
+    result = s.replace_strict({1: 10, 2: 20})
+
+    expected = pl.Series("a", [10, 20, 20, None, None])
+    assert_series_equal(result, expected)
+
+
+def test_replace_strict_mapping_null_specified() -> None:
+    s = pl.Series("a", [1, 2, 2, None, None])
+
+    result = s.replace_strict({1: 10, 2: 20, None: 0})
+
+    expected = pl.Series("a", [10, 20, 20, 0, 0])
+    assert_series_equal(result, expected)
+
+
+def test_replace_strict_mapping_null_replace_by_null() -> None:
+    s = pl.Series("a", [1, 2, 2, None])
+
+    result = s.replace_strict({1: 10, 2: None, None: 0})
+
+    expected = pl.Series("a", [10, None, None, 0])
+    assert_series_equal(result, expected)
+
+
+def test_replace_strict_mapping_null_with_default() -> None:
+    s = pl.Series("a", [1, 2, 2, None, None])
+
+    result = s.replace_strict({1: 10}, default=0)
+
+    expected = pl.Series("a", [10, 0, 0, 0, 0])
+    assert_series_equal(result, expected)
+
+
 def test_replace_strict_empty() -> None:
     lf = pl.LazyFrame({"a": [None, None]})
     result = lf.select(pl.col("a").replace_strict({}))
