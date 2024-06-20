@@ -4,7 +4,7 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use polars_error::PolarsResult;
+use polars_error::{polars_err, PolarsResult};
 use polars_utils::iter::FallibleIterator;
 
 use super::super::nested_utils::*;
@@ -163,7 +163,7 @@ where
                     .iter_converted(decode)
                     .map(self.op)
                     .next()
-                    .unwrap_or_default();
+                    .ok_or_else(|| polars_err!(ComputeError: "No values left in page"))?;
                 values.push(value);
             },
             State::OptionalByteStreamSplit(decoder) => {
@@ -171,7 +171,7 @@ where
                     .iter_converted(decode)
                     .map(self.op)
                     .next()
-                    .unwrap_or_default();
+                    .ok_or_else(|| polars_err!(ComputeError: "No values left in page"))?;
                 values.push(value);
                 validity.push(true);
             },
