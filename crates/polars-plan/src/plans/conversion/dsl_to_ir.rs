@@ -733,21 +733,27 @@ fn resolve_group_by(
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let current_schema = lp_arena.get(input).schema(lp_arena);
     let current_schema = current_schema.as_ref();
-    let keys = rewrite_projections(keys, current_schema, &[])?;
-    let aggs = rewrite_projections(aggs, current_schema, &keys)?;
+    let mut keys = rewrite_projections(keys, current_schema, &[])?;
 
     // Initialize schema from keys
     let mut schema = expressions_to_schema(&keys, current_schema, Context::Default)?;
 
+    #[allow(unused_mut)]
+    let mut pop_keys = false;
     // Add dynamic groupby index column(s)
+    // Also add index columns to keys for expression expansion.
     #[cfg(feature = "dynamic_group_by")]
     {
         if let Some(options) = _options.rolling.as_ref() {
             let name = &options.index_column;
             let dtype = current_schema.try_get(name)?;
+            keys.push(col(name));
+            pop_keys = true;
             schema.with_column(name.clone(), dtype.clone());
         } else if let Some(options) = _options.dynamic.as_ref() {
             let name = &options.index_column;
+            keys.push(col(name));
+            pop_keys = true;
             let dtype = current_schema.try_get(name)?;
             if options.include_boundaries {
                 schema.with_column("_lower_boundary".into(), dtype.clone());
@@ -757,6 +763,11 @@ fn resolve_group_by(
         }
     }
     let keys_index_len = schema.len();
+
+    let aggs = rewrite_projections(aggs, current_schema, &keys)?;
+    if pop_keys {
+        let _ = keys.pop();
+    }
 
     // Add aggregation column(s)
     let aggs_schema = expressions_to_schema(&aggs, current_schema, Context::Aggregation)?;

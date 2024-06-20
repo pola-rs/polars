@@ -450,15 +450,13 @@ def test_no_sorted_no_error() -> None:
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
         }
     )
-    result = df.group_by_dynamic("dt", every="1h").agg(
-        pl.all().count().name.suffix("_foo")
-    )
+    result = df.group_by_dynamic("dt", every="1h").agg(pl.len().alias("count"))
     expected = pl.DataFrame(
         {
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
-            "dt_foo": [1, 1],
+            "count": [1, 1],
         },
-        schema_overrides={"dt_foo": pl.UInt32},
+        schema_overrides={"count": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -1016,4 +1014,32 @@ def test_group_by_dynamic_get() -> None:
             date(2021, 1, 7),
         ],
         "get": [1, 3, 5, 7],
+    }
+
+
+def test_group_by_dynamic_exclude_index_from_expansion_17075() -> None:
+    lf = pl.LazyFrame(
+        {
+            "time": pl.datetime_range(
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 3),
+                interval="30m",
+                eager=True,
+            ),
+            "n": range(7),
+            "m": range(7),
+        }
+    )
+
+    assert lf.group_by_dynamic(
+        "time", every="1h", closed="right"
+    ).last().collect().to_dict(as_series=False) == {
+        "time": [
+            datetime(2021, 12, 15, 23, 0),
+            datetime(2021, 12, 16, 0, 0),
+            datetime(2021, 12, 16, 1, 0),
+            datetime(2021, 12, 16, 2, 0),
+        ],
+        "n": [0, 2, 4, 6],
+        "m": [0, 2, 4, 6],
     }
