@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Iterable, Protocol, cast
+from typing import TYPE_CHECKING, Any, Iterable
 
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype
@@ -67,233 +67,209 @@ def _create_col(
         raise TypeError(msg)
 
 
-# appease lint by casting `col` with a protocol that conforms to the factory interface
-class Column(Protocol):
-    def __call__(
-        self,
-        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-        *more_names: str | PolarsDataType,
-    ) -> Expr: ...
+"""
+Create Polars column expressions.
 
-    def __getattr__(self, name: str) -> Expr: ...
+Notes
+-----
+An instance of this class is exported under the name `col`. It can be used as
+though it were a function by calling, for example, `pl.col("foo")`.
+See the :func:`__call__` method for further documentation.
+
+This helper class enables an alternative syntax for creating a column expression
+through attribute lookup. For example `col.foo` creates an expression equal to
+`col("foo")`.
+See the :func:`__getattr__` method for further documentation.
+
+The function call syntax is considered the idiomatic way of constructing a column
+expression. The alternative attribute syntax can be useful for quick prototyping as
+it can save some keystrokes, but has drawbacks in both expressiveness and
+readability.
+
+Examples
+--------
+>>> from polars import col
+>>> df = pl.DataFrame(
+...     {
+...         "foo": [1, 2],
+...         "bar": [3, 4],
+...     }
+... )
+
+Create a new column expression using the standard syntax:
+
+>>> df.with_columns(baz=(col("foo") * col("bar")) / 2)
+shape: (2, 3)
+┌─────┬─────┬─────┐
+│ foo ┆ bar ┆ baz │
+│ --- ┆ --- ┆ --- │
+│ i64 ┆ i64 ┆ f64 │
+╞═════╪═════╪═════╡
+│ 1   ┆ 3   ┆ 1.5 │
+│ 2   ┆ 4   ┆ 4.0 │
+└─────┴─────┴─────┘
+
+Use attribute lookup to create a new column expression:
+
+>>> df.with_columns(baz=(col.foo + col.bar))
+shape: (2, 3)
+┌─────┬─────┬─────┐
+│ foo ┆ bar ┆ baz │
+│ --- ┆ --- ┆ --- │
+│ i64 ┆ i64 ┆ i64 │
+╞═════╪═════╪═════╡
+│ 1   ┆ 3   ┆ 4   │
+│ 2   ┆ 4   ┆ 6   │
+└─────┴─────┴─────┘
+"""
 
 
-# handle attribute lookup on the metaclass (we use the factory uninstantiated)
-class ColumnFactoryMeta(type):
-    def __getattr__(self, name: str) -> Expr:
-        return _create_col(name)
-
-
-# factory that creates columns using `col("name")` or `col.name` syntax
-class ColumnFactory(metaclass=ColumnFactoryMeta):
+class Col:
     """
-    Create Polars column expressions.
+    Create one or more column expressions representing column(s) in a DataFrame.
 
-    Notes
-    -----
-    An instance of this class is exported under the name `col`. It can be used as
-    though it were a function by calling, for example, `pl.col("foo")`.
-    See the :func:`__call__` method for further documentation.
+    Parameters
+    ----------
+    name
+        The name or datatype of the column(s) to represent.
+        Accepts regular expression input.
+        Regular expressions should start with `^` and end with `$`.
+    *more_names
+        Additional names or datatypes of columns to represent,
+        specified as positional arguments.
 
-    This helper class enables an alternative syntax for creating a column expression
-    through attribute lookup. For example `col.foo` creates an expression equal to
-    `col("foo")`.
-    See the :func:`__getattr__` method for further documentation.
-
-    The function call syntax is considered the idiomatic way of constructing a column
-    expression. The alternative attribute syntax can be useful for quick prototyping as
-    it can save some keystrokes, but has drawbacks in both expressiveness and
-    readability.
+    See Also
+    --------
+    first
+    last
+    nth
 
     Examples
     --------
-    >>> from polars import col
+    Pass a single column name to represent that column.
+
     >>> df = pl.DataFrame(
     ...     {
-    ...         "foo": [1, 2],
-    ...         "bar": [3, 4],
+    ...         "ham": [1, 2],
+    ...         "hamburger": [11, 22],
+    ...         "foo": [2, 1],
+    ...         "bar": ["a", "b"],
     ...     }
     ... )
+    >>> df.select(pl.col("foo"))
+    shape: (2, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 2   │
+    │ 1   │
+    └─────┘
 
-    Create a new column expression using the standard syntax:
+    Use dot syntax to save keystrokes for quick prototyping.
 
-    >>> df.with_columns(baz=(col("foo") * col("bar")) / 2)
+    >>> from polars import col as c
+    >>> df.select(c.foo + c.ham)
+    shape: (2, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 3   │
+    │ 3   │
+    └─────┘
+
+    Use the wildcard `*` to represent all columns.
+
+    >>> df.select(pl.col("*"))
+    shape: (2, 4)
+    ┌─────┬───────────┬─────┬─────┐
+    │ ham ┆ hamburger ┆ foo ┆ bar │
+    │ --- ┆ ---       ┆ --- ┆ --- │
+    │ i64 ┆ i64       ┆ i64 ┆ str │
+    ╞═════╪═══════════╪═════╪═════╡
+    │ 1   ┆ 11        ┆ 2   ┆ a   │
+    │ 2   ┆ 22        ┆ 1   ┆ b   │
+    └─────┴───────────┴─────┴─────┘
+    >>> df.select(pl.col("*").exclude("ham"))
     shape: (2, 3)
-    ┌─────┬─────┬─────┐
-    │ foo ┆ bar ┆ baz │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ f64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 1.5 │
-    │ 2   ┆ 4   ┆ 4.0 │
-    └─────┴─────┴─────┘
+    ┌───────────┬─────┬─────┐
+    │ hamburger ┆ foo ┆ bar │
+    │ ---       ┆ --- ┆ --- │
+    │ i64       ┆ i64 ┆ str │
+    ╞═══════════╪═════╪═════╡
+    │ 11        ┆ 2   ┆ a   │
+    │ 22        ┆ 1   ┆ b   │
+    └───────────┴─────┴─────┘
 
-    Use attribute lookup to create a new column expression:
+    Regular expression input is supported.
 
-    >>> df.with_columns(baz=(col.foo + col.bar))
+    >>> df.select(pl.col("^ham.*$"))
+    shape: (2, 2)
+    ┌─────┬───────────┐
+    │ ham ┆ hamburger │
+    │ --- ┆ ---       │
+    │ i64 ┆ i64       │
+    ╞═════╪═══════════╡
+    │ 1   ┆ 11        │
+    │ 2   ┆ 22        │
+    └─────┴───────────┘
+
+    Multiple columns can be represented by passing a list of names.
+
+    >>> df.select(pl.col(["hamburger", "foo"]))
+    shape: (2, 2)
+    ┌───────────┬─────┐
+    │ hamburger ┆ foo │
+    │ ---       ┆ --- │
+    │ i64       ┆ i64 │
+    ╞═══════════╪═════╡
+    │ 11        ┆ 2   │
+    │ 22        ┆ 1   │
+    └───────────┴─────┘
+
+    Or use positional arguments to represent multiple columns in the same way.
+
+    >>> df.select(pl.col("hamburger", "foo"))
+    shape: (2, 2)
+    ┌───────────┬─────┐
+    │ hamburger ┆ foo │
+    │ ---       ┆ --- │
+    │ i64       ┆ i64 │
+    ╞═══════════╪═════╡
+    │ 11        ┆ 2   │
+    │ 22        ┆ 1   │
+    └───────────┴─────┘
+
+    Easily select all columns that match a certain data type by passing that
+    datatype.
+
+    >>> df.select(pl.col(pl.String))
+    shape: (2, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ a   │
+    │ b   │
+    └─────┘
+    >>> df.select(pl.col(pl.Int64, pl.Float64))
     shape: (2, 3)
-    ┌─────┬─────┬─────┐
-    │ foo ┆ bar ┆ baz │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 4   │
-    │ 2   ┆ 4   ┆ 6   │
-    └─────┴─────┴─────┘
+    ┌─────┬───────────┬─────┐
+    │ ham ┆ hamburger ┆ foo │
+    │ --- ┆ ---       ┆ --- │
+    │ i64 ┆ i64       ┆ i64 │
+    ╞═════╪═══════════╪═════╡
+    │ 1   ┆ 11        ┆ 2   │
+    │ 2   ┆ 22        ┆ 1   │
+    └─────┴───────────┴─────┘
     """
 
-    def __new__(  # type: ignore[misc]
-        cls,
-        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-        *more_names: str | PolarsDataType,
-    ) -> Expr:
-        """
-        Create one or more column expressions representing column(s) in a DataFrame.
-
-        Parameters
-        ----------
-        name
-            The name or datatype of the column(s) to represent.
-            Accepts regular expression input.
-            Regular expressions should start with `^` and end with `$`.
-        *more_names
-            Additional names or datatypes of columns to represent,
-            specified as positional arguments.
-
-        See Also
-        --------
-        first
-        last
-        nth
-
-        Examples
-        --------
-        Pass a single column name to represent that column.
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "ham": [1, 2],
-        ...         "hamburger": [11, 22],
-        ...         "foo": [2, 1],
-        ...         "bar": ["a", "b"],
-        ...     }
-        ... )
-        >>> df.select(pl.col("foo"))
-        shape: (2, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 2   │
-        │ 1   │
-        └─────┘
-
-        Use dot syntax to save keystrokes for quick prototyping.
-
-        >>> from polars import col as c
-        >>> df.select(c.foo + c.ham)
-        shape: (2, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 3   │
-        │ 3   │
-        └─────┘
-
-        Use the wildcard `*` to represent all columns.
-
-        >>> df.select(pl.col("*"))
-        shape: (2, 4)
-        ┌─────┬───────────┬─────┬─────┐
-        │ ham ┆ hamburger ┆ foo ┆ bar │
-        │ --- ┆ ---       ┆ --- ┆ --- │
-        │ i64 ┆ i64       ┆ i64 ┆ str │
-        ╞═════╪═══════════╪═════╪═════╡
-        │ 1   ┆ 11        ┆ 2   ┆ a   │
-        │ 2   ┆ 22        ┆ 1   ┆ b   │
-        └─────┴───────────┴─────┴─────┘
-        >>> df.select(pl.col("*").exclude("ham"))
-        shape: (2, 3)
-        ┌───────────┬─────┬─────┐
-        │ hamburger ┆ foo ┆ bar │
-        │ ---       ┆ --- ┆ --- │
-        │ i64       ┆ i64 ┆ str │
-        ╞═══════════╪═════╪═════╡
-        │ 11        ┆ 2   ┆ a   │
-        │ 22        ┆ 1   ┆ b   │
-        └───────────┴─────┴─────┘
-
-        Regular expression input is supported.
-
-        >>> df.select(pl.col("^ham.*$"))
-        shape: (2, 2)
-        ┌─────┬───────────┐
-        │ ham ┆ hamburger │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 11        │
-        │ 2   ┆ 22        │
-        └─────┴───────────┘
-
-        Multiple columns can be represented by passing a list of names.
-
-        >>> df.select(pl.col(["hamburger", "foo"]))
-        shape: (2, 2)
-        ┌───────────┬─────┐
-        │ hamburger ┆ foo │
-        │ ---       ┆ --- │
-        │ i64       ┆ i64 │
-        ╞═══════════╪═════╡
-        │ 11        ┆ 2   │
-        │ 22        ┆ 1   │
-        └───────────┴─────┘
-
-        Or use positional arguments to represent multiple columns in the same way.
-
-        >>> df.select(pl.col("hamburger", "foo"))
-        shape: (2, 2)
-        ┌───────────┬─────┐
-        │ hamburger ┆ foo │
-        │ ---       ┆ --- │
-        │ i64       ┆ i64 │
-        ╞═══════════╪═════╡
-        │ 11        ┆ 2   │
-        │ 22        ┆ 1   │
-        └───────────┴─────┘
-
-        Easily select all columns that match a certain data type by passing that
-        datatype.
-
-        >>> df.select(pl.col(pl.String))
-        shape: (2, 1)
-        ┌─────┐
-        │ bar │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ a   │
-        │ b   │
-        └─────┘
-        >>> df.select(pl.col(pl.Int64, pl.Float64))
-        shape: (2, 3)
-        ┌─────┬───────────┬─────┐
-        │ ham ┆ hamburger ┆ foo │
-        │ --- ┆ ---       ┆ --- │
-        │ i64 ┆ i64       ┆ i64 │
-        ╞═════╪═══════════╪═════╡
-        │ 1   ┆ 11        ┆ 2   │
-        │ 2   ┆ 22        ┆ 1   │
-        └─────┴───────────┴─────┘
-        """
-        return _create_col(name, *more_names)
-
-    # appease sphinx; we actually use '__new__'
     def __call__(
-        self,
+        cls,
         name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
         *more_names: str | PolarsDataType,
     ) -> Expr:
@@ -334,4 +310,4 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         return getattr(type(self), name)
 
 
-col = cast(Column, ColumnFactory)
+col: Col = Col()
