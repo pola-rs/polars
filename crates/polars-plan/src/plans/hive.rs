@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
+use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
 use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,70 +17,6 @@ pub struct HivePartitions {
 }
 
 impl HivePartitions {
-    /// Constructs a new [`HivePartitions`] from a schema reference.
-    pub fn from_schema_ref(schema: SchemaRef) -> Self {
-        let column_stats = schema.iter_fields().map(ColumnStats::from_field).collect();
-        let stats = BatchStats::new(schema, column_stats, None);
-        Self { stats }
-    }
-
-    /// Constructs a new [`HivePartitions`] from a path.
-    ///
-    /// Returns `None` if the path does not contain any Hive partitions.
-    /// Returns `Err` if the Hive partitions cannot be parsed correctly or do not match the given
-    /// [`Schema`].
-    pub fn try_from_path(path: &Path, schema: Option<SchemaRef>) -> PolarsResult<Option<Self>> {
-        let sep = separator(path);
-
-        let path_string = path.display().to_string();
-        let path_parts = path_string.split(sep);
-
-        // Last part is the file, which should be skipped.
-        let file_index = path_parts.clone().count() - 1;
-
-        let partitions = path_parts
-            .enumerate()
-            .filter_map(|(index, part)| {
-                if index == file_index {
-                    return None;
-                }
-                parse_hive_string(part)
-            })
-            .map(|(name, value)| hive_info_to_series(name, value, schema.clone()))
-            .collect::<PolarsResult<Vec<_>>>()?;
-
-        if partitions.is_empty() {
-            return Ok(None);
-        }
-
-        let schema = match schema {
-            Some(schema) => Arc::new(
-                partitions
-                    .iter()
-                    .map(|s| {
-                        let mut field = s.field().into_owned();
-                        if let Some(dtype) = schema.get(field.name()) {
-                            field.dtype = dtype.clone();
-                        };
-                        field
-                    })
-                    .collect::<Schema>(),
-            ),
-            None => Arc::new(partitions.as_slice().into()),
-        };
-
-        let stats = BatchStats::new(
-            schema,
-            partitions
-                .into_iter()
-                .map(ColumnStats::from_column_literal)
-                .collect(),
-            None,
-        );
-
-        Ok(Some(HivePartitions { stats }))
-    }
-
     pub fn get_statistics(&self) -> &BatchStats {
         &self.stats
     }
@@ -108,33 +45,97 @@ pub fn hive_partitions_from_paths(
         return Ok(None);
     };
 
-    let Some(hive_parts) = HivePartitions::try_from_path(
-        &PathBuf::from(&path.to_str().unwrap()[hive_start_idx..]),
-        schema.clone(),
-    )?
-    else {
-        return Ok(None);
+    let sep = separator(path);
+    let path_string = path.to_str().unwrap();
+
+    macro_rules! get_hive_parts_iter {
+        ($e:expr) => {{
+            let path_parts = $e[hive_start_idx..].split(sep);
+            let file_index = path_parts.clone().count() - 1;
+
+            path_parts.enumerate().filter_map(move |(index, part)| {
+                if index == file_index {
+                    return None;
+                }
+                parse_hive_string(part)
+            })
+        }};
+    }
+
+    let hive_schema = if let Some(v) = schema {
+        v
+    } else {
+        let mut hive_schema = Schema::with_capacity(16);
+        let mut schema_inference_map: PlHashMap<&str, PlHashSet<DataType>> =
+            PlHashMap::with_capacity(16);
+
+        for (name, _) in get_hive_parts_iter!(path_string) {
+            hive_schema.insert_at_index(hive_schema.len(), name.into(), DataType::String)?;
+            schema_inference_map.insert(name, PlHashSet::with_capacity(4));
+        }
+
+        if hive_schema.is_empty() && schema_inference_map.is_empty() {
+            return Ok(None);
+        }
+
+        if !schema_inference_map.is_empty() {
+            for path in paths {
+                for (name, value) in get_hive_parts_iter!(path.to_str().unwrap()) {
+                    let Some(entry) = schema_inference_map.get_mut(name) else {
+                        continue;
+                    };
+
+                    entry.insert(infer_field_schema(value, false, false));
+                }
+            }
+
+            for (name, ref possibilities) in schema_inference_map.drain() {
+                let dtype = finish_infer_field_schema(possibilities);
+                *hive_schema.try_get_mut(name).unwrap() = dtype;
+            }
+        }
+        let hive_schema = Arc::new(hive_schema);
+        hive_schema
     };
 
-    let mut results = Vec::with_capacity(paths.len());
-    results.push(Arc::new(hive_parts));
+    let mut hive_partitions = Vec::with_capacity(paths.len());
 
-    for path in &paths[1..] {
-        let Some(hive_parts) = HivePartitions::try_from_path(
-            &PathBuf::from(&path.to_str().unwrap()[hive_start_idx..]),
-            schema.clone(),
-        )?
-        else {
+    for path in paths {
+        let path = path.to_str().unwrap();
+
+        let column_stats = get_hive_parts_iter!(path)
+            .map(|(name, value)| {
+                let Some(dtype) = hive_schema.as_ref().get(name) else {
+                    polars_bail!(
+                        SchemaFieldNotFound:
+                        "path contains column not present in the given Hive schema: {:?}, path = {:?}",
+                        name,
+                        path
+                    )
+                };
+
+                Ok(ColumnStats::from_column_literal(value_to_series(
+                    name,
+                    value,
+                    Some(dtype),
+                )?))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        if column_stats.is_empty() {
             polars_bail!(
                 ComputeError: "expected Hive partitioned path, got {}\n\n\
                 This error occurs if some paths are Hive partitioned and some paths are not.",
-                path.display()
+                path
             )
-        };
-        results.push(Arc::new(hive_parts));
+        }
+
+        let stats = BatchStats::new(hive_schema.clone(), column_stats, None);
+
+        hive_partitions.push(Arc::new(HivePartitions { stats }));
     }
 
-    Ok(Some(results))
+    Ok(Some(hive_partitions))
 }
 
 /// Determine the path separator for identifying Hive partitions.
@@ -172,24 +173,6 @@ fn parse_hive_string(part: &'_ str) -> Option<(&'_ str, &'_ str)> {
     }
 
     Some((name, value))
-}
-
-/// Convert Hive partition string information to a single-value [`Series`].
-fn hive_info_to_series(name: &str, value: &str, schema: Option<SchemaRef>) -> PolarsResult<Series> {
-    let dtype = match schema {
-        Some(ref s) => {
-            let dtype = s.try_get(name).map_err(|_| {
-                polars_err!(
-                    SchemaFieldNotFound:
-                    "path contains column not present in the given Hive schema: {:?}", name
-                )
-            })?;
-            Some(dtype)
-        },
-        None => None,
-    };
-
-    value_to_series(name, value, dtype)
 }
 
 /// Parse a string value into a single-value [`Series`].
