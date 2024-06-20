@@ -1135,7 +1135,7 @@ def test_read_byte_stream_split(nullable: bool) -> None:
     )
     arrays = [pa.array(values, type=field.type, mask=validity_mask) for field in schema]
     table = pa.Table.from_arrays(arrays, schema=schema)
-    df = pl.from_arrow(table)
+    df = cast(pl.DataFrame, pl.from_arrow(table))
 
     f = io.BytesIO()
     pq.write_table(
@@ -1197,7 +1197,7 @@ def test_read_byte_stream_split_arrays(
         for field in schema
     ]
     table = pa.Table.from_arrays(arrays, schema=schema)
-    df = pl.from_arrow(table)
+    df = cast(pl.DataFrame, pl.from_arrow(table))
 
     f = io.BytesIO()
     pq.write_table(
