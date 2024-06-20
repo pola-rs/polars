@@ -12,7 +12,7 @@ df = pl.DataFrame(
 print(df)
 # --8<-- [end:df]
 
-# --8<-- [start:melt]
-out = df.melt(id_vars=["A", "B"], value_vars=["C", "D"])
+# --8<-- [start:unpivot]
+out = df.unpivot(index=["A", "B"], on=["C", "D"])
 print(out)
-# --8<-- [end:melt]
+# --8<-- [end:unpivot]

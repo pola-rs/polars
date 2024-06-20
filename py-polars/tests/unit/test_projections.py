@@ -23,12 +23,12 @@ def test_projection_on_semi_join_4789() -> None:
     assert q.collect().to_dict(as_series=False) == {"a": [1], "p": [1], "seq": [[1]]}
 
 
-def test_melt_projection_pd_block_4997() -> None:
+def test_unpivot_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
         .with_row_index()
         .lazy()
-        .melt(id_vars="index")
+        .unpivot(index="index")
         .group_by("index")
         .agg(pl.col("variable").alias("result"))
         .collect()
@@ -69,7 +69,7 @@ def test_unnest_projection_pushdown() -> None:
     lf = pl.DataFrame({"x|y|z": [1, 2], "a|b|c": [2, 3]}).lazy()
 
     mlf = (
-        lf.melt()
+        lf.unpivot()
         .with_columns(pl.col("variable").str.split_exact("|", 2))
         .unnest("variable")
     )

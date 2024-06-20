@@ -13,9 +13,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", &df);
     // --8<-- [end:df]
 
-    // --8<-- [start:melt]
-    let out = df.melt(["A", "B"], ["C", "D"])?;
+    // --8<-- [start:unpivot]
+    let out = df.unpivot(["A", "B"], ["C", "D"])?;
     println!("{}", &out);
-    // --8<-- [end:melt]
+    // --8<-- [end:unpivot]
     Ok(())
 }

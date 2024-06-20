@@ -1600,12 +1600,12 @@ impl LazyFrame {
         self.slice(neg_tail, n)
     }
 
-    /// Melt the DataFrame from wide to long format.
+    /// Unpivot the DataFrame from wide to long format.
     ///
-    /// See [`MeltArgs`] for information on how to melt a DataFrame.
-    pub fn melt(self, args: MeltArgs) -> LazyFrame {
+    /// See [`UnpivotArgs`] for information on how to unpivot a DataFrame.
+    pub fn unpivot(self, args: UnpivotArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().melt(args).build();
+        let lp = self.get_plan_builder().unpivot(args).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

@@ -28,7 +28,6 @@ Manipulation/selection
     LazyFrame.join_asof
     LazyFrame.last
     LazyFrame.limit
-    LazyFrame.melt
     LazyFrame.merge_sorted
     LazyFrame.rename
     LazyFrame.reverse
@@ -44,6 +43,7 @@ Manipulation/selection
     LazyFrame.top_k
     LazyFrame.unique
     LazyFrame.unnest
+    LazyFrame.unpivot
     LazyFrame.update
     LazyFrame.with_columns
     LazyFrame.with_columns_seq

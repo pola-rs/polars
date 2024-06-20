@@ -35,7 +35,6 @@ Manipulation/selection
     DataFrame.join
     DataFrame.join_asof
     DataFrame.limit
-    DataFrame.melt
     DataFrame.merge_sorted
     DataFrame.partition_by
     DataFrame.pipe
@@ -64,6 +63,7 @@ Manipulation/selection
     DataFrame.transpose
     DataFrame.unique
     DataFrame.unnest
+    DataFrame.unpivot
     DataFrame.unstack
     DataFrame.update
     DataFrame.upsample

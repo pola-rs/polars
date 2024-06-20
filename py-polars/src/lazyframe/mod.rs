@@ -1112,7 +1112,7 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (id_vars, value_vars, value_name, variable_name, streamable))]
-    fn melt(
+    fn unpivot(
         &self,
         id_vars: Vec<String>,
         value_vars: Vec<String>,
@@ -1120,16 +1120,16 @@ impl PyLazyFrame {
         variable_name: Option<String>,
         streamable: bool,
     ) -> Self {
-        let args = MeltArgs {
-            id_vars: strings_to_smartstrings(id_vars),
-            value_vars: strings_to_smartstrings(value_vars),
+        let args = UnpivotArgs {
+            index: strings_to_smartstrings(id_vars),
+            on: strings_to_smartstrings(value_vars),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable,
         };
 
         let ldf = self.ldf.clone();
-        ldf.melt(args).into()
+        ldf.unpivot(args).into()
     }
 
     fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> Self {

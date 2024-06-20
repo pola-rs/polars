@@ -397,22 +397,22 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn melt(
+    pub fn unpivot(
         &self,
-        id_vars: Vec<PyBackedStr>,
-        value_vars: Vec<PyBackedStr>,
+        index: Vec<PyBackedStr>,
+        on: Vec<PyBackedStr>,
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        let args = MeltArgs {
-            id_vars: strings_to_smartstrings(id_vars),
-            value_vars: strings_to_smartstrings(value_vars),
+        let args = UnpivotArgs {
+            index: strings_to_smartstrings(index),
+            on: strings_to_smartstrings(on),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable: false,
         };
 
-        let df = self.df.melt2(args).map_err(PyPolarsErr::from)?;
+        let df = self.df.unpivot2(args).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
