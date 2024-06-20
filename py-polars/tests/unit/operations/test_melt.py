@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal
@@ -81,3 +83,10 @@ def test_melt_no_value_vars() -> None:
         schema={"a": pl.Int64, "variable": pl.String, "value": pl.Null}
     )
     assert_frame_equal(result, expected)
+
+
+def test_melt_raise_list() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.LazyFrame(
+            {"a": ["x", "y"], "b": [["test", "test2"], ["test3", "test4"]]}
+        ).melt().collect()
