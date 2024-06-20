@@ -255,15 +255,21 @@ impl<'a> IRDotDisplay<'a> {
                 let path = PathsDisplay(paths.as_ref());
                 let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
-                let total_columns = file_info.schema.len();
-                let predicate = predicate.as_ref().map(|e| self.display_expr(e));
-                let predicate = OptionExprIRDisplay(predicate);
+                let total_columns =
+                    file_info.schema.len() - usize::from(options.row_index.is_some());
 
                 write_label(f, id, |f| {
-                    write!(
-                        f,
-                        "{name} SCAN {path}\nπ {with_columns}/{total_columns};\nσ {predicate}",
-                    )
+                    write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
+
+                    if let Some(predicate) = predicate.as_ref() {
+                        write!(f, "\nσ {}", self.display_expr(predicate))?;
+                    }
+
+                    if let Some(row_index) = options.row_index.as_ref() {
+                        write!(f, "\nrow index: {} (+{})", row_index.name, row_index.offset)?;
+                    }
+
+                    Ok(())
                 })?;
             },
             Join {
@@ -332,7 +338,7 @@ impl<'a> IRDotDisplay<'a> {
 }
 
 // A few utility structures for formatting
-struct PathsDisplay<'a>(&'a [PathBuf]);
+pub(crate) struct PathsDisplay<'a>(pub &'a [PathBuf]);
 struct NumColumns<'a>(Option<&'a [String]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
 struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
@@ -340,13 +346,14 @@ struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 impl fmt::Display for PathsDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0.len() {
-            0 => Ok(()),
-            1 => self.0[0].display().fmt(f),
+            0 => write!(f, "[]"),
+            1 => write!(f, "[{}]", self.0[0].display()),
+            2 => write!(f, "[{}, {}]", self.0[0].display(), self.0[1].display()),
             _ => write!(
                 f,
-                "{} files: first file: {}",
-                self.0.len(),
-                self.0[0].display()
+                "[{}, ... {} other files]",
+                self.0[0].to_string_lossy(),
+                self.0.len() - 1,
             ),
         }
     }
