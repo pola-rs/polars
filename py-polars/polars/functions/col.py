@@ -307,6 +307,10 @@ class Col:
         │ 6   │
         └─────┘
         """
+
+        if name.startswith("__"):
+            return getattr(type(self), name)
+
         return _create_col(name)
 
 
