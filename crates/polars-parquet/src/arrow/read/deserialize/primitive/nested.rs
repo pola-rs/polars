@@ -11,8 +11,8 @@ use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
 use super::basic::{deserialize_plain, Values, ValuesDictionary};
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::encoding::{byte_stream_split, Encoding};
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 
@@ -27,6 +27,8 @@ where
     Required(Values<'a>),
     RequiredDictionary(ValuesDictionary<'a, T>),
     OptionalDictionary(ValuesDictionary<'a, T>),
+    RequiredByteStreamSplit(byte_stream_split::Decoder<'a>),
+    OptionalByteStreamSplit(byte_stream_split::Decoder<'a>),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -39,6 +41,8 @@ where
             State::Required(values) => values.len(),
             State::RequiredDictionary(values) => values.len(),
             State::OptionalDictionary(values) => values.len(),
+            State::RequiredByteStreamSplit(decoder) => decoder.len(),
+            State::OptionalByteStreamSplit(decoder) => decoder.len(),
         }
     }
 }
@@ -99,6 +103,18 @@ where
             },
             (Encoding::Plain, _, true, false) => Values::try_new::<P>(page).map(State::Optional),
             (Encoding::Plain, _, false, false) => Values::try_new::<P>(page).map(State::Required),
+            (Encoding::ByteStreamSplit, _, false, false) => {
+                let values = split_buffer(page)?.values;
+                Ok(State::RequiredByteStreamSplit(
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
+            (Encoding::ByteStreamSplit, _, true, false) => {
+                let values = split_buffer(page)?.values;
+                Ok(State::OptionalByteStreamSplit(
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -141,6 +157,23 @@ where
                 values.push(value.unwrap_or_default());
                 validity.push(true);
                 page.values.get_result()?;
+            },
+            State::RequiredByteStreamSplit(decoder) => {
+                let value = decoder
+                    .iter_converted(decode)
+                    .map(self.op)
+                    .next()
+                    .unwrap_or_default();
+                values.push(value);
+            },
+            State::OptionalByteStreamSplit(decoder) => {
+                let value = decoder
+                    .iter_converted(decode)
+                    .map(self.op)
+                    .next()
+                    .unwrap_or_default();
+                values.push(value);
+                validity.push(true);
             },
         }
         Ok(())
