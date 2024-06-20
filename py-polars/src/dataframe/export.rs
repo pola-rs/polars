@@ -104,7 +104,7 @@ impl PyDataFrame {
                 .collect::<Vec<_>>();
             let rbs = self
                 .df
-                .iter_chunks(false)
+                .iter_chunks(false, true)
                 .map(|rb| {
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {

@@ -1359,7 +1359,7 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self, *, future=False) -> pa.Table:
+    def to_arrow(self, *, future: bool = False) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
