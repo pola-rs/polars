@@ -12,6 +12,7 @@ from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from polars.type_aliases import SelectorType
+from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -107,14 +108,14 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         }
     )
     assert df.select(
-        ~cs.by_dtype(pl.INTEGER_DTYPES, pl.TEMPORAL_DTYPES)
-    ).schema == OrderedDict(
+        ~cs.by_dtype(*INTEGER_DTYPES, *TEMPORAL_DTYPES)
+    ).schema == pl.Schema(
         {
-            "cde": pl.Float64,
-            "def": pl.Float32,
-            "eee": pl.Boolean,
-            "fgg": pl.Boolean,
-            "qqR": pl.String,
+            "cde": pl.Float64(),
+            "def": pl.Float32(),
+            "eee": pl.Boolean(),
+            "fgg": pl.Boolean(),
+            "qqR": pl.String(),
         }
     )
     assert df.select(cs.by_dtype()).schema == {}

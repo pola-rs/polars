@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import (
-    FLOAT_DTYPES,
     Array,
     Categorical,
     List,
@@ -12,6 +11,7 @@ from polars.datatypes import (
     Struct,
     unpack_dtypes,
 )
+from polars.datatypes.group import FLOAT_DTYPES
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error

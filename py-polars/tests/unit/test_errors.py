@@ -21,6 +21,7 @@ from polars.exceptions import (
     SchemaFieldNotFoundError,
     StructFieldNotFoundError,
 )
+from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -78,15 +79,17 @@ def test_error_on_invalid_by_in_asof_join() -> None:
         df1.join_asof(df2, on="b", by=["a", "c"])
 
 
-def test_error_on_invalid_series_init() -> None:
-    for dtype in pl.TEMPORAL_DTYPES:
-        py_type = dtype_to_py_type(dtype)
-        with pytest.raises(
-            TypeError,
-            match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
-        ):
-            pl.Series([1.5, 2.0, 3.75], dtype=dtype)
+@pytest.mark.parametrize("dtype", TEMPORAL_DTYPES)
+def test_error_on_invalid_series_init(dtype: pl.DataType) -> None:
+    py_type = dtype_to_py_type(dtype)
+    with pytest.raises(
+        TypeError,
+        match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
+    ):
+        pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
+
+def test_error_on_invalid_series_init2() -> None:
     with pytest.raises(TypeError, match="unexpected value"):
         pl.Series([1.5, 2.0, 3.75], dtype=pl.Int32)
 

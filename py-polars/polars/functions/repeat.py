@@ -9,8 +9,6 @@ from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Array,
     Boolean,
     Decimal,
@@ -18,6 +16,7 @@ from polars.datatypes import (
     List,
     Utf8,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

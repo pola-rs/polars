@@ -10,20 +10,7 @@ import polars as pl
 from polars.exceptions import PanicException
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
-
-if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
-
-# TODO: Define data type groups centrally somewhere in the test suite
-DATETIME_DTYPES: set[PolarsDataType] = {
-    pl.Datetime,
-    pl.Datetime("ms"),
-    pl.Datetime("us"),
-    pl.Datetime("ns"),
-}
-TEMPORAL_DTYPES: set[PolarsDataType] = (
-    {pl.Date, pl.Time} | pl.DURATION_DTYPES | DATETIME_DTYPES
-)
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -34,7 +21,7 @@ else:
 
 @given(
     s=series(
-        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
+        allowed_dtypes=[*NUMERIC_DTYPES, pl.Boolean],
         allow_chunks=False,
     )
 )
@@ -46,7 +33,7 @@ def test_series_from_buffers_numeric_with_validity(s: pl.Series) -> None:
 
 @given(
     s=series(
-        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
+        allowed_dtypes=[*NUMERIC_DTYPES, pl.Boolean],
         allow_chunks=False,
         allow_null=False,
     )
@@ -56,7 +43,12 @@ def test_series_from_buffers_numeric(s: pl.Series) -> None:
     assert_series_equal(s, result)
 
 
-@given(s=series(allowed_dtypes=TEMPORAL_DTYPES, allow_chunks=False))
+@given(
+    s=series(
+        allowed_dtypes=[pl.Date, pl.Time, pl.Datetime, pl.Duration],
+        allow_chunks=False,
+    )
+)
 def test_series_from_buffers_temporal_with_validity(s: pl.Series) -> None:
     validity = s.is_not_null()
     physical = pl.Int32 if s.dtype == pl.Date else pl.Int64

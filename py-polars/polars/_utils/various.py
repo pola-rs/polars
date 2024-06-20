@@ -23,8 +23,6 @@ from typing import (
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
@@ -34,6 +32,7 @@ from polars.datatypes import (
     String,
     Time,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 

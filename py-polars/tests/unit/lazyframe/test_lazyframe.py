@@ -13,13 +13,13 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars import lit, when
-from polars.datatypes import FLOAT_DTYPES
 from polars.exceptions import (
     InvalidOperationError,
     PerformanceWarning,
     PolarsInefficientMapWarning,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
@@ -527,13 +527,13 @@ def test_floor() -> None:
         (1.0e20, 2, 100000000000000000000.0),
     ],
 )
-def test_round(n: float, ndigits: int, expected: float) -> None:
-    for float_dtype in FLOAT_DTYPES:
-        ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": float_dtype})
-        assert_series_equal(
-            ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
-            pl.Series("value", [expected], dtype=float_dtype),
-        )
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
+        pl.Series("value", [expected], dtype=dtype),
+    )
 
 
 def test_dot() -> None:

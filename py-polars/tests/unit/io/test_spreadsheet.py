@@ -14,6 +14,7 @@ import polars.selectors as cs
 from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io.spreadsheet.functions import _identify_workbook
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
@@ -597,7 +598,9 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
                 ],
             },
             "dtype_formats": {
-                pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)',
+                frozenset(
+                    FLOAT_DTYPES
+                ): '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)',
                 pl.Date: "dd-mm-yyyy",
             },
             "column_formats": {"dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"}},
@@ -692,7 +695,7 @@ def test_excel_sparklines(engine: ExcelSpreadsheetEngine) -> None:
             workbook=wb,
             worksheet="frame_data",
             table_style="Table Style Light 2",
-            dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
+            dtype_formats={frozenset(NUMERIC_DTYPES): "#,##0_);(#,##0)"},
             column_formats={cs.starts_with("h"): "#,##0_);(#,##0)"},
             sparklines={
                 "trend": ["q1", "q2", "q3", "q4"],
