@@ -131,7 +131,7 @@ def test_compressed_simple(compression: IpcCompression, stream: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    write_ipc(df, stream, f, compression)
+    write_ipc(df, stream, f, compression=compression)
     f.seek(0)
 
     df_read = read_ipc(stream, f, use_pyarrow=False)

@@ -84,7 +84,7 @@ where
         IpcWriter {
             writer,
             compression: None,
-            pl_flavor: false,
+            pl_flavor: true,
         }
     }
 
