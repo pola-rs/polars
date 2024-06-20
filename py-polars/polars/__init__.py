@@ -1,5 +1,4 @@
 import contextlib
-import os
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     # ensure the object constructor is known by polars
@@ -13,9 +12,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # we also set other function pointers needed
     # on the rust side. This function is highly
     # unsafe and should only be called once.
-    from polars.polars import (
-        __register_startup_deps,
-    )
+    from polars.polars import __register_startup_deps
 
     __register_startup_deps()
 
@@ -380,8 +377,6 @@ __all__ = [
     "sql",
     "sql_expr",
 ]
-
-os.environ["POLARS_ALLOW_EXTENSION"] = "true"
 
 
 def __getattr__(name: str):  # type: ignore[no-untyped-def]
