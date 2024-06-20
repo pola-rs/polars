@@ -3240,26 +3240,26 @@ class DataFrame:
     def write_ipc(
         self,
         file: None,
-        compression: IpcCompression = "uncompressed",
         *,
-        future: bool = False,
+        compression: IpcCompression = "uncompressed",
+        future: bool | None = None,
     ) -> BytesIO: ...
 
     @overload
     def write_ipc(
         self,
         file: str | Path | IO[bytes],
-        compression: IpcCompression = "uncompressed",
         *,
-        future: bool = False,
+        compression: IpcCompression = "uncompressed",
+        future: bool | None = None,
     ) -> None: ...
 
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
-        compression: IpcCompression = "uncompressed",
         *,
-        future: bool = False,
+        compression: IpcCompression = "uncompressed",
+        future: bool | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3308,6 +3308,8 @@ class DataFrame:
             issue_unstable_warning(
                 "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
             )
+        if future is None:
+            future = True
 
         self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
@@ -3316,20 +3318,26 @@ class DataFrame:
     def write_ipc_stream(
         self,
         file: None,
+        *,
         compression: IpcCompression = "uncompressed",
+        future: bool | None = None,
     ) -> BytesIO: ...
 
     @overload
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes],
+        *,
         compression: IpcCompression = "uncompressed",
+        future: bool | None = None,
     ) -> None: ...
 
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
+        *,
         compression: IpcCompression = "uncompressed",
+        future: bool | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC record batch stream.
@@ -3343,6 +3351,13 @@ class DataFrame:
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+        future
+            Setting this to `True` will write Polars' internal data structures that
+            might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -3367,7 +3382,14 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc_stream(file, compression)
+        if future:
+            issue_unstable_warning(
+                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
+            )
+        if future is None:
+            future = True
+
+        self._df.write_ipc_stream(file, compression, future=future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
