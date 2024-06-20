@@ -1359,7 +1359,7 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self, *, future: bool = False) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
@@ -1367,6 +1367,16 @@ class DataFrame:
 
         Data types that do copy:
             - CategoricalType
+
+        Parameters
+        ----------
+        future
+            Setting this to `True` will write Polars' internal data structures that
+            might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -1384,7 +1394,12 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        record_batches = self._df.to_arrow()
+        if future:
+            issue_unstable_warning(
+                "The `future` parameter of `DataFrame.to_arrow` is considered unstable."
+            )
+
+        record_batches = self._df.to_arrow(future)
         return pa.Table.from_batches(record_batches)
 
     @overload

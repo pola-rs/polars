@@ -69,7 +69,7 @@ where
 
         let mut data = vec![];
         let mut compressed_block = avro_schema::file::CompressedBlock::default();
-        for chunk in df.iter_chunks(false) {
+        for chunk in df.iter_chunks(false, true) {
             let mut serializers = chunk
                 .iter()
                 .zip(record.fields.iter())
