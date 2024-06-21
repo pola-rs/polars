@@ -1811,6 +1811,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.
 
+            .. warning::
+                Background mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Returns
         -------
         DataFrame
@@ -1887,7 +1891,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _eager,
             new_streaming,
         )
+
         if background:
+            issue_unstable_warning("Background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
 
         # Only for testing purposes atm.
