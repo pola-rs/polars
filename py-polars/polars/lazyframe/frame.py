@@ -6308,7 +6308,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.count())
 
     @deprecate_function(
-        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vaars`", version="1.0.0"
+        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        version="1.0.0",
     )
     def melt(
         self,
@@ -6334,9 +6335,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        index
+        id_vars
             Column(s) or selector(s) to use as identifier variables.
-        on
+        value_vars
             Column(s) or selector(s) to use as values variables; if `on`
             is empty all columns that are not in `index` will be used.
         variable_name
@@ -6348,4 +6349,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If this runs in streaming, the output of the unpivot operation
             will not have a stable ordering.
         """
-        return self.unpivot(index=id_vars, on=value_vars, variable_name=variable_name, value_name=value_name, streamable=streamable)
+        return self.unpivot(
+            index=id_vars,
+            on=value_vars,
+            variable_name=variable_name,
+            value_name=value_name,
+            streamable=streamable,
+        )

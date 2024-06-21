@@ -32,22 +32,23 @@ def test_unpivot() -> None:
             "6",
         ]
 
-    for unpivoted in [
-        df.unpivot(value_name="foo", variable_name="bar"),
-        df.lazy().unpivot(value_name="foo", variable_name="bar").collect(),
-    ]:
-        assert unpivoted["bar"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
-        assert unpivoted["foo"].to_list() == [
-            "a",
-            "b",
-            "c",
-            "1",
-            "3",
-            "5",
-            "2",
-            "4",
-            "6",
-        ]
+    with pytest.deprecated_call(match="unpivot"):
+        for unpivoted in [
+            df.melt(value_name="foo", variable_name="bar"),
+            df.lazy().melt(value_name="foo", variable_name="bar").collect(),
+        ]:
+            assert unpivoted["bar"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
+            assert unpivoted["foo"].to_list() == [
+                "a",
+                "b",
+                "c",
+                "1",
+                "3",
+                "5",
+                "2",
+                "4",
+                "6",
+            ]
 
 
 def test_unpivot_projection_pd_7747() -> None:
@@ -58,7 +59,7 @@ def test_unpivot_projection_pd_7747() -> None:
             "weight": [100, 103, 95, 90, 110],
         }
     )
-    with pytest.deprecated_call():
+    with pytest.deprecated_call(match="unpivot"):
         result = (
             df.with_columns(pl.col("age").alias("wgt"))
             .melt(id_vars="number", value_vars="wgt")

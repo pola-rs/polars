@@ -417,11 +417,11 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
-    #[pyo3(signature = (index, columns, values, maintain_order, sort_columns, aggregate_expr, separator))]
+    #[pyo3(signature = (index, on, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
         index: Vec<String>,
-        columns: Vec<String>,
+        on: Vec<String>,
         values: Option<Vec<String>>,
         maintain_order: bool,
         sort_columns: bool,
@@ -433,7 +433,7 @@ impl PyDataFrame {
         let df = fun(
             &self.df,
             index,
-            columns,
+            on,
             values,
             sort_columns,
             agg_expr,

@@ -7586,10 +7586,11 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
+    @deprecate_renamed_parameter("columns", "on", version="1.0.0")
     def pivot(
         self,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
@@ -7609,7 +7610,7 @@ class DataFrame:
             Column values to aggregate. If None, all remaining columns will be used.
         index
             One or multiple keys to group by.
-        columns
+        on
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
         aggregate_function
@@ -7643,7 +7644,7 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(index="foo", columns="bar", values="baz", aggregate_function="sum")
+        >>> df.pivot(index="foo", on="bar", values="baz", aggregate_function="sum")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ y   ┆ x   │
@@ -7659,7 +7660,7 @@ class DataFrame:
         >>> import polars.selectors as cs
         >>> df.pivot(
         ...     index=cs.string(),
-        ...     columns=cs.string(),
+        ...     on=cs.string(),
         ...     values=cs.numeric(),
         ...     aggregate_function="sum",
         ...     sort_columns=True,
@@ -7689,7 +7690,7 @@ class DataFrame:
         ... )
         >>> df.pivot(
         ...     index="col1",
-        ...     columns="col2",
+        ...     on="col2",
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),
         ... )
@@ -7708,12 +7709,12 @@ class DataFrame:
         get the same result as above in lazy mode:
 
         >>> index = pl.col("col1")
-        >>> columns = pl.col("col2")
+        >>> on = pl.col("col2")
         >>> values = pl.col("col3")
         >>> unique_column_values = ["x", "y"]
         >>> aggregate_function = lambda col: col.tanh().mean()
         >>> df.lazy().group_by(index).agg(
-        ...     aggregate_function(values.filter(columns == value)).alias(value)
+        ...     aggregate_function(values.filter(on == value)).alias(value)
         ...     for value in unique_column_values
         ... ).collect()  # doctest: +IGNORE_RESULT
         shape: (2, 3)
@@ -7738,7 +7739,7 @@ class DataFrame:
         ... )
         >>> df.pivot(
         ...     index="ix",
-        ...     columns="col",
+        ...     on="col",
         ...     values=["foo", "bar"],
         ...     aggregate_function="sum",
         ...     separator="/",
@@ -7754,7 +7755,7 @@ class DataFrame:
         └─────┴───────┴───────┴───────┴───────┘
         """  # noqa: W505
         index = _expand_selectors(self, index)
-        columns = _expand_selectors(self, columns)
+        on = _expand_selectors(self, on)
         if values is not None:
             values = _expand_selectors(self, values)
 
@@ -7793,7 +7794,7 @@ class DataFrame:
         return self._from_pydf(
             self._df.pivot_expr(
                 index,
-                columns,
+                on,
                 values,
                 maintain_order,
                 sort_columns,
@@ -10676,7 +10677,8 @@ class DataFrame:
         return self.lazy().count().collect(_eager=True)
 
     @deprecate_function(
-        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vaars`", version="1.0.0"
+        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        version="1.0.0",
     )
     def melt(
         self,
@@ -10700,9 +10702,9 @@ class DataFrame:
 
         Parameters
         ----------
-        index
+        id_vars
             Column(s) or selector(s) to use as identifier variables.
-        on
+        value_vars
             Column(s) or selector(s) to use as values variables; if `on`
             is empty all columns that are not in `index` will be used.
         variable_name
@@ -10710,8 +10712,12 @@ class DataFrame:
         value_name
             Name to give to the `value` column. Defaults to "value"
         """
-        return self.unpivot(index=id_vars, on=value_vars, variable_name=variable_name, value_name=value_name)
-
+        return self.unpivot(
+            index=id_vars,
+            on=value_vars,
+            variable_name=variable_name,
+            value_name=value_name,
+        )
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
