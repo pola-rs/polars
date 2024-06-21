@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::borrow::Cow;
+use std::sync::RwLockReadGuard;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -194,7 +195,7 @@ pub trait SeriesTrait:
         polars_bail!(opq = bitxor, self._dtype());
     }
 
-    fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
+    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
         None
     }
 

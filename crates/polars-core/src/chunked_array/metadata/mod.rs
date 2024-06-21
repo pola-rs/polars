@@ -5,13 +5,20 @@ use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub use self::collect::MetadataCollectable;
 pub use self::env::MetadataEnv;
-use super::{IntoScalar, PolarsDataType, Scalar};
+pub use self::guard::MetadataReadGuard;
+pub use self::interior_mutable::IMMetadata;
+pub use self::md_trait::MetadataTrait;
+use super::PolarsDataType;
 use crate::series::IsSorted;
 
 #[macro_use]
 mod env;
 mod collect;
+mod guard;
+mod interior_mutable;
+mod md_trait;
 
 macro_rules! mdenv_may_bail {
     (get: $field:literal, $value:expr $(=> $default:expr)?) => {{
@@ -54,15 +61,6 @@ bitflags! {
     }
 }
 
-pub trait MetadataTrait {
-    fn get_flags(&self) -> MetadataFlags;
-    fn min_value(&self) -> Option<Scalar>;
-    fn max_value(&self) -> Option<Scalar>;
-
-    /// Number of unique non-null values
-    fn distinct_count(&self) -> Option<IdxSize>;
-}
-
 pub struct Metadata<T: PolarsDataType> {
     flags: MetadataFlags,
 
@@ -73,16 +71,6 @@ pub struct Metadata<T: PolarsDataType> {
     distinct_count: Option<IdxSize>,
 }
 
-pub trait MetadataCollectable<T>: Sized {
-    fn collect_cheap_metadata(&mut self) {}
-
-    #[inline(always)]
-    fn with_cheap_metadata(mut self) -> Self {
-        self.collect_cheap_metadata();
-        self
-    }
-}
-
 bitflags! {
     #[derive(Default, Debug, Clone, Copy, PartialEq)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
@@ -90,29 +78,6 @@ bitflags! {
         const SORTED_ASC = 0x01;
         const SORTED_DSC = 0x02;
         const FAST_EXPLODE_LIST = 0x04;
-    }
-}
-
-impl<T: PolarsDataType> MetadataTrait for Metadata<T>
-where
-    T::OwnedPhysical: IntoScalar + Clone,
-{
-    fn get_flags(&self) -> MetadataFlags {
-        self.get_flags()
-    }
-
-    fn min_value(&self) -> Option<Scalar> {
-        self.get_min_value()
-            .map(|v| v.clone().into_scalar(T::get_dtype()).unwrap())
-    }
-
-    fn max_value(&self) -> Option<Scalar> {
-        self.get_max_value()
-            .map(|v| v.clone().into_scalar(T::get_dtype()).unwrap())
-    }
-
-    fn distinct_count(&self) -> Option<IdxSize> {
-        self.get_distinct_count()
     }
 }
 
@@ -430,6 +395,9 @@ impl<T: PolarsDataType> Metadata<T> {
         self.flags.set_fast_explode_list(value);
     }
 
+    pub fn is_sorted_any(&self) -> bool {
+        self.flags.get_sorted_flag() != IsSorted::Not
+    }
     pub fn is_sorted(&self) -> IsSorted {
         self.flags.get_sorted_flag()
     }
@@ -438,6 +406,10 @@ impl<T: PolarsDataType> Metadata<T> {
         self.flags.set_sorted_flag(is_sorted)
     }
 
+    pub fn set_flags(&mut self, flags: MetadataFlags) {
+        mdenv_may_bail!(set: "flags", flags);
+        self.flags = flags;
+    }
     pub fn set_min_value(&mut self, min_value: Option<T::OwnedPhysical>) {
         mdenv_may_bail!(set: "min_value", min_value);
         self.min_value = min_value;
@@ -451,11 +423,10 @@ impl<T: PolarsDataType> Metadata<T> {
         self.distinct_count = distinct_count;
     }
 
-    pub fn set_flags(&mut self, flags: MetadataFlags) {
-        mdenv_may_bail!(set: "flags", flags);
-        self.flags = flags;
+    pub fn get_flags(&self) -> MetadataFlags {
+        let flags = self.flags;
+        mdenv_may_bail!(get: "flags", flags => MetadataFlags::empty())
     }
-
     pub fn get_min_value(&self) -> Option<&T::OwnedPhysical> {
         let min_value = self.min_value.as_ref();
         mdenv_may_bail!(get: "min_value", min_value => None)
@@ -467,9 +438,5 @@ impl<T: PolarsDataType> Metadata<T> {
     pub fn get_distinct_count(&self) -> Option<IdxSize> {
         let distinct_count = self.distinct_count;
         mdenv_may_bail!(get: "distinct_count", distinct_count => None)
-    }
-    pub fn get_flags(&self) -> MetadataFlags {
-        let flags = self.flags;
-        mdenv_may_bail!(get: "flags", flags => MetadataFlags::empty())
     }
 }

@@ -1,6 +1,16 @@
-use super::{Metadata, MetadataCollectable, MetadataEnv};
+use super::{Metadata, MetadataEnv};
 use crate::chunked_array::{ChunkAgg, ChunkedArray, PolarsDataType, PolarsNumericType};
 use crate::series::IsSorted;
+
+pub trait MetadataCollectable<T>: Sized {
+    fn collect_cheap_metadata(&mut self) {}
+
+    #[inline(always)]
+    fn with_cheap_metadata(mut self) -> Self {
+        self.collect_cheap_metadata();
+        self
+    }
+}
 
 impl<T> MetadataCollectable<T> for ChunkedArray<T>
 where
