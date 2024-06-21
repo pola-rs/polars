@@ -377,7 +377,13 @@ def test_hive_partition_directory_scan(
         scan([tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True)
 
     if glob:
-        out = scan([tmp_path / "**/*.bin"], hive_partitioning=True).collect()
+        out = scan(tmp_path / "**/*.bin", hive_partitioning=True).collect()
+        assert_frame_equal(out, df)
+
+        out = scan(
+            [tmp_path / "a=1/**/*.bin", tmp_path / "a=22/**/*.bin"],
+            hive_partitioning=True,
+        ).collect()
         assert_frame_equal(out, df)
 
     out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=True).collect()
@@ -386,6 +392,10 @@ def test_hive_partition_directory_scan(
     # Test `hive_partitioning=False`
     out = scan(tmp_path, hive_partitioning=False).collect()
     assert_frame_equal(out, df.drop("a", "b"))
+
+    if glob:
+        out = scan(tmp_path / "**/*.bin", hive_partitioning=False).collect()
+        assert_frame_equal(out, df.drop("a", "b"))
 
     out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
     assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
