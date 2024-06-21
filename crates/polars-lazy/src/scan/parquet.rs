@@ -60,11 +60,12 @@ impl LazyFileListReader for LazyParquetReader {
     fn finish(mut self) -> PolarsResult<LazyFrame> {
         let (paths, hive_start_idx) =
             self.expand_paths(self.args.hive_options.enabled.unwrap_or(false))?;
-        self.args.hive_options.enabled = Some(self.args.hive_options.enabled.unwrap_or(
-            self.paths.len() == 1
-                && get_glob_start_idx(self.paths[0].to_str().unwrap().as_bytes()).is_none()
-                && paths.len() > 1,
-        ));
+        self.args.hive_options.enabled =
+            Some(self.args.hive_options.enabled.unwrap_or_else(|| {
+                self.paths.len() == 1
+                    && get_glob_start_idx(self.paths[0].to_str().unwrap().as_bytes()).is_none()
+                    && paths.len() > 1
+            }));
         self.args.hive_options.hive_start_idx = hive_start_idx;
 
         let row_index = self.args.row_index;

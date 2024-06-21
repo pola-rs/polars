@@ -297,8 +297,8 @@ def test_hive_partition_directory_scan(
     dfs = [
         pl.DataFrame({'x': 5 * [1], 'a': 1, 'b': 1}),
         pl.DataFrame({'x': 5 * [2], 'a': 1, 'b': 2}),
-        pl.DataFrame({'x': 5 * [3], 'a': 2, 'b': 1}),
-        pl.DataFrame({'x': 5 * [4], 'a': 2, 'b': 2}),
+        pl.DataFrame({'x': 5 * [3], 'a': 22, 'b': 1}),
+        pl.DataFrame({'x': 5 * [4], 'a': 22, 'b': 2}),
     ]  # fmt: skip
 
     for df in dfs:
@@ -353,10 +353,10 @@ def test_hive_partition_directory_scan(
     out = scan(tmp_path / "a=1/b=1/data.bin").collect()
     assert out.columns == ["x"]
 
-    out = scan([tmp_path / "a=1/", tmp_path / "a=2/"]).collect()
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/"]).collect()
     assert out.columns == ["x"]
 
-    out = scan([tmp_path / "a=1/", tmp_path / "a=2/b=1/data.bin"]).collect()
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/b=1/data.bin"]).collect()
     assert out.columns == ["x"]
 
     if glob:
@@ -367,14 +367,14 @@ def test_hive_partition_directory_scan(
     out = scan(tmp_path, hive_partitioning=True).collect()
     assert_frame_equal(out, df)
 
-    out = scan([tmp_path / "a=1", tmp_path / "a=2"], hive_partitioning=True).collect()
+    out = scan([tmp_path / "a=1", tmp_path / "a=22"], hive_partitioning=True).collect()
     assert_frame_equal(out, df.drop("a"))
 
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
         match="attempted to read from different directory levels with hive partitioning enabled:",
     ):
-        scan([tmp_path / "a=1", tmp_path / "a=2/b=1"], hive_partitioning=True)
+        scan([tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True)
 
     if glob:
         out = scan([tmp_path / "**/*.bin"], hive_partitioning=True).collect()

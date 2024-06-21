@@ -23,7 +23,7 @@ fn expand_paths(
     paths: &[PathBuf],
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     glob: bool,
-    validate_hive_partitioning: bool,
+    check_directory_level: bool,
 ) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
     let Some(first_path) = paths.first() else {
         return Ok((vec![].into(), 0));
@@ -35,7 +35,11 @@ fn expand_paths(
     let mut expand_start_idx = usize::MAX;
     let expand_start_idx = &mut expand_start_idx;
     let mut update_expand_start_idx = |i, path_idx: usize| {
-        if validate_hive_partitioning && ![usize::MAX, i].contains(expand_start_idx) {
+        if check_directory_level
+            && ![usize::MAX, i].contains(expand_start_idx)
+            // They could still be the same directory level, just with different name length
+            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+        {
             polars_bail!(
                 InvalidOperation:
                 "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
@@ -43,7 +47,7 @@ fn expand_paths(
                 paths[path_idx].to_str().unwrap(),
             )
         } else {
-            *expand_start_idx = i;
+            *expand_start_idx = std::cmp::min(*expand_start_idx, i);
             Ok(())
         }
     };
@@ -68,8 +72,8 @@ fn expand_paths(
             for (path_idx, path) in paths.iter().enumerate() {
                 let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
-                let (path, glob_start_idx) = if let Some(glob_start_idx) = glob_start_idx {
-                    (path.clone(), glob_start_idx)
+                let path = if glob_start_idx.is_some() {
+                    path.clone()
                 } else if !path.ends_with("/")
                     && is_file_cloud(path.to_str().unwrap(), cloud_options)?
                 {
@@ -80,10 +84,10 @@ fn expand_paths(
                     polars_bail!(ComputeError: "not implemented: did not find cloud file at path = {} and `glob` was set to false", path.to_str().unwrap());
                 } else {
                     // FIXME: This will fail! See https://github.com/pola-rs/polars/issues/17105
-                    (path.join("**/*"), path.to_str().unwrap().len())
+                    path.join("**/*")
                 };
 
-                update_expand_start_idx(glob_start_idx, path_idx)?;
+                update_expand_start_idx(0, path_idx)?;
 
                 out_paths.extend(
                     polars_io::async_glob(path.to_str().unwrap(), cloud_options)?
@@ -131,7 +135,7 @@ fn expand_paths(
             let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
             if glob && i.is_some() {
-                update_expand_start_idx(i.unwrap(), path_idx)?;
+                update_expand_start_idx(0, path_idx)?;
 
                 let Ok(paths) = glob::glob(path.to_str().unwrap()) else {
                     polars_bail!(ComputeError: "invalid glob pattern given")
@@ -259,15 +263,12 @@ pub trait LazyFileListReader: Clone {
 
     /// Returns a list of paths after resolving globs and directories, as well as
     /// the string index at which to start parsing hive partitions.
-    fn expand_paths(
-        &self,
-        validate_hive_partitioning: bool,
-    ) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
+    fn expand_paths(&self, check_directory_level: bool) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
         expand_paths(
             self.paths(),
             self.cloud_options(),
             self.glob(),
-            validate_hive_partitioning,
+            check_directory_level,
         )
     }
 }
