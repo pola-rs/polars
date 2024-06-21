@@ -32,8 +32,8 @@ impl PhysicalAggExpr for PivotExpr {
 
 pub fn pivot<I0, I1, I2, S0, S1, S2>(
     df: &DataFrame,
-    on: I1,
-    index: I0,
+    on: I0,
+    index: I1,
     values: Option<I2>,
     sort_columns: bool,
     agg_expr: Option<Expr>,
@@ -53,7 +53,7 @@ where
         let expr = prepare_eval_expr(agg_expr);
         PivotAgg::Expr(Arc::new(PivotExpr(expr)))
     });
-    polars_ops::pivot::pivot(df, index, on, values, sort_columns, agg_expr, separator)
+    polars_ops::pivot::pivot(df, on, index, values, sort_columns, agg_expr, separator)
 }
 
 pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
@@ -79,5 +79,5 @@ where
         let expr = prepare_eval_expr(agg_expr);
         PivotAgg::Expr(Arc::new(PivotExpr(expr)))
     });
-    polars_ops::pivot::pivot_stable(df, index, on, values, sort_columns, agg_expr, separator)
+    polars_ops::pivot::pivot_stable(df, on, index, values, sort_columns, agg_expr, separator)
 }

@@ -189,8 +189,8 @@ impl DataFrame {
     ///
     /// # Arguments
     ///
-    /// * `index` - String slice that represent the columns to use as id variables.
     /// * `on` - String slice that represent the columns to use as value variables.
+    /// * `index` - String slice that represent the columns to use as id variables.
     ///
     /// If `on` is empty all columns that are not in `index` will be used.
     ///
@@ -441,7 +441,7 @@ mod test {
         )
         .unwrap();
 
-        let unpivoted = df.unpivot(["A", "B"], ["C", "D"])?;
+        let unpivoted = df.unpivot(["C", "D"], ["A", "B"])?;
         assert_eq!(
             Vec::from(unpivoted.column("value")?.i32()?),
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
