@@ -390,23 +390,28 @@ impl SQLExprVisitor<'_> {
             } else {
                 Schema::new()
             }))
-        };
+        }?;
 
-        let mut column: PolarsResult<Expr> = if lf.is_none() {
+        let mut column: PolarsResult<Expr> = if lf.is_none() && schema.is_empty() {
             Ok(col(&ident_root.value))
         } else {
-            let col_name = &remaining_idents.next().unwrap().value;
-            if let Some((_, name, _)) = schema?.get_full(col_name) {
-                let resolved = &self.ctx.resolve_name(&ident_root.value, col_name);
+            let name = &remaining_idents.next().unwrap().value;
+            if lf.is_some() && name == "*" {
+                Ok(cols(schema.iter_names()))
+            } else if let Some((_, name, _)) = schema.get_full(name) {
+                let resolved = &self.ctx.resolve_name(&ident_root.value, name);
                 Ok(if name != resolved {
                     col(resolved).alias(name)
                 } else {
                     col(name)
                 })
+            } else if lf.is_none() {
+                remaining_idents = idents.iter().skip(1);
+                Ok(col(&ident_root.value))
             } else {
                 polars_bail!(
                     SQLInterface: "no column named '{}' found in table '{}'",
-                    col_name,
+                    name,
                     ident_root
                 )
             }

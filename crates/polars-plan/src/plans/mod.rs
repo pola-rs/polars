@@ -16,7 +16,7 @@ pub(crate) mod ir;
 mod apply;
 mod builder_dsl;
 mod builder_ir;
-pub(crate) mod conversion;
+pub mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
 pub mod expr_ir;

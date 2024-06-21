@@ -6,7 +6,7 @@ use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
 use polars_plan::prelude::*;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, JoinConstraint,
+    Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, Ident, JoinConstraint,
     JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr,
     SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
     Value as SQLValue, Values, WildcardAdditionalOptions,
@@ -600,36 +600,44 @@ impl SQLContext {
         lf = self.process_where(lf, &select_stmt.selection)?;
 
         // Column projections.
-        let projections: Vec<_> = select_stmt
+        let projections: Vec<Expr> = select_stmt
             .projection
             .iter()
             .map(|select_item| {
                 Ok(match select_item {
-                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, self, schema.as_deref())?,
+                    SelectItem::UnnamedExpr(expr) => {
+                        vec![parse_sql_expr(expr, self, schema.as_deref())?]
+                    },
                     SelectItem::ExprWithAlias { expr, alias } => {
                         let expr = parse_sql_expr(expr, self, schema.as_deref())?;
-                        expr.alias(&alias.value)
+                        vec![expr.alias(&alias.value)]
                     },
-                    SelectItem::QualifiedWildcard(oname, wildcard_options) => self
-                        .process_qualified_wildcard(
-                            oname,
+                    SelectItem::QualifiedWildcard(obj_name, wildcard_options) => {
+                        let expanded = self.process_qualified_wildcard(
+                            obj_name,
                             wildcard_options,
                             &mut contains_wildcard_exclude,
-                        )?,
+                            schema.as_deref(),
+                        )?;
+                        rewrite_projections(vec![expanded], &(schema.clone().unwrap()), &[])?
+                    },
                     SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
                         let e = col("*");
-                        self.process_wildcard_additional_options(
+                        vec![self.process_wildcard_additional_options(
                             e,
                             wildcard_options,
                             &mut contains_wildcard_exclude,
-                        )?
+                        )?]
                     },
                 })
             })
-            .collect::<PolarsResult<_>>()?;
+            .collect::<PolarsResult<Vec<Vec<_>>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-        // Check for "GROUP BY ..." (after projections, as there may be ordinal/position ints).
+        // Check for "GROUP BY ..." (after determining projections)
         let mut group_by_keys: Vec<Expr> = Vec::new();
         match &select_stmt.group_by {
             // Standard "GROUP BY x, y, z" syntax (also recognising ordinal values)
@@ -1152,25 +1160,13 @@ impl SQLContext {
         ObjectName(idents): &ObjectName,
         options: &WildcardAdditionalOptions,
         contains_wildcard_exclude: &mut bool,
+        schema: Option<&Schema>,
     ) -> PolarsResult<Expr> {
-        let idents = idents.as_slice();
-        let e = match idents {
-            [tbl_name] => {
-                let lf = self.table_map.get_mut(&tbl_name.value).ok_or_else(|| {
-                    polars_err!(
-                        SQLInterface: "no table named '{}' found",
-                        tbl_name
-                    )
-                })?;
-                let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
-                cols(schema.iter_names())
-            },
-            e => polars_bail!(
-                SQLSyntax: "invalid wildcard expression ({:?})",
-                e
-            ),
-        };
-        self.process_wildcard_additional_options(e, options, contains_wildcard_exclude)
+        let mut new_idents = idents.clone();
+        new_idents.push(Ident::new("*"));
+        let identifier = SQLExpr::CompoundIdentifier(new_idents);
+        let expr = parse_sql_expr(&identifier, self, schema)?;
+        self.process_wildcard_additional_options(expr, options, contains_wildcard_exclude)
     }
 
     fn process_wildcard_additional_options(

@@ -8,7 +8,7 @@ from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
-def struct_df() -> pl.DataFrame:
+def df_struct() -> pl.DataFrame:
     return pl.DataFrame(
         {
             "id": [100, 200, 300, 400],
@@ -19,8 +19,8 @@ def struct_df() -> pl.DataFrame:
     ).select(pl.struct(pl.all()).alias("json_msg"))
 
 
-def test_struct_field_selection(struct_df: pl.DataFrame) -> None:
-    res = struct_df.sql(
+def test_struct_field_selection(df_struct: pl.DataFrame) -> None:
+    res = df_struct.sql(
         """
         SELECT
           -- validate table alias resolution
@@ -36,14 +36,36 @@ def test_struct_field_selection(struct_df: pl.DataFrame) -> None:
           json_msg.name DESC
         """
     )
-
     expected = pl.DataFrame(
-        {
-            "ID": [400, 100],
-            "NAME": ["Zoe", "Alice"],
-            "AGE": [45, 32],
-        }
+        {"ID": [400, 100], "NAME": ["Zoe", "Alice"], "AGE": [45, 32]}
     )
+    assert_frame_equal(expected, res)
+
+
+@pytest.mark.parametrize(
+    ("fields", "excluding"),
+    [
+        ("json_msg.*", ""),
+        ("self.json_msg.*", ""),
+        ("json_msg.other.*", ""),
+        ("self.json_msg.other.*", ""),
+    ],
+)
+def test_struct_field_wildcard_selection(
+    fields: str,
+    excluding: str,
+    df_struct: pl.DataFrame,
+) -> None:
+    query = f"SELECT {fields} {excluding} FROM df_struct ORDER BY json_msg.id"
+    print(query)
+    res = pl.sql(query).collect()
+
+    expected = df_struct.unnest("json_msg")
+    if fields.endswith(".other.*"):
+        expected = expected["other"].struct.unnest()
+    if excluding:
+        expected = expected.drop(excluding.split(","))
+
     assert_frame_equal(expected, res)
 
 
@@ -55,6 +77,6 @@ def test_struct_field_selection(struct_df: pl.DataFrame) -> None:
         "self.json_msg.other.invalid_column",
     ],
 )
-def test_struct_indexing_errors(invalid_column: str, struct_df: pl.DataFrame) -> None:
+def test_struct_indexing_errors(invalid_column: str, df_struct: pl.DataFrame) -> None:
     with pytest.raises(StructFieldNotFoundError, match="invalid_column"):
-        struct_df.sql(f"SELECT {invalid_column} FROM self")
+        df_struct.sql(f"SELECT {invalid_column} FROM self")

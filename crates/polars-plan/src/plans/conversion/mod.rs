@@ -1,6 +1,6 @@
 mod convert_utils;
 mod dsl_to_ir;
-mod expr_expansion;
+pub(crate) mod expr_expansion;
 mod expr_to_ir;
 mod ir_to_dsl;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
