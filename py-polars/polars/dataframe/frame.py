@@ -7609,10 +7609,10 @@ class DataFrame:
         on
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
-        values
-            Column values to aggregate. If None, all remaining columns will be used.
         index
             One or multiple keys to group by.
+        values
+            Column values to aggregate. If None, all remaining columns will be used.
         aggregate_function
             Choose from:
 
@@ -7644,7 +7644,7 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(index="foo", on="bar", values="baz", aggregate_function="sum")
+        >>> df.pivot("bar", index="foo", values="baz", aggregate_function="sum")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ y   ┆ x   │

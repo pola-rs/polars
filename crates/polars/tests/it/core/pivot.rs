@@ -120,8 +120,8 @@ fn test_pivot_old() {
     );
     let pvt = pivot(
         &df,
-        ["index"],
         ["columns"],
+        ["index"],
         Some(["values"]),
         false,
         Some(PivotAgg::Count),
