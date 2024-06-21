@@ -7849,7 +7849,7 @@ class DataFrame:
         ...     }
         ... )
         >>> import polars.selectors as cs
-        >>> df.unpivot(index="a", on=cs.numeric())
+        >>> df.unpivot(cs.numeric(), index="a")
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │

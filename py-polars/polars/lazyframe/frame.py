@@ -5754,7 +5754,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> import polars.selectors as cs
-        >>> lf.unpivot(index="a", on=cs.numeric()).collect()
+        >>> lf.unpivot(cs.numeric(), index="a").collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │

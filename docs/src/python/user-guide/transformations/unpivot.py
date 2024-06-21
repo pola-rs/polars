@@ -13,6 +13,6 @@ print(df)
 # --8<-- [end:df]
 
 # --8<-- [start:unpivot]
-out = df.unpivot(index=["A", "B"], on=["C", "D"])
+out = df.unpivot(["C", "D"], index=["A", "B"])
 print(out)
 # --8<-- [end:unpivot]
