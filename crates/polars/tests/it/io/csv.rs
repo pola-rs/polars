@@ -1391,3 +1391,16 @@ fn test_read_io_reader() {
     let expected = CsvReader::new(file).finish().unwrap();
     assert!(df.equals(&expected))
 }
+
+#[test]
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+fn test_read_compressed() {
+    const COMPRESSED_CSV: &str = "../../examples/datasets/compressed.csv.gz";
+    let df = CsvReadOptions::default()
+        .with_n_rows(Some(2367))
+        .try_into_reader_with_file_path(Some(COMPRESSED_CSV.into()))
+        .unwrap()
+        .finish()
+        .unwrap();
+    assert_eq!(df.shape(), (2367, 3));
+}
