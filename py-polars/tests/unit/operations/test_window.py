@@ -502,5 +502,4 @@ def test_window_chunked_std_17102() -> None:
 
     df = pl.concat([c1, c2], rechunk=False)
     out = df.select(pl.col("B").std().over("A").alias("std"))
-
-    assert out.n_unique() == 1
+    assert out.unique().item() == 0.7071067811865476
