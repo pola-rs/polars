@@ -103,15 +103,15 @@ where
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let columns = on
+    let on = on
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = get_values_columns(pivot_df, &index, &columns, values);
+    let values = get_values_columns(pivot_df, &index, &on, values);
     pivot_impl(
         pivot_df,
         &index,
-        &columns,
+        &on,
         &values,
         agg_fn,
         sort_columns,
