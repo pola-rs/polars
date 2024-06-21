@@ -376,6 +376,23 @@ class _selector_proxy_(Expr):
         raise TypeError(msg)
 
     @overload
+    def __add__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __add__(self, other: Any) -> Expr: ...
+
+    def __add__(self, other: Any) -> Expr:
+        if is_selector(other):
+            msg = """
+unsupported operand type(s) for op: ('Selector' + 'Selector')
+
+Hint: utilize the OR `|` operator for a selection union or the AND `&` operator for a selection intersection.
+            """.strip()
+            raise TypeError(msg)
+        else:
+            return self.as_expr().__add__(other)
+
+    @overload
     def __and__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
