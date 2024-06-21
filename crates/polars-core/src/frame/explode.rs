@@ -239,7 +239,7 @@ impl DataFrame {
     ///  | "a" | 5   | "D"      | 6     |
     ///  +-----+-----+----------+-------+
     /// ```
-    pub fn unpivot<I, J>(&self, index: I, on: J) -> PolarsResult<Self>
+    pub fn unpivot<I, J>(&self, on: I, index: J) -> PolarsResult<Self>
     where
         I: IntoVec<SmartString>,
         J: IntoVec<SmartString>,

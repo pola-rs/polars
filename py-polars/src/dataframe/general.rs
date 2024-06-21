@@ -432,8 +432,8 @@ impl PyDataFrame {
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
         let df = fun(
             &self.df,
-            index,
             on,
+            index,
             values,
             sort_columns,
             agg_expr,
