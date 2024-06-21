@@ -250,7 +250,7 @@ impl AExpr {
                 let output_type = tmp.as_ref().unwrap_or(output_type);
                 let fields = func_args_to_fields(input, schema, arena, nested)?;
                 polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
-                Ok(output_type.get_field(schema, Context::Default, &fields))
+                output_type.get_field(schema, Context::Default, &fields)
             },
             Function {
                 function, input, ..

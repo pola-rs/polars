@@ -799,13 +799,13 @@ impl Expr {
         self.function_with_options(
             move |s: Series| Some(s.product().map(|sc| sc.into_series(s.name()))).transpose(),
             GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Float32 => Float32,
-                    Float64 => Float64,
-                    UInt64 => UInt64,
-                    _ => Int64,
-                }
+                use DataType as T;
+                Ok(match dt {
+                    T::Float32 => T::Float32,
+                    T::Float64 => T::Float64,
+                    T::UInt64 => T::UInt64,
+                    _ => T::Int64,
+                })
             }),
             options,
         )
@@ -1468,10 +1468,12 @@ impl Expr {
                     Ok(Some(out))
                 }
             },
-            GetOutput::map_field(|field| match field.data_type() {
-                DataType::Float64 => field.clone(),
-                DataType::Float32 => Field::new(field.name(), DataType::Float32),
-                _ => Field::new(field.name(), DataType::Float64),
+            GetOutput::map_field(|field| {
+                Ok(match field.data_type() {
+                    DataType::Float64 => field.clone(),
+                    DataType::Float32 => Field::new(field.name(), DataType::Float32),
+                    _ => Field::new(field.name(), DataType::Float64),
+                })
             }),
         )
         .with_fmt("rolling_map_float")

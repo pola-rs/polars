@@ -118,7 +118,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
         this.apply(
             func,
-            GetOutput::map_field(move |f| eval_field_to_dtype(f, &expr2, false)),
+            GetOutput::map_field(move |f| Ok(eval_field_to_dtype(f, &expr2, false))),
         )
         .with_fmt("expanding_eval")
     }
