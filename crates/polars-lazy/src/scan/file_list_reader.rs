@@ -32,8 +32,7 @@ fn expand_paths(
     let is_cloud = is_cloud_url(first_path);
     let mut out_paths = vec![];
 
-    let mut expand_start_idx = usize::MAX;
-    let expand_start_idx = &mut expand_start_idx;
+    let expand_start_idx = &mut usize::MAX.clone();
     let mut update_expand_start_idx = |i, path_idx: usize| {
         if check_directory_level
             && ![usize::MAX, i].contains(expand_start_idx)
