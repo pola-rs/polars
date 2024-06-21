@@ -48,7 +48,7 @@ impl DslBuilder {
             file_counter: Default::default(),
             // TODO: Support Hive partitioning.
             hive_options: HiveOptions {
-                enabled: false,
+                enabled: Some(false),
                 ..Default::default()
             },
         };
@@ -139,7 +139,7 @@ impl DslBuilder {
                 file_counter: Default::default(),
                 // TODO: Support Hive partitioning.
                 hive_options: HiveOptions {
-                    enabled: false,
+                    enabled: Some(false),
                     ..Default::default()
                 },
             },
@@ -175,7 +175,7 @@ impl DslBuilder {
             file_counter: Default::default(),
             // TODO: Support Hive partitioning.
             hive_options: HiveOptions {
-                enabled: false,
+                enabled: Some(false),
                 ..Default::default()
             },
         };

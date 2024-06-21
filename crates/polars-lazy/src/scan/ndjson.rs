@@ -96,7 +96,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             return self.finish_no_glob();
         }
 
-        let paths = self.expand_paths()?.0;
+        let paths = self.expand_paths(false)?.0;
 
         let file_options = FileScanOptions {
             n_rows: self.n_rows,
