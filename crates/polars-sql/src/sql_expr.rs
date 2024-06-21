@@ -375,42 +375,50 @@ impl SQLExprVisitor<'_> {
 
     /// Visit a compound SQL identifier
     ///
-    /// e.g. df.column or "df"."column"
+    /// e.g. tbl.column, struct.field, tbl.struct.field (inc. nested struct fields)
     fn visit_compound_identifier(&mut self, idents: &[Ident]) -> PolarsResult<Expr> {
-        match idents {
-            [tbl_name, column_name] => {
-                let mut lf = self
-                    .ctx
-                    .get_table_from_current_scope(&tbl_name.value)
-                    .ok_or_else(|| {
-                        polars_err!(
-                            SQLInterface: "no table or alias named '{}' found",
-                            tbl_name
-                        )
-                    })?;
+        // inference priority: table > struct > column
+        let ident_root = &idents[0];
+        let mut remaining_idents = idents.iter().skip(1);
+        let mut lf = self.ctx.get_table_from_current_scope(&ident_root.value);
 
-                let schema =
-                    lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
-                if let Some((_, name, _)) = schema.get_full(&column_name.value) {
-                    let resolved = &self.ctx.resolve_name(&tbl_name.value, &column_name.value);
-                    Ok(if name != resolved {
-                        col(resolved).alias(name)
-                    } else {
-                        col(name)
-                    })
+        let schema = if let Some(ref mut lf) = lf {
+            lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)
+        } else {
+            Ok(Arc::new(if let Some(active_schema) = self.active_schema {
+                active_schema.clone()
+            } else {
+                Schema::new()
+            }))
+        };
+
+        let mut column: PolarsResult<Expr> = if lf.is_none() {
+            Ok(col(&ident_root.value))
+        } else {
+            let col_name = &remaining_idents.next().unwrap().value;
+            if let Some((_, name, _)) = schema?.get_full(col_name) {
+                let resolved = &self.ctx.resolve_name(&ident_root.value, col_name);
+                Ok(if name != resolved {
+                    col(resolved).alias(name)
                 } else {
-                    polars_bail!(
-                        SQLInterface: "no column named '{}' found in table '{}'",
-                        column_name,
-                        tbl_name
-                    )
-                }
-            },
-            _ => polars_bail!(
-                SQLInterface: "invalid identifier {:?}",
-                idents
-            ),
+                    col(name)
+                })
+            } else {
+                polars_bail!(
+                    SQLInterface: "no column named '{}' found in table '{}'",
+                    col_name,
+                    ident_root
+                )
+            }
+        };
+        // additional ident levels index into struct fields
+        for ident in remaining_idents {
+            column = Ok(column
+                .unwrap()
+                .struct_()
+                .field_by_name(ident.value.as_str()));
         }
+        column
     }
 
     fn visit_interval(&self, interval: &Interval) -> PolarsResult<Expr> {

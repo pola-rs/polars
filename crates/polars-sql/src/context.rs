@@ -1179,9 +1179,17 @@ impl SQLContext {
         options: &WildcardAdditionalOptions,
         contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
-        if options.opt_except.is_some() {
-            polars_bail!(SQLSyntax: "EXCEPT not supported (use EXCLUDE instead)")
+        // bail on unsupported wildcard options
+        if options.opt_ilike.is_some() {
+            polars_bail!(SQLSyntax: "ILIKE wildcard option is unsupported")
+        } else if options.opt_rename.is_some() {
+            polars_bail!(SQLSyntax: "RENAME wildcard option is unsupported")
+        } else if options.opt_replace.is_some() {
+            polars_bail!(SQLSyntax: "REPLACE wildcard option is unsupported")
+        } else if options.opt_except.is_some() {
+            polars_bail!(SQLSyntax: "EXCEPT wildcard option is unsupported (use EXCLUDE instead)")
         }
+
         Ok(match &options.opt_exclude {
             Some(ExcludeSelectItem::Single(ident)) => {
                 *contains_wildcard_exclude = true;
