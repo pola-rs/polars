@@ -40,7 +40,7 @@ def test_unpivot_values_predicate_pushdown() -> None:
     ).lazy()
 
     assert (
-        lf.unpivot("id", ["asset_key_1", "asset_key_2", "asset_key_3"])
+        lf.unpivot(index="id", on=["asset_key_1", "asset_key_2", "asset_key_3"])
         .filter(pl.col("value") == pl.lit("123"))
         .collect()
     ).to_dict(as_series=False) == {

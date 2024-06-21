@@ -5705,11 +5705,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def unpivot(
         self,
+        *,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-        *,
         streamable: bool = True,
     ) -> Self:
         """

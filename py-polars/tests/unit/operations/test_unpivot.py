@@ -76,10 +76,10 @@ def test_unpivot_projection_pd_7747() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/10075
-def test_unpivot_no_value_vars() -> None:
+def test_unpivot_no_on() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
 
-    result = lf.unpivot("a")
+    result = lf.unpivot(index="a")
 
     expected = pl.LazyFrame(
         schema={"a": pl.Int64, "variable": pl.String, "value": pl.Null}

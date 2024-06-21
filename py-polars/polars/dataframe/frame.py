@@ -7589,11 +7589,11 @@ class DataFrame:
     @deprecate_renamed_parameter("columns", "on", version="1.0.0")
     def pivot(
         self,
+        *,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
-        *,
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -7805,6 +7805,7 @@ class DataFrame:
 
     def unpivot(
         self,
+        *,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
