@@ -602,11 +602,16 @@ impl PySeries {
         Ok(s.into())
     }
 
-    #[pyo3(signature = (separator, drop_first=false))]
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PyResult<PyDataFrame> {
+    #[pyo3(signature = (separator, drop_first=false, keep_column=false))]
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        keep_column: bool,
+    ) -> PyResult<PyDataFrame> {
         let df = self
             .series
-            .to_dummies(separator, drop_first)
+            .to_dummies(separator, drop_first, keep_column)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
