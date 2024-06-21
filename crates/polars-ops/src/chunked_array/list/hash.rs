@@ -2,6 +2,7 @@ use std::hash::Hash;
 
 use polars_core::export::_boost_hash_combine;
 use polars_core::export::rayon::prelude::*;
+use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
 use polars_core::{with_match_physical_float_polars_type, POOL};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -66,12 +67,12 @@ pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UI
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             hash_agg(ca, &build_hasher)
                         })
-                    } else if s.bit_repr_is_large() {
-                        let ca = s.bit_repr_large();
-                        hash_agg(&ca, &build_hasher)
                     } else {
-                        let ca = s.bit_repr_small();
-                        hash_agg(&ca, &build_hasher)
+                        match s.bit_repr() {
+                            None => unimplemented!("Hash for lists without bit representation"),
+                            Some(BitRepr::Small(ca)) => hash_agg(&ca, &build_hasher),
+                            Some(BitRepr::Large(ca)) => hash_agg(&ca, &build_hasher),
+                        }
                     }
                 },
             })

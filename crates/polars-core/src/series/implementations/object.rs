@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use ahash::RandomState;
 
-use super::MetadataFlags;
+use super::{BitRepr, MetadataFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
@@ -11,7 +11,11 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
-impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
+impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
 
 impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where

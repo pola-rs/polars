@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 pub use sort::options::*;
 
 use crate::chunked_array::cast::CastOptions;
-use crate::series::IsSorted;
+use crate::series::{BitRepr, IsSorted};
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
     fn reinterpret_signed(&self) -> Series {
@@ -59,10 +59,7 @@ pub trait Reinterpret {
 /// This is useful in hashing context and reduces no.
 /// of compiled code paths.
 pub(crate) trait ToBitRepr {
-    fn bit_repr_is_large() -> bool;
-
-    fn bit_repr_large(&self) -> UInt64Chunked;
-    fn bit_repr_small(&self) -> UInt32Chunked;
+    fn to_bit_repr(&self) -> BitRepr;
 }
 
 pub trait ChunkAnyValue {
