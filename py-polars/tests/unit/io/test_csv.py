@@ -1347,6 +1347,52 @@ def test_float_precision(dtype: pl.Float32 | pl.Float64) -> None:
     assert df.write_csv(float_precision=3) == "col\n1.000\n2.200\n3.330\n"
 
 
+def test_float_scientific() -> None:
+    df = (
+        pl.Series(
+            "colf64",
+            [3.141592653589793 * mult for mult in (1e-8, 1e-3, 1e3, 1e17)],
+            dtype=pl.Float64,
+        )
+        .to_frame()
+        .with_columns(pl.col("colf64").cast(pl.Float32).alias("colf32"))
+    )
+
+    assert (
+        df.write_csv(float_precision=None, float_scientific=False)
+        == "colf64,colf32\n0.00000003141592653589793,0.00000003141592586075603\n0.0031415926535897933,0.0031415927223861217\n3141.592653589793,3141.5927734375\n314159265358979300,314159265516355600\n"
+    )
+    assert (
+        df.write_csv(float_precision=0, float_scientific=False)
+        == "colf64,colf32\n0,0\n0,0\n3142,3142\n314159265358979328,314159265516355584\n"
+    )
+    assert (
+        df.write_csv(float_precision=1, float_scientific=False)
+        == "colf64,colf32\n0.0,0.0\n0.0,0.0\n3141.6,3141.6\n314159265358979328.0,314159265516355584.0\n"
+    )
+    assert (
+        df.write_csv(float_precision=3, float_scientific=False)
+        == "colf64,colf32\n0.000,0.000\n0.003,0.003\n3141.593,3141.593\n314159265358979328.000,314159265516355584.000\n"
+    )
+
+    assert (
+        df.write_csv(float_precision=None, float_scientific=True)
+        == "colf64,colf32\n3.141592653589793e-8,3.1415926e-8\n3.1415926535897933e-3,3.1415927e-3\n3.141592653589793e3,3.1415928e3\n3.141592653589793e17,3.1415927e17\n"
+    )
+    assert (
+        df.write_csv(float_precision=0, float_scientific=True)
+        == "colf64,colf32\n3e-8,3e-8\n3e-3,3e-3\n3e3,3e3\n3e17,3e17\n"
+    )
+    assert (
+        df.write_csv(float_precision=1, float_scientific=True)
+        == "colf64,colf32\n3.1e-8,3.1e-8\n3.1e-3,3.1e-3\n3.1e3,3.1e3\n3.1e17,3.1e17\n"
+    )
+    assert (
+        df.write_csv(float_precision=3, float_scientific=True)
+        == "colf64,colf32\n3.142e-8,3.142e-8\n3.142e-3,3.142e-3\n3.142e3,3.142e3\n3.142e17,3.142e17\n"
+    )
+
+
 def test_skip_rows_different_field_len() -> None:
     csv = io.StringIO(
         textwrap.dedent(

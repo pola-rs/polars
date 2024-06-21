@@ -30,6 +30,7 @@
 //!     but also with `QUOTE_NON_NULL = false`.
 //!  3. A serializer that quotes only non-nulls. This is a bare serializer with `QUOTE_NON_NULL = true`.
 
+use std::fmt::LowerExp;
 use std::io::Write;
 
 use arrow::array::{Array, BooleanArray, NullArray, PrimitiveArray, Utf8ViewArray};
@@ -38,6 +39,7 @@ use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use memchr::{memchr3, memchr_iter};
+use num_traits::NumCast;
 use polars_core::prelude::*;
 
 use crate::csv::write::{QuoteStyle, SerializeOptions};
@@ -121,13 +123,23 @@ fn integer_serializer<I: NativeType + itoa::Integer>(array: &PrimitiveArray<I>) 
     })
 }
 
-fn float_serializer_no_precision<I: NativeType + ryu::Float>(
+fn float_serializer_no_precision<I: NativeType + ryu::Float + LowerExp + NumCast>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
-        let value = buffer.format(item);
-        buf.extend_from_slice(value.as_bytes());
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| match _options
+        .float_scientific
+    {
+        Some(true) => write!(buf, "{item:.e}").unwrap(),
+        Some(false) => {
+            let v: f64 = NumCast::from(item).unwrap();
+            let value = v.to_string();
+            buf.extend_from_slice(value.as_bytes());
+        },
+        None => {
+            let mut buffer = ryu::Buffer::new();
+            let value = buffer.format(item);
+            buf.extend_from_slice(value.as_bytes());
+        },
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -139,13 +151,17 @@ fn float_serializer_no_precision<I: NativeType + ryu::Float>(
     })
 }
 
-fn float_serializer_with_precision<I: NativeType>(
+fn float_serializer_with_precision<I: NativeType + LowerExp>(
     array: &PrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
-        let _ = write!(buf, "{item:.precision$}");
+        let _ = if _options.float_scientific.unwrap_or(false) {
+            write!(buf, "{item:.precision$e}")
+        } else {
+            write!(buf, "{item:.precision$}")
+        };
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {

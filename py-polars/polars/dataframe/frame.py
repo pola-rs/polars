@@ -2512,6 +2512,7 @@ class DataFrame:
         datetime_format: str | None = ...,
         date_format: str | None = ...,
         time_format: str | None = ...,
+        float_scientific: bool | None = ...,
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
@@ -2531,6 +2532,7 @@ class DataFrame:
         datetime_format: str | None = ...,
         date_format: str | None = ...,
         time_format: str | None = ...,
+        float_scientific: bool | None = ...,
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
@@ -2549,6 +2551,7 @@ class DataFrame:
         datetime_format: str | None = None,
         date_format: str | None = None,
         time_format: str | None = None,
+        float_scientific: bool | None = None,
         float_precision: int | None = None,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
@@ -2587,6 +2590,9 @@ class DataFrame:
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
+        float_scientific
+            Whether to use of scientific form always (true) or never (false) or auto
+            (None) `Float32` and `Float64` datatypes.
         float_precision
             Number of decimal places to write, applied to both `Float32` and
             `Float64` datatypes.
@@ -2650,6 +2656,7 @@ class DataFrame:
             datetime_format,
             date_format,
             time_format,
+            float_scientific,
             float_precision,
             null_value,
             quote_style,
