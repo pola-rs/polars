@@ -2591,8 +2591,8 @@ class DataFrame:
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
         float_scientific
-            Whether to use of scientific form always (true) or never (false) or auto
-            (None) `Float32` and `Float64` datatypes.
+            Whether to use scientific form always (true), never (false), or
+            automatically (None) for `Float32` and `Float64` datatypes.
         float_precision
             Number of decimal places to write, applied to both `Float32` and
             `Float64` datatypes.
