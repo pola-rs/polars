@@ -84,8 +84,8 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
 /// If you have a relatively large table, consider using a group_by over a pivot.
 pub fn pivot<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    index: I0,
-    on: I1,
+    on: I0,
+    index: I1,
     values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
@@ -127,8 +127,8 @@ where
 /// If you have a relatively large table, consider using a group_by over a pivot.
 pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
-    index: I0,
-    on: I1,
+    on: I0,
+    index: I1,
     values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,

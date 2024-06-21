@@ -7589,9 +7589,9 @@ class DataFrame:
     @deprecate_renamed_parameter("columns", "on", version="1.0.0")
     def pivot(
         self,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *,
-        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
         maintain_order: bool = True,
@@ -7606,13 +7606,13 @@ class DataFrame:
 
         Parameters
         ----------
+        on
+            Name of the column(s) whose values will be used as the header of the output
+            DataFrame.
         values
             Column values to aggregate. If None, all remaining columns will be used.
         index
             One or multiple keys to group by.
-        on
-            Name of the column(s) whose values will be used as the header of the output
-            DataFrame.
         aggregate_function
             Choose from:
 
@@ -7659,8 +7659,8 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.pivot(
+        ...     cs.string(),
         ...     index=cs.string(),
-        ...     on=cs.string(),
         ...     values=cs.numeric(),
         ...     aggregate_function="sum",
         ...     sort_columns=True,
@@ -7689,8 +7689,8 @@ class DataFrame:
         ...     }
         ... )
         >>> df.pivot(
+        ...     "col2",
         ...     index="col1",
-        ...     on="col2",
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),
         ... )
@@ -7738,8 +7738,8 @@ class DataFrame:
         ...     }
         ... )
         >>> df.pivot(
+        ...     "col",
         ...     index="ix",
-        ...     on="col",
         ...     values=["foo", "bar"],
         ...     aggregate_function="sum",
         ...     separator="/",
@@ -7793,8 +7793,8 @@ class DataFrame:
 
         return self._from_pydf(
             self._df.pivot_expr(
-                index,
                 on,
+                index,
                 values,
                 maintain_order,
                 sort_columns,
@@ -7805,8 +7805,8 @@ class DataFrame:
 
     def unpivot(
         self,
-        *,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        *,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
@@ -7867,7 +7867,7 @@ class DataFrame:
         on = [] if on is None else _expand_selectors(self, on)
         index = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(self._df.unpivot(index, on, value_name, variable_name))
+        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
 
     @unstable()
     def unstack(

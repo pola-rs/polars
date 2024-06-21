@@ -5773,7 +5773,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index = [] if index is None else _expand_selectors(self, index)
 
         return self._from_pyldf(
-            self._ldf.unpivot(index, on, value_name, variable_name, streamable)
+            self._ldf.unpivot(on, index, value_name, variable_name, streamable)
         )
 
     def map_batches(

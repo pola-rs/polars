@@ -399,8 +399,8 @@ impl PyDataFrame {
 
     pub fn unpivot(
         &self,
-        index: Vec<PyBackedStr>,
         on: Vec<PyBackedStr>,
+        index: Vec<PyBackedStr>,
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
@@ -417,11 +417,11 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
-    #[pyo3(signature = (index, on, values, maintain_order, sort_columns, aggregate_expr, separator))]
+    #[pyo3(signature = (on, index, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
-        index: Vec<String>,
         on: Vec<String>,
+        index: Vec<String>,
         values: Option<Vec<String>>,
         maintain_order: bool,
         sort_columns: bool,

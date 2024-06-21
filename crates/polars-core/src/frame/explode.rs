@@ -244,11 +244,11 @@ impl DataFrame {
         I: IntoVec<SmartString>,
         J: IntoVec<SmartString>,
     {
-        let id_vars = index.into_vec();
-        let value_vars = on.into_vec();
+        let index = index.into_vec();
+        let on = on.into_vec();
         self.unpivot2(UnpivotArgs {
-            index: id_vars,
-            on: value_vars,
+            index,
+            on,
             ..Default::default()
         })
     }
