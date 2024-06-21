@@ -24,8 +24,8 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct UnpivotArgs {
-    pub index: Vec<SmartString>,
     pub on: Vec<SmartString>,
+    pub index: Vec<SmartString>,
     pub variable_name: Option<SmartString>,
     pub value_name: Option<SmartString>,
     /// Whether the unpivot may be done
@@ -247,8 +247,8 @@ impl DataFrame {
         let index = index.into_vec();
         let on = on.into_vec();
         self.unpivot2(UnpivotArgs {
-            index,
             on,
+            index,
             ..Default::default()
         })
     }
@@ -448,8 +448,8 @@ mod test {
         );
 
         let args = UnpivotArgs {
-            index: vec![],
             on: vec![],
+            index: vec![],
             ..Default::default()
         };
 
@@ -464,8 +464,8 @@ mod test {
         );
 
         let args = UnpivotArgs {
-            index: vec!["A".into()],
             on: vec![],
+            index: vec!["A".into()],
             ..Default::default()
         };
 

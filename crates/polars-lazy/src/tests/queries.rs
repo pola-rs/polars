@@ -50,8 +50,8 @@ fn test_lazy_unpivot() {
     let df = get_df();
 
     let args = UnpivotArgs {
-        index: vec!["petal_width".into(), "petal_length".into()],
         on: vec!["sepal_length".into(), "sepal_width".into()],
+        index: vec!["petal_width".into(), "petal_length".into()],
         ..Default::default()
     };
 

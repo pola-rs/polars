@@ -110,8 +110,8 @@ where
     let values = get_values_columns(pivot_df, &index, &on, values);
     pivot_impl(
         pivot_df,
-        &index,
         &on,
+        &index,
         &values,
         agg_fn,
         sort_columns,
@@ -153,8 +153,8 @@ where
     let values = get_values_columns(pivot_df, &index, &on, values);
     pivot_impl(
         pivot_df,
-        &index,
         &on,
+        &index,
         &values,
         agg_fn,
         sort_columns,
@@ -192,11 +192,11 @@ where
 fn pivot_impl(
     pivot_df: &DataFrame,
     // keys of the first group_by operation
+    on: &[String],
+    // these columns will be aggregated in the nested group_by
     index: &[String],
     // these columns will be used for a nested group_by
     // the rows of this nested group_by will be pivoted as header column values
-    on: &[String],
-    // these columns will be aggregated in the nested group_by
     values: &[String],
     // aggregation function
     agg_fn: Option<PivotAgg>,

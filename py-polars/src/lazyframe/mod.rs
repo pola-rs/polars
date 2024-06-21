@@ -1121,8 +1121,8 @@ impl PyLazyFrame {
         streamable: bool,
     ) -> Self {
         let args = UnpivotArgs {
-            index: strings_to_smartstrings(index),
             on: strings_to_smartstrings(on),
+            index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable,
