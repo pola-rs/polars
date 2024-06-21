@@ -58,12 +58,13 @@ def test_unpivot_projection_pd_7747() -> None:
             "weight": [100, 103, 95, 90, 110],
         }
     )
-    result = (
-        df.with_columns(pl.col("age").alias("wgt"))
-        .unpivot(index="number", on="wgt")
-        .select("number", "value")
-        .collect()
-    )
+    with pytest.deprecated_call():
+        result = (
+            df.with_columns(pl.col("age").alias("wgt"))
+            .melt(id_vars="number", value_vars="wgt")
+            .select("number", "value")
+            .collect()
+        )
     expected = pl.DataFrame(
         {
             "number": [1, 2, 1, 2, 1],

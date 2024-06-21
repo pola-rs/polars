@@ -35,6 +35,7 @@ Manipulation/selection
     DataFrame.join
     DataFrame.join_asof
     DataFrame.limit
+    DataFrame.melt
     DataFrame.merge_sorted
     DataFrame.partition_by
     DataFrame.pipe
