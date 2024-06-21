@@ -41,5 +41,10 @@ static ALLOC: MiMalloc = MiMalloc;
 // linking breaks on Windows if we use tracemalloc C APIs. So we only use this
 // on Unix for now.
 #[global_allocator]
-#[cfg(all(debug_assertions, not(allocator = "default"), target_family = "unix",))]
+#[cfg(all(
+    debug_assertions,
+    target_family = "unix",
+    not(allocator = "default"),
+    not(allocator = "mimalloc"),
+))]
 static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
