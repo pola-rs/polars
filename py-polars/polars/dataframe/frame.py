@@ -7589,8 +7589,8 @@ class DataFrame:
     @deprecate_renamed_parameter("columns", "on", version="1.0.0")
     def pivot(
         self,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
@@ -7805,8 +7805,8 @@ class DataFrame:
 
     def unpivot(
         self,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
     ) -> Self:
@@ -7822,11 +7822,11 @@ class DataFrame:
 
         Parameters
         ----------
-        index
-            Column(s) or selector(s) to use as identifier variables.
         on
             Column(s) or selector(s) to use as values variables; if `on`
             is empty all columns that are not in `index` will be used.
+        index
+            Column(s) or selector(s) to use as identifier variables.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
