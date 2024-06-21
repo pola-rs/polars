@@ -367,6 +367,7 @@ def test_hive_partition_directory_scan(
     out = scan(tmp_path, hive_partitioning=True).collect()
     assert_frame_equal(out, df)
 
+    # Accept multiple directories from the same level
     out = scan([tmp_path / "a=1", tmp_path / "a=22"], hive_partitioning=True).collect()
     assert_frame_equal(out, df.drop("a"))
 
@@ -380,14 +381,28 @@ def test_hive_partition_directory_scan(
         out = scan(tmp_path / "**/*.bin", hive_partitioning=True).collect()
         assert_frame_equal(out, df)
 
+        # Parse hive from full path for glob patterns
         out = scan(
             [tmp_path / "a=1/**/*.bin", tmp_path / "a=22/**/*.bin"],
             hive_partitioning=True,
         ).collect()
         assert_frame_equal(out, df)
 
+    # Parse hive from full path for files
     out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=True).collect()
     assert_frame_equal(out, df.filter(a=1, b=1))
+
+    out = scan(
+        [tmp_path / "a=1/b=1/data.bin", tmp_path / "a=22/b=1/data.bin"],
+        hive_partitioning=True,
+    ).collect()
+    assert_frame_equal(
+        out,
+        df.filter(
+            ((pl.col("a") == 1) & (pl.col("b") == 1))
+            | ((pl.col("a") == 22) & (pl.col("b") == 1))
+        ),
+    )
 
     # Test `hive_partitioning=False`
     out = scan(tmp_path, hive_partitioning=False).collect()
