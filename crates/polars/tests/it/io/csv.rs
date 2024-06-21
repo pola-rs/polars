@@ -8,6 +8,7 @@ use polars_core::utils::concat_df;
 use super::*;
 
 const FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
+const COMPRESSED_CSV_GZ: &str = "../../examples/datasets/compressed.csv.gz";
 
 #[test]
 fn write_csv() {
@@ -41,6 +42,7 @@ fn write_csv() {
 }
 
 #[test]
+#[cfg(feature = "timezones")]
 fn write_dates() {
     let s0 = Series::new("date", [chrono::NaiveDate::from_yo_opt(2024, 33), None]);
     let s1 = Series::new("time", [None, chrono::NaiveTime::from_hms_opt(19, 50, 0)]);
@@ -1388,4 +1390,15 @@ fn test_read_io_reader() {
     let df = concat_df(&batches).unwrap();
     let expected = CsvReader::new(file).finish().unwrap();
     assert!(df.equals(&expected))
+}
+
+#[test]
+fn read_csv_gz() {
+    let df = CsvReadOptions::default()
+        .with_n_rows(Some(2367))
+        .try_into_reader_with_file_path(Some(COMPRESSED_CSV_GZ.into()))
+        .unwrap()
+        .finish()
+        .unwrap();
+    assert_eq!(df.shape(), (2367, 2));
 }
