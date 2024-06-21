@@ -44,6 +44,7 @@ Manipulation/selection
     LazyFrame.top_k
     LazyFrame.unique
     LazyFrame.unnest
+    LazyFrame.unpivot
     LazyFrame.update
     LazyFrame.with_columns
     LazyFrame.with_columns_seq

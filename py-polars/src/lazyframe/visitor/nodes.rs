@@ -520,13 +520,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .to_object(py),
-                FunctionNode::Melt { args, schema: _ } => (
-                    "melt",
-                    args.id_vars.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    args.value_vars
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
+                FunctionNode::Unpivot { args, schema: _ } => (
+                    "unpivot",
+                    args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                    args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.variable_name
                         .as_ref()
                         .map_or_else(|| py.None(), |s| s.as_str().to_object(py)),

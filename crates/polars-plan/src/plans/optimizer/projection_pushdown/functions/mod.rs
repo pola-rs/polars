@@ -1,6 +1,6 @@
-mod melt;
+mod unpivot;
 
-use melt::process_melt;
+use unpivot::process_unpivot;
 
 use super::*;
 
@@ -64,13 +64,13 @@ pub(super) fn process_functions(
                 .explode(columns.clone())
                 .build())
         },
-        Melt { ref args, .. } => {
+        Unpivot { ref args, .. } => {
             let lp = IR::MapFunction {
                 input,
                 function: function.clone(),
             };
 
-            process_melt(
+            process_unpivot(
                 proj_pd,
                 lp,
                 args,

@@ -297,10 +297,10 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
+    pub fn unpivot(self, args: Arc<UnpivotArgs>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
-            function: FunctionNode::Melt {
+            function: FunctionNode::Unpivot {
                 args,
                 schema: Default::default(),
             },

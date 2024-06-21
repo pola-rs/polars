@@ -524,7 +524,7 @@ impl<'a> PredicatePushDown<'a> {
                                 expr_arena,
                             ))
                         },
-                        FunctionNode::Melt { args, .. } => {
+                        FunctionNode::Unpivot { args, .. } => {
                             let variable_name = args.variable_name.as_deref().unwrap_or("variable");
                             let value_name = args.value_name.as_deref().unwrap_or("value");
 
@@ -533,7 +533,7 @@ impl<'a> PredicatePushDown<'a> {
                                 let name = &*name;
                                 name == variable_name
                                     || name == value_name
-                                    || args.value_vars.iter().any(|s| s.as_str() == name)
+                                    || args.on.iter().any(|s| s.as_str() == name)
                             };
                             let local_predicates = transfer_to_local_by_name(
                                 expr_arena,

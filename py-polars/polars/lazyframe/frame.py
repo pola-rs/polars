@@ -5703,13 +5703,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             subset = _expand_selectors(self, subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
-    def melt(
+    def unpivot(
         self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-        *,
         streamable: bool = True,
     ) -> Self:
         """
@@ -5718,25 +5718,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
+        columns are identifier variables (index) while all other columns, considered
+        measured variables (on), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
-        id_vars
+        on
+            Column(s) or selector(s) to use as values variables; if `on`
+            is empty all columns that are not in `index` will be used.
+        index
             Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
         streamable
             Allow this node to run in the streaming engine.
-            If this runs in streaming, the output of the melt operation
+            If this runs in streaming, the output of the unpivot operation
             will not have a stable ordering.
+
+        Notes
+        -----
+        If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
+        but with `index` replacing `id_vars` and `on` replacing `value_vars`.
+        In other frameworks, you might know this operation as `pivot_longer`.
 
         Examples
         --------
@@ -5748,7 +5754,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> import polars.selectors as cs
-        >>> lf.melt(id_vars="a", value_vars=cs.numeric()).collect()
+        >>> lf.unpivot(cs.numeric(), index="a").collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -5763,11 +5769,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
-        id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
+        on = [] if on is None else _expand_selectors(self, on)
+        index = [] if index is None else _expand_selectors(self, index)
 
         return self._from_pyldf(
-            self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
+            self._ldf.unpivot(on, index, value_name, variable_name, streamable)
         )
 
     def map_batches(
@@ -6300,3 +6306,53 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         return self._from_pyldf(self._ldf.count())
+
+    @deprecate_function(
+        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        version="1.0.0",
+    )
+    def melt(
+        self,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        variable_name: str | None = None,
+        value_name: str | None = None,
+        *,
+        streamable: bool = True,
+    ) -> Self:
+        """
+        Unpivot a DataFrame from wide to long format.
+
+        Optionally leaves identifiers set.
+
+        This function is useful to massage a DataFrame into a format where one or more
+        columns are identifier variables (id_vars) while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis leaving just
+        two non-identifier columns, 'variable' and 'value'.
+
+        .. deprecated 1.0.0
+            Please use :meth:`.unpivot` instead.
+
+        Parameters
+        ----------
+        id_vars
+            Column(s) or selector(s) to use as identifier variables.
+        value_vars
+            Column(s) or selector(s) to use as values variables; if `value_vars`
+            is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `variable` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
+        streamable
+            Allow this node to run in the streaming engine.
+            If this runs in streaming, the output of the unpivot operation
+            will not have a stable ordering.
+        """
+        return self.unpivot(
+            index=id_vars,
+            on=value_vars,
+            variable_name=variable_name,
+            value_name=value_name,
+            streamable=streamable,
+        )

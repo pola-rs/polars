@@ -9,8 +9,8 @@ pub enum DslFunction {
     Explode {
         columns: Vec<Expr>,
     },
-    Melt {
-        args: MeltArgs,
+    Unpivot {
+        args: UnpivotArgs,
     },
     RowIndex {
         name: Arc<str>,
@@ -79,7 +79,7 @@ impl DslFunction {
                     schema: Default::default(),
                 }
             },
-            DslFunction::Melt { args } => FunctionNode::Melt {
+            DslFunction::Unpivot { args } => FunctionNode::Unpivot {
                 args: Arc::new(args),
                 schema: Default::default(),
             },
@@ -125,7 +125,7 @@ impl Display for DslFunction {
         match self {
             FunctionNode(inner) => write!(f, "{inner}"),
             Explode { .. } => write!(f, "EXPLODE"),
-            Melt { .. } => write!(f, "MELT"),
+            Unpivot { .. } => write!(f, "UNPIVOT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
             Stats(_) => write!(f, "STATS"),
             FillNan(_) => write!(f, "FILL NAN"),

@@ -11,7 +11,7 @@ impl FunctionNode {
             RowIndex { schema, .. }
             | Explode { schema, .. }
             | Rename { schema, .. }
-            | Melt { schema, .. } => {
+            | Unpivot { schema, .. } => {
                 let mut guard = schema.lock().unwrap();
                 *guard = None;
             },
@@ -98,7 +98,7 @@ impl FunctionNode {
                 Ok(Cow::Owned(row_index_schema(schema, input_schema, name)))
             },
             Explode { schema, columns } => explode_schema(schema, input_schema, columns),
-            Melt { schema, args } => melt_schema(args, schema, input_schema),
+            Unpivot { schema, args } => unpivot_schema(args, schema, input_schema),
         }
     }
 }
@@ -143,8 +143,8 @@ fn explode_schema<'a>(
     Ok(Cow::Owned(schema))
 }
 
-fn melt_schema<'a>(
-    args: &MeltArgs,
+fn unpivot_schema<'a>(
+    args: &UnpivotArgs,
     cached_schema: &CachedSchema,
     input_schema: &'a Schema,
 ) -> PolarsResult<Cow<'a, SchemaRef>> {
@@ -154,7 +154,7 @@ fn melt_schema<'a>(
     }
 
     let mut new_schema = args
-        .id_vars
+        .index
         .iter()
         .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
         .collect::<Schema>();
@@ -175,15 +175,15 @@ fn melt_schema<'a>(
     let mut supertype = DataType::Null;
 
     // take all columns that are not in `id_vars` as `value_var`
-    if args.value_vars.is_empty() {
-        let id_vars = PlHashSet::from_iter(&args.id_vars);
+    if args.on.is_empty() {
+        let id_vars = PlHashSet::from_iter(&args.index);
         for (name, dtype) in input_schema.iter() {
             if !id_vars.contains(name) {
                 supertype = try_get_supertype(&supertype, dtype).unwrap();
             }
         }
     } else {
-        for name in &args.value_vars {
+        for name in &args.on {
             let dtype = input_schema.get(name).unwrap();
             supertype = try_get_supertype(&supertype, dtype).unwrap();
         }
