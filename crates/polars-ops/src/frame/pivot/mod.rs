@@ -206,7 +206,7 @@ fn pivot_impl(
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame> {
     polars_ensure!(!index.is_empty(), ComputeError: "index cannot be zero length");
-    polars_ensure!(!on.is_empty(), ComputeError: "columns cannot be zero length");
+    polars_ensure!(!on.is_empty(), ComputeError: "`on` cannot be zero length");
     if !stable {
         println!("unstable pivot not yet supported, using stable pivot");
     };
