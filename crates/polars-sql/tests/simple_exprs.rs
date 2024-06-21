@@ -3,10 +3,29 @@ use polars_lazy::prelude::*;
 use polars_sql::*;
 use polars_time::Duration;
 
-fn create_sample_df() -> PolarsResult<DataFrame> {
+fn create_sample_df() -> DataFrame {
     let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
     let b = Series::new("b", 1..10000i64);
-    DataFrame::new(vec![a, b])
+    DataFrame::new(vec![a, b]).unwrap()
+}
+
+fn create_struct_df() -> (DataFrame, DataFrame) {
+    let struct_cols = vec![col("num"), col("str"), col("val")];
+    let df = df! {
+        "num" => [100, 250, 300, 350],
+        "str" => ["b", "a", "b", "a"],
+        "val" => [4.0, 3.5, 2.0, 1.5],
+    }
+    .unwrap();
+
+    (
+        df.clone()
+            .lazy()
+            .select([as_struct(struct_cols).alias("json_msg")])
+            .collect()
+            .unwrap(),
+        df,
+    )
 }
 
 fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> LazyFrame) {
@@ -19,7 +38,7 @@ fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> 
 
 #[test]
 fn test_simple_select() -> PolarsResult<()> {
-    let df = create_sample_df()?;
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let df_sql = context
@@ -44,7 +63,7 @@ fn test_simple_select() -> PolarsResult<()> {
 
 #[test]
 fn test_nested_expr() -> PolarsResult<()> {
-    let df = create_sample_df()?;
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let df_sql = context
@@ -57,7 +76,7 @@ fn test_nested_expr() -> PolarsResult<()> {
 
 #[test]
 fn test_group_by_simple() -> PolarsResult<()> {
-    let df = create_sample_df()?;
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let df_sql = context
@@ -134,7 +153,7 @@ fn test_group_by_expression_key() -> PolarsResult<()> {
 
 #[test]
 fn test_cast_exprs() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -164,7 +183,7 @@ fn test_cast_exprs() {
 
 #[test]
 fn test_literal_exprs() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -225,7 +244,7 @@ fn test_implicit_date_string() {
 
 #[test]
 fn test_prefixed_column_names() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -244,7 +263,7 @@ fn test_prefixed_column_names() {
 
 #[test]
 fn test_prefixed_column_names_2() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -263,7 +282,7 @@ fn test_prefixed_column_names_2() {
 
 #[test]
 fn test_null_exprs() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -319,7 +338,7 @@ fn test_null_exprs_in_where() {
 
 #[test]
 fn test_binary_functions() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -369,7 +388,7 @@ fn test_binary_functions() {
 #[test]
 #[ignore = "TODO: non deterministic"]
 fn test_agg_functions() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -411,7 +430,7 @@ fn test_agg_functions() {
 
 #[test]
 fn test_create_table() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
 
@@ -474,7 +493,7 @@ fn test_unary_minus_1() {
 
 #[test]
 fn test_arr_agg() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let exprs = vec![
         (
             "SELECT ARRAY_AGG(a) AS a FROM df",
@@ -515,7 +534,7 @@ fn test_arr_agg() {
 
 #[test]
 fn test_ctes() -> PolarsResult<()> {
-    let df = create_sample_df()?;
+    let df = create_sample_df();
 
     let mut context = SQLContext::new();
     context.register("df", df.lazy());
@@ -594,7 +613,7 @@ fn test_group_by_2() -> PolarsResult<()> {
 
 #[test]
 fn test_case_expr() {
-    let df = create_sample_df().unwrap().head(Some(10));
+    let df = create_sample_df().head(Some(10));
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
     let sql = r#"
@@ -619,7 +638,7 @@ fn test_case_expr() {
 
 #[test]
 fn test_case_expr_with_expression() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
 
@@ -645,7 +664,7 @@ fn test_case_expr_with_expression() {
 
 #[test]
 fn test_sql_expr() {
-    let df = create_sample_df().unwrap();
+    let df = create_sample_df();
     let expr = sql_expr("MIN(a)").unwrap();
     let actual = df.clone().lazy().select(&[expr]).collect().unwrap();
     let expected = df.lazy().select(&[col("a").min()]).collect().unwrap();
@@ -689,35 +708,23 @@ fn test_order_by_excluded_column() {
         "SELECT df.* EXCLUDE y FROM df ORDER BY y",
     ] {
         let df_sorted = context.execute(sql).unwrap().collect().unwrap();
-
         let expected = df! {"x" => [2, 1, 0, 3],}.unwrap();
         assert!(df_sorted.equals(&expected));
     }
 }
 
 #[test]
-fn test_struct_wildcards() {
-    let struct_cols = vec![col("num"), col("str"), col("val")];
-    let df_original = df! {
-        "num" => [100, 200, 300, 400],
-        "str" => ["d", "c", "b", "a"],
-        "val" => [0.0, 5.0, 3.0, 4.0],
-    }
-    .unwrap();
-
-    let df_struct = df_original
-        .clone()
-        .lazy()
-        .select([as_struct(struct_cols).alias("json_msg")]);
+fn test_struct_field_selection() {
+    let (df_struct, df_original) = create_struct_df();
 
     let mut context = SQLContext::new();
     context.register("df", df_struct.clone().lazy());
 
     for sql in [
-        r#"SELECT json_msg.* FROM df"#,
-        r#"SELECT df.json_msg.* FROM df"#,
+        r#"SELECT json_msg.* FROM df ORDER BY 1"#,
+        r#"SELECT df.json_msg.* FROM df ORDER BY 3 DESC"#,
         r#"SELECT json_msg.* FROM df ORDER BY json_msg.num"#,
-        r#"SELECT df.json_msg.* FROM df ORDER BY json_msg.str DESC"#,
+        r#"SELECT df.json_msg.* FROM df ORDER BY json_msg.val DESC"#,
     ] {
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
         assert!(df_sql.equals(&df_original));

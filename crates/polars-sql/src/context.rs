@@ -200,8 +200,9 @@ impl SQLContext {
     fn expr_or_ordinal(
         &mut self,
         e: &SQLExpr,
-        schema: Option<&Schema>,
         exprs: &[Expr],
+        selected: Option<&[Expr]>,
+        schema: Option<&Schema>,
         clause: &str,
     ) -> PolarsResult<Expr> {
         match e {
@@ -230,7 +231,12 @@ impl SQLContext {
                         idx
                     )
                 })?;
-                Ok(exprs
+                let cols = if let Some(cols) = selected {
+                    cols
+                } else {
+                    exprs
+                };
+                Ok(cols
                     .get(idx - 1)
                     .ok_or_else(|| {
                         polars_err!(
@@ -645,7 +651,9 @@ impl SQLContext {
                 // translate the group expressions, allowing ordinal values
                 group_by_keys = group_by_exprs
                     .iter()
-                    .map(|e| self.expr_or_ordinal(e, schema.as_deref(), &projections, "GROUP BY"))
+                    .map(|e| {
+                        self.expr_or_ordinal(e, &projections, None, schema.as_deref(), "GROUP BY")
+                    })
                     .collect::<PolarsResult<_>>()?
             },
             // "GROUP BY ALL" syntax; automatically adds expressions that do not contain
@@ -712,8 +720,9 @@ impl SQLContext {
                 });
                 let retained_columns: Vec<_> =
                     retained_names.into_iter().map(|name| col(&name)).collect();
+
                 lf = lf.with_columns(projections);
-                lf = self.process_order_by(lf, &query.order_by)?;
+                lf = self.process_order_by(lf, &query.order_by, Some(retained_columns.as_ref()))?;
                 lf.select(&retained_columns)
             } else if contains_wildcard_exclude {
                 let mut dropped_names = Vec::with_capacity(projections.len());
@@ -731,19 +740,19 @@ impl SQLContext {
                 });
                 if exclude_expr.is_some() {
                     lf = lf.with_columns(projections);
-                    lf = self.process_order_by(lf, &query.order_by)?;
+                    lf = self.process_order_by(lf, &query.order_by, None)?;
                     lf.drop(dropped_names)
                 } else {
                     lf = lf.select(projections);
-                    self.process_order_by(lf, &query.order_by)?
+                    self.process_order_by(lf, &query.order_by, None)?
                 }
             } else {
                 lf = lf.select(projections);
-                self.process_order_by(lf, &query.order_by)?
+                self.process_order_by(lf, &query.order_by, None)?
             }
         } else {
             lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
-            lf = self.process_order_by(lf, &query.order_by)?;
+            lf = self.process_order_by(lf, &query.order_by, None)?;
 
             // Apply optional 'having' clause, post-aggregation.
             let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
@@ -773,7 +782,7 @@ impl SQLContext {
 
                 // DISTINCT ON applies the ORDER BY before the operation.
                 if !query.order_by.is_empty() {
-                    lf = self.process_order_by(lf, &query.order_by)?;
+                    lf = self.process_order_by(lf, &query.order_by, None)?;
                 }
                 return Ok(lf.unique_stable(Some(cols), UniqueKeepStrategy::First));
             },
@@ -1002,13 +1011,14 @@ impl SQLContext {
         &mut self,
         mut lf: LazyFrame,
         order_by: &[OrderByExpr],
+        selected: Option<&[Expr]>,
     ) -> PolarsResult<LazyFrame> {
         let mut by = Vec::with_capacity(order_by.len());
         let mut descending = Vec::with_capacity(order_by.len());
         let mut nulls_last = Vec::with_capacity(order_by.len());
 
         let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
-        let column_names = schema
+        let columns = schema
             .clone()
             .unwrap()
             .iter_names()
@@ -1023,7 +1033,13 @@ impl SQLContext {
             descending.push(desc_order);
 
             // translate order expression, allowing ordinal values
-            by.push(self.expr_or_ordinal(&ob.expr, schema.as_deref(), &column_names, "ORDER BY")?)
+            by.push(self.expr_or_ordinal(
+                &ob.expr,
+                &columns,
+                selected,
+                schema.as_deref(),
+                "ORDER BY",
+            )?)
         }
         Ok(lf.sort_by_exprs(
             &by,
