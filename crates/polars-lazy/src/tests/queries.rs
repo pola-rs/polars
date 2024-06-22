@@ -46,18 +46,18 @@ fn test_lazy_alias() {
 }
 
 #[test]
-fn test_lazy_melt() {
+fn test_lazy_unpivot() {
     let df = get_df();
 
-    let args = MeltArgs {
-        id_vars: vec!["petal_width".into(), "petal_length".into()],
-        value_vars: vec!["sepal_length".into(), "sepal_width".into()],
+    let args = UnpivotArgs {
+        on: vec!["sepal_length".into(), "sepal_width".into()],
+        index: vec!["petal_width".into(), "petal_length".into()],
         ..Default::default()
     };
 
     let out = df
         .lazy()
-        .melt(args)
+        .unpivot(args)
         .filter(col("variable").eq(lit("sepal_length")))
         .select([col("variable"), col("petal_width"), col("value")])
         .collect()

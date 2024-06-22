@@ -304,10 +304,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        false
-    }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.physical().clone()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(BitRepr::Small(self.0.physical().clone()))
     }
 }

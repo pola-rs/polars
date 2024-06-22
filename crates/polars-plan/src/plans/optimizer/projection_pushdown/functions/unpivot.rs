@@ -1,17 +1,17 @@
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn process_melt(
+pub(super) fn process_unpivot(
     proj_pd: &mut ProjectionPushDown,
     lp: IR,
-    args: &Arc<MeltArgs>,
+    args: &Arc<UnpivotArgs>,
     input: Node,
     acc_projections: Vec<ColumnNode>,
     projections_seen: usize,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
-    if args.value_vars.is_empty() {
+    if args.on.is_empty() {
         // restart projection pushdown
         proj_pd.no_pushdown_restart_opt(lp, acc_projections, projections_seen, lp_arena, expr_arena)
     } else {
@@ -28,10 +28,10 @@ pub(super) fn process_melt(
         }
 
         // make sure that the requested columns are projected
-        args.id_vars.iter().for_each(|name| {
+        args.index.iter().for_each(|name| {
             add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
         });
-        args.value_vars.iter().for_each(|name| {
+        args.on.iter().for_each(|name| {
             add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
         });
 
@@ -44,9 +44,9 @@ pub(super) fn process_melt(
             expr_arena,
         )?;
 
-        // re-make melt node so that the schema is updated
+        // re-make unpivot node so that the schema is updated
         let lp = IRBuilder::new(input, expr_arena, lp_arena)
-            .melt(args.clone())
+            .unpivot(args.clone())
             .build();
 
         if local_projections.is_empty() {

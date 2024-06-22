@@ -484,33 +484,47 @@ impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
 
 impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedArray<T>> {
-    fn bit_repr_is_large(&self) -> bool {
-        ChunkedArray::<T>::bit_repr_is_large()
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
-#[cfg(feature = "dtype-array")]
-impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        false
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
     }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+#[cfg(feature = "dtype-array")]
+impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        let repr = self
+            .0
             .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
             .unwrap()
             .u32()
             .unwrap()
-            .clone()
+            .clone();
+
+        Some(BitRepr::Small(repr))
     }
 }

@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.skip(
@@ -414,3 +414,32 @@ def test_hive_partition_directory_scan(
 
     out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
     assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
+
+    
+def test_hive_partition_schema_inference(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    dfs = [
+        pl.DataFrame({"x": 1}),
+        pl.DataFrame({"x": 2}),
+        pl.DataFrame({"x": 3}),
+    ]
+
+    paths = [
+        tmp_path / "a=1/data.bin",
+        tmp_path / "a=1.5/data.bin",
+        tmp_path / "a=polars/data.bin",
+    ]
+
+    expected = [
+        pl.Series("a", [1], dtype=pl.Int64),
+        pl.Series("a", [1.0, 1.5], dtype=pl.Float64),
+        pl.Series("a", ["1", "1.5", "polars"], dtype=pl.String),
+    ]
+
+    for i in range(3):
+        paths[i].parent.mkdir(exist_ok=True, parents=True)
+        dfs[i].write_parquet(paths[i])
+        out = pl.scan_parquet(tmp_path / "**/*.bin").collect()
+
+        assert_series_equal(out["a"], expected[i])

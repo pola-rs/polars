@@ -8,6 +8,7 @@ use polars_core::hashing::{
     _HASHMAP_INIT_SIZE,
 };
 use polars_core::prelude::*;
+use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::{_set_partition_size, split_and_flatten};
 use polars_core::{with_match_physical_float_polars_type, IdBuildHasher, POOL};
@@ -402,7 +403,7 @@ where
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
-            ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", left_dtype, right_dtype
+            ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{left_dtype}` and `{right_dtype}`",
         );
         match left_dtype {
             DataType::String => {
@@ -415,27 +416,37 @@ where
                 let right_by = right_by_s.binary().unwrap();
                 asof_join_by_binary::<T, A, F>(left_by, right_by, left_asof, right_asof, filter)
             },
+            x if x.is_float() => {
+                with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
+                    let left_by: &ChunkedArray<$T> = left_by_s.as_ref().as_ref().as_ref();
+                    let right_by: &ChunkedArray<$T> = right_by_s.as_ref().as_ref().as_ref();
+                    asof_join_by_numeric::<T, $T, A, F>(
+                        left_by, right_by, left_asof, right_asof, filter,
+                    )?
+                })
+            },
             _ => {
-                if left_by_s.dtype().is_float() {
-                    with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
-                        let left_by: &ChunkedArray<$T> = left_by_s.as_ref().as_ref().as_ref();
-                        let right_by: &ChunkedArray<$T> = right_by_s.as_ref().as_ref().as_ref();
-                        asof_join_by_numeric::<T, $T, A, F>(
-                            left_by, right_by, left_asof, right_asof, filter,
+                let left_by = left_by_s.bit_repr();
+                let right_by = right_by_s.bit_repr();
+
+                let (Some(left_by), Some(right_by)) = (left_by, right_by) else {
+                    polars_bail!(nyi = "Dispatch join for {left_dtype} and {right_dtype}");
+                };
+
+                use BitRepr as B;
+                match (left_by, right_by) {
+                    (B::Small(left_by), B::Small(right_by)) => {
+                        asof_join_by_numeric::<T, UInt32Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter,
                         )?
-                    })
-                } else if left_by_s.bit_repr_is_large() {
-                    let left_by = left_by_s.bit_repr_large();
-                    let right_by = right_by_s.bit_repr_large();
-                    asof_join_by_numeric::<T, UInt64Type, A, F>(
-                        &left_by, &right_by, left_asof, right_asof, filter,
-                    )?
-                } else {
-                    let left_by = left_by_s.bit_repr_small();
-                    let right_by = right_by_s.bit_repr_small();
-                    asof_join_by_numeric::<T, UInt32Type, A, F>(
-                        &left_by, &right_by, left_asof, right_asof, filter,
-                    )?
+                    },
+                    (B::Large(left_by), B::Large(right_by)) => {
+                        asof_join_by_numeric::<T, UInt64Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter,
+                        )?
+                    },
+                    // We have already asserted that the datatypes are the same.
+                    _ => unreachable!(),
                 }
             },
         }

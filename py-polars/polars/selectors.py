@@ -1567,7 +1567,7 @@ def digit(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     ... ).pivot(
     ...     values="value",
     ...     index="key",
-    ...     columns="year",
+    ...     on="year",
     ...     aggregate_function="sum",
     ... )
     >>> print(df)

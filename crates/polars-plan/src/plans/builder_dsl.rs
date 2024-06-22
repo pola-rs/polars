@@ -339,10 +339,10 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn melt(self, args: MeltArgs) -> Self {
+    pub fn unpivot(self, args: UnpivotArgs) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
-            function: DslFunction::Melt { args },
+            function: DslFunction::Unpivot { args },
         }
         .into()
     }

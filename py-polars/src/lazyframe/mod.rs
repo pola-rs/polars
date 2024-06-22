@@ -1111,25 +1111,25 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
-    #[pyo3(signature = (id_vars, value_vars, value_name, variable_name, streamable))]
-    fn melt(
+    #[pyo3(signature = (on, index, value_name, variable_name, streamable))]
+    fn unpivot(
         &self,
-        id_vars: Vec<String>,
-        value_vars: Vec<String>,
+        on: Vec<String>,
+        index: Vec<String>,
         value_name: Option<String>,
         variable_name: Option<String>,
         streamable: bool,
     ) -> Self {
-        let args = MeltArgs {
-            id_vars: strings_to_smartstrings(id_vars),
-            value_vars: strings_to_smartstrings(value_vars),
+        let args = UnpivotArgs {
+            on: strings_to_smartstrings(on),
+            index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable,
         };
 
         let ldf = self.ldf.clone();
-        ldf.melt(args).into()
+        ldf.unpivot(args).into()
     }
 
     fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> Self {

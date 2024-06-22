@@ -7586,13 +7586,14 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
+    @deprecate_renamed_parameter("columns", "on", version="1.0.0")
     def pivot(
         self,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         aggregate_function: PivotAgg | Expr | None = None,
-        *,
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -7605,13 +7606,13 @@ class DataFrame:
 
         Parameters
         ----------
-        values
-            Column values to aggregate. If None, all remaining columns will be used.
-        index
-            One or multiple keys to group by.
-        columns
+        on
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
+        index
+            One or multiple keys to group by.
+        values
+            Column values to aggregate. If None, all remaining columns will be used.
         aggregate_function
             Choose from:
 
@@ -7630,6 +7631,10 @@ class DataFrame:
         -------
         DataFrame
 
+        Notes
+        -----
+        In some other frameworks, you might know this operation as `pivot_wider`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -7639,7 +7644,7 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(index="foo", columns="bar", values="baz", aggregate_function="sum")
+        >>> df.pivot("bar", index="foo", values="baz", aggregate_function="sum")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ y   ┆ x   │
@@ -7654,8 +7659,8 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.pivot(
+        ...     cs.string(),
         ...     index=cs.string(),
-        ...     columns=cs.string(),
         ...     values=cs.numeric(),
         ...     aggregate_function="sum",
         ...     sort_columns=True,
@@ -7684,8 +7689,8 @@ class DataFrame:
         ...     }
         ... )
         >>> df.pivot(
+        ...     "col2",
         ...     index="col1",
-        ...     columns="col2",
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),
         ... )
@@ -7704,12 +7709,12 @@ class DataFrame:
         get the same result as above in lazy mode:
 
         >>> index = pl.col("col1")
-        >>> columns = pl.col("col2")
+        >>> on = pl.col("col2")
         >>> values = pl.col("col3")
         >>> unique_column_values = ["x", "y"]
         >>> aggregate_function = lambda col: col.tanh().mean()
         >>> df.lazy().group_by(index).agg(
-        ...     aggregate_function(values.filter(columns == value)).alias(value)
+        ...     aggregate_function(values.filter(on == value)).alias(value)
         ...     for value in unique_column_values
         ... ).collect()  # doctest: +IGNORE_RESULT
         shape: (2, 3)
@@ -7733,8 +7738,8 @@ class DataFrame:
         ...     }
         ... )
         >>> df.pivot(
+        ...     "col",
         ...     index="ix",
-        ...     columns="col",
         ...     values=["foo", "bar"],
         ...     aggregate_function="sum",
         ...     separator="/",
@@ -7750,7 +7755,7 @@ class DataFrame:
         └─────┴───────┴───────┴───────┴───────┘
         """  # noqa: W505
         index = _expand_selectors(self, index)
-        columns = _expand_selectors(self, columns)
+        on = _expand_selectors(self, on)
         if values is not None:
             values = _expand_selectors(self, values)
 
@@ -7788,8 +7793,8 @@ class DataFrame:
 
         return self._from_pydf(
             self._df.pivot_expr(
+                on,
                 index,
-                columns,
                 values,
                 maintain_order,
                 sort_columns,
@@ -7798,10 +7803,11 @@ class DataFrame:
             )
         )
 
-    def melt(
+    def unpivot(
         self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
     ) -> Self:
@@ -7811,21 +7817,27 @@ class DataFrame:
         Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
+        columns are identifier variables (index) while all other columns, considered
+        measured variables (on), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
-        id_vars
+        on
+            Column(s) or selector(s) to use as values variables; if `on`
+            is empty all columns that are not in `index` will be used.
+        index
             Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
+
+        Notes
+        -----
+        If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
+        but with `index` replacing `id_vars` and `on` replacing `value_vars`.
+        In other frameworks, you might know this operation as `pivot_longer`.
 
         Examples
         --------
@@ -7837,7 +7849,7 @@ class DataFrame:
         ...     }
         ... )
         >>> import polars.selectors as cs
-        >>> df.melt(id_vars="a", value_vars=cs.numeric())
+        >>> df.unpivot(cs.numeric(), index="a")
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -7852,12 +7864,10 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
-        id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
+        on = [] if on is None else _expand_selectors(self, on)
+        index = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(
-            self._df.melt(id_vars, value_vars, value_name, variable_name)
-        )
+        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
 
     @unstable()
     def unstack(
@@ -10666,6 +10676,49 @@ class DataFrame:
         └─────┴─────┴─────┘
         """
         return self.lazy().count().collect(_eager=True)
+
+    @deprecate_function(
+        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        version="1.0.0",
+    )
+    def melt(
+        self,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        variable_name: str | None = None,
+        value_name: str | None = None,
+    ) -> Self:
+        """
+        Unpivot a DataFrame from wide to long format.
+
+        Optionally leaves identifiers set.
+
+        This function is useful to massage a DataFrame into a format where one or more
+        columns are identifier variables (id_vars) while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis leaving just
+        two non-identifier columns, 'variable' and 'value'.
+
+        .. deprecated 1.0.0
+            Please use :meth:`.unpivot` instead.
+
+        Parameters
+        ----------
+        id_vars
+            Column(s) or selector(s) to use as identifier variables.
+        value_vars
+            Column(s) or selector(s) to use as values variables; if `value_vars`
+            is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `variable` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
+        """
+        return self.unpivot(
+            index=id_vars,
+            on=value_vars,
+            variable_name=variable_name,
+            value_name=value_name,
+        )
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

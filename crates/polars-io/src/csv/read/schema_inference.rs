@@ -99,8 +99,24 @@ impl CsvReadOptions {
     }
 }
 
+pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataType {
+    // determine data type based on possible types
+    // if there are incompatible types, use DataType::String
+    match possibilities.len() {
+        1 => possibilities.iter().next().unwrap().clone(),
+        2 if possibilities.contains(&DataType::Int64)
+            && possibilities.contains(&DataType::Float64) =>
+        {
+            // we have an integer and double, fall down to double
+            DataType::Float64
+        },
+        // default to String for conflicting datatypes (e.g bool and int)
+        _ => DataType::String,
+    }
+}
+
 /// Infer the data type of a record
-fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
+pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // String for them
     if string.starts_with('"') {
@@ -428,7 +444,6 @@ fn infer_file_schema_inner(
 
     // build schema from inference results
     for i in 0..header_length {
-        let possibilities = &column_types[i];
         let field_name = &headers[i];
 
         if let Some(schema_overwrite) = schema_overwrite {
@@ -447,27 +462,9 @@ fn infer_file_schema_inner(
             }
         }
 
-        // determine data type based on possible types
-        // if there are incompatible types, use DataType::String
-        match possibilities.len() {
-            1 => {
-                for dtype in possibilities.iter() {
-                    fields.push(Field::new(field_name, dtype.clone()));
-                }
-            },
-            2 => {
-                if possibilities.contains(&DataType::Int64)
-                    && possibilities.contains(&DataType::Float64)
-                {
-                    // we have an integer and double, fall down to double
-                    fields.push(Field::new(field_name, DataType::Float64));
-                } else {
-                    // default to String for conflicting datatypes (e.g bool and int)
-                    fields.push(Field::new(field_name, DataType::String));
-                }
-            },
-            _ => fields.push(Field::new(field_name, DataType::String)),
-        }
+        let possibilities = &column_types[i];
+        let dtype = finish_infer_field_schema(possibilities);
+        fields.push(Field::new(field_name, dtype));
     }
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function

@@ -90,8 +90,8 @@ pub enum FunctionNode {
         #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
     },
-    Melt {
-        args: Arc<MeltArgs>,
+    Unpivot {
+        args: Arc<UnpivotArgs>,
         #[cfg_attr(feature = "serde", serde(skip))]
         schema: CachedSchema,
     },
@@ -125,7 +125,7 @@ impl PartialEq for FunctionNode {
                 },
             ) => existing_l == existing_r && new_l == new_r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
-            (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
+            (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
             #[cfg(feature = "merge_sorted")]
             (MergeSorted { column: l }, MergeSorted { column: r }) => l == r,
@@ -165,7 +165,7 @@ impl Hash for FunctionNode {
                 new.hash(state);
             },
             FunctionNode::Explode { columns, schema: _ } => columns.hash(state),
-            FunctionNode::Melt { args, schema: _ } => args.hash(state),
+            FunctionNode::Unpivot { args, schema: _ } => args.hash(state),
             FunctionNode::RowIndex {
                 name,
                 schema: _,
@@ -187,7 +187,7 @@ impl FunctionNode {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => false,
             Count { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
-            Melt { args, .. } => args.streamable,
+            Unpivot { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
             OpaquePython { streamable, .. } => *streamable,
@@ -201,7 +201,7 @@ impl FunctionNode {
         match self {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
-            Explode { .. } | Melt { .. } => true,
+            Explode { .. } | Unpivot { .. } => true,
             _ => false,
         }
     }
@@ -212,7 +212,7 @@ impl FunctionNode {
             Opaque { predicate_pd, .. } => *predicate_pd,
             #[cfg(feature = "python")]
             OpaquePython { predicate_pd, .. } => *predicate_pd,
-            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Melt { .. } => true,
+            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } | Unpivot { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } | Count { .. } => false,
@@ -231,7 +231,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
-            | Melt { .. } => true,
+            | Unpivot { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowIndex { .. } => true,
@@ -295,9 +295,9 @@ impl FunctionNode {
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Explode { columns, .. } => df.explode(columns.as_ref()),
-            Melt { args, .. } => {
+            Unpivot { args, .. } => {
                 let args = (**args).clone();
-                df.melt2(args)
+                df.unpivot2(args)
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.as_ref(), *offset),
         }
@@ -353,7 +353,7 @@ impl Display for FunctionNode {
             },
             Rename { .. } => write!(f, "RENAME"),
             Explode { .. } => write!(f, "EXPLODE"),
-            Melt { .. } => write!(f, "MELT"),
+            Unpivot { .. } => write!(f, "UNPIVOT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
         }
     }
