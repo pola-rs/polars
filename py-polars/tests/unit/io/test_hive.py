@@ -415,7 +415,7 @@ def test_hive_partition_directory_scan(
     out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
     assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
 
-    
+
 def test_hive_partition_schema_inference(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
