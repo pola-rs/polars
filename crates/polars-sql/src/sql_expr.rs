@@ -377,53 +377,7 @@ impl SQLExprVisitor<'_> {
     ///
     /// e.g. tbl.column, struct.field, tbl.struct.field (inc. nested struct fields)
     fn visit_compound_identifier(&mut self, idents: &[Ident]) -> PolarsResult<Expr> {
-        // inference priority: table > struct > column
-        let ident_root = &idents[0];
-        let mut remaining_idents = idents.iter().skip(1);
-        let mut lf = self.ctx.get_table_from_current_scope(&ident_root.value);
-
-        let schema = if let Some(ref mut lf) = lf {
-            lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)
-        } else {
-            Ok(Arc::new(if let Some(active_schema) = self.active_schema {
-                active_schema.clone()
-            } else {
-                Schema::new()
-            }))
-        }?;
-
-        let mut column: PolarsResult<Expr> = if lf.is_none() && schema.is_empty() {
-            Ok(col(&ident_root.value))
-        } else {
-            let name = &remaining_idents.next().unwrap().value;
-            if lf.is_some() && name == "*" {
-                Ok(cols(schema.iter_names()))
-            } else if let Some((_, name, _)) = schema.get_full(name) {
-                let resolved = &self.ctx.resolve_name(&ident_root.value, name);
-                Ok(if name != resolved {
-                    col(resolved).alias(name)
-                } else {
-                    col(name)
-                })
-            } else if lf.is_none() {
-                remaining_idents = idents.iter().skip(1);
-                Ok(col(&ident_root.value))
-            } else {
-                polars_bail!(
-                    SQLInterface: "no column named '{}' found in table '{}'",
-                    name,
-                    ident_root
-                )
-            }
-        };
-        // additional ident levels index into struct fields
-        for ident in remaining_idents {
-            column = Ok(column
-                .unwrap()
-                .struct_()
-                .field_by_name(ident.value.as_str()));
-        }
-        column
+        Ok(resolve_compound_identifier(self.ctx, idents, self.active_schema)?[0].clone())
     }
 
     fn visit_interval(&self, interval: &Interval) -> PolarsResult<Expr> {
@@ -1252,4 +1206,84 @@ fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
         17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
         _ => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
     }))
+}
+
+pub(crate) fn resolve_compound_identifier(
+    ctx: &mut SQLContext,
+    idents: &[Ident],
+    active_schema: Option<&Schema>,
+) -> PolarsResult<Vec<Expr>> {
+    // inference priority: table > struct > column
+    let ident_root = &idents[0];
+    let mut remaining_idents = idents.iter().skip(1);
+    let mut lf = ctx.get_table_from_current_scope(&ident_root.value);
+
+    let schema = if let Some(ref mut lf) = lf {
+        lf.schema_with_arenas(&mut ctx.lp_arena, &mut ctx.expr_arena)
+    } else {
+        Ok(Arc::new(if let Some(active_schema) = active_schema {
+            active_schema.clone()
+        } else {
+            Schema::new()
+        }))
+    }?;
+
+    let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = if lf.is_none() && schema.is_empty() {
+        Ok((col(&ident_root.value), None))
+    } else {
+        let name = &remaining_idents.next().unwrap().value;
+        if lf.is_some() && name == "*" {
+            return Ok(schema
+                .iter_names()
+                .map(|name| col(name))
+                .collect::<Vec<_>>());
+        } else if let Some((_, name, dtype)) = schema.get_full(name) {
+            let resolved = &ctx.resolve_name(&ident_root.value, name);
+            Ok((
+                if name != resolved {
+                    col(resolved).alias(name)
+                } else {
+                    col(name)
+                },
+                Some(dtype),
+            ))
+        } else if lf.is_none() {
+            remaining_idents = idents.iter().skip(1);
+            Ok((col(&ident_root.value), schema.get(&ident_root.value)))
+        } else {
+            polars_bail!(
+                SQLInterface: "no column named '{}' found in table '{}'",
+                name,
+                ident_root
+            )
+        }
+    };
+
+    // additional ident levels index into struct fields
+    let (mut column, mut dtype) = col_dtype?;
+    for ident in remaining_idents {
+        let name = ident.value.as_str();
+        match dtype {
+            Some(DataType::Struct(fields)) if name == "*" => {
+                return Ok(fields
+                    .iter()
+                    .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                    .collect())
+            },
+            Some(DataType::Struct(fields)) => {
+                dtype = fields
+                    .iter()
+                    .find(|fld| fld.name == name)
+                    .map(|fld| &fld.dtype);
+            },
+            Some(dtype) if name == "*" => {
+                polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
+            },
+            _ => {
+                dtype = None;
+            },
+        }
+        column = column.struct_().field_by_name(name);
+    }
+    Ok(vec![column])
 }

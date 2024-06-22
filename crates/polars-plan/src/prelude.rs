@@ -11,7 +11,6 @@ pub(crate) use polars_time::prelude::*;
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::dsl::*;
-pub use crate::plans::conversion::expr_expansion::rewrite_projections;
 #[cfg(feature = "debugging")]
 pub use crate::plans::debug::*;
 pub use crate::plans::options::*;

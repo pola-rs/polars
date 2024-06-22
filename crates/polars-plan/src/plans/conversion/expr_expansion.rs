@@ -634,7 +634,7 @@ fn find_flags(expr: &Expr) -> PolarsResult<ExpansionFlags> {
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-pub fn rewrite_projections(
+pub(crate) fn rewrite_projections(
     exprs: Vec<Expr>,
     schema: &Schema,
     keys: &[Expr],
