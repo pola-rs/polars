@@ -39,6 +39,11 @@ macro_rules! invalid_operation_panic {
     };
 }
 
+pub enum BitRepr {
+    Small(UInt32Chunked),
+    Large(UInt64Chunked),
+}
+
 pub(crate) mod private {
     use ahash::RandomState;
 
@@ -47,15 +52,10 @@ pub(crate) mod private {
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
 
     pub trait PrivateSeriesNumeric {
-        fn bit_repr_is_large(&self) -> bool {
-            false
-        }
-        fn bit_repr_large(&self) -> UInt64Chunked {
-            unimplemented!()
-        }
-        fn bit_repr_small(&self) -> UInt32Chunked {
-            unimplemented!()
-        }
+        /// Return a bit representation
+        ///
+        /// If there is no available bit representation this returns `None`.
+        fn bit_repr(&self) -> Option<BitRepr>;
     }
 
     pub trait PrivateSeries {
