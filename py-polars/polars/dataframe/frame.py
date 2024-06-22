@@ -9242,6 +9242,11 @@ class DataFrame:
         This method will fail if there is a column of type `List` in the DataFrame or
         subset.
 
+        Notes
+        -----
+        If you're coming from pandas, this is similar to
+        `pandas.DataFrame.drop_duplicates`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
