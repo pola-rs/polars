@@ -924,7 +924,11 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
-    fn replace(
+    fn replace(&self, old: PyExpr, new: PyExpr) -> Self {
+        self.inner.clone().replace(old.inner, new.inner).into()
+    }
+
+    fn replace_strict(
         &self,
         old: PyExpr,
         new: PyExpr,
@@ -933,7 +937,7 @@ impl PyExpr {
     ) -> Self {
         self.inner
             .clone()
-            .replace(
+            .replace_strict(
                 old.inner,
                 new.inner,
                 default.map(|e| e.inner),
