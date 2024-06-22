@@ -5569,22 +5569,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, then
-
-        .. code-block:: python
-
-            # polars
-            df.unique(["a", "b"])
-
-        is equivalent to
-
-        .. code-block:: python
-
-            # pandas
-            df.drop_duplicates(["a", "b"])
-
-        though note that the output ordering is not stable unless
-        you also pass `maintain_order=True`.
+        If you're coming from pandas, this is similar to
+        `pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
