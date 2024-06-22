@@ -136,7 +136,7 @@ pub fn to_alp_impl(
 
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
-            } else if file_options.hive_options.enabled {
+            } else if file_options.hive_options.enabled.unwrap() {
                 hive_partitions_from_paths(
                     paths.as_ref(),
                     file_options.hive_options.hive_start_idx,

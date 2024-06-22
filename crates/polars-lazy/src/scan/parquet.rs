@@ -5,6 +5,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
 use polars_io::{HiveOptions, RowIndex};
 
+use super::get_glob_start_idx;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -57,7 +58,15 @@ impl LazyParquetReader {
 impl LazyFileListReader for LazyParquetReader {
     /// Get the final [LazyFrame].
     fn finish(mut self) -> PolarsResult<LazyFrame> {
-        let (paths, hive_start_idx) = self.expand_paths()?;
+        let (paths, hive_start_idx) =
+            self.expand_paths(self.args.hive_options.enabled.unwrap_or(false))?;
+        self.args.hive_options.enabled =
+            Some(self.args.hive_options.enabled.unwrap_or_else(|| {
+                self.paths.len() == 1
+                    && get_glob_start_idx(self.paths[0].to_str().unwrap().as_bytes()).is_none()
+                    && !paths.is_empty()
+                    && paths[0] != self.paths[0]
+            }));
         self.args.hive_options.hive_start_idx = hive_start_idx;
 
         let row_index = self.args.row_index;

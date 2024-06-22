@@ -299,7 +299,7 @@ impl PyLazyFrame {
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
-        hive_partitioning: bool,
+        hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
         retries: usize,
         glob: bool,

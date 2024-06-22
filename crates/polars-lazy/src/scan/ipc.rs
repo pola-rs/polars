@@ -47,7 +47,7 @@ impl LazyIpcReader {
 
 impl LazyFileListReader for LazyIpcReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let paths = self.expand_paths()?.0;
+        let paths = self.expand_paths(false)?.0;
         let args = self.args;
 
         let options = IpcScanOptions {

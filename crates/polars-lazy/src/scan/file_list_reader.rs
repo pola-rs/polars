@@ -12,6 +12,10 @@ use crate::prelude::*;
 
 pub type PathIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
 
+pub(super) fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
+    memchr::memchr3(b'*', b'?', b'[', path)
+}
+
 /// Recursively traverses directories and expands globs if `glob` is `true`.
 /// Returns the expanded paths and the index at which to start parsing hive
 /// partitions from the path.
@@ -19,14 +23,33 @@ fn expand_paths(
     paths: &[PathBuf],
     #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
     glob: bool,
+    check_directory_level: bool,
 ) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
     let Some(first_path) = paths.first() else {
         return Ok((vec![].into(), 0));
     };
 
     let is_cloud = is_cloud_url(first_path);
-    let mut expand_start_idx = usize::MAX;
     let mut out_paths = vec![];
+
+    let expand_start_idx = &mut usize::MAX.clone();
+    let mut update_expand_start_idx = |i, path_idx: usize| {
+        if check_directory_level
+            && ![usize::MAX, i].contains(expand_start_idx)
+            // They could still be the same directory level, just with different name length
+            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+        {
+            polars_bail!(
+                InvalidOperation:
+                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
+                paths[path_idx - 1].to_str().unwrap(),
+                paths[path_idx].to_str().unwrap(),
+            )
+        } else {
+            *expand_start_idx = std::cmp::min(*expand_start_idx, i);
+            Ok(())
+        }
+    };
 
     if is_cloud {
         #[cfg(feature = "async")]
@@ -45,25 +68,25 @@ fn expand_paths(
                 })
             }
 
-            for path in paths {
-                let glob_start_idx =
-                    memchr::memchr3(b'*', b'?', b'[', path.to_str().unwrap().as_bytes());
+            for (path_idx, path) in paths.iter().enumerate() {
+                let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
-                let (path, glob_start_idx) = if let Some(glob_start_idx) = glob_start_idx {
-                    (path.clone(), glob_start_idx)
+                let path = if glob_start_idx.is_some() {
+                    path.clone()
                 } else if !path.ends_with("/")
                     && is_file_cloud(path.to_str().unwrap(), cloud_options)?
                 {
-                    expand_start_idx = 0;
+                    update_expand_start_idx(0, path_idx)?;
                     out_paths.push(path.clone());
                     continue;
                 } else if !glob {
                     polars_bail!(ComputeError: "not implemented: did not find cloud file at path = {} and `glob` was set to false", path.to_str().unwrap());
                 } else {
-                    (path.join("**/*"), path.to_str().unwrap().len())
+                    // FIXME: This will fail! See https://github.com/pola-rs/polars/issues/17105
+                    path.join("**/*")
                 };
 
-                expand_start_idx = std::cmp::min(expand_start_idx, glob_start_idx);
+                update_expand_start_idx(0, path_idx)?;
 
                 out_paths.extend(
                     polars_io::async_glob(path.to_str().unwrap(), cloud_options)?
@@ -77,13 +100,14 @@ fn expand_paths(
     } else {
         let mut stack = VecDeque::new();
 
-        for path in paths {
+        for path_idx in 0..paths.len() {
+            let path = &paths[path_idx];
             stack.clear();
 
             if path.is_dir() {
                 let i = path.to_str().unwrap().len();
 
-                expand_start_idx = std::cmp::min(expand_start_idx, i);
+                update_expand_start_idx(i, path_idx)?;
 
                 stack.push_back(path.clone());
 
@@ -107,11 +131,10 @@ fn expand_paths(
                 continue;
             }
 
-            let i = memchr::memchr3(b'*', b'?', b'[', path.to_str().unwrap().as_bytes());
+            let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
             if glob && i.is_some() {
-                let i = i.unwrap();
-                expand_start_idx = std::cmp::min(expand_start_idx, i);
+                update_expand_start_idx(0, path_idx)?;
 
                 let Ok(paths) = glob::glob(path.to_str().unwrap()) else {
                     polars_bail!(ComputeError: "invalid glob pattern given")
@@ -121,7 +144,7 @@ fn expand_paths(
                     out_paths.push(path.map_err(to_compute_err)?);
                 }
             } else {
-                expand_start_idx = 0;
+                update_expand_start_idx(0, path_idx)?;
                 out_paths.push(path.clone());
             }
         }
@@ -129,7 +152,7 @@ fn expand_paths(
 
     Ok((
         out_paths.into_iter().collect::<Arc<[_]>>(),
-        expand_start_idx,
+        *expand_start_idx,
     ))
 }
 
@@ -144,7 +167,7 @@ pub trait LazyFileListReader: Clone {
             return self.finish_no_glob();
         }
 
-        let paths = self.expand_paths()?.0;
+        let paths = self.expand_paths(false)?.0;
 
         let lfs = paths
             .iter()
@@ -239,7 +262,12 @@ pub trait LazyFileListReader: Clone {
 
     /// Returns a list of paths after resolving globs and directories, as well as
     /// the string index at which to start parsing hive partitions.
-    fn expand_paths(&self) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
-        expand_paths(self.paths(), self.cloud_options(), self.glob())
+    fn expand_paths(&self, check_directory_level: bool) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
+        expand_paths(
+            self.paths(),
+            self.cloud_options(),
+            self.glob(),
+            check_directory_level,
+        )
     }
 }
