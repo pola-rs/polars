@@ -169,11 +169,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Concatenate, ParamSpec
 
-    if sys.version_info >= (3, 11):
-        pass
-    else:
-        pass
-
     T = TypeVar("T")
     P = ParamSpec("P")
 
