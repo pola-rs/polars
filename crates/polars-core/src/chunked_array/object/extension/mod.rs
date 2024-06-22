@@ -63,7 +63,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     iter: I,
 ) -> PolarsExtension {
     let env = "POLARS_ALLOW_EXTENSION";
-    if !(std::env::var(env).is_ok() || POLARS_ALLOW_EXTENSION.load(Ordering::Relaxed)) {
+    if !(POLARS_ALLOW_EXTENSION.load(Ordering::Relaxed) || std::env::var(env).is_ok()) {
         panic!("creating extension types not allowed - try setting the environment variable {env}")
     }
     let t_size = std::mem::size_of::<T>();
