@@ -298,7 +298,7 @@ impl ListNameSpace {
                     let out = out_dtype.read().unwrap();
                     match out.as_ref() {
                         // dtype already set
-                        Some(dt) => dt.clone(),
+                        Some(dt) => Ok(dt.clone()),
                         // dtype still unknown, set it
                         None => {
                             drop(out);
@@ -314,7 +314,7 @@ impl ListNameSpace {
                             let dt = DataType::Struct(fields);
 
                             *lock = Some(dt.clone());
-                            dt
+                            Ok(dt)
                         },
                     }
                 }),

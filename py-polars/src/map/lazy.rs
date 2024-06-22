@@ -192,9 +192,11 @@ pub fn map_mul(
 
     let exprs = pyexpr.iter().map(|pe| pe.clone().inner).collect::<Vec<_>>();
 
-    let output_map = GetOutput::map_field(move |fld| match output_type {
-        Some(ref dt) => Field::new(fld.name(), dt.0.clone()),
-        None => fld.clone(),
+    let output_map = GetOutput::map_field(move |fld| {
+        Ok(match output_type {
+            Some(ref dt) => Field::new(fld.name(), dt.0.clone()),
+            None => fld.clone(),
+        })
     });
     if map_groups {
         polars::lazy::dsl::apply_multiple(function, exprs, output_map, returns_scalar).into()
