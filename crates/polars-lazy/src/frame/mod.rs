@@ -606,9 +606,6 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.comm_subplan_elim {
-            polars_warn!(
-                "Cannot combine 'streaming' with 'comm_subplan_elim'. CSE will be turned off."
-            );
             opt_state.comm_subplan_elim = false;
         }
         let lp_top = optimize(

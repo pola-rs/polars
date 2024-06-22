@@ -1013,6 +1013,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+
+            .. warning::
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         tree_format
             Format the output as a tree.
 
@@ -1040,6 +1045,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             if tree_format:
                 format = "tree"
+
+        if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
 
         if optimized:
             ldf = self._ldf.optimization_toggle(
@@ -1876,7 +1884,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
-            comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -2054,7 +2061,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
-            comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -2582,6 +2588,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
+            .. warning::
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Notes
         -----
         This is similar to a :func:`collect` operation, but it overwrites the number of
@@ -2627,6 +2637,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim = False
             comm_subexpr_elim = False
             cluster_with_columns = False
+
+        if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
 
         lf = self._ldf.optimization_toggle(
             type_coercion,
