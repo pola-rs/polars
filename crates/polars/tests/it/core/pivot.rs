@@ -16,7 +16,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     let out = pivot(
         &df,
         ["values1"],
-        ["index"],
+        Some(["index"]),
         Some(["values2"]),
         true,
         Some(PivotAgg::Count),
@@ -34,7 +34,7 @@ fn test_pivot_date_() -> PolarsResult<()> {
     let mut out = pivot_stable(
         &df,
         ["values2"],
-        ["index"],
+        Some(["index"]),
         Some(["values1"]),
         true,
         Some(PivotAgg::First),
@@ -64,7 +64,7 @@ fn test_pivot_old() {
     let pvt = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::Sum),
@@ -79,7 +79,7 @@ fn test_pivot_old() {
     let pvt = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::Min),
@@ -93,7 +93,7 @@ fn test_pivot_old() {
     let pvt = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::Max),
@@ -107,7 +107,7 @@ fn test_pivot_old() {
     let pvt = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::Mean),
@@ -121,7 +121,7 @@ fn test_pivot_old() {
     let pvt = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::Count),
@@ -149,7 +149,7 @@ fn test_pivot_categorical() -> PolarsResult<()> {
     let out = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         true,
         Some(PivotAgg::Count),
@@ -174,7 +174,7 @@ fn test_pivot_new() -> PolarsResult<()> {
     let out = (pivot_stable(
         &df,
         ["cols1"],
-        ["index1", "index2"],
+        Some(["index1", "index2"]),
         Some(["values1"]),
         true,
         Some(PivotAgg::Sum),
@@ -191,7 +191,7 @@ fn test_pivot_new() -> PolarsResult<()> {
     let out = pivot_stable(
         &df,
         ["cols1", "cols2"],
-        ["index1", "index2"],
+        Some(["index1", "index2"]),
         Some(["values1"]),
         true,
         Some(PivotAgg::Sum),
@@ -222,7 +222,7 @@ fn test_pivot_2() -> PolarsResult<()> {
     let out = pivot_stable(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::First),
@@ -255,7 +255,7 @@ fn test_pivot_datetime() -> PolarsResult<()> {
     let out = pivot(
         &df,
         ["columns"],
-        ["index"],
+        Some(["index"]),
         Some(["values"]),
         false,
         Some(PivotAgg::Sum),

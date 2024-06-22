@@ -22,7 +22,7 @@ def test_pivot() -> None:
             "N": [1, 2, 2, 4, 2],
         }
     )
-    result = df.pivot(index="foo", on="bar", values="N", aggregate_function=None)
+    result = df.pivot("bar", values="N", aggregate_function=None)
 
     expected = pl.DataFrame(
         [
@@ -45,7 +45,7 @@ def test_pivot_no_values() -> None:
             "N2": [1, 2, 2, 4, 2],
         }
     )
-    result = df.pivot(index="foo", on="bar", values=None, aggregate_function=None)
+    result = df.pivot(on="bar", index="foo", aggregate_function=None)
     expected = pl.DataFrame(
         {
             "foo": ["A", "B", "C"],
@@ -523,3 +523,11 @@ def test_pivot_string_17081() -> None:
         "5": [None, "8", None],
         "6": [None, None, "9"],
     }
+
+
+def test_pivot_invalid() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="`index` and `values` cannot both be None in `pivot` operation",
+    ):
+        pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")

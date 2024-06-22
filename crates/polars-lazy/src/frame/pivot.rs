@@ -33,7 +33,7 @@ impl PhysicalAggExpr for PivotExpr {
 pub fn pivot<I0, I1, I2, S0, S1, S2>(
     df: &DataFrame,
     on: I0,
-    index: I1,
+    index: Option<I1>,
     values: Option<I2>,
     sort_columns: bool,
     agg_expr: Option<Expr>,
@@ -59,7 +59,7 @@ where
 pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     df: &DataFrame,
     on: I0,
-    index: I1,
+    index: Option<I1>,
     values: Option<I2>,
     sort_columns: bool,
     agg_expr: Option<Expr>,

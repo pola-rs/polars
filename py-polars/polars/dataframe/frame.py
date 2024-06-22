@@ -7586,8 +7586,8 @@ class DataFrame:
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
         *,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         aggregate_function: PivotAgg | Expr | None = None,
         maintain_order: bool = True,
         sort_columns: bool = False,
@@ -7605,9 +7605,13 @@ class DataFrame:
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
         index
-            One or multiple keys to group by.
+            One or multiple keys to group by. If None, all remaining columns not specified
+            on `on` and `values` will be used. At least one of `index` and `values` must
+            be specified.
         values
-            Column values to aggregate. If None, all remaining columns will be used.
+            One or multiple keys to group by. If None, all remaining columns not specified
+            on `on` and `index` will be used. At least one of `index` and `values` must
+            be specified.
         aggregate_function
             Choose from:
 
@@ -7620,7 +7624,8 @@ class DataFrame:
         sort_columns
             Sort the transposed columns by name. Default is by order of discovery.
         separator
-            Used as separator/delimiter in generated column names in case of multiple value columns.
+            Used as separator/delimiter in generated column names in case of multiple
+            `values` columns.
 
         Returns
         -------
@@ -7632,49 +7637,84 @@ class DataFrame:
 
         Examples
         --------
+        You can use `pivot` to reshape a dataframe from "long" to "wide" format.
+
+        For example, suppose we have a dataframe of test scores achieved by some
+        students, where each row represents a distinct test.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": ["one", "one", "two", "two", "one", "two"],
-        ...         "bar": ["y", "y", "y", "x", "x", "x"],
-        ...         "baz": [1, 2, 3, 4, 5, 6],
+        ...         "name": ["Cady", "Cady", "Karen", "Karen"],
+        ...         "subject": ["maths", "physics", "maths", "physics"],
+        ...         "test_1": [98, 99, 61, 58],
+        ...         "test_2": [100, 100, 60, 60],
         ...     }
         ... )
-        >>> df.pivot("bar", index="foo", values="baz", aggregate_function="sum")
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ y   ┆ x   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ one ┆ 3   ┆ 5   │
-        │ two ┆ 3   ┆ 10  │
-        └─────┴─────┴─────┘
+        >>> df
+        shape: (4, 4)
+        ┌───────┬─────────┬────────┬────────┐
+        │ name  ┆ subject ┆ test_1 ┆ test_2 │
+        │ ---   ┆ ---     ┆ ---    ┆ ---    │
+        │ str   ┆ str     ┆ i64    ┆ i64    │
+        ╞═══════╪═════════╪════════╪════════╡
+        │ Cady  ┆ maths   ┆ 98     ┆ 100    │
+        │ Cady  ┆ physics ┆ 99     ┆ 100    │
+        │ Karen ┆ maths   ┆ 61     ┆ 60     │
+        │ Karen ┆ physics ┆ 58     ┆ 60     │
+        └───────┴─────────┴────────┴────────┘
 
-        Pivot using selectors to determine the index/values/columns:
+        Using `pivot`, we can reshape so we have one row per student, with different
+        subjects as columns, and their `test_1` scores as values:
+
+        >>> df.pivot("subject", index="name", values="test_1")
+        shape: (2, 3)
+        ┌───────┬───────┬─────────┐
+        │ name  ┆ maths ┆ physics │
+        │ ---   ┆ ---   ┆ ---     │
+        │ str   ┆ i64   ┆ i64     │
+        ╞═══════╪═══════╪═════════╡
+        │ Cady  ┆ 98    ┆ 99      │
+        │ Karen ┆ 61    ┆ 58      │
+        └───────┴───────┴─────────┘
+
+        You can use selectors too - here we include all test scores in the pivoted table:
 
         >>> import polars.selectors as cs
-        >>> df.pivot(
-        ...     cs.string(),
-        ...     index=cs.string(),
-        ...     values=cs.numeric(),
-        ...     aggregate_function="sum",
-        ...     sort_columns=True,
-        ... ).sort(
-        ...     by=cs.string(),
-        ... )
-        shape: (4, 6)
-        ┌─────┬─────┬─────────────┬─────────────┬─────────────┬─────────────┐
-        │ foo ┆ bar ┆ {"one","x"} ┆ {"one","y"} ┆ {"two","x"} ┆ {"two","y"} │
-        │ --- ┆ --- ┆ ---         ┆ ---         ┆ ---         ┆ ---         │
-        │ str ┆ str ┆ i64         ┆ i64         ┆ i64         ┆ i64         │
-        ╞═════╪═════╪═════════════╪═════════════╪═════════════╪═════════════╡
-        │ one ┆ x   ┆ 5           ┆ null        ┆ null        ┆ null        │
-        │ one ┆ y   ┆ null        ┆ 3           ┆ null        ┆ null        │
-        │ two ┆ x   ┆ null        ┆ null        ┆ 10          ┆ null        │
-        │ two ┆ y   ┆ null        ┆ null        ┆ null        ┆ 3           │
-        └─────┴─────┴─────────────┴─────────────┴─────────────┴─────────────┘
+        >>> df.pivot("subject", values=cs.starts_with("test"))
+        shape: (2, 5)
+        ┌───────┬──────────────┬────────────────┬──────────────┬────────────────┐
+        │ name  ┆ test_1_maths ┆ test_1_physics ┆ test_2_maths ┆ test_2_physics │
+        │ ---   ┆ ---          ┆ ---            ┆ ---          ┆ ---            │
+        │ str   ┆ i64          ┆ i64            ┆ i64          ┆ i64            │
+        ╞═══════╪══════════════╪════════════════╪══════════════╪════════════════╡
+        │ Cady  ┆ 98           ┆ 99             ┆ 100          ┆ 100            │
+        │ Karen ┆ 61           ┆ 58             ┆ 60           ┆ 60             │
+        └───────┴──────────────┴────────────────┴──────────────┴────────────────┘
 
-        Run an expression as aggregation function
+        If you end up with multiple values per cell, you can specify how to aggregate
+        them with `aggregate_function`:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "ix": [1, 1, 2, 2, 1, 2],
+        ...         "col": ["a", "a", "a", "a", "b", "b"],
+        ...         "foo": [0, 1, 2, 2, 7, 1],
+        ...         "bar": [0, 2, 0, 0, 9, 4],
+        ...     }
+        ... )
+        >>> df.pivot("col", index="ix", aggregate_function="sum")
+        shape: (2, 5)
+        ┌─────┬───────┬───────┬───────┬───────┐
+        │ ix  ┆ foo_a ┆ foo_b ┆ bar_a ┆ bar_b │
+        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
+        ╞═════╪═══════╪═══════╪═══════╪═══════╡
+        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
+        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
+        └─────┴───────┴───────┴───────┴───────┘
+
+        You can also pass a custom aggregation function using
+        :meth:`polars.element`:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -7721,38 +7761,12 @@ class DataFrame:
         │ a    ┆ 0.998347 ┆ null     │
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
-
-        Using a custom `separator` in generated column names:
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "ix": [1, 1, 2, 2, 1, 2],
-        ...         "col": ["a", "a", "a", "a", "b", "b"],
-        ...         "foo": [0, 1, 2, 2, 7, 1],
-        ...         "bar": [0, 2, 0, 0, 9, 4],
-        ...     }
-        ... )
-        >>> df.pivot(
-        ...     "col",
-        ...     index="ix",
-        ...     values=["foo", "bar"],
-        ...     aggregate_function="sum",
-        ...     separator="/",
-        ... )
-        shape: (2, 5)
-        ┌─────┬───────┬───────┬───────┬───────┐
-        │ ix  ┆ foo/a ┆ foo/b ┆ bar/a ┆ bar/b │
-        │ --- ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
-        │ i64 ┆ i64   ┆ i64   ┆ i64   ┆ i64   │
-        ╞═════╪═══════╪═══════╪═══════╪═══════╡
-        │ 1   ┆ 1     ┆ 7     ┆ 2     ┆ 9     │
-        │ 2   ┆ 4     ┆ 1     ┆ 0     ┆ 4     │
-        └─────┴───────┴───────┴───────┴───────┘
         """  # noqa: W505
-        index = _expand_selectors(self, index)
         on = _expand_selectors(self, on)
         if values is not None:
             values = _expand_selectors(self, values)
+        if index is not None:
+            index = _expand_selectors(self, index)
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
