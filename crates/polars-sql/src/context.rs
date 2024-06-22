@@ -1,9 +1,11 @@
 use std::cell::RefCell;
+use std::ops::Deref;
 
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_ops::frame::JoinCoalesce;
+use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, Ident, JoinConstraint,
@@ -231,6 +233,8 @@ impl SQLContext {
                         idx
                     )
                 })?;
+                // note: "selected" cols represent final projection order, so we use those for
+                // ordinal resolution. "exprs" may include cols that are subsequently dropped.
                 let cols = if let Some(cols) = selected {
                     cols
                 } else {
@@ -1067,6 +1071,7 @@ impl SQLContext {
 
         // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
+        let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
 
@@ -1081,6 +1086,12 @@ impl SQLContext {
                 if e.clone().meta().is_simple_projection() {
                     group_key_aliases.insert(alias.as_ref());
                     e = expr
+                } else if let Expr::Function {
+                    function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
+                    ..
+                } = expr.deref()
+                {
+                    projection_overrides.insert(alias.as_ref(), col(name).alias(alias));
                 } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
@@ -1096,7 +1107,12 @@ impl SQLContext {
                     }
                 }
                 aggregation_projection.push(e);
-            } else if let Expr::Column(_) = e {
+            } else if let Expr::Column(_)
+            | Expr::Function {
+                function: FunctionExpr::StructExpr(StructFunction::FieldByName(_)),
+                ..
+            } = e
+            {
                 // Non-aggregated columns must be part of the GROUP BY clause
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
@@ -1112,7 +1128,9 @@ impl SQLContext {
             .iter_names()
             .zip(projections)
             .map(|(name, projection_expr)| {
-                if group_by_keys_schema.get(name).is_some()
+                if let Some(expr) = projection_overrides.get(name.as_str()) {
+                    expr.clone()
+                } else if group_by_keys_schema.get(name).is_some()
                     || projection_aliases.contains(name.as_str())
                     || group_key_aliases.contains(name.as_str())
                 {

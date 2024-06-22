@@ -729,4 +729,20 @@ fn test_struct_field_selection() {
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
         assert!(df_sql.equals(&df_original));
     }
+
+    let sql = r#"
+      SELECT
+        json_msg.str AS id,
+        SUM(json_msg.num) AS sum_n
+      FROM df
+      GROUP BY json_msg.str
+      ORDER BY 1
+    "#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let df_expected = df! {
+        "id" => ["a", "b"],
+        "sum_n" => [600, 400],
+    }
+    .unwrap();
+    assert!(df_sql.equals(&df_expected));
 }

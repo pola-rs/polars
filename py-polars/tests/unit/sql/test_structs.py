@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import StructFieldNotFoundError
+from polars.exceptions import SQLSyntaxError, StructFieldNotFoundError
 from polars.testing import assert_frame_equal
 
 
@@ -11,10 +11,10 @@ from polars.testing import assert_frame_equal
 def df_struct() -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "id": [100, 200, 300, 400],
-            "name": ["Alice", "Bob", "David", "Zoe"],
-            "age": [32, 27, 19, 45],
-            "other": [{"n": 1.5}, {"n": None}, {"n": -0.5}, {"n": 2.0}],
+            "id": [200, 300, 400],
+            "name": ["Bob", "David", "Zoe"],
+            "age": [45, 19, 45],
+            "other": [{"n": 1.5}, {"n": None}, {"n": -0.5}],
         }
     ).select(pl.struct(pl.all()).alias("json_msg"))
 
@@ -36,10 +36,43 @@ def test_struct_field_selection(df_struct: pl.DataFrame) -> None:
           json_msg.name DESC
         """
     )
+    expected = pl.DataFrame({"ID": [400, 200], "NAME": ["Zoe", "Bob"], "AGE": [45, 45]})
+    assert_frame_equal(expected, res)
+
+
+def test_struct_field_group_by(df_struct: pl.DataFrame) -> None:
+    res = pl.sql(
+        """
+        SELECT
+          COUNT(json_msg.age) AS n,
+          ARRAY_AGG(json_msg.name) AS names
+        FROM df_struct
+        GROUP BY json_msg.age
+        ORDER BY 1 DESC
+        """
+    ).collect()
+
     expected = pl.DataFrame(
-        {"ID": [400, 100], "NAME": ["Zoe", "Alice"], "AGE": [45, 32]}
+        data={"n": [2, 1], "names": [["Bob", "Zoe"], ["David"]]},
+        schema_overrides={"n": pl.UInt32},
     )
     assert_frame_equal(expected, res)
+
+
+def test_struct_field_group_by_errors(df_struct: pl.DataFrame) -> None:
+    with pytest.raises(
+        SQLSyntaxError,
+        match="'name' should participate in the GROUP BY clause or an aggregate function",
+    ):
+        pl.sql(
+            """
+            SELECT
+              json_msg.name,
+              SUM(json_msg.age) AS sum_age
+            FROM df_struct
+            GROUP BY json_msg.age
+            """
+        ).collect()
 
 
 @pytest.mark.parametrize(
@@ -77,6 +110,8 @@ def test_struct_field_wildcard_selection(
         "self.json_msg.other.invalid_column",
     ],
 )
-def test_struct_indexing_errors(invalid_column: str, df_struct: pl.DataFrame) -> None:
+def test_struct_field_selection_errors(
+    invalid_column: str, df_struct: pl.DataFrame
+) -> None:
     with pytest.raises(StructFieldNotFoundError, match="invalid_column"):
         df_struct.sql(f"SELECT {invalid_column} FROM self")
