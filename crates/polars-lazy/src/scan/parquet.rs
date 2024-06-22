@@ -64,7 +64,8 @@ impl LazyFileListReader for LazyParquetReader {
             Some(self.args.hive_options.enabled.unwrap_or_else(|| {
                 self.paths.len() == 1
                     && get_glob_start_idx(self.paths[0].to_str().unwrap().as_bytes()).is_none()
-                    && paths.len() > 1
+                    && !paths.is_empty()
+                    && paths[0] != self.paths[0]
             }));
         self.args.hive_options.hive_start_idx = hive_start_idx;
 
