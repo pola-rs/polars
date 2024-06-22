@@ -81,7 +81,7 @@ from polars.datatypes import (
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
-    py_type_to_dtype,
+    parse_into_dtype,
     supported_numpy_char_code,
 )
 from polars.datatypes._utils import dtype_to_init_repr
@@ -269,7 +269,7 @@ class Series:
         elif dtype is not None and not is_polars_dtype(dtype):
             # Raise early error on invalid dtype
             if not is_polars_dtype(
-                pl_dtype := py_type_to_dtype(dtype, raise_unmatched=False)
+                pl_dtype := parse_into_dtype(dtype, raise_unmatched=False)
             ):
                 msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
                 raise ValueError(msg)
@@ -3953,7 +3953,7 @@ class Series:
         ]
         """
         # Do not dispatch cast as it is expensive and used in other functions.
-        dtype = py_type_to_dtype(dtype)
+        dtype = parse_into_dtype(dtype)
         return self._from_pyseries(self._s.cast(dtype, strict, wrap_numerical))
 
     def to_physical(self) -> Series:
@@ -5259,7 +5259,7 @@ class Series:
         if return_dtype is None:
             pl_return_dtype = None
         else:
-            pl_return_dtype = py_type_to_dtype(return_dtype)
+            pl_return_dtype = parse_into_dtype(return_dtype)
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(

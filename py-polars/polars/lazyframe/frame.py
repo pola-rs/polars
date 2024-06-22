@@ -72,7 +72,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     is_polars_dtype,
-    py_type_to_dtype,
+    parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
@@ -2786,7 +2786,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 c = by_dtype(c)  # type: ignore[arg-type]
 
-            dtype = py_type_to_dtype(dtype)
+            dtype = parse_into_dtype(dtype)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)

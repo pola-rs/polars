@@ -1,3 +1,4 @@
+from polars.datatypes._parse import parse_into_dtype
 from polars.datatypes.classes import (
     Array,
     Binary,
@@ -49,7 +50,6 @@ from polars.datatypes.convert import (
     maybe_cast,
     numpy_char_code_to_dtype,
     py_type_to_arrow_type,
-    py_type_to_dtype,
     supported_numpy_char_code,
     unpack_dtypes,
 )
@@ -103,7 +103,8 @@ __all__ = [
     "maybe_cast",
     "numpy_char_code_to_dtype",
     "py_type_to_arrow_type",
-    "py_type_to_dtype",
     "supported_numpy_char_code",
     "unpack_dtypes",
+    # _parse
+    "parse_into_dtype",
 ]

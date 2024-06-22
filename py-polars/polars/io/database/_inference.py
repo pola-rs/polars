@@ -28,7 +28,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
 )
-from polars.datatypes.convert import _map_py_type_to_dtype
+from polars.datatypes._parse import _map_py_type_to_dtype
 from polars.datatypes.group import (
     INTEGER_DTYPES,
     UNSIGNED_INTEGER_DTYPES,

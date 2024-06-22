@@ -12,7 +12,7 @@ from polars._utils.deprecation import (
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
+from polars.datatypes import Date, Datetime, Time, parse_into_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -1236,7 +1236,7 @@ class ExprStringNameSpace:
         └─────────────────────┴─────────────┘
         """
         if dtype is not None:
-            dtype = py_type_to_dtype(dtype)
+            dtype = parse_into_dtype(dtype)
         return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:

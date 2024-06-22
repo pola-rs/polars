@@ -604,7 +604,7 @@ class List(NestedType):
     inner: PolarsDataType
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
+        self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -675,7 +675,7 @@ class Array(NestedType):
             msg = "Array constructor is missing the required argument `shape`"
             raise TypeError(msg)
 
-        inner_parsed = polars.datatypes.py_type_to_dtype(inner)
+        inner_parsed = polars.datatypes.parse_into_dtype(inner)
         inner_shape = inner_parsed.shape if isinstance(inner_parsed, Array) else ()
 
         if isinstance(shape, int):
@@ -754,7 +754,7 @@ class Field:
 
     def __init__(self, name: str, dtype: PolarsDataType):
         self.name = name
-        self.dtype = polars.datatypes.py_type_to_dtype(dtype)
+        self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
