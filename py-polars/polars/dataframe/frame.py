@@ -10682,7 +10682,7 @@ class DataFrame:
         value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Unpivot a DataFrame from wide to long format.
 

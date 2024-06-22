@@ -6325,7 +6325,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         value_name: str | None = None,
         *,
         streamable: bool = True,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Unpivot a DataFrame from wide to long format.
 
