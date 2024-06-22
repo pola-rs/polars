@@ -123,23 +123,13 @@ fn integer_serializer<I: NativeType + itoa::Integer>(array: &PrimitiveArray<I>) 
     })
 }
 
-fn float_serializer_no_precision<I: NativeType + ryu::Float + LowerExp + NumCast>(
+fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| match _options
-        .float_scientific
-    {
-        Some(true) => write!(buf, "{item:.e}").unwrap(),
-        Some(false) => {
-            let v: f64 = NumCast::from(item).unwrap();
-            let value = v.to_string();
-            buf.extend_from_slice(value.as_bytes());
-        },
-        None => {
-            let mut buffer = ryu::Buffer::new();
-            let value = buffer.format(item);
-            buf.extend_from_slice(value.as_bytes());
-        },
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let mut buffer = ryu::Buffer::new();
+        let value = buffer.format(item);
+        buf.extend_from_slice(value.as_bytes());
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -151,17 +141,66 @@ fn float_serializer_no_precision<I: NativeType + ryu::Float + LowerExp + NumCast
     })
 }
 
-fn float_serializer_with_precision<I: NativeType + LowerExp>(
+fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        // Float writing into a buffer of `Vec<u8>` cannot fail.
+        let _ = write!(buf, "{item:.e}");
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let v: f64 = NumCast::from(item).unwrap();
+        let value = v.to_string();
+        buf.extend_from_slice(value.as_bytes());
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
     array: &PrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
-        let _ = if _options.float_scientific.unwrap_or(false) {
-            write!(buf, "{item:.precision$e}")
-        } else {
-            write!(buf, "{item:.precision$}")
-        };
+        let _ = write!(buf, "{item:.precision$e}");
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_with_precision_positional<I: NativeType>(
+    array: &PrimitiveArray<I>,
+    precision: usize,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        // Float writing into a buffer of `Vec<u8>` cannot fail.
+        let _ = write!(buf, "{item:.precision$}");
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -479,12 +518,30 @@ pub(super) fn serializer_for<'a>(
         DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
         DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
         DataType::Float32 => match options.float_precision {
-            Some(precision) => quote_if_always!(float_serializer_with_precision::<f32>, precision),
-            None => quote_if_always!(float_serializer_no_precision::<f32>),
+            Some(precision) => match options.float_scientific {
+                Some(true) => {
+                    quote_if_always!(float_serializer_with_precision_scientific::<f32>, precision)
+                },
+                _ => quote_if_always!(float_serializer_with_precision_positional::<f32>, precision),
+            },
+            None => match options.float_scientific {
+                Some(true) => quote_if_always!(float_serializer_no_precision_scientific::<f32>),
+                Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f32>),
+                None => quote_if_always!(float_serializer_no_precision_autoformat::<f32>),
+            },
         },
         DataType::Float64 => match options.float_precision {
-            Some(precision) => quote_if_always!(float_serializer_with_precision::<f64>, precision),
-            None => quote_if_always!(float_serializer_no_precision::<f64>),
+            Some(precision) => match options.float_scientific {
+                Some(true) => {
+                    quote_if_always!(float_serializer_with_precision_scientific::<f64>, precision)
+                },
+                _ => quote_if_always!(float_serializer_with_precision_positional::<f64>, precision),
+            },
+            None => match options.float_scientific {
+                Some(true) => quote_if_always!(float_serializer_no_precision_scientific::<f64>),
+                Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f64>),
+                None => quote_if_always!(float_serializer_no_precision_autoformat::<f64>),
+            },
         },
         DataType::Null => quote_if_always!(null_serializer),
         DataType::Boolean => {
