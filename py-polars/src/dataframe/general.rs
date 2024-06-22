@@ -421,7 +421,7 @@ impl PyDataFrame {
     pub fn pivot_expr(
         &self,
         on: Vec<String>,
-        index: Vec<String>,
+        index: Option<Vec<String>>,
         values: Option<Vec<String>>,
         maintain_order: bool,
         sort_columns: bool,

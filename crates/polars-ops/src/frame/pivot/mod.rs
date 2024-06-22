@@ -85,7 +85,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
 pub fn pivot<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
     on: I0,
-    index: I1,
+    index: Option<I1>,
     values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
@@ -99,15 +99,11 @@ where
     S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
     let on = on
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = get_values_columns(pivot_df, &index, &on, values);
+    let (index, values) = assign_remaining_columns(pivot_df, &on, index, values)?;
     pivot_impl(
         pivot_df,
         &on,
@@ -128,7 +124,7 @@ where
 pub fn pivot_stable<I0, I1, I2, S0, S1, S2>(
     pivot_df: &DataFrame,
     on: I0,
-    index: I1,
+    index: Option<I1>,
     values: Option<I2>,
     sort_columns: bool,
     agg_fn: Option<PivotAgg>,
@@ -142,15 +138,11 @@ where
     S1: AsRef<str>,
     S2: AsRef<str>,
 {
-    let index = index
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
     let on = on
         .into_iter()
         .map(|s| s.as_ref().to_string())
         .collect::<Vec<_>>();
-    let values = get_values_columns(pivot_df, &index, &on, values);
+    let (index, values) = assign_remaining_columns(pivot_df, &on, index, values)?;
     pivot_impl(
         pivot_df,
         &on,
@@ -163,28 +155,52 @@ where
     )
 }
 
-/// Determine `values` columns, which is optional in `pivot` calls.
+/// Ensure both `index` and `values` are populated with `Vec<String>`.
 ///
-/// If not specified (i.e. is `None`), use all remaining columns in the
-/// `DataFrame` after `index` and `columns` have been excluded.
-fn get_values_columns<I, S>(
+/// - If `index` is None, assign columns not in `on` and `values` to it.
+/// - If `values` is None, assign columns not in `on` and `index` to it.
+/// - At least one of `index` and `values` must be non-null.
+fn assign_remaining_columns<I1, I2, S1, S2>(
     df: &DataFrame,
-    index: &[String],
     on: &[String],
-    values: Option<I>,
-) -> Vec<String>
+    index: Option<I1>,
+    values: Option<I2>,
+) -> PolarsResult<(Vec<String>, Vec<String>)>
 where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
+    I1: IntoIterator<Item = S1>,
+    I2: IntoIterator<Item = S2>,
+    S1: AsRef<str>,
+    S2: AsRef<str>,
 {
-    match values {
-        Some(v) => v.into_iter().map(|s| s.as_ref().to_string()).collect(),
-        None => df
-            .get_column_names()
-            .into_iter()
-            .map(|c| c.to_string())
-            .filter(|c| !(index.contains(c) | on.contains(c)))
-            .collect(),
+    match (index, values) {
+        (Some(index), Some(values)) => {
+            let index = index.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let values = values.into_iter().map(|s| s.as_ref().to_string()).collect();
+            Ok((index, values))
+        },
+        (Some(index), None) => {
+            let index: Vec<String> = index.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let values = df
+                .get_column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .filter(|c| !(index.contains(c) | on.contains(c)))
+                .collect();
+            Ok((index, values))
+        },
+        (None, Some(values)) => {
+            let values: Vec<String> = values.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let index = df
+                .get_column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .filter(|c| !(values.contains(c) | on.contains(c)))
+                .collect();
+            Ok((index, values))
+        },
+        (None, None) => {
+            polars_bail!(InvalidOperation: "`index` and `values` cannot both be None in `pivot` operation")
+        },
     }
 }
 
