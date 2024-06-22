@@ -447,6 +447,36 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
 
     Examples
     --------
+    Concatenate two existing list columns. Null values are propagated.
+
+    >>> df = pl.DataFrame({"a": [[1, 2], [3], [4, 5]], "b": [[4], [], None]})
+    >>> df.with_columns(concat_list=pl.concat_list("a", "b"))
+    shape: (3, 3)
+    ┌───────────┬───────────┬─────────────┐
+    │ a         ┆ b         ┆ concat_list │
+    │ ---       ┆ ---       ┆ ---         │
+    │ list[i64] ┆ list[i64] ┆ list[i64]   │
+    ╞═══════════╪═══════════╪═════════════╡
+    │ [1, 2]    ┆ [4]       ┆ [1, 2, 4]   │
+    │ [3]       ┆ []        ┆ [3]         │
+    │ [4, 5]    ┆ null      ┆ null        │
+    └───────────┴───────────┴─────────────┘
+
+    Non-list columns are cast to a list before concatenation. The output data type
+    is the supertype of the concatenated columns.
+
+    >>> df.select("a", concat_list=pl.concat_list("a", pl.lit("x")))
+    shape: (3, 2)
+    ┌───────────┬─────────────────┐
+    │ a         ┆ concat_list     │
+    │ ---       ┆ ---             │
+    │ list[i64] ┆ list[str]       │
+    ╞═══════════╪═════════════════╡
+    │ [1, 2]    ┆ ["1", "2", "x"] │
+    │ [3]       ┆ ["3", "x"]      │
+    │ [4, 5]    ┆ ["4", "5", "x"] │
+    └───────────┴─────────────────┘
+
     Create lagged columns and collect them into a list. This mimics a rolling window.
 
     >>> df = pl.DataFrame({"A": [1.0, 2.0, 9.0, 2.0, 13.0]})
