@@ -169,11 +169,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Concatenate, ParamSpec
 
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
     T = TypeVar("T")
     P = ParamSpec("P")
 
@@ -418,7 +413,7 @@ class DataFrame:
             raise TypeError(msg)
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> Self:
+    def deserialize(cls, source: str | Path | IOBase) -> DataFrame:
         """
         Read a serialized DataFrame from a file.
 
@@ -460,7 +455,7 @@ class DataFrame:
         return cls._from_pydf(PyDataFrame.deserialize(source))
 
     @classmethod
-    def _from_pydf(cls, py_df: PyDataFrame) -> Self:
+    def _from_pydf(cls, py_df: PyDataFrame) -> DataFrame:
         """Construct Polars DataFrame from FFI PyDataFrame object."""
         df = cls.__new__(cls)
         df._df = py_df
@@ -474,7 +469,7 @@ class DataFrame:
         *,
         schema_overrides: SchemaDict | None = None,
         rechunk: bool = True,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Construct a DataFrame from an Arrow table.
 
@@ -520,7 +515,7 @@ class DataFrame:
         rechunk: bool = True,
         nan_to_null: bool = True,
         include_index: bool = False,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Construct a Polars DataFrame from a pandas DataFrame.
 
@@ -559,7 +554,7 @@ class DataFrame:
             )
         )
 
-    def _replace(self, column: str, new_column: Series) -> Self:
+    def _replace(self, column: str, new_column: Series) -> DataFrame:
         """Replace a column by a new Series (in place)."""
         self._df.replace(column, new_column._s)
         return self
@@ -1064,14 +1059,14 @@ class DataFrame:
     def __setstate__(self, state: list[Series]) -> None:
         self._df = DataFrame(state)._df
 
-    def __mul__(self, other: DataFrame | Series | int | float) -> Self:
+    def __mul__(self, other: DataFrame | Series | int | float) -> DataFrame:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.mul_df(other._df))
 
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.mul(other._s))
 
-    def __rmul__(self, other: DataFrame | Series | int | float) -> Self:
+    def __rmul__(self, other: int | float) -> DataFrame:
         return self * other
 
     def __add__(
@@ -1089,13 +1084,13 @@ class DataFrame:
             return self.select((lit(other) + F.col("*")).name.keep())
         return self + other
 
-    def __sub__(self, other: DataFrame | Series | int | float) -> Self:
+    def __sub__(self, other: DataFrame | Series | int | float) -> DataFrame:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.sub_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.sub(other._s))
 
-    def __mod__(self, other: DataFrame | Series | int | float) -> Self:
+    def __mod__(self, other: DataFrame | Series | int | float) -> DataFrame:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
@@ -1229,10 +1224,10 @@ class DataFrame:
     def __len__(self) -> int:
         return self.height
 
-    def __copy__(self) -> Self:
+    def __copy__(self) -> DataFrame:
         return self.clone()
 
-    def __deepcopy__(self, memo: None = None) -> Self:
+    def __deepcopy__(self, memo: None = None) -> DataFrame:
         return self.clone()
 
     def _ipython_key_completions_(self) -> list[str]:
@@ -4042,7 +4037,7 @@ class DataFrame:
         include_header: bool = False,
         header_name: str = "column",
         column_names: str | Iterable[str] | None = None,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Transpose a DataFrame over the diagonal.
 
@@ -4221,7 +4216,7 @@ class DataFrame:
         """
         return self.lazy().rename(mapping).collect(_eager=True)
 
-    def insert_column(self, index: int, column: Series) -> Self:
+    def insert_column(self, index: int, column: Series) -> DataFrame:
         """
         Insert a Series at a certain column index.
 
@@ -4614,7 +4609,7 @@ class DataFrame:
         """
         return self._df.get_column_index(name)
 
-    def replace_column(self, index: int, column: Series) -> Self:
+    def replace_column(self, index: int, column: Series) -> DataFrame:
         """
         Replace a column at an index location.
 
@@ -4762,7 +4757,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> Self:
+    def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
         """
         Execute a SQL query against the DataFrame.
 
@@ -4852,7 +4847,7 @@ class DataFrame:
         with SQLContext(register_globals=False, eager=True) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)  # type: ignore[return-value]
+            return ctx.execute(query)
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k(
@@ -5056,7 +5051,7 @@ class DataFrame:
         """
         return self._df.equals(other._df, null_equal=null_equal)
 
-    def slice(self, offset: int, length: int | None = None) -> Self:
+    def slice(self, offset: int, length: int | None = None) -> DataFrame:
         """
         Get a slice of this DataFrame.
 
@@ -5092,7 +5087,7 @@ class DataFrame:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
-    def head(self, n: int = 5) -> Self:
+    def head(self, n: int = 5) -> DataFrame:
         """
         Get the first `n` rows.
 
@@ -5144,7 +5139,7 @@ class DataFrame:
             n = max(0, self.height + n)
         return self._from_pydf(self._df.head(n))
 
-    def tail(self, n: int = 5) -> Self:
+    def tail(self, n: int = 5) -> DataFrame:
         """
         Get the last `n` rows.
 
@@ -5196,7 +5191,7 @@ class DataFrame:
             n = max(0, self.height + n)
         return self._from_pydf(self._df.tail(n))
 
-    def limit(self, n: int = 5) -> Self:
+    def limit(self, n: int = 5) -> DataFrame:
         """
         Get the first `n` rows.
 
@@ -5412,7 +5407,7 @@ class DataFrame:
         """
         return function(self, *args, **kwargs)
 
-    def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
+    def with_row_index(self, name: str = "index", offset: int = 0) -> DataFrame:
         """
         Add a row index as the first column in the DataFrame.
 
@@ -5489,7 +5484,7 @@ class DataFrame:
         " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
+    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> DataFrame:
         """
         Add a column at index 0 that counts the rows.
 
@@ -6144,7 +6139,7 @@ class DataFrame:
         every: str | timedelta,
         group_by: str | Sequence[str] | None = None,
         maintain_order: bool = False,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Upsample a DataFrame at a regular frequency.
 
@@ -6841,7 +6836,7 @@ class DataFrame:
 
     def hstack(
         self, columns: list[Series] | DataFrame, *, in_place: bool = False
-    ) -> Self:
+    ) -> DataFrame:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
 
@@ -6882,7 +6877,7 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
+    def vstack(self, other: DataFrame, *, in_place: bool = False) -> DataFrame:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
@@ -6940,7 +6935,7 @@ class DataFrame:
 
         return self._from_pydf(self._df.vstack(other._df))
 
-    def extend(self, other: DataFrame) -> Self:
+    def extend(self, other: DataFrame) -> DataFrame:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
@@ -7205,7 +7200,7 @@ class DataFrame:
         """
         return self.lazy().cast(dtypes, strict=strict).collect(_eager=True)
 
-    def clear(self, n: int = 0) -> Self:
+    def clear(self, n: int = 0) -> DataFrame:
         """
         Create an empty (n=0) or `n`-row null-filled (n>0) copy of the DataFrame.
 
@@ -7263,7 +7258,7 @@ class DataFrame:
             }
         )
 
-    def clone(self) -> Self:
+    def clone(self) -> DataFrame:
         """
         Create a copy of this DataFrame.
 
@@ -7597,7 +7592,7 @@ class DataFrame:
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
-    ) -> Self:
+    ) -> DataFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
 
@@ -7810,7 +7805,7 @@ class DataFrame:
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Unpivot a DataFrame from wide to long format.
 
@@ -8017,7 +8012,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[False] = ...,
-    ) -> list[Self]: ...
+    ) -> list[DataFrame]: ...
 
     @overload
     def partition_by(
@@ -8027,7 +8022,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: Literal[True],
-    ) -> dict[tuple[object, ...], Self]: ...
+    ) -> dict[tuple[object, ...], DataFrame]: ...
 
     @overload
     def partition_by(
@@ -8037,7 +8032,7 @@ class DataFrame:
         maintain_order: bool = ...,
         include_key: bool = ...,
         as_dict: bool,
-    ) -> list[Self] | dict[tuple[object, ...], Self]: ...
+    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]: ...
 
     def partition_by(
         self,
@@ -8046,7 +8041,7 @@ class DataFrame:
         maintain_order: bool = True,
         include_key: bool = True,
         as_dict: bool = False,
-    ) -> list[Self] | dict[tuple[object, ...], Self]:
+    ) -> list[DataFrame] | dict[tuple[object, ...], DataFrame]:
         """
         Group by the given columns and return the groups as separate dataframes.
 
@@ -8956,7 +8951,7 @@ class DataFrame:
         """
         return wrap_s(self._df.mean_horizontal(ignore_nulls)).alias("mean")
 
-    def std(self, ddof: int = 1) -> Self:
+    def std(self, ddof: int = 1) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their standard deviation value.
 
@@ -8995,9 +8990,9 @@ class DataFrame:
         │ 0.816497 ┆ 0.816497 ┆ null │
         └──────────┴──────────┴──────┘
         """
-        return self.lazy().std(ddof).collect(_eager=True)  # type: ignore[return-value]
+        return self.lazy().std(ddof).collect(_eager=True)
 
-    def var(self, ddof: int = 1) -> Self:
+    def var(self, ddof: int = 1) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their variance value.
 
@@ -9036,9 +9031,9 @@ class DataFrame:
         │ 0.666667 ┆ 0.666667 ┆ null │
         └──────────┴──────────┴──────┘
         """
-        return self.lazy().var(ddof).collect(_eager=True)  # type: ignore[return-value]
+        return self.lazy().var(ddof).collect(_eager=True)
 
-    def median(self) -> Self:
+    def median(self) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their median value.
 
@@ -9061,7 +9056,7 @@ class DataFrame:
         │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
         """
-        return self.lazy().median().collect(_eager=True)  # type: ignore[return-value]
+        return self.lazy().median().collect(_eager=True)
 
     def product(self) -> DataFrame:
         """
@@ -9098,7 +9093,7 @@ class DataFrame:
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
-    ) -> Self:
+    ) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
@@ -9128,7 +9123,7 @@ class DataFrame:
         │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
         """
-        return self.lazy().quantile(quantile, interpolation).collect(_eager=True)  # type: ignore[return-value]
+        return self.lazy().quantile(quantile, interpolation).collect(_eager=True)
 
     def to_dummies(
         self,
@@ -9136,7 +9131,7 @@ class DataFrame:
         *,
         separator: str = "_",
         drop_first: bool = False,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Convert categorical variables into dummy/indicator variables.
 
@@ -9396,7 +9391,7 @@ class DataFrame:
         """
         return self.lazy().approx_n_unique().collect(_eager=True)
 
-    def rechunk(self) -> Self:
+    def rechunk(self) -> DataFrame:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
 
@@ -9405,7 +9400,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.rechunk())
 
-    def null_count(self) -> Self:
+    def null_count(self) -> DataFrame:
         """
         Create a new DataFrame that shows the null counts per column.
 
@@ -9438,7 +9433,7 @@ class DataFrame:
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Sample from this DataFrame.
 
@@ -10145,7 +10140,7 @@ class DataFrame:
         for offset in range(0, self.height, n_rows):
             yield self.slice(offset, n_rows)
 
-    def shrink_to_fit(self, *, in_place: bool = False) -> Self:
+    def shrink_to_fit(self, *, in_place: bool = False) -> DataFrame:
         """
         Shrink DataFrame memory usage.
 
@@ -10326,7 +10321,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
 
@@ -10687,7 +10682,7 @@ class DataFrame:
         value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-    ) -> Self:
+    ) -> DataFrame:
         """
         Unpivot a DataFrame from wide to long format.
 
