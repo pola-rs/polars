@@ -22,6 +22,7 @@ ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
 either = { workspace = true }
+flate2 = { workspace = true, optional = true }
 itoa = { workspace = true }
 libc = "0.2"
 ndarray = { workspace = true }
@@ -217,6 +218,7 @@ io = [
   "csv",
   "cloud",
   "clipboard",
+  "flate2/zlib-ng",
 ]
 
 optimizations = [

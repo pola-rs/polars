@@ -378,24 +378,46 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
             let f = std::fs::File::create(&*s)?;
-            py.allow_threads(|| {
-                // No need for a buffered writer, because the csv writer does internal buffering.
-                CsvWriter::new(f)
-                    .include_bom(include_bom)
-                    .include_header(include_header)
-                    .with_separator(separator)
-                    .with_line_terminator(line_terminator)
-                    .with_quote_char(quote_char)
-                    .with_batch_size(batch_size)
-                    .with_datetime_format(datetime_format)
-                    .with_date_format(date_format)
-                    .with_time_format(time_format)
-                    .with_float_precision(float_precision)
-                    .with_null_value(null)
-                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
-                    .finish(&mut self.df)
-                    .map_err(PyPolarsErr::from)
-            })?;
+            if s.ends_with(".gz") {
+                let gz_writer = flate2::GzBuilder::new().write(f, flate2::Compression::default());
+                py.allow_threads(|| {
+                    // No need for a buffered writer, because the csv writer does internal buffering.
+                    CsvWriter::new(gz_writer)
+                        .include_bom(include_bom)
+                        .include_header(include_header)
+                        .with_separator(separator)
+                        .with_line_terminator(line_terminator)
+                        .with_quote_char(quote_char)
+                        .with_batch_size(batch_size)
+                        .with_datetime_format(datetime_format)
+                        .with_date_format(date_format)
+                        .with_time_format(time_format)
+                        .with_float_precision(float_precision)
+                        .with_null_value(null)
+                        .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
+                        .finish(&mut self.df)
+                        .map_err(PyPolarsErr::from)
+                })?;
+            } else {
+                py.allow_threads(|| {
+                    // No need for a buffered writer, because the csv writer does internal buffering.
+                    CsvWriter::new(f)
+                        .include_bom(include_bom)
+                        .include_header(include_header)
+                        .with_separator(separator)
+                        .with_line_terminator(line_terminator)
+                        .with_quote_char(quote_char)
+                        .with_batch_size(batch_size)
+                        .with_datetime_format(datetime_format)
+                        .with_date_format(date_format)
+                        .with_time_format(time_format)
+                        .with_float_precision(float_precision)
+                        .with_null_value(null)
+                        .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
+                        .finish(&mut self.df)
+                        .map_err(PyPolarsErr::from)
+                })?;
+            }
         } else {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
