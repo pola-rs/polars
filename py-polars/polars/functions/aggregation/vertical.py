@@ -16,7 +16,7 @@ def into_expr(*names: str | Expr) -> Expr:
     return names[0] if contains_expr else F.col(*names)
 
 
-def all(*names: str, ignore_nulls: bool = True) -> Expr:
+def all(*names: str | Expr, ignore_nulls: bool = True) -> Expr:
     """
     Either return an expression representing all columns, or evaluate a bitwise AND operation.
 
@@ -122,7 +122,7 @@ def any(*names: str | Expr, ignore_nulls: bool = True) -> Expr | bool | None:
     return into_expr(*names).any(ignore_nulls=ignore_nulls)
 
 
-def max(*names: str) -> Expr:
+def max(*names: str | Expr) -> Expr:
     """
     Get the maximum value.
 
@@ -182,7 +182,7 @@ def max(*names: str) -> Expr:
     return into_expr(*names).max()
 
 
-def min(*names: str) -> Expr:
+def min(*names: str | Expr) -> Expr:
     """
     Get the minimum value.
 
@@ -242,7 +242,7 @@ def min(*names: str) -> Expr:
     return into_expr(*names).min()
 
 
-def sum(*names: str) -> Expr:
+def sum(*names: str | Expr) -> Expr:
     """
     Sum all values.
 
@@ -302,7 +302,7 @@ def sum(*names: str) -> Expr:
     return into_expr(*names).sum()
 
 
-def cum_sum(*names: str) -> Expr:
+def cum_sum(*names: str | Expr) -> Expr:
     """
     Cumulatively sum all values.
 
