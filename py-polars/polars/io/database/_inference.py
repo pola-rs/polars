@@ -28,7 +28,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
 )
-from polars.datatypes._parse import _map_py_type_to_dtype
+from polars.datatypes._parse import parse_py_type_into_dtype
 from polars.datatypes.group import (
     INTEGER_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
@@ -209,7 +209,7 @@ def _infer_dtype_from_cursor_description(
     if isclass(type_code):
         # python types, eg: int, float, str, etc
         with suppress(TypeError):
-            dtype = _map_py_type_to_dtype(type_code)  # type: ignore[arg-type]
+            dtype = parse_py_type_into_dtype(type_code)  # type: ignore[arg-type]
 
     elif isinstance(type_code, str):
         # database/sql type names, eg: "VARCHAR", "NUMERIC", "BLOB", etc

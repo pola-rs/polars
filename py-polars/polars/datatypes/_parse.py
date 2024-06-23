@@ -5,14 +5,7 @@ import re
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    ForwardRef,
-    Optional,
-    Union,
-    get_args,
-)
+from typing import TYPE_CHECKING, Any, ForwardRef, Optional, Union, get_args
 
 from polars.datatypes.classes import (
     Binary,
@@ -62,55 +55,53 @@ PY_STR_TO_DTYPE: SchemaDict = {
 
 
 @functools.lru_cache(16)
-def _map_py_type_to_dtype(
+def parse_py_type_into_dtype(
     python_dtype: PythonDataType | type[object],
 ) -> PolarsDataType:
     """Convert Python data type to Polars data type."""
-    if python_dtype is float:
-        return Float64
     if python_dtype is int:
-        return Int64
-    if python_dtype is str:
-        return String
-    if python_dtype is bool:
-        return Boolean
-    if issubclass(python_dtype, datetime):
+        return Int64()
+    elif python_dtype is float:
+        return Float64()
+    elif python_dtype is str:
+        return String()
+    elif python_dtype is bool:
+        return Boolean()
+    elif issubclass(python_dtype, datetime):
         # `datetime` is a subclass of `date`,
         # so need to check `datetime` first
         return Datetime("us")
-    if issubclass(python_dtype, date):
-        return Date
-    if python_dtype is timedelta:
+    elif issubclass(python_dtype, date):
+        return Date()
+    elif python_dtype is timedelta:
         return Duration
-    if python_dtype is time:
-        return Time
-    if python_dtype is list:
-        return List
-    if python_dtype is tuple:
-        return List
-    if python_dtype is PyDecimal:
+    elif python_dtype is time:
+        return Time()
+    elif python_dtype is PyDecimal:
         return Decimal
-    if python_dtype is bytes:
-        return Binary
-    if python_dtype is object:
-        return Object
-    if python_dtype is None.__class__:
-        return Null
+    elif python_dtype is bytes:
+        return Binary()
+    elif python_dtype is object:
+        return Object()
+    elif python_dtype is None.__class__:
+        return Null()
+    elif python_dtype is list or python_dtype is tuple:
+        return List
 
-    # cover generic typing aliases, such as 'list[str]'
-    if hasattr(python_dtype, "__origin__") and hasattr(python_dtype, "__args__"):
+    elif hasattr(python_dtype, "__origin__") and hasattr(python_dtype, "__args__"):
         base_type = python_dtype.__origin__
         if base_type is not None:
-            dtype = _map_py_type_to_dtype(base_type)
+            dtype = parse_py_type_into_dtype(base_type)
             nested = python_dtype.__args__
             if len(nested) == 1:
                 nested = nested[0]
             return (
-                dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
+                dtype if nested is None else dtype(parse_py_type_into_dtype(nested))  # type: ignore[operator]
             )
 
-    msg = f"unrecognised Python type: {python_dtype!r}"
-    raise TypeError(msg)
+    else:
+        msg = f"unrecognized Python type: {python_dtype!r}"
+        raise TypeError(msg)
 
 
 def parse_into_dtype(input: Any) -> PolarsDataType:
@@ -138,7 +129,7 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
             input = possible_types[0]
 
     try:
-        return _map_py_type_to_dtype(input)
+        return parse_py_type_into_dtype(input)
     except (KeyError, TypeError):  # pragma: no cover
         msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
         raise TypeError(msg) from None
