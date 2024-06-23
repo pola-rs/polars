@@ -176,13 +176,13 @@ def test_init_dict() -> None:
 
 
 def test_error_string_dtypes() -> None:
-    with pytest.raises(ValueError, match="cannot infer dtype"):
+    with pytest.raises(TypeError, match="cannot parse input"):
         pl.DataFrame(
             data={"x": [1, 2], "y": [3, 4], "z": [5, 6]},
             schema={"x": "i16", "y": "i32", "z": "f32"},  # type: ignore[dict-item]
         )
 
-    with pytest.raises(ValueError, match="not a valid Polars data type"):
+    with pytest.raises(TypeError, match="cannot parse input"):
         pl.Series("n", [1, 2, 3], dtype="f32")  # type: ignore[arg-type]
 
 

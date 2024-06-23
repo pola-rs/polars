@@ -9,11 +9,9 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ForwardRef,
-    Literal,
     Optional,
     Union,
     get_args,
-    overload,
 )
 
 from polars.datatypes.classes import (
@@ -115,48 +113,40 @@ def _map_py_type_to_dtype(
     raise TypeError(msg)
 
 
-@overload
-def parse_into_dtype(
-    data_type: Any, *, raise_unmatched: Literal[True] = ...
-) -> PolarsDataType: ...
-
-
-@overload
-def parse_into_dtype(
-    data_type: Any, *, raise_unmatched: Literal[False]
-) -> PolarsDataType | None: ...
-
-
-def parse_into_dtype(
-    data_type: Any, *, raise_unmatched: bool = True
-) -> PolarsDataType | None:
-    """Convert a Python dtype (or type annotation) to a Polars dtype."""
-    if isinstance(data_type, ForwardRef):
-        annotation = data_type.__forward_arg__
-        data_type = (
+def parse_into_dtype(input: Any) -> PolarsDataType:
+    """Parse an input into a Polars data type."""
+    if isinstance(input, ForwardRef):
+        annotation = input.__forward_arg__
+        input = (
             PY_STR_TO_DTYPE.get(
-                re.sub(r"(^None \|)|(\| None$)", "", annotation).strip(), data_type
+                re.sub(r"(^None \|)|(\| None$)", "", annotation).strip(), input
             )
             if isinstance(annotation, str)  # type: ignore[redundant-expr]
             else annotation
         )
-    elif type(data_type).__name__ == "InitVar":
-        data_type = data_type.type
+    elif type(input).__name__ == "InitVar":
+        input = input.type
 
-    if is_polars_dtype(data_type):
-        return data_type
+    if is_polars_dtype(input):
+        return input
 
-    elif isinstance(data_type, (OptionType, UnionType)):
+    elif isinstance(input, (OptionType, UnionType)):
         # not exhaustive; handles the common "type | None" case, but
         # should probably pick appropriate supertype when n_types > 1?
-        possible_types = [tp for tp in get_args(data_type) if tp is not NoneType]
+        possible_types = [tp for tp in get_args(input) if tp is not NoneType]
         if len(possible_types) == 1:
-            data_type = possible_types[0]
+            input = possible_types[0]
 
     try:
-        return _map_py_type_to_dtype(data_type)
+        return _map_py_type_to_dtype(input)
     except (KeyError, TypeError):  # pragma: no cover
-        if raise_unmatched:
-            msg = f"cannot infer dtype from {data_type!r} (type: {type(data_type).__name__!r})"
-            raise ValueError(msg) from None
+        msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
+        raise TypeError(msg) from None
+
+
+def try_parse_into_dtype(input: Any) -> PolarsDataType | None:
+    """Try parsing an input into a Polars data type, returning None on failure."""
+    try:
+        return parse_into_dtype(input)
+    except TypeError:
         return None

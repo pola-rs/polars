@@ -44,6 +44,7 @@ from polars.datatypes import (
     is_polars_dtype,
     numpy_char_code_to_dtype,
     parse_into_dtype,
+    try_parse_into_dtype,
 )
 from polars.datatypes.constructor import (
     numpy_type_to_constructor,
@@ -171,11 +172,7 @@ def sequence_to_pyseries(
         elif dtype in py_temporal_types:
             dtype = parse_into_dtype(dtype)
 
-        values_dtype = (
-            None
-            if value is None
-            else parse_into_dtype(type(value), raise_unmatched=False)
-        )
+        values_dtype = None if value is None else try_parse_into_dtype(type(value))
         if values_dtype is not None and values_dtype.is_float():
             msg = f"'float' object cannot be interpreted as a {python_dtype.__name__!r}"
             raise TypeError(

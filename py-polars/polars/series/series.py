@@ -267,14 +267,7 @@ class Series:
         if dtype == Unknown:
             dtype = None
         elif dtype is not None and not is_polars_dtype(dtype):
-            # Raise early error on invalid dtype
-            if not is_polars_dtype(
-                pl_dtype := parse_into_dtype(dtype, raise_unmatched=False)
-            ):
-                msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
-                raise ValueError(msg)
-            else:
-                dtype = pl_dtype
+            dtype = parse_into_dtype(dtype)
 
         # Handle case where values are passed as the first argument
         original_name: str | None = None
