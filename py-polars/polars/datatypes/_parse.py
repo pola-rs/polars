@@ -36,23 +36,6 @@ else:
     NoneType = type(None)
     UnionType = type(Union[int, float])
 
-PY_STR_TO_DTYPE: SchemaDict = {
-    "float": Float64,
-    "int": Int64,
-    "str": String,
-    "bool": Boolean,
-    "date": Date,
-    "datetime": Datetime("us"),
-    "timedelta": Duration("us"),
-    "time": Time,
-    "list": List,
-    "tuple": List,
-    "Decimal": Decimal,
-    "bytes": Binary,
-    "object": Object,
-    "NoneType": Null,
-}
-
 
 @functools.lru_cache(16)
 def parse_py_type_into_dtype(
@@ -106,17 +89,11 @@ def parse_py_type_into_dtype(
 
 def parse_into_dtype(input: Any) -> PolarsDataType:
     """Parse an input into a Polars data type."""
-    if isinstance(input, ForwardRef):
-        annotation = input.__forward_arg__
-        formatted = re.sub(r"(^None \|)|(\| None$)", "", annotation).strip()
-        input = (
-            PY_STR_TO_DTYPE.get(formatted, input)
-            if isinstance(annotation, str)  # type: ignore[redundant-expr]
-            else annotation
-        )
-
     if is_polars_dtype(input):
         return input
+
+    elif isinstance(input, ForwardRef):
+        return _parse_forward_ref_into_dtype(input)
 
     elif isinstance(input, (OptionType, UnionType)):
         # not exhaustive; handles the common "type | None" case, but
@@ -128,6 +105,38 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
     try:
         return parse_py_type_into_dtype(input)
     except (KeyError, TypeError):  # pragma: no cover
+        msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
+        raise TypeError(msg) from None
+
+
+PY_TYPE_STR_TO_DTYPE: SchemaDict = {
+    "int": Int64(),
+    "float": Float64(),
+    "bool": Boolean(),
+    "str": String(),
+    "bytes": Binary(),
+    "date": Date(),
+    "time": Time(),
+    "datetime": Datetime("us"),
+    "timedelta": Duration("us"),
+    "object": Object(),
+    "NoneType": Null(),
+    "Decimal": Decimal,
+    "list": List,
+    "tuple": List,
+}
+
+
+def _parse_forward_ref_into_dtype(input: ForwardRef) -> PolarsDataType:
+    """Parse a ForwardRef into a Polars data type."""
+    annotation = input.__forward_arg__
+
+    # Strip "optional" designation - Polars data types are always nullable
+    formatted = re.sub(r"(^None \|)|(\| None$)", "", annotation).strip()
+
+    try:
+        return PY_TYPE_STR_TO_DTYPE[formatted]
+    except KeyError:
         msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
         raise TypeError(msg) from None
 
