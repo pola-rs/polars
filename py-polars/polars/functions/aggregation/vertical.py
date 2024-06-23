@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from builtins import any as standard_any
 
 import polars.functions as F
+from polars.expr import Expr
 
-if TYPE_CHECKING:
-    from polars import Expr
+
+def into_expr(*names: str | Expr) -> Expr:
+    """Process column name inputs into expressions."""
+    contains_expr = standard_any(isinstance(name, Expr) for name in names)
+    if len(names) > 1 and contains_expr:
+        msg = "`names` input must be either a set of strings or a single expression"
+        raise TypeError(msg)
+
+    return names[0] if contains_expr else F.col(*names)
 
 
 def all(*names: str, ignore_nulls: bool = True) -> Expr:
@@ -67,10 +75,10 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     if not names:
         return F.col("*")
 
-    return F.col(*names).all(ignore_nulls=ignore_nulls)
+    return into_expr(*names).all(ignore_nulls=ignore_nulls)
 
 
-def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
+def any(*names: str | Expr, ignore_nulls: bool = True) -> Expr | bool | None:
     """
     Evaluate a bitwise OR operation.
 
@@ -111,7 +119,7 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     │ true │
     └──────┘
     """
-    return F.col(*names).any(ignore_nulls=ignore_nulls)
+    return into_expr(*names).any(ignore_nulls=ignore_nulls)
 
 
 def max(*names: str) -> Expr:
@@ -171,7 +179,7 @@ def max(*names: str) -> Expr:
     │ 8   ┆ 5   │
     └─────┴─────┘
     """
-    return F.col(*names).max()
+    return into_expr(*names).max()
 
 
 def min(*names: str) -> Expr:
@@ -231,7 +239,7 @@ def min(*names: str) -> Expr:
     │ 1   ┆ 2   │
     └─────┴─────┘
     """
-    return F.col(*names).min()
+    return into_expr(*names).min()
 
 
 def sum(*names: str) -> Expr:
@@ -291,7 +299,7 @@ def sum(*names: str) -> Expr:
     │ 7   ┆ 11  │
     └─────┴─────┘
     """
-    return F.col(*names).sum()
+    return into_expr(*names).sum()
 
 
 def cum_sum(*names: str) -> Expr:
@@ -329,4 +337,4 @@ def cum_sum(*names: str) -> Expr:
     │ 6   │
     └─────┘
     """
-    return F.col(*names).cum_sum()
+    return into_expr(*names).cum_sum()
