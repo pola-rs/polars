@@ -1743,8 +1743,6 @@ A,B
 
 
 def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
-    # The capsys fixture allows pytest to access stdout/stderr. See
-    # https://docs.pytest.org/en/7.1.x/how-to/capture-stdout-stderr.html
     df = pl.DataFrame(
         {
             "numbers": [1, 2, 3],
@@ -1752,8 +1750,6 @@ def test_write_csv_stdout_stderr(capsys: pytest.CaptureFixture[str]) -> None:
             "dates": [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)],
         }
     )
-
-    # pytest hijacks sys.stdout and changes its type, which causes mypy failure
     df.write_csv(sys.stdout)
     captured = capsys.readouterr()
     assert captured.out == (
