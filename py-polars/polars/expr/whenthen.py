@@ -99,7 +99,7 @@ class Then(Expr):
         return wrap_expr(self._then.otherwise(statement_pyexpr))
 
 
-class ChainedWhen(Expr):
+class ChainedWhen:
     """
     Utility class for the `when-then-otherwise` expression.
 

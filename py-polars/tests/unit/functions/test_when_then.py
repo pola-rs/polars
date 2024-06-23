@@ -622,3 +622,11 @@ def test_when_then_supertype_15975_comment() -> None:
     )
 
     assert q.collect()["val"].to_list() == [1.0, 1.5, 16.0]
+
+
+def test_chained_when_no_subclass_17142() -> None:
+    # https://github.com/pola-rs/polars/pull/17142
+    when = pl.when(True).then(1).when(True)
+
+    assert not isinstance(when, pl.Expr)
+    assert "<polars.expr.whenthen.ChainedWhen object at" in str(when)
