@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use arrow::array::{Array, StaticArray};
 use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
@@ -81,14 +79,14 @@ where
 }
 
 #[inline]
-pub fn try_unary_elementwise<'a, T, V, F, K, E>(
+pub fn try_unary_elementwise<'a, T, V, F, K>(
     ca: &'a ChunkedArray<T>,
     mut op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     V: PolarsDataType,
-    F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E>,
+    F: FnMut(Option<T::Physical<'a>>) -> PolarsResult<Option<K>>,
     V::Array: ArrayFromIter<Option<K>>,
 {
     let iter = ca
@@ -119,14 +117,14 @@ where
 }
 
 #[inline]
-pub fn try_unary_elementwise_values<'a, T, V, F, K, E>(
+pub fn try_unary_elementwise_values<'a, T, V, F, K>(
     ca: &'a ChunkedArray<T>,
     mut op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     V: PolarsDataType,
-    F: FnMut(T::Physical<'a>) -> Result<K, E>,
+    F: FnMut(T::Physical<'a>) -> PolarsResult<K>,
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
@@ -173,16 +171,15 @@ where
 }
 
 #[inline]
-pub fn try_unary_mut_with_options<T, V, F, Arr, E>(
+pub fn try_unary_mut_with_options<T, V, F, Arr>(
     ca: &ChunkedArray<T>,
     op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
     Arr: Array + StaticArray,
-    F: FnMut(&T::Array) -> Result<Arr, E>,
-    E: Error,
+    F: FnMut(&T::Array) -> PolarsResult<Arr>,
 {
     ChunkedArray::try_from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
 }
@@ -267,16 +264,16 @@ pub fn binary_elementwise_for_each<'a, 'b, T, U, F>(
 }
 
 #[inline]
-pub fn try_binary_elementwise<T, U, V, F, K, E>(
+pub fn try_binary_elementwise<T, U, V, F, K>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> PolarsResult<Option<K>>,
     V::Array: ArrayFromIter<Option<K>>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -387,19 +384,18 @@ where
 }
 
 #[inline]
-pub fn try_binary_mut_with_options<T, U, V, F, Arr, E>(
+pub fn try_binary_mut_with_options<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
     name: &str,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
     Arr: Array,
-    F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
-    E: Error,
+    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Arr>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -448,18 +444,17 @@ where
 }
 
 /// Applies a kernel that produces `Array` types.
-pub fn try_binary<T, U, V, F, Arr, E>(
+pub fn try_binary<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
     Arr: Array,
-    F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
-    E: Error,
+    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Arr>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -530,25 +525,24 @@ where
 /// # Safety
 /// Caller must ensure that the returned `ArrayRef` belongs to `T: PolarsDataType`.
 #[inline]
-pub unsafe fn try_binary_unchecked_same_type<T, U, F, E>(
+pub unsafe fn try_binary_unchecked_same_type<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
     keep_sorted: bool,
     keep_fast_explode: bool,
-) -> Result<ChunkedArray<T>, E>
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> Result<Box<dyn Array>, E>,
-    E: Error,
+    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Box<dyn Array>>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let chunks = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
-        .collect::<Result<Vec<_>, E>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
     let mut ca = lhs.copy_with_chunks(chunks);
 
     use MetadataProperties as P;
@@ -561,12 +555,12 @@ where
 }
 
 #[inline]
-pub fn try_ternary_elementwise<T, U, V, G, F, K, E>(
+pub fn try_ternary_elementwise<T, U, V, G, F, K>(
     ca1: &ChunkedArray<T>,
     ca2: &ChunkedArray<U>,
     ca3: &ChunkedArray<G>,
     mut op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     U: PolarsDataType,
@@ -576,7 +570,7 @@ where
         Option<T::Physical<'a>>,
         Option<U::Physical<'a>>,
         Option<G::Physical<'a>>,
-    ) -> Result<Option<K>, E>,
+    ) -> PolarsResult<Option<K>>,
     V::Array: ArrayFromIter<Option<K>>,
 {
     let (ca1, ca2, ca3) = align_chunks_ternary(ca1, ca2, ca3);
@@ -663,16 +657,16 @@ where
     }
 }
 
-pub fn broadcast_try_binary_elementwise<T, U, V, F, K, E>(
+pub fn broadcast_try_binary_elementwise<T, U, V, F, K>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
-) -> Result<ChunkedArray<V>, E>
+) -> PolarsResult<ChunkedArray<V>>
 where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> PolarsResult<Option<K>>,
     V::Array: ArrayFromIter<Option<K>>,
 {
     match (lhs.len(), rhs.len()) {

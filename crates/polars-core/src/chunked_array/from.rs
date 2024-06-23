@@ -138,13 +138,13 @@ where
         unsafe { Self::from_chunks_and_dtype_unchecked(ca.name(), chunks, ca.dtype().clone()) }
     }
 
-    pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
+    pub fn try_from_chunk_iter<I, A>(name: &str, iter: I) -> PolarsResult<Self>
     where
-        I: IntoIterator<Item = Result<A, E>>,
+        I: IntoIterator<Item = PolarsResult<A>>,
         T: PolarsDataType<Array = A>,
         A: Array,
     {
-        let chunks: Result<_, _> = iter
+        let chunks: PolarsResult<_> = iter
             .into_iter()
             .map(|x| Ok(Box::new(x?) as Box<dyn Array>))
             .collect();

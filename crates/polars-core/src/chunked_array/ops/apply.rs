@@ -57,13 +57,13 @@ where
     }
 
     /// Applies a function only to the non-null elements, propagating nulls.
-    pub fn try_apply_nonnull_values_generic<'a, U, K, F, E>(
+    pub fn try_apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
         mut op: F,
-    ) -> Result<ChunkedArray<U>, E>
+    ) -> PolarsResult<ChunkedArray<U>>
     where
         U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> Result<K, E>,
+        F: FnMut(T::Physical<'a>) -> PolarsResult<K>,
         U::Array: ArrayFromIter<K> + ArrayFromIter<Option<K>>,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -102,10 +102,10 @@ where
         }
     }
 
-    pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
+    pub fn try_apply_generic<'a, U, K, F>(&'a self, op: F) -> PolarsResult<ChunkedArray<U>>
     where
         U: PolarsDataType,
-        F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E> + Copy,
+        F: FnMut(Option<T::Physical<'a>>) -> PolarsResult<Option<K>> + Copy,
         U::Array: ArrayFromIter<Option<K>>,
     {
         let iter = self.downcast_iter().map(|arr| {
