@@ -18,12 +18,6 @@ from polars import functions as F
 from polars._utils.parse.expr import _parse_inputs_as_iterable
 from polars._utils.various import is_column, re_escape
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Binary,
     Boolean,
     Categorical,
@@ -36,19 +30,60 @@ from polars.datatypes import (
     Time,
     is_polars_dtype,
 )
+from polars.datatypes.group import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
+    TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
+)
 from polars.expr import Expr
 
 if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, LazyFrame
-    from polars.datatypes import PolarsDataType
-    from polars.type_aliases import SelectorType, TimeUnit
+    from polars.type_aliases import PolarsDataType, SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
+
+__all__ = [
+    "all",
+    "alpha",
+    "alphanumeric",
+    "binary",
+    "boolean",
+    "by_dtype",
+    "by_index",
+    "by_name",
+    "categorical",
+    "contains",
+    "date",
+    "datetime",
+    "decimal",
+    "digit",
+    "duration",
+    "ends_with",
+    "exclude",
+    "expand_selector",
+    "first",
+    "float",
+    "integer",
+    "is_selector",
+    "last",
+    "matches",
+    "numeric",
+    "signed_integer",
+    "starts_with",
+    "string",
+    "temporal",
+    "time",
+    "unsigned_integer",
+]
 
 
 @overload
@@ -320,7 +355,7 @@ class _selector_proxy_(Expr):
                 ).rstrip(",")
                 return f"cs.{selector_name}({str_params})"
 
-    @overload  # type: ignore[override]
+    @overload
     def __sub__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -340,7 +375,7 @@ class _selector_proxy_(Expr):
         msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
         raise TypeError(msg)
 
-    @overload  # type: ignore[override]
+    @overload
     def __and__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -363,7 +398,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__and__(other)
 
-    @overload  # type: ignore[override]
+    @overload
     def __or__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -381,7 +416,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    @overload  # type: ignore[override]
+    @overload
     def __xor__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -399,7 +434,7 @@ class _selector_proxy_(Expr):
         else:
             return self.as_expr().__or__(other)
 
-    def __rand__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __rand__(self, other: Any) -> Expr:
         if is_column(other):
             colname = other.meta.output_name()
             if self._attrs["name"] == "by_name" and (
@@ -409,12 +444,12 @@ class _selector_proxy_(Expr):
             other = by_name(colname)
         return self.as_expr().__rand__(other)
 
-    def __ror__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __ror__(self, other: Any) -> Expr:
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
 
-    def __rxor__(self, other: Any) -> Expr:  # type: ignore[override]
+    def __rxor__(self, other: Any) -> Expr:
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__rxor__(other)
@@ -862,33 +897,33 @@ def by_dtype(
     ...     }
     ... )
 
-    Select all columns with date or integer dtypes:
+    Select all columns with date or string dtypes:
 
-    >>> df.select(cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
+    >>> df.select(cs.by_dtype(pl.Date, pl.String))
     shape: (3, 2)
-    ┌────────────┬──────────┐
-    │ dt         ┆ value    │
-    │ ---        ┆ ---      │
-    │ date       ┆ i64      │
-    ╞════════════╪══════════╡
-    │ 1999-12-31 ┆ 1234500  │
-    │ 2024-01-01 ┆ 5000555  │
-    │ 2010-07-05 ┆ -4500000 │
-    └────────────┴──────────┘
+    ┌────────────┬───────┐
+    │ dt         ┆ other │
+    │ ---        ┆ ---   │
+    │ date       ┆ str   │
+    ╞════════════╪═══════╡
+    │ 1999-12-31 ┆ foo   │
+    │ 2024-01-01 ┆ bar   │
+    │ 2010-07-05 ┆ foo   │
+    └────────────┴───────┘
 
-    Select all columns that are not of date or integer dtype:
+    Select all columns that are not of date or string dtype:
 
-    >>> df.select(~cs.by_dtype(pl.Date, pl.INTEGER_DTYPES))
+    >>> df.select(~cs.by_dtype(pl.Date, pl.String))
     shape: (3, 1)
-    ┌───────┐
-    │ other │
-    │ ---   │
-    │ str   │
-    ╞═══════╡
-    │ foo   │
-    │ bar   │
-    │ foo   │
-    └───────┘
+    ┌──────────┐
+    │ value    │
+    │ ---      │
+    │ i64      │
+    ╞══════════╡
+    │ 1234500  │
+    │ 5000555  │
+    │ -4500000 │
+    └──────────┘
 
     Group by string columns and sum the numeric columns:
 
@@ -1532,7 +1567,7 @@ def digit(ascii_only: bool = False) -> SelectorType:  # noqa: FBT001
     ... ).pivot(
     ...     values="value",
     ...     index="key",
-    ...     columns="year",
+    ...     on="year",
     ...     aggregate_function="sum",
     ... )
     >>> print(df)
@@ -2631,38 +2666,3 @@ def time() -> SelectorType:
     └─────────────────────┴────────────┘
     """
     return _selector_proxy_(F.col(Time), name="time")
-
-
-__all__ = [
-    "all",
-    "alpha",
-    "alphanumeric",
-    "binary",
-    "boolean",
-    "by_dtype",
-    "by_index",
-    "by_name",
-    "categorical",
-    "contains",
-    "date",
-    "datetime",
-    "decimal",
-    "digit",
-    "duration",
-    "ends_with",
-    "exclude",
-    "expand_selector",
-    "first",
-    "float",
-    "integer",
-    "is_selector",
-    "last",
-    "matches",
-    "numeric",
-    "signed_integer",
-    "starts_with",
-    "string",
-    "temporal",
-    "time",
-    "unsigned_integer",
-]

@@ -139,7 +139,8 @@ impl DataFrame {
                     match ordering {
                         IndexOrder::C => unsafe {
                             let num_cols = columns.len();
-                            let mut offset = (ptr as *mut N::Native).add(col_idx + chunk_offset);
+                            let mut offset =
+                                (ptr as *mut N::Native).add(col_idx + chunk_offset * num_cols);
                             for v in vals.iter() {
                                 *offset = *v;
                                 offset = offset.add(num_cols);

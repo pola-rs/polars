@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -130,7 +131,7 @@ def test_compressed_simple(compression: IpcCompression, stream: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    write_ipc(df, stream, f, compression)
+    write_ipc(df, stream, f, compression=compression)
     f.seek(0)
 
     df_read = read_ipc(stream, f, use_pyarrow=False)
@@ -348,6 +349,6 @@ def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
     df = pl.read_ipc(p, memory_map=True)
 
     with pytest.raises(
-        pl.ComputeError, match="cannot write to file: already memory mapped"
+        ComputeError, match="cannot write to file: already memory mapped"
     ):
         df.write_ipc(p)

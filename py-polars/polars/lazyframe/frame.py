@@ -34,6 +34,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _in_notebook,
@@ -51,7 +52,6 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Categorical,
-    DataTypeGroup,
     Date,
     Datetime,
     Duration,
@@ -74,13 +74,13 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.schema import Schema
 from polars.selectors import _expand_selectors, by_dtype, expand_selector
-from polars.slice import LazyPolarsSlice
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
@@ -267,10 +267,10 @@ class LazyFrame:
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    Constructing a LazyFrame from a list of lists, row orientation inferred:
+    Constructing a LazyFrame from a list of lists, row orientation specified:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> lf6 = pl.LazyFrame(data, schema=["a", "b", "c"])
+    >>> lf6 = pl.LazyFrame(data, schema=["a", "b", "c"], orient="row")
     >>> lf6.collect()
     shape: (2, 3)
     ┌─────┬─────┬─────┐
@@ -314,7 +314,7 @@ class LazyFrame:
         )
 
     @classmethod
-    def _from_pyldf(cls, ldf: PyLazyFrame) -> Self:
+    def _from_pyldf(cls, ldf: PyLazyFrame) -> LazyFrame:
         self = cls.__new__(cls)
         self._ldf = ldf
         return self
@@ -333,7 +333,7 @@ class LazyFrame:
         scan_fn: Any,
         *,
         pyarrow: bool = False,
-    ) -> Self:
+    ) -> LazyFrame:
         self = cls.__new__(cls)
         if isinstance(schema, Mapping):
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
@@ -346,7 +346,7 @@ class LazyFrame:
         return self
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> Self:
+    def deserialize(cls, source: str | Path | IOBase) -> LazyFrame:
         """
         Read a logical plan from a file to construct a LazyFrame.
 
@@ -420,7 +420,7 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... ).select("foo", "bar")
-        >>> lf.columns
+        >>> lf.columns  # doctest: +SKIP
         ['foo', 'bar']
         """
         issue_warning(
@@ -462,7 +462,7 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> lf.dtypes
+        >>> lf.dtypes  # doctest: +SKIP
         [Int64, Float64, String]
         """
         issue_warning(
@@ -498,7 +498,7 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> lf.schema
+        >>> lf.schema  # doctest: +SKIP
         Schema({'foo': Int64, 'bar': Float64, 'ham': String})
         """
         issue_warning(
@@ -537,7 +537,7 @@ class LazyFrame:
         ...         "bar": [4, 5, 6],
         ...     }
         ... )
-        >>> lf.width
+        >>> lf.width  # doctest: +SKIP
         2
         """
         issue_warning(
@@ -580,10 +580,10 @@ class LazyFrame:
     def __contains__(self, key: str) -> bool:
         return key in self.collect_schema()
 
-    def __copy__(self) -> Self:
+    def __copy__(self) -> LazyFrame:
         return self.clone()
 
-    def __deepcopy__(self, memo: None = None) -> Self:
+    def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
     def __getitem__(self, item: int | range | slice) -> LazyFrame:
@@ -1013,6 +1013,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Combine sequential independent calls to with_columns
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+
+            .. warning::
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         tree_format
             Format the output as a tree.
 
@@ -1040,6 +1045,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             if tree_format:
                 format = "tree"
+
+        if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
 
         if optimized:
             ldf = self._ldf.optimization_toggle(
@@ -1191,7 +1199,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             plt.show()
             return None
 
-    def inspect(self, fmt: str = "{}") -> Self:
+    def inspect(self, fmt: str = "{}") -> LazyFrame:
         """
         Inspect a node in the computation graph.
 
@@ -1225,7 +1233,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         nulls_last: bool | Sequence[bool] = False,
         maintain_order: bool = False,
         multithreaded: bool = True,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Sort the LazyFrame by the given columns.
 
@@ -1331,7 +1339,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> Self:
+    def sql(self, query: str, *, table_name: str = "self") -> LazyFrame:
         """
         Execute a SQL query against the LazyFrame.
 
@@ -1413,7 +1421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         with SQLContext(register_globals=False, eager=False) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)  # type: ignore[return-value]
+            return ctx.execute(query)
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k(
@@ -1422,7 +1430,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         reverse: bool | Sequence[bool] = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Return the `k` largest rows.
 
@@ -1497,7 +1505,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         by: IntoExpr | Iterable[IntoExpr],
         reverse: bool | Sequence[bool] = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Return the `k` smallest rows.
 
@@ -1811,6 +1819,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.
 
+            .. warning::
+                Background mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Returns
         -------
         DataFrame
@@ -1872,7 +1884,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
-            comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -1887,7 +1898,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _eager,
             new_streaming,
         )
+
         if background:
+            issue_unstable_warning("Background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
 
         # Only for testing purposes atm.
@@ -2048,7 +2061,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
-            comm_subplan_elim = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -2576,6 +2588,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
+            .. warning::
+                Streaming mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Notes
         -----
         This is similar to a :func:`collect` operation, but it overwrites the number of
@@ -2622,6 +2638,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
             cluster_with_columns = False
 
+        if streaming:
+            issue_unstable_warning("Streaming mode is considered unstable.")
+
         lf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
@@ -2637,7 +2656,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return wrap_df(lf.fetch(n_rows))
 
-    def lazy(self) -> Self:
+    def lazy(self) -> LazyFrame:
         """
         Return lazy representation, i.e. itself.
 
@@ -2662,7 +2681,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self
 
-    def cache(self) -> Self:
+    def cache(self) -> LazyFrame:
         """
         Cache the result once the execution of the physical plan hits this node.
 
@@ -2678,7 +2697,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ),
         *,
         strict: bool = True,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Cast LazyFrame column(s) to the specified dtype(s).
 
@@ -2817,7 +2836,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return pl.DataFrame(schema=self.collect_schema()).clear(n).lazy()
 
-    def clone(self) -> Self:
+    def clone(self) -> LazyFrame:
         """
         Create a copy of this LazyFrame.
 
@@ -2852,7 +2871,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             | np.ndarray[Any, Any]
         ),
         **constraints: Any,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 
@@ -2954,7 +2973,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # note: identify masks separately from predicates
         for p in predicates:
             if p is False:  # immediately disallows all rows
-                return self.clear()  # type: ignore[return-value]
+                return self.clear()
             elif p is True:
                 continue  # no-op; matches all rows
             if _is_generator(p):
@@ -3012,7 +3031,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def select(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Select columns from this LazyFrame.
 
@@ -3099,18 +3118,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.select(
-        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.Int64) % 2 == 1).name.suffix("_is_odd"),
         ...     ).collect()
         shape: (3, 1)
-        ┌───────────┐
-        │ is_odd    │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,0}     │
-        │ {0,1}     │
-        │ {1,0}     │
-        └───────────┘
+        ┌──────────────┐
+        │ is_odd       │
+        │ ---          │
+        │ struct[2]    │
+        ╞══════════════╡
+        │ {true,false} │
+        │ {false,true} │
+        │ {true,false} │
+        └──────────────┘
         """
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
@@ -3121,7 +3140,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def select_seq(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Select columns from this LazyFrame.
 
@@ -3733,7 +3752,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-    ) -> Self:
+        coalesce: bool | None = None,
+    ) -> LazyFrame:
         """
         Perform an asof join.
 
@@ -3809,6 +3829,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
+        coalesce
+            Coalescing behavior (merging of join columns).
+
+            - None: -> join specific.
+            - True: -> Always coalesce join columns.
+            - False: -> Never coalesce join columns.
+
+            Note that joining on any other expressions than `col`
+            will turn off coalescing.
 
 
         Examples
@@ -3899,6 +3928,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 strategy,
                 tolerance_num,
                 tolerance_str,
+                coalesce=coalesce,
             )
         )
 
@@ -3916,7 +3946,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         coalesce: bool | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Add a join operation to the Logical Plan.
 
@@ -3975,6 +4005,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - None: -> join specific.
             - True: -> Always coalesce join columns.
             - False: -> Never coalesce join columns.
+
+            Note that joining on any other expressions than `col`
+            will turn off coalescing.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -4117,7 +4150,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *exprs: IntoExpr | Iterable[IntoExpr],
         **named_exprs: IntoExpr,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Add columns to this LazyFrame.
 
@@ -4270,7 +4303,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *exprs: IntoExpr | Iterable[IntoExpr],
         **named_exprs: IntoExpr,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Add columns to this LazyFrame.
 
@@ -4308,7 +4341,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @deprecate_function(
         "Use `pl.concat(..., how='horizontal')` instead.", version="1.0.0"
     )
-    def with_context(self, other: Self | list[Self]) -> Self:
+    def with_context(self, other: Self | list[Self]) -> LazyFrame:
         """
         Add an external context to the computation graph.
 
@@ -4371,8 +4404,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
     def drop(
-        self, *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector]
-    ) -> Self:
+        self,
+        *columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
+        strict: bool = True,
+    ) -> LazyFrame:
         """
         Remove columns from the DataFrame.
 
@@ -4381,6 +4416,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *columns
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
+        strict
+            Validate that all column names exist in the schema and throw an
+            exception if a column name does not exist in the schema.
 
         Examples
         --------
@@ -4435,9 +4473,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┘
         """
         drop_cols = _expand_selectors(self, *columns)
-        return self._from_pyldf(self._ldf.drop(drop_cols))
+        return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
-    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> Self:
+    def rename(self, mapping: dict[str, str] | Callable[[str], str]) -> LazyFrame:
         """
         Rename column names.
 
@@ -4491,7 +4529,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new = list(mapping.values())
             return self._from_pyldf(self._ldf.rename(existing, new))
 
-    def reverse(self) -> Self:
+    def reverse(self) -> LazyFrame:
         """
         Reverse the DataFrame.
 
@@ -4519,7 +4557,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Shift values by the given number of indices.
 
@@ -4595,7 +4633,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n = parse_into_expression(n)
         return self._from_pyldf(self._ldf.shift(n, fill_value))
 
-    def slice(self, offset: int, length: int | None = None) -> Self:
+    def slice(self, offset: int, length: int | None = None) -> LazyFrame:
         """
         Get a slice of this DataFrame.
 
@@ -4632,7 +4670,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(msg)
         return self._from_pyldf(self._ldf.slice(offset, length))
 
-    def limit(self, n: int = 5) -> Self:
+    def limit(self, n: int = 5) -> LazyFrame:
         """
         Get the first `n` rows.
 
@@ -4683,7 +4721,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.head(n)
 
-    def head(self, n: int = 5) -> Self:
+    def head(self, n: int = 5) -> LazyFrame:
         """
         Get the first `n` rows.
 
@@ -4732,7 +4770,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, n)
 
-    def tail(self, n: int = 5) -> Self:
+    def tail(self, n: int = 5) -> LazyFrame:
         """
         Get the last `n` rows.
 
@@ -4775,7 +4813,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.tail(n))
 
-    def last(self) -> Self:
+    def last(self) -> LazyFrame:
         """
         Get the last row of the DataFrame.
 
@@ -4799,7 +4837,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.tail(1)
 
-    def first(self) -> Self:
+    def first(self) -> LazyFrame:
         """
         Get the first row of the DataFrame.
 
@@ -4826,7 +4864,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @deprecate_function(
         "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
     )
-    def approx_n_unique(self) -> Self:
+    def approx_n_unique(self) -> LazyFrame:
         """
         Approximate count of unique values.
 
@@ -4855,7 +4893,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
-    def with_row_index(self, name: str = "index", offset: int = 0) -> Self:
+    def with_row_index(self, name: str = "index", offset: int = 0) -> LazyFrame:
         """
         Add a row index as the first column in the LazyFrame.
 
@@ -4937,7 +4975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         " Note that the default column name has changed from 'row_nr' to 'index'.",
         version="0.20.4",
     )
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
+    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> LazyFrame:
         """
         Add a column at index 0 that counts the rows.
 
@@ -4979,7 +5017,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.with_row_index(name, offset)
 
-    def gather_every(self, n: int, offset: int = 0) -> Self:
+    def gather_every(self, n: int, offset: int = 0) -> LazyFrame:
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
@@ -5028,7 +5066,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         limit: int | None = None,
         *,
         matches_supertype: bool = True,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Fill null values using the specified value or strategy.
 
@@ -5153,7 +5191,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self.select(F.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self, value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
         """
         Fill floating point NaN values.
 
@@ -5196,7 +5234,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             value = F.lit(value)
         return self._from_pyldf(self._ldf.fill_nan(value._pyexpr))
 
-    def std(self, ddof: int = 1) -> Self:
+    def std(self, ddof: int = 1) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their standard deviation value.
 
@@ -5236,7 +5274,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.std(ddof))
 
-    def var(self, ddof: int = 1) -> Self:
+    def var(self, ddof: int = 1) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their variance value.
 
@@ -5276,7 +5314,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.var(ddof))
 
-    def max(self) -> Self:
+    def max(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their maximum value.
 
@@ -5300,7 +5338,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.max())
 
-    def min(self) -> Self:
+    def min(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their minimum value.
 
@@ -5324,7 +5362,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.min())
 
-    def sum(self) -> Self:
+    def sum(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their sum value.
 
@@ -5348,7 +5386,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.sum())
 
-    def mean(self) -> Self:
+    def mean(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their mean value.
 
@@ -5372,7 +5410,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.mean())
 
-    def median(self) -> Self:
+    def median(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their median value.
 
@@ -5396,7 +5434,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.median())
 
-    def null_count(self) -> Self:
+    def null_count(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame as the sum of their null value count.
 
@@ -5425,7 +5463,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         quantile: float | Expr,
         interpolation: RollingInterpolationMethod = "nearest",
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their quantile value.
 
@@ -5461,7 +5499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: str | Expr | Sequence[str | Expr],
         *more_columns: str | Expr,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
 
@@ -5509,7 +5547,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         keep: UniqueKeepStrategy = "any",
         maintain_order: bool = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Drop duplicate rows from this DataFrame.
 
@@ -5541,6 +5579,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         This method will fail if there is a column of type `List` in the DataFrame or
         subset.
+
+        Notes
+        -----
+        If you're coming from pandas, this is similar to
+        `pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
@@ -5590,7 +5633,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def drop_nulls(
         self,
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Drop all rows that contain null values.
 
@@ -5684,40 +5727,46 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             subset = _expand_selectors(self, subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
-    def melt(
+    def unpivot(
         self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        *,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-        *,
         streamable: bool = True,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Unpivot a DataFrame from wide to long format.
 
         Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
+        columns are identifier variables (index) while all other columns, considered
+        measured variables (on), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
-        id_vars
+        on
+            Column(s) or selector(s) to use as values variables; if `on`
+            is empty all columns that are not in `index` will be used.
+        index
             Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
         streamable
             Allow this node to run in the streaming engine.
-            If this runs in streaming, the output of the melt operation
+            If this runs in streaming, the output of the unpivot operation
             will not have a stable ordering.
+
+        Notes
+        -----
+        If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
+        but with `index` replacing `id_vars` and `on` replacing `value_vars`.
+        In other frameworks, you might know this operation as `pivot_longer`.
 
         Examples
         --------
@@ -5729,7 +5778,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> import polars.selectors as cs
-        >>> lf.melt(id_vars="a", value_vars=cs.numeric()).collect()
+        >>> lf.unpivot(cs.numeric(), index="a").collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -5744,11 +5793,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
-        id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
+        on = [] if on is None else _expand_selectors(self, on)
+        index = [] if index is None else _expand_selectors(self, index)
 
         return self._from_pyldf(
-            self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
+            self._ldf.unpivot(on, index, value_name, variable_name, streamable)
         )
 
     def map_batches(
@@ -5762,7 +5811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
         streamable: bool = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Apply a custom function.
 
@@ -5849,7 +5898,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def interpolate(self) -> Self:
+    def interpolate(self) -> LazyFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
 
@@ -5881,7 +5930,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
 
@@ -5931,7 +5980,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         columns = _expand_selectors(self, columns, *more_columns)
         return self._from_pyldf(self._ldf.unnest(columns))
 
-    def merge_sorted(self, other: LazyFrame, key: str) -> Self:
+    def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
@@ -6002,7 +6051,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         column: str,
         *,
         descending: bool = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Indicate that one or multiple columns are sorted.
 
@@ -6038,7 +6087,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         include_nulls: bool = False,
-    ) -> Self:
+    ) -> LazyFrame:
         """
         Update the values in this `LazyFrame` with the values in `other`.
 
@@ -6261,7 +6310,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(result._ldf)
 
-    def count(self) -> Self:
+    def count(self) -> LazyFrame:
         """
         Return the number of non-null elements for each column.
 
@@ -6281,3 +6330,53 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
         """
         return self._from_pyldf(self._ldf.count())
+
+    @deprecate_function(
+        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        version="1.0.0",
+    )
+    def melt(
+        self,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        variable_name: str | None = None,
+        value_name: str | None = None,
+        *,
+        streamable: bool = True,
+    ) -> LazyFrame:
+        """
+        Unpivot a DataFrame from wide to long format.
+
+        Optionally leaves identifiers set.
+
+        This function is useful to massage a DataFrame into a format where one or more
+        columns are identifier variables (id_vars) while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis leaving just
+        two non-identifier columns, 'variable' and 'value'.
+
+        .. deprecated 1.0.0
+            Please use :meth:`.unpivot` instead.
+
+        Parameters
+        ----------
+        id_vars
+            Column(s) or selector(s) to use as identifier variables.
+        value_vars
+            Column(s) or selector(s) to use as values variables; if `value_vars`
+            is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `variable` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
+        streamable
+            Allow this node to run in the streaming engine.
+            If this runs in streaming, the output of the unpivot operation
+            will not have a stable ordering.
+        """
+        return self.unpivot(
+            index=id_vars,
+            on=value_vars,
+            variable_name=variable_name,
+            value_name=value_name,
+            streamable=streamable,
+        )

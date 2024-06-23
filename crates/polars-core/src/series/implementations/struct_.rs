@@ -9,7 +9,11 @@ unsafe impl IntoSeries for StructChunked {
     }
 }
 
-impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {}
+impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
 
 impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn compute_len(&mut self) {

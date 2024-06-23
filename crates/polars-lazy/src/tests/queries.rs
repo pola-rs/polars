@@ -46,18 +46,18 @@ fn test_lazy_alias() {
 }
 
 #[test]
-fn test_lazy_melt() {
+fn test_lazy_unpivot() {
     let df = get_df();
 
-    let args = MeltArgs {
-        id_vars: vec!["petal_width".into(), "petal_length".into()],
-        value_vars: vec!["sepal_length".into(), "sepal_width".into()],
+    let args = UnpivotArgs {
+        on: vec!["sepal_length".into(), "sepal_width".into()],
+        index: vec!["petal_width".into(), "petal_length".into()],
         ..Default::default()
     };
 
     let out = df
         .lazy()
-        .melt(args)
+        .unpivot(args)
         .filter(col("variable").eq(lit("sepal_length")))
         .select([col("variable"), col("petal_width"), col("value")])
         .collect()
@@ -256,7 +256,7 @@ fn test_lazy_query_3() {
 }
 
 #[test]
-fn test_lazy_query_4() {
+fn test_lazy_query_4() -> PolarsResult<()> {
     let df = df! {
         "uid" => [0, 0, 0, 1, 1, 1],
         "day" => [1, 2, 3, 1, 2, 3],
@@ -273,7 +273,7 @@ fn test_lazy_query_4() {
             col("day").alias("day"),
             col("cumcases")
                 .apply(
-                    |s: Series| Ok(Some(&s - &(s.shift(1)))),
+                    |s: Series| (&s - &(s.shift(1))).map(Some),
                     GetOutput::same_type(),
                 )
                 .alias("diff_cases"),
@@ -291,6 +291,8 @@ fn test_lazy_query_4() {
         Vec::from(out.column("diff_cases").unwrap().i32().unwrap()),
         &[None, Some(2), Some(3), None, Some(5), Some(11)]
     );
+
+    Ok(())
 }
 
 #[test]

@@ -1218,8 +1218,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::EwmVar { options: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm var"))
                 },
-                FunctionExpr::Replace { return_dtype: _ } => {
-                    return Err(PyNotImplementedError::new_err("replace"))
+                FunctionExpr::Replace => return Err(PyNotImplementedError::new_err("replace")),
+                FunctionExpr::ReplaceStrict { return_dtype: _ } => {
+                    return Err(PyNotImplementedError::new_err("replace_strict"))
                 },
                 FunctionExpr::Negate => return Err(PyNotImplementedError::new_err("negate")),
                 FunctionExpr::FillNullWithStrategy(_) => {

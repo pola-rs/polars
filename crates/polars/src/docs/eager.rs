@@ -24,7 +24,7 @@
 //! * [Joins](#joins)
 //! * [GroupBy](#group_by)
 //!     - [pivot](#pivot)
-//! * [Melt](#melt)
+//! * [Unpivot](#unpivot)
 //! * [Explode](#explode)
 //! * [IO](#io)
 //!     - [Read CSV](#read-csv)
@@ -460,7 +460,7 @@
 //! # }
 //! ```
 //!
-//! ## Melt
+//! ## Unpivot
 //!
 //! ```
 //! use polars::prelude::*;
@@ -473,8 +473,8 @@
 //!              "D" => &[2, 4, 6]
 //!     ]?;
 //!
-//! let melted = df.melt(&["A", "B"], &["C", "D"]).unwrap();
-//! // melted:
+//! let unpivoted = df.unpivot(&["A", "B"], &["C", "D"]).unwrap();
+//! // unpivoted:
 //!
 //! // +-----+-----+----------+-------+
 //! // | A   | B   | variable | value |

@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -49,7 +50,7 @@ def test_map_rows_error_return_type() -> None:
         res = [x + y for x, y in zip(row[0], row[1])]
         return [res]
 
-    with pytest.raises(pl.ComputeError, match="expected tuple, got list"):
+    with pytest.raises(ComputeError, match="expected tuple, got list"):
         df.map_rows(combine)
 
 

@@ -314,15 +314,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<TimeChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        true
-    }
-
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }

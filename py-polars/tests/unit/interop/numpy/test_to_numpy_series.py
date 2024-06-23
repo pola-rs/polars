@@ -16,6 +16,8 @@ from polars.testing.parametric import series
 if TYPE_CHECKING:
     import numpy.typing as npt
 
+    from polars.type_aliases import PolarsDataType
+
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
     if s.len() == 0:
@@ -46,7 +48,7 @@ def assert_allow_copy_false_raises(s: pl.Series) -> None:
     ],
 )
 def test_series_to_numpy_numeric_zero_copy(
-    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+    dtype: PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, 3]).cast(dtype)
     result = s.to_numpy(allow_copy=False)
@@ -72,7 +74,7 @@ def test_series_to_numpy_numeric_zero_copy(
     ],
 )
 def test_series_to_numpy_numeric_with_nulls(
-    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+    dtype: PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     s = pl.Series([1, 2, None], dtype=dtype, strict=False)
     result = s.to_numpy()
@@ -97,7 +99,7 @@ def test_series_to_numpy_numeric_with_nulls(
     ],
 )
 def test_series_to_numpy_temporal_zero_copy(
-    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+    dtype: PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     values = [0, 2_000, 1_000_000]
     s = pl.Series(values, dtype=dtype, strict=False)
@@ -148,7 +150,7 @@ def test_series_to_numpy_date() -> None:
     ],
 )
 def test_series_to_numpy_temporal_with_nulls(
-    dtype: pl.PolarsDataType, expected_dtype: npt.DTypeLike
+    dtype: PolarsDataType, expected_dtype: npt.DTypeLike
 ) -> None:
     values = [0, 2_000, 1_000_000, None]
     s = pl.Series(values, dtype=dtype, strict=False)
@@ -187,7 +189,7 @@ def test_series_to_numpy_datetime_with_tz_with_nulls() -> None:
 )
 @pytest.mark.parametrize("with_nulls", [False, True])
 def test_to_numpy_object_dtypes(
-    dtype: pl.PolarsDataType, values: list[Any], with_nulls: bool
+    dtype: PolarsDataType, values: list[Any], with_nulls: bool
 ) -> None:
     if with_nulls:
         values.append(None)

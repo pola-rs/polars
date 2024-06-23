@@ -341,7 +341,9 @@ pub enum FunctionExpr {
         options: EWMOptions,
     },
     #[cfg(feature = "replace")]
-    Replace {
+    Replace,
+    #[cfg(feature = "replace")]
+    ReplaceStrict {
         return_dtype: Option<DataType>,
     },
     GatherEvery {
@@ -568,7 +570,9 @@ impl Hash for FunctionExpr {
                 include_breakpoint.hash(state);
             },
             #[cfg(feature = "replace")]
-            Replace { return_dtype } => return_dtype.hash(state),
+            Replace => {},
+            #[cfg(feature = "replace")]
+            ReplaceStrict { return_dtype } => return_dtype.hash(state),
             FillNullWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
@@ -753,7 +757,9 @@ impl Display for FunctionExpr {
             #[cfg(feature = "hist")]
             Hist { .. } => "hist",
             #[cfg(feature = "replace")]
-            Replace { .. } => "replace",
+            Replace => "replace",
+            #[cfg(feature = "replace")]
+            ReplaceStrict { .. } => "replace_strict",
             FillNullWithStrategy(_) => "fill_null_with_strategy",
             GatherEvery { .. } => "gather_every",
             #[cfg(feature = "reinterpret")]
@@ -1143,9 +1149,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
             #[cfg(feature = "replace")]
-            Replace { return_dtype } => {
-                map_as_slice!(dispatch::replace, return_dtype.clone())
+            Replace => {
+                map_as_slice!(dispatch::replace)
             },
+            #[cfg(feature = "replace")]
+            ReplaceStrict { return_dtype } => {
+                map_as_slice!(dispatch::replace_strict, return_dtype.clone())
+            },
+
             FillNullWithStrategy(strategy) => map!(dispatch::fill_null_with_strategy, strategy),
             GatherEvery { n, offset } => map!(dispatch::gather_every, n, offset),
             #[cfg(feature = "reinterpret")]

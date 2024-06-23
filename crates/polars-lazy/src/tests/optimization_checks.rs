@@ -1,5 +1,3 @@
-use polars_ops::prelude::JoinCoalesce;
-
 use super::*;
 
 #[cfg(feature = "parquet")]
@@ -156,11 +154,7 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
             df2.lazy(),
             [col("idx1")],
             [col("idx2")],
-            JoinArgs {
-                how: JoinType::Left,
-                coalesce: JoinCoalesce::CoalesceColumns,
-                ..Default::default()
-            },
+            JoinType::Left.into(),
         )
         .filter(col("bar").eq(lit(5i32)))
         .collect()?;
@@ -208,11 +202,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
             q2,
             [col("category")],
             [col("category")],
-            JoinArgs {
-                how: JoinType::Left,
-                coalesce: JoinCoalesce::CoalesceColumns,
-                ..Default::default()
-            },
+            JoinType::Left.into(),
         )
         .slice(1, 3)
         // this inserts a cache and blocks slice pushdown

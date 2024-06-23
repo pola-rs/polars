@@ -171,16 +171,16 @@ def test_sql_on_compatible_frame_types() -> None:
     ):
         res = pl.sql(
             """
-                        SELECT a, b, SUM(c) AS cc FROM (
-                          SELECT * FROM df               -- polars frame
-                            UNION ALL SELECT * FROM dfp  -- pandas frame
-                            UNION ALL SELECT * FROM dfa  -- pyarrow table
-                            UNION ALL SELECT * FROM dfb  -- pyarrow record batch
-                        ) tbl
-                        INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
-                        GROUP BY "a", "b"
-                        ORDER BY "a", "b"
-                    """
+            SELECT a, b, SUM(c) AS cc FROM (
+              SELECT * FROM df               -- polars frame
+                UNION ALL SELECT * FROM dfp  -- pandas frame
+                UNION ALL SELECT * FROM dfa  -- pyarrow table
+                UNION ALL SELECT * FROM dfb  -- pyarrow record batch
+            ) tbl
+            INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
+            GROUP BY "a", "b"
+            ORDER BY "a", "b"
+            """
         ).collect()
 
         expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [16, 24]})

@@ -45,7 +45,7 @@ def test_series_dtype_enum(s: pl.Series) -> None:
     assert all(v in s.dtype.categories for v in s)
 
 
-@given(s=series(dtype=pl.Boolean, size=5))
+@given(s=series(dtype=pl.Boolean, min_size=5, max_size=5))
 @settings(max_examples=5)
 def test_series_size(s: pl.Series) -> None:
     assert s.len() == 5
@@ -87,7 +87,7 @@ def test_dataframes_lazy(lf: pl.LazyFrame) -> None:
     assert isinstance(lf, pl.LazyFrame)
 
 
-@given(df=dataframes(cols=3, size=5))
+@given(df=dataframes(cols=3, min_size=5, max_size=5))
 @settings(max_examples=5)
 def test_dataframes_size(df: pl.DataFrame) -> None:
     assert df.height == 5

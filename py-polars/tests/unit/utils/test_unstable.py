@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-import polars as pl
 from polars._utils.unstable import issue_unstable_warning, unstable
+from polars.exceptions import UnstableWarning
 
 
 def test_issue_unstable_warning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -14,7 +14,7 @@ def test_issue_unstable_warning(monkeypatch: pytest.MonkeyPatch) -> None:
         msg
         + " It may be changed at any point without it being considered a breaking change."
     )
-    with pytest.warns(pl.UnstableWarning, match=expected):
+    with pytest.warns(UnstableWarning, match=expected):
         issue_unstable_warning(msg)
 
 
@@ -22,7 +22,7 @@ def test_issue_unstable_warning_default(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
 
     msg = "This functionality is considered unstable."
-    with pytest.warns(pl.UnstableWarning, match=msg):
+    with pytest.warns(UnstableWarning, match=msg):
         issue_unstable_warning()
 
 
@@ -40,7 +40,7 @@ def test_unstable_decorator(monkeypatch: pytest.MonkeyPatch) -> None:
     def hello() -> None: ...
 
     msg = "`hello` is considered unstable."
-    with pytest.warns(pl.UnstableWarning, match=msg):
+    with pytest.warns(UnstableWarning, match=msg):
         hello()
 
 

@@ -46,7 +46,9 @@ def add_counter(val: int) -> int:
 
 
 out = df.select(
-    pl.col("values").map_elements(add_counter).alias("solution_map_elements"),
+    pl.col("values")
+    .map_elements(add_counter, return_dtype=pl.Int64)
+    .alias("solution_map_elements"),
     (pl.col("values") + pl.int_range(1, pl.len() + 1)).alias("solution_expr"),
 )
 print(out)
@@ -54,8 +56,8 @@ print(out)
 
 # --8<-- [start:combine]
 out = df.select(
-    pl.struct(["keys", "values"])
-    .map_elements(lambda x: len(x["keys"]) + x["values"])
+    pl.struct("keys", "values")
+    .map_elements(lambda x: len(x["keys"]) + x["values"], return_dtype=pl.Int64)
     .alias("solution_map_elements"),
     (pl.col("keys").str.len_bytes() + pl.col("values")).alias("solution_expr"),
 )

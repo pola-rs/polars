@@ -11,6 +11,9 @@ from polars._utils.various import find_stacklevel
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
 
+    NS = TypeVar("NS")
+
+
 __all__ = [
     "register_expr_namespace",
     "register_dataframe_namespace",
@@ -26,9 +29,6 @@ _reserved_namespaces: set[str] = reduce(
         for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)
     ),
 )
-
-
-NS = TypeVar("NS")
 
 
 class NameSpace:

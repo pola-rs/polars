@@ -33,39 +33,22 @@ impl Default for ScanArgsIpc {
 #[derive(Clone)]
 struct LazyIpcReader {
     args: ScanArgsIpc,
-    path: PathBuf,
     paths: Arc<[PathBuf]>,
 }
 
 impl LazyIpcReader {
-    fn new(path: PathBuf, args: ScanArgsIpc) -> Self {
+    fn new(args: ScanArgsIpc) -> Self {
         Self {
             args,
-            path,
             paths: Arc::new([]),
         }
     }
 }
 
 impl LazyFileListReader for LazyIpcReader {
-    fn finish(mut self) -> PolarsResult<LazyFrame> {
-        if let Some(paths) = self.iter_paths()? {
-            let paths = paths
-                .into_iter()
-                .collect::<PolarsResult<Arc<[PathBuf]>>>()?;
-            self.paths = paths;
-        }
-        self.finish_no_glob()
-    }
-
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+    fn finish(self) -> PolarsResult<LazyFrame> {
+        let paths = self.expand_paths(false)?.0;
         let args = self.args;
-
-        let paths = if self.paths.is_empty() {
-            Arc::new([self.path]) as Arc<[PathBuf]>
-        } else {
-            self.paths
-        };
 
         let options = IpcScanOptions {
             memory_map: args.memory_map,
@@ -87,17 +70,12 @@ impl LazyFileListReader for LazyIpcReader {
         Ok(lf)
     }
 
-    fn path(&self) -> &Path {
-        self.path.as_path()
+    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+        unreachable!()
     }
 
     fn paths(&self) -> &[PathBuf] {
         &self.paths
-    }
-
-    fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
-        self
     }
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
@@ -136,12 +114,12 @@ impl LazyFileListReader for LazyIpcReader {
 impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(path.as_ref().to_owned(), args).finish()
+        LazyIpcReader::new(args)
+            .with_paths(Arc::new([path.as_ref().to_path_buf()]))
+            .finish()
     }
 
     pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(PathBuf::new(), args)
-            .with_paths(paths)
-            .finish()
+        LazyIpcReader::new(args).with_paths(paths).finish()
     }
 }

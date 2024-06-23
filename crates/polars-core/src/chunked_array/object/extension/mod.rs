@@ -3,6 +3,7 @@ mod list;
 pub(crate) mod polars_extension;
 
 use std::mem;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
@@ -13,6 +14,14 @@ use crate::prelude::*;
 use crate::PROCESS_ID;
 
 pub const EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
+static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
+
+/// Control whether extension types may be created.
+///
+/// If the environment variable POLARS_ALLOW_EXTENSION is set, this function has no effect.
+pub fn set_polars_allow_extension(toggle: bool) {
+    POLARS_ALLOW_EXTENSION.store(toggle, Ordering::Relaxed)
+}
 
 /// Invariants
 /// `ptr` must point to start a `T` allocation
@@ -54,9 +63,9 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     iter: I,
 ) -> PolarsExtension {
     let env = "POLARS_ALLOW_EXTENSION";
-    std::env::var(env).unwrap_or_else(|_| {
-        panic!("env var: {env} must be set to allow extension types to be created",)
-    });
+    if !(POLARS_ALLOW_EXTENSION.load(Ordering::Relaxed) || std::env::var(env).is_ok()) {
+        panic!("creating extension types not allowed - try setting the environment variable {env}")
+    }
     let t_size = std::mem::size_of::<T>();
     let t_alignment = std::mem::align_of::<T>();
     let n_t_vals = iter.size_hint().1.unwrap();
@@ -176,7 +185,7 @@ mod test {
 
     #[test]
     fn test_create_extension() {
-        std::env::set_var("POLARS_ALLOW_EXTENSION", "1");
+        set_polars_allow_extension(true);
         // Run this under MIRI.
         let foo = Foo {
             a: 1,
@@ -195,7 +204,7 @@ mod test {
 
     #[test]
     fn test_extension_to_list() {
-        std::env::set_var("POLARS_ALLOW_EXTENSION", "1");
+        set_polars_allow_extension(true);
         let foo1 = Foo {
             a: 1,
             b: 1,
@@ -219,7 +228,7 @@ mod test {
 
     #[test]
     fn test_extension_to_list_explode() {
-        std::env::set_var("POLARS_ALLOW_EXTENSION", "1");
+        set_polars_allow_extension(true);
         let foo1 = Foo {
             a: 1,
             b: 1,

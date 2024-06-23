@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
 
 
@@ -24,5 +25,5 @@ def test_nth(expr: pl.Expr, expected_cols: list[str]) -> None:
 
 def test_nth_duplicate() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(pl.DuplicateError, match="a"):
+    with pytest.raises(DuplicateError, match="a"):
         df.select(pl.nth(0, 0))

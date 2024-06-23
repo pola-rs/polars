@@ -1,5 +1,4 @@
 import contextlib
-import os
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     # ensure the object constructor is known by polars
@@ -13,12 +12,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # we also set other function pointers needed
     # on the rust side. This function is highly
     # unsafe and should only be called once.
-    from polars.polars import (
-        __register_startup_deps,
-    )
-    from polars.polars import (
-        get_file_cache_prefix as _get_file_cache_prefix,
-    )
+    from polars.polars import __register_startup_deps
 
     __register_startup_deps()
 
@@ -37,16 +31,10 @@ from polars.convert import (
     from_pandas,
     from_records,
     from_repr,
+    json_normalize,
 )
 from polars.dataframe import DataFrame
 from polars.datatypes import (
-    DATETIME_DTYPES,
-    DURATION_DTYPES,
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NESTED_DTYPES,
-    NUMERIC_DTYPES,
-    TEMPORAL_DTYPES,
     Array,
     Binary,
     Boolean,
@@ -76,27 +64,6 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     Utf8,
-)
-from polars.exceptions import (
-    CategoricalRemappingWarning,
-    ChronoFormatWarning,
-    ColumnNotFoundError,
-    ComputeError,
-    DuplicateError,
-    InvalidOperationError,
-    MapWithoutReturnDtypeWarning,
-    NoDataError,
-    OutOfBoundsError,
-    PolarsError,
-    PolarsPanicError,
-    PolarsWarning,
-    SchemaError,
-    SchemaFieldNotFoundError,
-    ShapeError,
-    SQLInterfaceError,
-    SQLSyntaxError,
-    StructFieldNotFoundError,
-    UnstableWarning,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -206,7 +173,7 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
-from polars.lazyframe import InProcessQuery, LazyFrame
+from polars.lazyframe import LazyFrame
 from polars.meta import (
     build_info,
     get_index_type,
@@ -223,45 +190,24 @@ from polars.string_cache import (
     enable_string_cache,
     using_string_cache,
 )
-from polars.type_aliases import PolarsDataType
 
 __version__: str = _get_polars_version()
 del _get_polars_version
 
 __all__ = [
+    # modules
     "api",
     "exceptions",
     "plugins",
-    # exceptions/errors
-    "ColumnNotFoundError",
-    "ComputeError",
-    "DuplicateError",
-    "InvalidOperationError",
-    "NoDataError",
-    "OutOfBoundsError",
-    "PolarsError",
-    "PolarsPanicError",
-    "SQLInterfaceError",
-    "SQLSyntaxError",
-    "SchemaError",
-    "SchemaFieldNotFoundError",
-    "ShapeError",
-    "StructFieldNotFoundError",
-    # warnings
-    "CategoricalRemappingWarning",
-    "ChronoFormatWarning",
-    "MapWithoutReturnDtypeWarning",
-    "PolarsWarning",
-    "UnstableWarning",
+    "selectors",
     # core classes
     "DataFrame",
     "Expr",
     "LazyFrame",
     "Series",
-    # other classes
-    "InProcessQuery",
+    # schema
     "Schema",
-    # polars.datatypes
+    # datatypes
     "Array",
     "Binary",
     "Boolean",
@@ -291,16 +237,6 @@ __all__ = [
     "UInt64",
     "Unknown",
     "Utf8",
-    # polars.datatypes: dtype groups
-    "DATETIME_DTYPES",
-    "DURATION_DTYPES",
-    "FLOAT_DTYPES",
-    "INTEGER_DTYPES",
-    "NESTED_DTYPES",
-    "NUMERIC_DTYPES",
-    "TEMPORAL_DTYPES",
-    # polars.type_aliases
-    "PolarsDataType",
     # polars.io
     "read_avro",
     "read_clipboard",
@@ -383,8 +319,8 @@ __all__ = [
     "cum_reduce",
     "cumfold",
     "cumreduce",
-    "date",  # named date_, see import above
-    "datetime",  # named datetime_, see import above
+    "date",
+    "datetime",
     "duration",
     "exclude",
     "field",
@@ -413,7 +349,7 @@ __all__ = [
     "std",
     "struct",
     "tail",
-    "time",  # named time_, see import above
+    "time",
     "var",
     # polars.functions.len
     "len",
@@ -428,20 +364,49 @@ __all__ = [
     "from_pandas",
     "from_records",
     "from_repr",
-    # polars.sql
-    "SQLContext",
-    "sql",
-    # polars.utils
+    "json_normalize",
+    # polars.meta
     "build_info",
     "get_index_type",
     "show_versions",
     "thread_pool_size",
     "threadpool_size",
-    # selectors
-    "selectors",
+    # polars.sql
+    "SQLContext",
+    "sql",
     "sql_expr",
-    # internal
-    "_get_file_cache_prefix",
 ]
 
-os.environ["POLARS_ALLOW_EXTENSION"] = "true"
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    # Deprecate re-export of exceptions at top-level
+    if name in dir(exceptions):
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            message=(
+                f"Accessing `{name}` from the top-level `polars` module is deprecated."
+                " Import it directly from the `polars.exceptions` module instead:"
+                f" from polars.exceptions import {name}"
+            ),
+            version="1.0.0",
+        )
+        return getattr(exceptions, name)
+
+    # Deprecate data type groups at top-level
+    import polars.datatypes.group as dtgroup
+
+    if name in dir(dtgroup):
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            message=(
+                f"`{name}` is deprecated. Define your own data type groups or use the"
+                " `polars.selectors` module for selecting columns of a certain data type."
+            ),
+            version="1.0.0",
+        )
+        return getattr(dtgroup, name)
+
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

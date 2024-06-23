@@ -12,6 +12,7 @@ from hypothesis import assume, given
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -91,7 +92,7 @@ def test_add_business_day_w_week_mask_invalid() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError, match="`week_mask` must have at least one business day"
+        ComputeError, match="`week_mask` must have at least one business day"
     ):
         df.select(pl.col("start").dt.add_business_days("n", week_mask=[False] * 7))
 
@@ -161,7 +162,7 @@ def test_add_business_days_w_roll() -> None:
             "n": [1, 5, 7],
         }
     )
-    with pytest.raises(pl.ComputeError, match="is not a business date"):
+    with pytest.raises(ComputeError, match="is not a business date"):
         df.select(result=pl.col("start").dt.add_business_days("n"))
     result = df.select(
         result=pl.col("start").dt.add_business_days("n", roll="forward")
@@ -202,17 +203,17 @@ def test_add_business_days_datetime(time_zone: str | None, time_unit: TimeUnit) 
     ).dt.replace_time_zone(time_zone)
     assert_series_equal(result, expected)
 
-    with pytest.raises(pl.ComputeError, match="is not a business date"):
+    with pytest.raises(ComputeError, match="is not a business date"):
         df.select(result=pl.col("start").dt.add_business_days(2))
 
 
 def test_add_business_days_invalid() -> None:
     df = pl.DataFrame({"start": [timedelta(1)]})
-    with pytest.raises(pl.InvalidOperationError, match="expected date or datetime"):
+    with pytest.raises(InvalidOperationError, match="expected date or datetime"):
         df.select(result=pl.col("start").dt.add_business_days(2, week_mask=[True] * 7))
     df = pl.DataFrame({"start": [date(2020, 1, 1)]})
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="expected Int64, Int32, UInt64, or UInt32, got f64",
     ):
         df.select(

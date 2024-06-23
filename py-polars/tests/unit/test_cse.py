@@ -23,9 +23,9 @@ def test_cse_rename_cross_join_5405() -> None:
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
-    result = left.join(
-        right.rename({"B": "C"}), on=["A", "C"], how="left", coalesce=True
-    ).collect(comm_subplan_elim=True)
+    result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
+        comm_subplan_elim=True
+    )
 
     expected = pl.DataFrame(
         {
@@ -52,8 +52,9 @@ def test_union_duplicates() -> None:
     assert result
 
 
-# https://github.com/pola-rs/polars/issues/11116
 def test_cse_with_struct_expr_11116() -> None:
+    # https://github.com/pola-rs/polars/issues/11116
+
     df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
 
     result = df.with_columns(
@@ -94,9 +95,9 @@ def test_cse_schema_6081() -> None:
         pl.col("value").min().alias("min_value")
     )
 
-    result = df.join(
-        min_value_by_group, on=["date", "id"], how="left", coalesce=True
-    ).collect(comm_subplan_elim=True, projection_pushdown=True)
+    result = df.join(min_value_by_group, on=["date", "id"], how="left").collect(
+        comm_subplan_elim=True, projection_pushdown=True
+    )
     expected = pl.DataFrame(
         {
             "date": [date(2022, 12, 12), date(2022, 12, 12), date(2022, 12, 13)],
@@ -128,9 +129,9 @@ def test_cse_9630() -> None:
     intersected_df1 = all_subsections.join(lf1, on="key")
     intersected_df2 = all_subsections.join(lf2, on="key")
 
-    result = intersected_df1.join(
-        intersected_df2, on=["key"], how="left", coalesce=True
-    ).collect(comm_subplan_elim=True)
+    result = intersected_df1.join(intersected_df2, on=["key"], how="left").collect(
+        comm_subplan_elim=True
+    )
 
     expected = pl.DataFrame(
         {

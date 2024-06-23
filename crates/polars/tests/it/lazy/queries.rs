@@ -195,7 +195,7 @@ fn test_unknown_supertype_ignore() -> PolarsResult<()> {
 fn test_apply_multiple_columns() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    let multiply = |s: &mut [Series]| Ok(Some(&(&s[0] * &s[0]) * &s[1]));
+    let multiply = |s: &mut [Series]| (&(&s[0] * &s[0])? * &s[1]).map(Some);
 
     let out = df
         .clone()

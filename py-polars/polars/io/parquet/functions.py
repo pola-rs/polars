@@ -41,7 +41,7 @@ def read_parquet(
     row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
-    hive_partitioning: bool = True,
+    hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
     rechunk: bool = False,
@@ -82,7 +82,9 @@ def read_parquet(
         can be skipped from reading.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
-        to prune reads.
+        to prune reads. This is unset by default (i.e. `None`), meaning it is
+        automatically enabled when a single directory is passed, and otherwise
+        disabled.
     glob
         Expand path given via globbing rules.
     hive_schema
@@ -274,7 +276,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
         Dictionary mapping column names to datatypes
     """
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
 
     return _read_parquet_schema(source)
 
@@ -289,7 +291,7 @@ def scan_parquet(
     row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
-    hive_partitioning: bool = True,
+    hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
     rechunk: bool = False,
@@ -383,9 +385,11 @@ def scan_parquet(
         issue_unstable_warning(msg)
 
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     else:
-        source = [normalize_filepath(source) for source in source]
+        source = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
 
     return _scan_parquet_impl(
         source,
@@ -417,7 +421,7 @@ def _scan_parquet_impl(
     storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
-    hive_partitioning: bool = True,
+    hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
     retries: int = 0,

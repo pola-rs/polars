@@ -13,12 +13,18 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars import lit, when
-from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import PerformanceWarning, PolarsInefficientMapWarning
+from polars.exceptions import (
+    InvalidOperationError,
+    PerformanceWarning,
+    PolarsInefficientMapWarning,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
+
+    from polars.type_aliases import PolarsDataType
 
 
 def test_init_signature_match() -> None:
@@ -521,13 +527,13 @@ def test_floor() -> None:
         (1.0e20, 2, 100000000000000000000.0),
     ],
 )
-def test_round(n: float, ndigits: int, expected: float) -> None:
-    for float_dtype in FLOAT_DTYPES:
-        ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": float_dtype})
-        assert_series_equal(
-            ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
-            pl.Series("value", [expected], dtype=float_dtype),
-        )
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
+        pl.Series("value", [expected], dtype=dtype),
+    )
 
 
 def test_dot() -> None:
@@ -618,7 +624,7 @@ def test_cast_frame() -> None:
     # test 'strict' mode
     lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
 
-    with pytest.raises(pl.InvalidOperationError, match="conversion .* failed"):
+    with pytest.raises(InvalidOperationError, match="conversion .* failed"):
         lf.cast(pl.UInt8).collect()
 
     assert lf.cast(pl.UInt8, strict=False).collect().rows() == [
@@ -1191,7 +1197,7 @@ def test_quadratic_behavior_4736() -> None:
 
 
 @pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64])
-def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
+def test_from_epoch(input_dtype: PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [
             pl.Series("timestamp_d", [13285]).cast(input_dtype),
@@ -1236,7 +1242,7 @@ def test_from_epoch_str() -> None:
         ]
     )
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         ldf.select(
             pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
             pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
@@ -1338,7 +1344,7 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
     ],
 )
 def test_compare_aggregation_between_lazy_and_eager_6904(
-    dtype: pl.PolarsDataType, func: pl.Expr
+    dtype: PolarsDataType, func: pl.Expr
 ) -> None:
     df = pl.DataFrame(
         {

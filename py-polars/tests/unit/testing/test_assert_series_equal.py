@@ -24,7 +24,7 @@ def test_assert_series_equal_parametric(s: pl.Series) -> None:
 
 @given(data=st.data())
 def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
-    inner = data.draw(dtypes(excluded_dtypes=[pl.Struct, pl.Categorical]))
+    inner = data.draw(dtypes(excluded_dtypes=[pl.Categorical]))
     shape = data.draw(st.integers(min_value=1, max_value=3))
     dtype = pl.Array(inner, shape=shape)
     s = data.draw(series(dtype=dtype))
@@ -59,6 +59,13 @@ def test_assert_series_equal_check_order() -> None:
     assert_series_equal(srs1, srs2, check_order=False)
     with pytest.raises(AssertionError):
         assert_series_not_equal(srs1, srs2, check_order=False)
+
+
+def test_assert_series_equal_check_order_unsortable_type() -> None:
+    s = pl.Series([object(), object()])
+
+    with pytest.raises(TypeError):
+        assert_series_equal(s, s, check_order=False)
 
 
 def test_compare_series_nans_assert_equal() -> None:

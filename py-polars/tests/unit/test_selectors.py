@@ -12,6 +12,7 @@ from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from polars.type_aliases import SelectorType
+from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -107,14 +108,14 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
         }
     )
     assert df.select(
-        ~cs.by_dtype(pl.INTEGER_DTYPES, pl.TEMPORAL_DTYPES)
-    ).schema == OrderedDict(
+        ~cs.by_dtype(*INTEGER_DTYPES, *TEMPORAL_DTYPES)
+    ).schema == pl.Schema(
         {
-            "cde": pl.Float64,
-            "def": pl.Float32,
-            "eee": pl.Boolean,
-            "fgg": pl.Boolean,
-            "qqR": pl.String,
+            "cde": pl.Float64(),
+            "def": pl.Float32(),
+            "eee": pl.Boolean(),
+            "fgg": pl.Boolean(),
+            "qqR": pl.String(),
         }
     )
     assert df.select(cs.by_dtype()).schema == {}
@@ -726,19 +727,6 @@ def test_selector_expr_dispatch() -> None:
             pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).name.keep()
         ),
     )
-
-    # check that "as_expr" behaves, both explicitly and implicitly
-    for nan_or_inf in (
-        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),
-        cs.float().is_nan().as_expr() | cs.float().is_infinite(),
-        cs.float().is_nan() | cs.float().is_infinite(),
-    ):
-        assert_frame_equal(
-            expected,
-            df.with_columns(
-                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).name.keep()
-            ).fill_null(0),
-        )
 
 
 def test_regex_expansion_group_by_9947() -> None:

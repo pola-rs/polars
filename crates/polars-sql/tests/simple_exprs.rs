@@ -420,7 +420,7 @@ fn test_create_table() {
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let create_tbl_res = df! {
-        "Response" => ["Create Table"]
+        "Response" => ["CREATE TABLE"]
     }
     .unwrap();
     assert!(df_sql.equals(&create_tbl_res));

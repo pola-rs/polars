@@ -124,7 +124,7 @@ impl PyLazyFrame {
         };
 
         let lf = r
-            .with_infer_schema_length(infer_schema_length)
+            .with_infer_schema_length(infer_schema_length.and_then(NonZeroUsize::new))
             .with_batch_size(batch_size)
             .with_n_rows(n_rows)
             .low_memory(low_memory)
@@ -299,7 +299,7 @@ impl PyLazyFrame {
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
-        hive_partitioning: bool,
+        hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
         retries: usize,
         glob: bool,
@@ -334,6 +334,7 @@ impl PyLazyFrame {
         });
         let hive_options = HiveOptions {
             enabled: hive_partitioning,
+            hive_start_idx: 0,
             schema: hive_schema,
         };
 
@@ -891,7 +892,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "asof_join")]
-    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str))]
+    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce))]
     fn join_asof(
         &self,
         other: Self,
@@ -905,7 +906,13 @@ impl PyLazyFrame {
         strategy: Wrap<AsofStrategy>,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
+        coalesce: Option<bool>,
     ) -> PyResult<Self> {
+        let coalesce = match coalesce {
+            None => JoinCoalesce::JoinSpecific,
+            Some(true) => JoinCoalesce::CoalesceColumns,
+            Some(false) => JoinCoalesce::KeepColumns,
+        };
         let ldf = self.ldf.clone();
         let other = other.ldf;
         let left_on = left_on.inner;
@@ -917,6 +924,7 @@ impl PyLazyFrame {
             .right_on([right_on])
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
+            .coalesce(coalesce)
             .how(JoinType::AsOf(AsOfOptions {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_smartstrings),
@@ -1103,25 +1111,25 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
-    #[pyo3(signature = (id_vars, value_vars, value_name, variable_name, streamable))]
-    fn melt(
+    #[pyo3(signature = (on, index, value_name, variable_name, streamable))]
+    fn unpivot(
         &self,
-        id_vars: Vec<String>,
-        value_vars: Vec<String>,
+        on: Vec<String>,
+        index: Vec<String>,
         value_name: Option<String>,
         variable_name: Option<String>,
         streamable: bool,
     ) -> Self {
-        let args = MeltArgs {
-            id_vars: strings_to_smartstrings(id_vars),
-            value_vars: strings_to_smartstrings(value_vars),
+        let args = UnpivotArgs {
+            on: strings_to_smartstrings(on),
+            index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable,
         };
 
         let ldf = self.ldf.clone();
-        ldf.melt(args).into()
+        ldf.unpivot(args).into()
     }
 
     fn with_row_index(&self, name: &str, offset: Option<IdxSize>) -> Self {
@@ -1159,9 +1167,14 @@ impl PyLazyFrame {
             .into()
     }
 
-    fn drop(&self, columns: Vec<String>) -> Self {
+    fn drop(&self, columns: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop(columns).into()
+        if strict {
+            ldf.drop(columns)
+        } else {
+            ldf.drop_no_validate(columns)
+        }
+        .into()
     }
 
     fn cast(&self, dtypes: HashMap<PyBackedStr, Wrap<DataType>>, strict: bool) -> Self {

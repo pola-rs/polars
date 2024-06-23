@@ -10,7 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
@@ -21,6 +21,7 @@ from polars.testing import (
     assert_series_equal,
     assert_series_not_equal,
 )
+from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -571,6 +572,7 @@ def test_asof_join_tolerance_grouper() -> None:
         {
             "date": [date(2020, 1, 5), date(2020, 1, 10)],
             "by": [1, 1],
+            "date_right": [date(2020, 1, 5), None],
             "values": [100, None],
         }
     )
@@ -1351,7 +1353,7 @@ def test_replace_time_zone_ambiguous_with_ambiguous(
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="Please use `ambiguous` to tell how it should be localized",
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
@@ -2309,13 +2311,13 @@ def test_year_null_backed_by_out_of_range_15313() -> None:
     assert_series_equal(result, expected)
 
 
-def test_series_is_temporal() -> None:
-    for tp in TEMPORAL_DTYPES | {
-        pl.Datetime("ms", "UTC"),
-        pl.Datetime("ns", "Europe/Amsterdam"),
-    }:
-        s = pl.Series([None], dtype=tp)
-        assert s.dtype.is_temporal() is True
+@pytest.mark.parametrize(
+    "dtype",
+    [*TEMPORAL_DTYPES, pl.Datetime("ms", "UTC"), pl.Datetime("ns", "Europe/Amsterdam")],
+)
+def test_series_is_temporal(dtype: pl.DataType) -> None:
+    s = pl.Series([None], dtype=dtype)
+    assert s.dtype.is_temporal() is True
 
 
 @pytest.mark.parametrize(

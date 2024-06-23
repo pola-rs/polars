@@ -11,7 +11,17 @@ import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    InvalidOperationError,
+    OutOfBoundsError,
+    PanicException,
+    SchemaError,
+    SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
+)
+from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -19,7 +29,7 @@ if TYPE_CHECKING:
 
 def test_error_on_empty_group_by() -> None:
     with pytest.raises(
-        pl.ComputeError, match="at least one key is required in a group_by operation"
+        ComputeError, match="at least one key is required in a group_by operation"
     ):
         pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
 
@@ -29,7 +39,7 @@ def test_error_on_reducing_map() -> None:
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"output length of `map` \(1\) must be equal to "
             r"the input length \(6\); consider using `apply` instead"
@@ -39,7 +49,7 @@ def test_error_on_reducing_map() -> None:
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=(
             r"output length of `map` \(1\) must be equal to "
             r"the input length \(4\); consider using `apply` instead"
@@ -65,25 +75,27 @@ def test_error_on_invalid_by_in_asof_join() -> None:
     ).set_sorted("b")
 
     df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df1.join_asof(df2, on="b", by=["a", "c"])
 
 
-def test_error_on_invalid_series_init() -> None:
-    for dtype in pl.TEMPORAL_DTYPES:
-        py_type = dtype_to_py_type(dtype)
-        with pytest.raises(
-            TypeError,
-            match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
-        ):
-            pl.Series([1.5, 2.0, 3.75], dtype=dtype)
+@pytest.mark.parametrize("dtype", TEMPORAL_DTYPES)
+def test_error_on_invalid_series_init(dtype: pl.DataType) -> None:
+    py_type = dtype_to_py_type(dtype)
+    with pytest.raises(
+        TypeError,
+        match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
+    ):
+        pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
+
+def test_error_on_invalid_series_init2() -> None:
     with pytest.raises(TypeError, match="unexpected value"):
         pl.Series([1.5, 2.0, 3.75], dtype=pl.Int32)
 
 
 def test_error_on_invalid_struct_field() -> None:
-    with pytest.raises(pl.StructFieldNotFoundError):
+    with pytest.raises(StructFieldNotFoundError):
         pl.struct(
             [pl.Series("a", [1, 2]), pl.Series("b", ["a", "b"])], eager=True
         ).struct.field("z")
@@ -92,20 +104,18 @@ def test_error_on_invalid_struct_field() -> None:
 def test_not_found_error() -> None:
     csv = "a,b,c\n2,1,1"
     df = pl.read_csv(io.StringIO(csv))
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         df.select("d")
 
 
 def test_string_numeric_comp_err() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="cannot compare string with numeric type"
-    ):
+    with pytest.raises(ComputeError, match="cannot compare string with numeric type"):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 
 def test_panic_error() -> None:
     with pytest.raises(
-        pl.PolarsPanicError,
+        PanicException,
         match="unit: 'k' not supported",
     ):
         pl.datetime_range(
@@ -140,7 +150,7 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ColumnNotFoundError,
+        ColumnNotFoundError,
         match='unable to find column "colC"',
     ):
         (
@@ -156,7 +166,7 @@ def test_projection_update_schema_missing_column() -> None:
 def test_not_found_on_rename() -> None:
     df = pl.DataFrame({"exists": [1, 2, 3]})
 
-    err_type = (pl.SchemaFieldNotFoundError, pl.ColumnNotFoundError)
+    err_type = (SchemaFieldNotFoundError, ColumnNotFoundError)
     with pytest.raises(err_type):
         df.rename({"does_not_exist": "exists"})
 
@@ -207,7 +217,7 @@ def test_error_on_double_agg() -> None:
         "median",
         "skew",  # this one is comes from Apply
     ]:
-        with pytest.raises(pl.ComputeError, match="the column is already aggregated"):
+        with pytest.raises(ComputeError, match="the column is already aggregated"):
             (
                 pl.DataFrame(
                     {
@@ -223,13 +233,13 @@ def test_error_on_double_agg() -> None:
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
-        pl.ComputeError, match="filter predicate must be of type `Boolean`, got"
+        ComputeError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 
 
 def test_is_nan_on_non_boolean() -> None:
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
@@ -238,7 +248,7 @@ def test_window_expression_different_group_length() -> None:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
             pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")
         )
-    except pl.ComputeError as exc:
+    except ComputeError as exc:
         msg = str(exc)
         assert (
             "the length of the window expression did not match that of the group" in msg
@@ -284,7 +294,7 @@ def test_invalid_sort_by() -> None:
 
     # `select a where b order by c desc`
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"`sort_by` produced different length \(5\) than the Series that has to be sorted \(3\)",
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
@@ -292,7 +302,7 @@ def test_invalid_sort_by() -> None:
 
 def test_epoch_time_type() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`timestamp` operation not supported for dtype `time`",
     ):
         pl.Series([time(0, 0, 1)]).dt.epoch("s")
@@ -309,7 +319,7 @@ def test_duplicate_columns_arg_csv() -> None:
 
 
 def test_datetime_time_add_err() -> None:
-    with pytest.raises(pl.SchemaError, match="failed to determine supertype"):
+    with pytest.raises(SchemaError, match="failed to determine supertype"):
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
 
 
@@ -325,7 +335,7 @@ def test_arr_eval_named_cols() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
     ):
         df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
@@ -333,7 +343,7 @@ def test_arr_eval_named_cols() -> None:
 def test_alias_in_join_keys() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"'alias' is not allowed in a join key, use 'with_columns' first",
     ):
         df.join(df, on=pl.col("A").alias("foo"))
@@ -348,7 +358,7 @@ def test_sort_by_different_lengths() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"the expression in `sort_by` argument must result in the same length",
     ):
         df.group_by("group").agg(
@@ -358,7 +368,7 @@ def test_sort_by_different_lengths() -> None:
         )
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"the expression in `sort_by` argument must result in the same length",
     ):
         df.group_by("group").agg(
@@ -377,7 +387,7 @@ def test_err_filter_no_expansion() -> None:
     )
 
     with pytest.raises(
-        pl.ComputeError, match=r"The predicate expanded to zero expressions"
+        ComputeError, match=r"The predicate expanded to zero expressions"
     ):
         # we filter by ints
         df.filter(pl.col(pl.Int16).min() < 0.1)
@@ -402,7 +412,7 @@ def test_date_string_comparison(e: pl.Expr) -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"cannot compare 'date/datetime/time' to a string value",
     ):
         df.select(e)
@@ -411,7 +421,7 @@ def test_date_string_comparison(e: pl.Expr) -> None:
 def test_err_on_multiple_column_expansion() -> None:
     # this would be a great feature :)
     with pytest.raises(
-        pl.ComputeError, match=r"expanding more than one `col` is not allowed"
+        ComputeError, match=r"expanding more than one `col` is not allowed"
     ):
         pl.DataFrame(
             {
@@ -432,21 +442,21 @@ def test_compare_different_len() -> None:
 
     s = pl.Series([2, 5, 8])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot evaluate two Series of different lengths"
+        ComputeError, match=r"cannot evaluate two Series of different lengths"
     ):
         df.filter(pl.col("idx") == s)
 
 
 def test_take_negative_index_is_oob() -> None:
     df = pl.DataFrame({"value": [1, 2, 3]})
-    with pytest.raises(pl.OutOfBoundsError):
+    with pytest.raises(OutOfBoundsError):
         df["value"].gather(-4)
 
 
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        pl.InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
+        InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
     ):
         df.select(pl.col("s") + 1)
 
@@ -454,7 +464,7 @@ def test_string_numeric_arithmetic_err() -> None:
 def test_ambiguous_filter_err() -> None:
     df = pl.DataFrame({"a": [None, "2", "3"], "b": [None, None, "z"]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"The predicate passed to 'LazyFrame.filter' expanded to multiple expressions",
     ):
         df.filter(pl.col(["a", "b"]).is_null())
@@ -463,7 +473,7 @@ def test_ambiguous_filter_err() -> None:
 def test_with_column_duplicates() -> None:
     df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"the name: 'same' passed to `LazyFrame.with_columns` is duplicate.*",
     ):
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
@@ -473,7 +483,7 @@ def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"The output type of the 'apply' function cannot be determined",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
@@ -493,12 +503,12 @@ def test_skip_nulls_err() -> None:
 def test_cast_err_column_value_highlighting(
     test_df: pl.DataFrame, type: pl.DataType, expected_message: str
 ) -> None:
-    with pytest.raises(pl.InvalidOperationError, match=expected_message):
+    with pytest.raises(InvalidOperationError, match=expected_message):
         test_df.with_columns(pl.all().cast(type))
 
 
 def test_lit_agg_err() -> None:
-    with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
+    with pytest.raises(ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
 
 
@@ -512,7 +522,7 @@ def test_invalid_group_by_arg() -> None:
 
 def test_overflow_msg() -> None:
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"could not append value: 2147483648 of type: i64 to the builder",
     ):
         pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
@@ -523,7 +533,7 @@ def test_sort_by_err_9259() -> None:
         {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
         schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
     )
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.lazy().group_by("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()
@@ -532,7 +542,7 @@ def test_sort_by_err_9259() -> None:
 def test_empty_inputs_error() -> None:
     df = pl.DataFrame({"col1": [1]})
     with pytest.raises(
-        pl.ComputeError, match="expression: 'sum_horizontal' didn't get any inputs"
+        ComputeError, match="expression: 'sum_horizontal' didn't get any inputs"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
 
@@ -595,7 +605,7 @@ def test_sort_by_error() -> None:
     )
 
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="expressions in 'sort_by' produced a different number of groups",
     ):
         df.group_by("id", maintain_order=True).agg(
@@ -604,12 +614,12 @@ def test_sort_by_error() -> None:
 
 
 def test_non_existent_expr_inputs_in_lazy() -> None:
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
 
     lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         (
             lf.select(pl.col("foo").cum_sum().alias("bar"))
             .filter(pl.col("bar") == pl.col("foo"))
@@ -618,9 +628,7 @@ def test_non_existent_expr_inputs_in_lazy() -> None:
 
 
 def test_error_list_to_array() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="not all elements have the specified width"
-    ):
+    with pytest.raises(ComputeError, match="not all elements have the specified width"):
         pl.DataFrame(
             data={"a": [[1, 2], [3, 4, 5]]}, schema={"a": pl.List(pl.Int8)}
         ).with_columns(array=pl.col("a").list.to_array(2))
@@ -628,13 +636,13 @@ def test_error_list_to_array() -> None:
 
 def test_raise_not_found_in_simplify_14974() -> None:
     df = pl.DataFrame()
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         df.select(1 / (1 + pl.col("a")))
 
 
 def test_invalid_product_type() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`product` operation not supported for dtype",
     ):
         pl.Series([[1, 2, 3]]).product()
@@ -642,21 +650,19 @@ def test_invalid_product_type() -> None:
 
 def test_fill_null_invalid_supertype() -> None:
     df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
-    with pytest.raises(
-        pl.InvalidOperationError, match="could not determine supertype of"
-    ):
+    with pytest.raises(InvalidOperationError, match="could not determine supertype of"):
         df.select(pl.col("date").fill_null(1.0))
 
 
 def test_raise_array_of_cats() -> None:
-    with pytest.raises(pl.InvalidOperationError, match="is not yet supported"):
+    with pytest.raises(InvalidOperationError, match="is not yet supported"):
         pl.Series([["a", "b"], ["a", "c"]], dtype=pl.Array(pl.Categorical, 2))
 
 
 def test_raise_invalid_arithmetic() -> None:
     df = pl.Series("a", [object()]).to_frame()
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("a") - pl.col("a"))
 
 
@@ -669,13 +675,13 @@ def test_raise_on_sorted_multi_args() -> None:
 
 def test_err_invalid_comparison() -> None:
     with pytest.raises(
-        pl.SchemaError,
+        SchemaError,
         match="could not evalulate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
     ):
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="could not apply comparison on series of dtype 'object; operand names: 'a', 'b'",
     ):
         _ = pl.Series("a", [object()]) == pl.Series("b", [object])

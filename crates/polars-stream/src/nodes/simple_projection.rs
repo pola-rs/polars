@@ -36,7 +36,7 @@ impl ComputeNode for SimpleProjectionNode {
                     df.select_with_schema(self.schema.iter_names(), &self.schema)
                 })?;
 
-                if let Err(_) = send.send(morsel).await {
+                if send.send(morsel).await.is_err() {
                     break;
                 }
             }

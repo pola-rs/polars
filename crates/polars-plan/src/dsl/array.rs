@@ -177,7 +177,7 @@ impl ArrayNameSpace {
                             Field::from_owned(name, inner.as_ref().clone())
                         })
                         .collect();
-                    DataType::Struct(fields)
+                    Ok(DataType::Struct(fields))
                 }),
             )
             .with_fmt("arr.to_struct")

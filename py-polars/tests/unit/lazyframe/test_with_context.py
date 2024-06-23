@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -18,7 +19,7 @@ def test_with_context() -> None:
 
     with pytest.deprecated_call():
         context = df_a.with_context(df_b.lazy())
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         context.select("a", "c").collect()
 
 

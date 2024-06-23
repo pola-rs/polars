@@ -13,10 +13,10 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
-from polars._utils.construction.dataframe import _infer_data_orientation
 from polars._utils.construction.utils import try_get_type_hints
-from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
+from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import PolarsDataType
+
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -962,11 +963,11 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
 def test_init_errors() -> None:
     # Length mismatch
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
 
     # Columns don't match data dimensions
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.DataFrame([[1, 2], [3, 4]], schema=["a", "b", "c"])
 
     # Unmatched input
@@ -1300,7 +1301,7 @@ def test_from_records_nullable_structs() -> None:
         {"id": 1, "items": [{"item_id": 100, "description": "hi"}]},
     ]
 
-    schema: list[tuple[str, pl.PolarsDataType]] = [
+    schema: list[tuple[str, PolarsDataType]] = [
         ("id", pl.UInt16),
         (
             "items",
@@ -1312,7 +1313,7 @@ def test_from_records_nullable_structs() -> None:
         ),
     ]
 
-    schema_options: list[list[tuple[str, pl.PolarsDataType]] | None] = [schema, None]
+    schema_options: list[list[tuple[str, PolarsDataType]] | None] = [schema, None]
     for s in schema_options:
         result = pl.DataFrame(records, schema=s, orient="row")
         expected = {
@@ -1330,7 +1331,7 @@ def test_from_records_nullable_structs() -> None:
     assert df.to_dict(as_series=False) == {"id": [], "items": []}
     assert df.schema == dict_schema
 
-    dtype: pl.PolarsDataType = dict_schema["items"]
+    dtype: PolarsDataType = dict_schema["items"]
     series = pl.Series("items", dtype=dtype)
     assert series.to_frame().to_dict(as_series=False) == {"items": []}
     assert series.dtype == dict_schema["items"]
@@ -1625,13 +1626,3 @@ def test_array_construction() -> None:
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
-
-
-def test_infer_data_orientation() -> None:
-    assert _infer_data_orientation([1], 1) == "col"
-    assert _infer_data_orientation([1, 2], 2) == "col"
-    assert _infer_data_orientation([1, 2], 2, 2) == "col"
-    assert _infer_data_orientation([1, 2, 3], 2) == "col"
-    assert _infer_data_orientation([1, 2, 3], 2, 2) == "col"
-    assert _infer_data_orientation([1, 2, 3], 2, 3) == "row"
-    assert _infer_data_orientation([1, "x"], 2) == "row"

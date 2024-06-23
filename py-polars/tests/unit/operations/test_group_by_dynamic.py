@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -340,14 +341,14 @@ def test_rolling_dynamic_sortedness_check() -> None:
         }
     )
 
-    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
+    with pytest.raises(ComputeError, match=r"input data is not sorted"):
         df.group_by_dynamic("idx", every="2i", group_by="group").agg(
             pl.col("idx").alias("idx1")
         )
 
     # no `by` argument
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"argument in operation 'group_by_dynamic' is not sorted",
     ):
         df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
@@ -437,7 +438,7 @@ def test_group_by_dynamic_validation() -> None:
         }
     )
 
-    with pytest.raises(pl.ComputeError, match="'every' argument must be positive"):
+    with pytest.raises(ComputeError, match="'every' argument must be positive"):
         df.group_by_dynamic("index", group_by="group", every="-1i", period="2i").agg(
             pl.col("weight")
         )
@@ -449,15 +450,13 @@ def test_no_sorted_no_error() -> None:
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
         }
     )
-    result = df.group_by_dynamic("dt", every="1h").agg(
-        pl.all().count().name.suffix("_foo")
-    )
+    result = df.group_by_dynamic("dt", every="1h").agg(pl.len().alias("count"))
     expected = pl.DataFrame(
         {
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
-            "dt_foo": [1, 1],
+            "count": [1, 1],
         },
-        schema_overrides={"dt_foo": pl.UInt32},
+        schema_overrides={"count": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 
@@ -975,7 +974,7 @@ def test_group_by_dynamic_invalid() -> None:
         },
     )
     with pytest.raises(
-        pl.InvalidOperationError, match="duration may not be a parsed integer"
+        InvalidOperationError, match="duration may not be a parsed integer"
     ):
         (
             df.sort("times")
@@ -983,7 +982,7 @@ def test_group_by_dynamic_invalid() -> None:
             .agg(pl.col("values").sum().alias("sum"))
         )
     with pytest.raises(
-        pl.InvalidOperationError, match="duration must be a parsed integer"
+        InvalidOperationError, match="duration must be a parsed integer"
     ):
         (
             df.with_row_index()
@@ -1015,4 +1014,32 @@ def test_group_by_dynamic_get() -> None:
             date(2021, 1, 7),
         ],
         "get": [1, 3, 5, 7],
+    }
+
+
+def test_group_by_dynamic_exclude_index_from_expansion_17075() -> None:
+    lf = pl.LazyFrame(
+        {
+            "time": pl.datetime_range(
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 3),
+                interval="30m",
+                eager=True,
+            ),
+            "n": range(7),
+            "m": range(7),
+        }
+    )
+
+    assert lf.group_by_dynamic(
+        "time", every="1h", closed="right"
+    ).last().collect().to_dict(as_series=False) == {
+        "time": [
+            datetime(2021, 12, 15, 23, 0),
+            datetime(2021, 12, 16, 0, 0),
+            datetime(2021, 12, 16, 1, 0),
+            datetime(2021, 12, 16, 2, 0),
+        ],
+        "n": [0, 2, 4, 6],
+        "m": [0, 2, 4, 6],
     }

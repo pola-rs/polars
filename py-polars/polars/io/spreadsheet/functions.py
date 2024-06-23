@@ -14,10 +14,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.various import normalize_filepath, parse_version
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     N_INFER_DEFAULT,
-    NUMERIC_DTYPES,
     Boolean,
     Date,
     Datetime,
@@ -26,9 +23,10 @@ from polars.datatypes import (
     Null,
     String,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
 from polars.dependencies import import_optional
 from polars.exceptions import (
-    ModuleUpgradeRequired,
+    ModuleUpgradeRequiredError,
     NoDataError,
     ParameterCollisionError,
 )
@@ -631,7 +629,7 @@ def _initialise_spreadsheet_parser(
             module_version := fastexcel.__version__
         ) < (0, 10):
             msg = f"`fastexcel` >= 0.10 is required to read bytes; found {module_version})"
-            raise ModuleUpgradeRequired(msg)
+            raise ModuleUpgradeRequiredError(msg)
 
         if reading_bytesio:
             source = source.getbuffer().tobytes()  # type: ignore[union-attr]
@@ -803,7 +801,7 @@ def _read_spreadsheet_calamine(
     fastexcel_version = parse_version(fastexcel.__version__)
     if fastexcel_version < (0, 9) and "schema_sample_rows" in read_options:
         msg = f"a more recent version of `fastexcel` is required (>= 0.9; found {fastexcel.__version__})"
-        raise ModuleUpgradeRequired(msg)
+        raise ModuleUpgradeRequiredError(msg)
 
     schema_overrides = schema_overrides or {}
     if read_options.get("schema_sample_rows") == 0:

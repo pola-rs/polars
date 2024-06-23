@@ -9,16 +9,18 @@ SQL Clauses
      - Description
    * - :ref:`SELECT <select>`
      - Retrieves specific column data from one or more tables.
+   * - :ref:`DISTINCT <distinct>`
+     - Returns unique values from a query.
    * - :ref:`FROM <from>`
      - Specify the table(s) from which to retrieve or delete data.
    * - :ref:`JOIN <join>`
      - Combine rows from two or more tables based on a related column.
    * - :ref:`WHERE <where>`
-     - Filter rows returned from the query based on specific condition(s).
+     - Filter rows returned from the query based on the given conditions.
    * - :ref:`GROUP BY <group_by>`
      - Aggregate row values based based on one or more key columns.
    * - :ref:`HAVING <having>`
-     - Filter groups in a `GROUP BY` based on specific condition(s).
+     - Filter groups in a `GROUP BY` based on the given conditions.
    * - :ref:`ORDER BY <order_by>`
      - Sort the query result based on one or more specified columns.
    * - :ref:`LIMIT <limit>`
@@ -55,6 +57,35 @@ Select the columns to be returned by the query.
     # │ 1   ┆ zz  │
     # │ 2   ┆ yy  │
     # │ 3   ┆ xx  │
+    # └─────┴─────┘
+
+.. _distinct:
+
+DISTINCT
+--------
+Returns unique values from a query.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "a": [1, 2, 2, 1],
+        "b": ["xx", "yy", "yy", "xx"],
+      }
+    )
+    df.sql("""
+      SELECT DISTINCT * FROM self
+    """)
+    # shape: (2, 2)
+    # ┌─────┬─────┐
+    # │ a   ┆ b   │
+    # │ --- ┆ --- │
+    # │ i64 ┆ str │
+    # ╞═════╪═════╡
+    # │ 1   ┆ xx  │
+    # │ 2   ┆ yy  │
     # └─────┴─────┘
 
 .. _from:
@@ -143,7 +174,7 @@ Combines rows from two or more tables based on a related column.
 WHERE
 -----
 
-Filter rows returned from the query based on specific condition(s).
+Filter rows returned from the query based on the given conditions.
 
 .. code-block:: python
 
@@ -198,7 +229,7 @@ Group rows that have the same values in specified columns into summary rows.
 
 HAVING
 ------
-Filter groups in a `GROUP BY` based on specific condition(s).
+Filter groups in a `GROUP BY` based on the given conditions.
 
 .. code-block:: python
 

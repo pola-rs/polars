@@ -9,6 +9,7 @@ import pytest
 from hypothesis import assume, given
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 
@@ -195,12 +196,12 @@ def test_interpolate_vs_numpy(data: st.DataObject) -> None:
 def test_interpolate_by_invalid() -> None:
     s = pl.Series([1, None, 3])
     by = pl.Series([1, 2])
-    with pytest.raises(pl.InvalidOperationError, match=r"\(3\), got 2"):
+    with pytest.raises(InvalidOperationError, match=r"\(3\), got 2"):
         s.interpolate_by(by)
 
     by = pl.Series([1, None, 3])
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="null values in `by` column are not yet supported in 'interpolate_by'",
     ):
         s.interpolate_by(by)

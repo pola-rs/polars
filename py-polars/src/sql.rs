@@ -1,7 +1,8 @@
 use polars::sql::SQLContext;
 use pyo3::prelude::*;
 
-use crate::{PyLazyFrame, PyPolarsErr};
+use crate::error::PyPolarsErr;
+use crate::PyLazyFrame;
 
 #[pyclass]
 #[repr(transparent)]

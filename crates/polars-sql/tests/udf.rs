@@ -42,7 +42,7 @@ fn test_udfs() -> PolarsResult<()> {
         move |s: &mut [Series]| {
             let first = s[0].clone();
             let second = s[1].clone();
-            Ok(Some(first + second))
+            (first + second).map(Some)
         },
     );
 
@@ -77,7 +77,7 @@ fn test_udfs() -> PolarsResult<()> {
         move |s: &mut [Series]| {
             let first = s[0].clone();
             let second = s[1].clone();
-            Ok(Some(first / second))
+            (first / second).map(Some)
         },
     );
 

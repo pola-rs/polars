@@ -51,7 +51,7 @@ pub fn fma_series(a: &Series, b: &Series, c: &Series) -> Series {
             fma_ca(a, b, c).into_series()
         })
     } else {
-        a + &(b * c)
+        (a + &(b * c).unwrap()).unwrap()
     }
 }
 
@@ -102,7 +102,7 @@ pub fn fsm_series(a: &Series, b: &Series, c: &Series) -> Series {
             fsm_ca(a, b, c).into_series()
         })
     } else {
-        a - &(b * c)
+        (a - &(b * c).unwrap()).unwrap()
     }
 }
 
@@ -152,6 +152,6 @@ pub fn fms_series(a: &Series, b: &Series, c: &Series) -> Series {
             fms_ca(a, b, c).into_series()
         })
     } else {
-        &(a * b) - c
+        (&(a * b).unwrap() - c).unwrap()
     }
 }

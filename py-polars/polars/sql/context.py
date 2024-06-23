@@ -54,6 +54,9 @@ if TYPE_CHECKING:
     ]
 
 
+__all__ = ["SQLContext"]
+
+
 def _compatible_frame(obj: Any) -> bool:
     """Check if the object can be converted to DataFrame."""
     return (
@@ -381,6 +384,7 @@ class SQLContext(Generic[FrameType]):
         ...         ("The Shawshank Redemption", 1994, 25_000_000, 28_341_469, 9.3),
         ...     ],
         ...     schema=["title", "release_year", "budget", "gross", "imdb_score"],
+        ...     orient="row",
         ... )
         >>> ctx = pl.SQLContext(films=df)
 
@@ -667,6 +671,3 @@ class SQLContext(Generic[FrameType]):
         ['foo_bar', 'hello_data']
         """
         return sorted(self._ctxt.get_tables())
-
-
-__all__ = ["SQLContext"]

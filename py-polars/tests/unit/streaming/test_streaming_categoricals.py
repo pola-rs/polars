@@ -28,6 +28,6 @@ def test_streaming_cat_14933() -> None:
             pl.Series("l", [None, None], dtype=pl.Categorical(ordering="physical")),
         ]
     )
-    result = df1.join(df2, on="a", how="left", coalesce=True)
+    result = df1.join(df2, on="a", how="left")
     expected = {"a": [0], "l": [None]}
     assert result.collect(streaming=True).to_dict(as_series=False) == expected

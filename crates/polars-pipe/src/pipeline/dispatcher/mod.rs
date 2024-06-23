@@ -62,7 +62,7 @@ impl ThreadedSink {
 ///         succeed.
 ///         Think for example on multiply a few columns, or applying a predicate.
 ///         Operators can shrink the batches: filter
-///         Grow the batches: explode/ melt
+///         Grow the batches: explode/ unpivot
 ///         Keep them the same size: element-wise operations
 ///         The probe side of join operations is also an operator.
 ///

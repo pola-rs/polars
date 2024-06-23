@@ -7,7 +7,7 @@ fn cum_fold_dtype() -> GetOutput {
         for fld in &fields[1..] {
             st = get_supertype(&st, &fld.dtype).unwrap();
         }
-        Field::new(
+        Ok(Field::new(
             &fields[0].name,
             DataType::Struct(
                 fields
@@ -15,7 +15,7 @@ fn cum_fold_dtype() -> GetOutput {
                     .map(|fld| Field::new(fld.name(), st.clone()))
                     .collect(),
             ),
-        )
+        ))
     })
 }
 

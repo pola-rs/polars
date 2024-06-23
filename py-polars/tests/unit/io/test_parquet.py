@@ -17,6 +17,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -123,11 +124,11 @@ def test_read_parquet_respects_rechunk_16416(
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.write_parquet(buf, compression="lzo", use_pyarrow=False)
     buf.seek(0)
     # Invalid parquet file as writing failed.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         _ = pl.read_parquet(buf)
 
     buf = io.BytesIO()
@@ -136,7 +137,7 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
         df.write_parquet(buf, compression="lzo", use_pyarrow=True)
     buf.seek(0)
     # Invalid parquet file as writing failed.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         _ = pl.read_parquet(buf)
 
 
@@ -160,10 +161,10 @@ def test_to_from_file_lzo(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.avro"
 
     # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.write_parquet(file_path, compression="lzo", use_pyarrow=False)
     # Invalid parquet file as writing failed.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         _ = pl.read_parquet(file_path)
 
     # Writing lzo compressed parquet files is not supported for now.
@@ -908,40 +909,13 @@ def test_complex_types(tmp_path: Path, series: list[Any], dtype: pl.DataType) ->
     xs = pl.Series(series, dtype=dtype)
     df = pl.DataFrame({"x": xs})
 
-    tmp_path.mkdir(exist_ok=True)
-    file_path = tmp_path / "complex-types.parquet"
-
-    df.write_parquet(file_path)
-    after = pl.read_parquet(file_path)
-
-    assert str(after) == str(df)
+    test_round_trip(df)
 
 
 @pytest.mark.xfail()
 def test_placeholder_zero_array() -> None:
     # @TODO: if this does not fail anymore please enable the upper test-cases
     pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
-
-
-@pytest.mark.xfail()
-def test_placeholder_no_array_equals() -> None:
-    # @TODO: if this does not fail anymore please just call
-    # `test_round_trip` instead of comparing the strings.
-    test_round_trip(
-        pl.DataFrame(
-            {
-                "x": pl.Series(
-                    [
-                        [
-                            [1, 2],
-                            [3, 4],
-                        ]
-                    ],
-                    dtype=pl.Array(pl.List(pl.Int8), 2),
-                )
-            }
-        )
-    )
 
 
 @pytest.mark.write_disk()

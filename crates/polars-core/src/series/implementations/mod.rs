@@ -32,6 +32,7 @@ use ahash::RandomState;
 
 use super::*;
 use crate::chunked_array::comparison::*;
+use crate::chunked_array::metadata::MetadataTrait;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
@@ -239,20 +240,8 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
-            fn get_metadata_min_value(&self) -> Option<Scalar> {
-                let v = self.metadata()?.get_min_value()?;
-                Some(Scalar::new(
-                    private::PrivateSeries::_dtype(self).clone(),
-                    AnyValue::from(*v),
-                ))
-            }
-
-            fn get_metadata_max_value(&self) -> Option<Scalar> {
-                let v = self.metadata()?.get_max_value()?;
-                Some(Scalar::new(
-                    private::PrivateSeries::_dtype(self).clone(),
-                    AnyValue::from(*v),
-                ))
+            fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
+                self.metadata().map(|v| v as &dyn MetadataTrait)
             }
 
             fn bitand(&self, other: &Series) -> PolarsResult<Series> {
@@ -495,33 +484,47 @@ impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
 
 impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedArray<T>> {
-    fn bit_repr_is_large(&self) -> bool {
-        ChunkedArray::<T>::bit_repr_is_large()
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
-#[cfg(feature = "dtype-array")]
-impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        false
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
     }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+#[cfg(feature = "dtype-array")]
+impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        let repr = self
+            .0
             .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
             .unwrap()
             .u32()
             .unwrap()
-            .clone()
+            .clone();
+
+        Some(BitRepr::Small(repr))
     }
 }

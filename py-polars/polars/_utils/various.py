@@ -23,8 +23,6 @@ from typing import (
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
@@ -34,6 +32,7 @@ from polars.datatypes import (
     String,
     Time,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
@@ -322,10 +321,7 @@ def _cast_repr_strings_with_schema(
                     .cast(tp)
                 )
             elif tp == Boolean:
-                cast_cols[c] = F.col(c).replace(
-                    {"true": True, "false": False},
-                    default=None,
-                )
+                cast_cols[c] = F.col(c).replace_strict({"true": True, "false": False})
             elif tp in INTEGER_DTYPES:
                 int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
                 cast_cols[c] = (

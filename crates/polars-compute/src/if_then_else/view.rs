@@ -65,6 +65,7 @@ impl IfThenElseKernel for BinaryViewArray {
                 validity,
                 Some(combined_buffer_len),
             )
+            .maybe_gc()
         }
     }
 
@@ -97,6 +98,7 @@ impl IfThenElseKernel for BinaryViewArray {
                 validity,
                 Some(combined_buffer_len),
             )
+            .maybe_gc()
         }
     }
 
@@ -130,6 +132,7 @@ impl IfThenElseKernel for BinaryViewArray {
                 validity,
                 Some(combined_buffer_len),
             )
+            .maybe_gc()
         }
     }
 
@@ -150,6 +153,7 @@ impl IfThenElseKernel for BinaryViewArray {
         );
         unsafe {
             BinaryViewArray::new_unchecked(dtype, views.into(), buffers, None, total_len, total_len)
+                .maybe_gc()
         }
     }
 }

@@ -7,8 +7,6 @@ from inspect import isclass
 from typing import TYPE_CHECKING, Any
 
 from polars.datatypes import (
-    INTEGER_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Binary,
     Boolean,
     Date,
@@ -31,6 +29,10 @@ from polars.datatypes import (
     UInt64,
 )
 from polars.datatypes.convert import _map_py_type_to_dtype
+from polars.datatypes.group import (
+    INTEGER_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
+)
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType

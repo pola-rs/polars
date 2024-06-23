@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -52,7 +53,7 @@ def test_empty_count_window() -> None:
 
 def test_empty_sort_by_args() -> None:
     df = pl.DataFrame([1, 2, 3])
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.all().sort_by([]))
 
 

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars._utils.wrap import wrap_s
 from polars.polars import PySeries
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -36,7 +39,7 @@ from polars.polars import PySeries
 )
 @pytest.mark.parametrize("strict", [True, False])
 def test_fallback_with_dtype_strict(
-    dtype: pl.PolarsDataType, values: list[Any], strict: bool
+    dtype: PolarsDataType, values: list[Any], strict: bool
 ) -> None:
     result = wrap_s(
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=strict)
@@ -71,7 +74,7 @@ def test_fallback_with_dtype_strict(
     ],
 )
 def test_fallback_with_dtype_strict_failure(
-    dtype: pl.PolarsDataType, values: list[Any]
+    dtype: PolarsDataType, values: list[Any]
 ) -> None:
     with pytest.raises(TypeError, match="unexpected value"):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
@@ -242,7 +245,7 @@ def test_fallback_with_dtype_strict_failure(
     ],
 )
 def test_fallback_with_dtype_nonstrict(
-    dtype: pl.PolarsDataType, values: list[Any], expected: list[Any]
+    dtype: PolarsDataType, values: list[Any], expected: list[Any]
 ) -> None:
     result = wrap_s(
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=False)
@@ -275,7 +278,7 @@ def test_fallback_with_dtype_nonstrict(
 )
 @pytest.mark.parametrize("strict", [True, False])
 def test_fallback_without_dtype(
-    expected_dtype: pl.PolarsDataType, values: list[Any], strict: bool
+    expected_dtype: PolarsDataType, values: list[Any], strict: bool
 ) -> None:
     result = wrap_s(PySeries.new_from_any_values("", values, strict=strict))
     assert result.to_list() == values
@@ -340,7 +343,7 @@ def test_fallback_without_dtype_strict_failure(values: list[Any]) -> None:
 )
 def test_fallback_without_dtype_nonstrict_mixed_types(
     values: list[Any],
-    expected_dtype: pl.PolarsDataType,
+    expected_dtype: PolarsDataType,
     expected: list[Any],
 ) -> None:
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))

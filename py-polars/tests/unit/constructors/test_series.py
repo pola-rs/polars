@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing.asserts.series import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 def test_series_mixed_dtypes_list() -> None:
@@ -48,7 +52,7 @@ def test_series_mixed_dtypes_object() -> None:
 
 # https://github.com/pola-rs/polars/issues/15139
 @pytest.mark.parametrize("dtype", [pl.List(pl.Int64), None])
-def test_sequence_of_series_with_dtype(dtype: pl.PolarsDataType | None) -> None:
+def test_sequence_of_series_with_dtype(dtype: PolarsDataType | None) -> None:
     values = [1, 2, 3]
     int_series = pl.Series(values)
     list_series = pl.Series([int_series], dtype=dtype)
@@ -71,7 +75,7 @@ def test_sequence_of_series_with_dtype(dtype: pl.PolarsDataType | None) -> None:
     ],
 )
 def test_upcast_primitive_and_strings(
-    values: list[Any], dtype: pl.PolarsDataType, expected_dtype: pl.PolarsDataType
+    values: list[Any], dtype: PolarsDataType, expected_dtype: PolarsDataType
 ) -> None:
     with pytest.raises(TypeError):
         pl.Series(values, dtype=dtype, strict=True)
@@ -147,7 +151,7 @@ def test_series_init_np_temporal_with_nat_15518() -> None:
 def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=re.escape("cannot reshape empty array into shape (0, 0)"),
     ):
         pl.Series(arr)

@@ -10,7 +10,7 @@ from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_div() -> None:

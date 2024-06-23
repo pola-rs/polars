@@ -8,11 +8,12 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 @given(
     s=series(
-        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
+        allowed_dtypes=[*NUMERIC_DTYPES, pl.Boolean],
         allow_chunks=False,
         allow_null=False,
     )

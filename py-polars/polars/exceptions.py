@@ -8,9 +8,9 @@ try:
         MapWithoutReturnDtypeWarning,
         NoDataError,
         OutOfBoundsError,
+        PanicException,
         PerformanceWarning,
         PolarsError,
-        PolarsPanicError,
         PolarsWarning,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -68,7 +68,7 @@ except ImportError:
     class OutOfBoundsError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when the given index is out of bounds."""
 
-    class PolarsPanicError(PolarsError):  # type: ignore[no-redef, misc]
+    class PanicException(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
@@ -105,10 +105,6 @@ except ImportError:
         """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
-class InvalidAssert(PolarsError):  # type: ignore[misc]
-    """Exception raised when an unsupported testing assert is made."""
-
-
 class RowsError(PolarsError):  # type: ignore[misc]
     """Exception raised when the number of returned rows does not match expectation."""
 
@@ -121,7 +117,7 @@ class TooManyRowsReturnedError(RowsError):
     """Exception raised when more rows than expected are returned."""
 
 
-class ModuleUpgradeRequired(ModuleNotFoundError):
+class ModuleUpgradeRequiredError(ModuleNotFoundError):
     """Exception raised when a module is installed but needs to be upgraded."""
 
 
@@ -149,6 +145,46 @@ class CustomUFuncWarning(PolarsWarning):  # type: ignore[misc]
     """Warning issued when a custom ufunc is handled differently than numpy ufunc would."""  # noqa: W505
 
 
+class DataOrientationWarning(PolarsWarning):  # type: ignore[misc]
+    """
+    Warning issued to indicate row orientation was inferred from the inputs.
+
+    Occurs when constructing a DataFrame from a list of rows without explicitly
+    specifying row orientation. Polars is usually able to infer the data orientation
+    from the data and schema, but there are cases where this is not possible. This is a
+    common source of confusion. Use the `orient` parameter to be explicit about the
+    data orientation.
+
+    Examples
+    --------
+    >>> pl.DataFrame([(1, 2, 3), (4, 5, 6)], schema=["a", "b", "c"])  # doctest: +SKIP
+    DataOrientationWarning: Row orientation inferred during DataFrame construction.
+    Explicitly specify the orientation by passing `orient="row"` to silence this warning.
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    │ 4   ┆ 5   ┆ 6   │
+    └─────┴─────┴─────┘
+
+    Pass `orient="row"` to silence the warning.
+
+    >>> pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"], orient="row")
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    │ 4   ┆ 5   ┆ 6   │
+    └─────┴─────┴─────┘
+    """  # noqa: W505
+
+
 class PolarsInefficientMapWarning(PerformanceWarning):  # type: ignore[misc]
     """Warning issued when a potentially slow `map_*` operation is performed."""
 
@@ -159,17 +195,16 @@ class UnstableWarning(PolarsWarning):  # type: ignore[misc]
 
 __all__ = [
     # Errors
-    "ChronoFormatWarning",
+    "PolarsError",
     "ColumnNotFoundError",
     "ComputeError",
     "DuplicateError",
     "InvalidOperationError",
-    "ModuleUpgradeRequired",
+    "ModuleUpgradeRequiredError",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
-    "PolarsError",
-    "PolarsPanicError",
+    "ParameterCollisionError",
     "RowsError",
     "SQLInterfaceError",
     "SQLSyntaxError",
@@ -179,13 +214,17 @@ __all__ = [
     "StringCacheMismatchError",
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
+    "UnsuitableSQLError",
     # Warnings
     "PolarsWarning",
     "CategoricalRemappingWarning",
     "ChronoFormatWarning",
     "CustomUFuncWarning",
+    "DataOrientationWarning",
     "MapWithoutReturnDtypeWarning",
     "PerformanceWarning",
     "PolarsInefficientMapWarning",
     "UnstableWarning",
+    # Panic
+    "PanicException",
 ]

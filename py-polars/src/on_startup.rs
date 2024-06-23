@@ -2,8 +2,8 @@ use std::any::Any;
 
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
-use polars_core::chunked_array::object::registry;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
+use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_core::error::PolarsError::ComputeError;
 use polars_error::PolarsWarning;
 use pyo3::intern;
@@ -67,6 +67,7 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
 
 #[pyfunction]
 pub fn __register_startup_deps() {
+    set_polars_allow_extension(true);
     if !registry::is_object_builder_registered() {
         // Stack frames can get really large in debug mode.
         #[cfg(debug_assertions)]

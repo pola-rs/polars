@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.0.0-alpha.1"
+version = "1.0.0-rc.1"
 edition = "2021"
 
 [lib]
@@ -158,7 +158,7 @@ cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/htt
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
-new_streaming = ["polars-lazy/new-streaming"]
+new_streaming = ["polars-lazy/new_streaming"]
 
 dtype-i8 = []
 dtype-i16 = []

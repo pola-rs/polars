@@ -181,38 +181,6 @@ class DataType(metaclass=DataTypeClass):
         return issubclass(cls, NestedType)
 
 
-class DataTypeGroup(frozenset):  # type: ignore[type-arg]
-    """Group of data types."""
-
-    _match_base_type: bool
-
-    def __new__(
-        cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
-    ) -> DataTypeGroup:
-        """
-        Construct a DataTypeGroup.
-
-        Parameters
-        ----------
-        items :
-            iterable of data types
-        match_base_type:
-            match the base type
-        """
-        for it in items:
-            if not isinstance(it, (DataType, DataTypeClass)):
-                msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
-                raise TypeError(msg)
-        dtype_group = super().__new__(cls, items)
-        dtype_group._match_base_type = match_base_type
-        return dtype_group
-
-    def __contains__(self, item: Any) -> bool:
-        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
-            item = item.base_type()
-        return super().__contains__(item)
-
-
 class NumericType(DataType):
     """Base class for numeric data types."""
 

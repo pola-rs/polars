@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
 from polars.testing import assert_series_equal
 
 
@@ -49,14 +50,14 @@ def test_scatter() -> None:
     assert a.to_list() == [None, 1, 2, None, 4]
 
     a = pl.Series("x", [1, 2])
-    with pytest.raises(pl.OutOfBoundsError):
+    with pytest.raises(OutOfBoundsError):
         a[-100] = None
     assert_series_equal(a, pl.Series("x", [1, 2]))
 
 
 def test_index_with_None_errors_16905() -> None:
     s = pl.Series("s", [1, 2, 3])
-    with pytest.raises(pl.ComputeError, match="index values should not be null"):
+    with pytest.raises(ComputeError, match="index values should not be null"):
         s[[1, None]] = 5
     # The error doesn't trash the series, as it used to:
     assert_series_equal(s, pl.Series("s", [1, 2, 3]))
@@ -67,7 +68,7 @@ def test_object_dtype_16905() -> None:
     s = pl.Series("s", [obj, 27], dtype=pl.Object)
     # This operation is not semantically wrong, it might be supported in the
     # future, but for now it isn't.
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         s[0] = 5
     # The error doesn't trash the series, as it used to:
     assert s.dtype == pl.Object

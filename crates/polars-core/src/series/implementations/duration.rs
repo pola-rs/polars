@@ -13,11 +13,8 @@ unsafe impl IntoSeries for DurationChunked {
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DurationChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        true
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }
 
@@ -186,7 +183,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             dt if dt.is_float() => {
                 let phys = &self.0 .0;
                 let phys_float = phys.cast(dt).unwrap();
-                let out = (&phys_float * rhs).cast(&DataType::Int64).unwrap();
+                let out = std::ops::Mul::mul(&phys_float, rhs)?
+                    .cast(&DataType::Int64)
+                    .unwrap();
                 let phys = out.i64().unwrap().clone();
                 Ok(phys.into_duration(tul).into_series())
             },
@@ -201,9 +200,11 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             DataType::Duration(tur) => {
                 if tul == *tur {
                     // Returns a constant as f64.
-                    Ok((&self.0 .0.cast(&DataType::Float64).unwrap()
-                        / &rhs.duration().unwrap().0.cast(&DataType::Float64).unwrap())
-                        .into_series())
+                    Ok(std::ops::Div::div(
+                        &self.0 .0.cast(&DataType::Float64).unwrap(),
+                        &rhs.duration().unwrap().0.cast(&DataType::Float64).unwrap(),
+                    )?
+                    .into_series())
                 } else {
                     let rhs = rhs.cast(self.dtype())?;
                     self.divide(&rhs)
@@ -219,7 +220,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             dt if dt.is_float() => {
                 let phys = &self.0 .0;
                 let phys_float = phys.cast(dt).unwrap();
-                let out = (&phys_float / rhs).cast(&DataType::Int64).unwrap();
+                let out = std::ops::Div::div(&phys_float, rhs)?
+                    .cast(&DataType::Int64)
+                    .unwrap();
                 let phys = out.i64().unwrap().clone();
                 Ok(phys.into_duration(tul).into_series())
             },

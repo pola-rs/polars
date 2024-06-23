@@ -525,12 +525,14 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<IpcCompression>>,
+        future: bool,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
             let f = std::fs::File::create(&*s)?;
             py.allow_threads(|| {
                 IpcStreamWriter::new(f)
                     .with_compression(compression.0)
+                    .with_pl_flavor(future)
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -539,6 +541,7 @@ impl PyDataFrame {
 
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
+                .with_pl_flavor(future)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

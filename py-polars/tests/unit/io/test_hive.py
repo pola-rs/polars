@@ -1,13 +1,15 @@
 import warnings
 from collections import OrderedDict
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.skip(
@@ -95,7 +97,6 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     expected = {
         "a": [3, 4],
         "d": [3, 4],
-        "a_right": [3, 4],
         "d_right": [3, 4],
     }
     assert result.to_dict(as_series=False) == expected
@@ -186,8 +187,8 @@ def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
     root.mkdir()
     df.write_parquet(root / "file.parquet")
 
-    with pytest.raises(pl.DuplicateError, match="invalid Hive partition schema"):
-        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True).collect()
+    with pytest.raises(DuplicateError, match="invalid Hive partition schema"):
+        pl.scan_parquet(tmp_path, hive_partitioning=True).collect()
 
 
 @pytest.mark.write_disk()
@@ -207,7 +208,7 @@ def test_hive_partitioned_projection_skip_files(
         new_path.mkdir(parents=True, exist_ok=True)
         sub_df.write_parquet(new_path / "file=8484.parquet")
     test_df = (
-        pl.scan_parquet(str(root) + "/**/**/*.parquet")
+        pl.scan_parquet(str(root) + "/**/**/*.parquet", hive_partitioning=True)
         # don't care about column order
         .select("sqlver", "namespace", "a", pl.exclude("sqlver", "namespace", "a"))
         .collect()
@@ -257,7 +258,7 @@ def test_scan_parquet_hive_schema(dataset_path: Path) -> None:
 @pytest.mark.write_disk()
 def test_read_parquet_invalid_hive_schema(dataset_path: Path) -> None:
     with pytest.raises(
-        pl.SchemaFieldNotFoundError,
+        SchemaFieldNotFoundError,
         match='path contains column not present in the given Hive schema: "c"',
     ):
         pl.read_parquet(
@@ -273,3 +274,172 @@ def test_read_parquet_hive_schema_with_pyarrow() -> None:
         match="cannot use `hive_partitions` with `use_pyarrow=True`",
     ):
         pl.read_parquet("test.parquet", hive_schema={"c": pl.Int32}, use_pyarrow=True)
+
+
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+@pytest.mark.parametrize(
+    "glob",
+    [True, False],
+)
+def test_hive_partition_directory_scan(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    glob: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    dfs = [
+        pl.DataFrame({'x': 5 * [1], 'a': 1, 'b': 1}),
+        pl.DataFrame({'x': 5 * [2], 'a': 1, 'b': 2}),
+        pl.DataFrame({'x': 5 * [3], 'a': 22, 'b': 1}),
+        pl.DataFrame({'x': 5 * [4], 'a': 22, 'b': 2}),
+    ]  # fmt: skip
+
+    for df in dfs:
+        a = df.item(0, "a")
+        b = df.item(0, "b")
+        path = tmp_path / f"a={a}/b={b}/data.bin"
+        path.parent.mkdir(exist_ok=True, parents=True)
+        write_func(df.drop("a", "b"), path)
+
+    df = pl.concat(dfs)
+    hive_schema = df.lazy().select("a", "b").collect_schema()
+
+    scan = scan_func
+    scan = partial(scan_func, hive_schema=hive_schema, glob=glob)
+
+    out = scan(
+        tmp_path,
+        hive_partitioning=True,
+        hive_schema=hive_schema,
+    ).collect()
+    assert_frame_equal(out, df)
+
+    out = scan(tmp_path, hive_partitioning=False).collect()
+    assert_frame_equal(out, df.drop("a", "b"))
+
+    out = scan(
+        tmp_path / "a=1",
+        hive_partitioning=True,
+    ).collect()
+    assert_frame_equal(out, df.filter(a=1).drop("a"))
+
+    out = scan(
+        tmp_path / "a=1",
+        hive_partitioning=False,
+    ).collect()
+    assert_frame_equal(out, df.filter(a=1).drop("a", "b"))
+
+    path = tmp_path / "a=1/b=1/data.bin"
+
+    out = scan(path, hive_partitioning=True).collect()
+    assert_frame_equal(out, dfs[0])
+
+    out = scan(path, hive_partitioning=False).collect()
+    assert_frame_equal(out, dfs[0].drop("a", "b"))
+
+    # Test default behavior with `hive_partitioning=None`, which should only
+    # enable hive partitioning when a single directory is passed:
+    out = scan(tmp_path).collect()
+    assert_frame_equal(out, df)
+
+    # Otherwise, hive partitioning is not enabled automatically:
+    out = scan(tmp_path / "a=1/b=1/data.bin").collect()
+    assert out.columns == ["x"]
+
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/"]).collect()
+    assert out.columns == ["x"]
+
+    out = scan([tmp_path / "a=1/", tmp_path / "a=22/b=1/data.bin"]).collect()
+    assert out.columns == ["x"]
+
+    if glob:
+        out = scan(tmp_path / "a=1/**/*.bin").collect()
+        assert out.columns == ["x"]
+
+    # Test `hive_partitioning=True`
+    out = scan(tmp_path, hive_partitioning=True).collect()
+    assert_frame_equal(out, df)
+
+    # Accept multiple directories from the same level
+    out = scan([tmp_path / "a=1", tmp_path / "a=22"], hive_partitioning=True).collect()
+    assert_frame_equal(out, df.drop("a"))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="attempted to read from different directory levels with hive partitioning enabled:",
+    ):
+        scan([tmp_path / "a=1", tmp_path / "a=22/b=1"], hive_partitioning=True)
+
+    if glob:
+        out = scan(tmp_path / "**/*.bin", hive_partitioning=True).collect()
+        assert_frame_equal(out, df)
+
+        # Parse hive from full path for glob patterns
+        out = scan(
+            [tmp_path / "a=1/**/*.bin", tmp_path / "a=22/**/*.bin"],
+            hive_partitioning=True,
+        ).collect()
+        assert_frame_equal(out, df)
+
+    # Parse hive from full path for files
+    out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=True).collect()
+    assert_frame_equal(out, df.filter(a=1, b=1))
+
+    out = scan(
+        [tmp_path / "a=1/b=1/data.bin", tmp_path / "a=22/b=1/data.bin"],
+        hive_partitioning=True,
+    ).collect()
+    assert_frame_equal(
+        out,
+        df.filter(
+            ((pl.col("a") == 1) & (pl.col("b") == 1))
+            | ((pl.col("a") == 22) & (pl.col("b") == 1))
+        ),
+    )
+
+    # Test `hive_partitioning=False`
+    out = scan(tmp_path, hive_partitioning=False).collect()
+    assert_frame_equal(out, df.drop("a", "b"))
+
+    if glob:
+        out = scan(tmp_path / "**/*.bin", hive_partitioning=False).collect()
+        assert_frame_equal(out, df.drop("a", "b"))
+
+    out = scan(tmp_path / "a=1/b=1/data.bin", hive_partitioning=False).collect()
+    assert_frame_equal(out, df.filter(a=1, b=1).drop("a", "b"))
+
+
+def test_hive_partition_schema_inference(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    dfs = [
+        pl.DataFrame({"x": 1}),
+        pl.DataFrame({"x": 2}),
+        pl.DataFrame({"x": 3}),
+    ]
+
+    paths = [
+        tmp_path / "a=1/data.bin",
+        tmp_path / "a=1.5/data.bin",
+        tmp_path / "a=polars/data.bin",
+    ]
+
+    expected = [
+        pl.Series("a", [1], dtype=pl.Int64),
+        pl.Series("a", [1.0, 1.5], dtype=pl.Float64),
+        pl.Series("a", ["1", "1.5", "polars"], dtype=pl.String),
+    ]
+
+    for i in range(3):
+        paths[i].parent.mkdir(exist_ok=True, parents=True)
+        dfs[i].write_parquet(paths[i])
+        out = pl.scan_parquet(tmp_path).collect()
+
+        assert_series_equal(out["a"], expected[i])

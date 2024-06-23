@@ -18,7 +18,8 @@ use polars_io::prelude::materialize_projection;
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::{check_projected_arrow_schema, is_cloud_url};
 use polars_io::SerReader;
-use polars_plan::logical_plan::FileInfo;
+use polars_plan::plans::FileInfo;
+use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::IdxSize;
@@ -39,6 +40,7 @@ pub struct ParquetSource {
     cloud_options: Option<CloudOptions>,
     metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
+    hive_parts: Option<Vec<Arc<HivePartitions>>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -78,12 +80,10 @@ impl ParquetSource {
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
-        let mut file_info = self.file_info.clone();
-        file_info.update_hive_partitions(path)?;
-        let hive_partitions = file_info
+        let hive_partitions = self
             .hive_parts
             .as_ref()
-            .map(|hive| hive.materialize_partition_columns());
+            .map(|x| x[index].materialize_partition_columns());
 
         let projection = materialize_projection(
             file_options.with_columns.as_deref(),
@@ -192,6 +192,7 @@ impl ParquetSource {
         metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
+        hive_parts: Option<Vec<Arc<HivePartitions>>>,
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
@@ -216,6 +217,7 @@ impl ParquetSource {
             cloud_options,
             metadata,
             file_info,
+            hive_parts,
             verbose,
             run_async,
             prefetch_size,

@@ -16,6 +16,7 @@ Conversion
     from_pandas
     from_records
     from_repr
+    json_normalize
 
 Miscellaneous
 ~~~~~~~~~~~~~~~~~~~~

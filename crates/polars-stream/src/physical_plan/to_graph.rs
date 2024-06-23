@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
-use polars_plan::logical_plan::{AExpr, Context};
+use polars_plan::plans::{AExpr, Context};
 use polars_utils::arena::Arena;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
@@ -13,7 +13,7 @@ struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &'a Arena<AExpr>,
     graph: Graph,
-    phys_to_g: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
 }
 
@@ -26,7 +26,7 @@ pub fn physical_plan_to_graph(
         phys_sm,
         expr_arena,
         graph: Graph::with_capacity(phys_sm.len()),
-        phys_to_g: SecondaryMap::with_capacity(phys_sm.len()),
+        phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
     };
 
@@ -34,7 +34,7 @@ pub fn physical_plan_to_graph(
         to_graph_rec(key, &mut ctx)?;
     }
 
-    Ok((ctx.graph, ctx.phys_to_g))
+    Ok((ctx.graph, ctx.phys_to_graph))
 }
 
 #[recursive]
@@ -42,19 +42,20 @@ fn to_graph_rec<'a>(
     phys_node_key: PhysNodeKey,
     ctx: &mut GraphConversionContext<'a>,
 ) -> PolarsResult<GraphNodeKey> {
-    if let Some(graph_key) = ctx.phys_to_g.get(phys_node_key) {
+    // This will ensure we create a proper acyclic directed graph instead of a tree.
+    if let Some(graph_key) = ctx.phys_to_graph.get(phys_node_key) {
         return Ok(*graph_key);
     }
 
     use PhysNode::*;
     let graph_key = match &ctx.phys_sm[phys_node_key] {
-        DataFrameScan { df } => ctx
+        InMemorySource { df } => ctx
             .graph
             .add_node(nodes::in_memory_source::InMemorySource::new(df.clone()), []),
 
         Filter { predicate, input } => {
             let phys_predicate_expr = create_physical_expr(
-                &predicate,
+                predicate,
                 Context::Default,
                 ctx.expr_arena,
                 None,
@@ -75,12 +76,18 @@ fn to_graph_rec<'a>(
             )
         },
 
+        InMemorySink { input } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph
+                .add_node(nodes::in_memory_sink::InMemorySink::default(), [input_key])
+        },
+
         // Fallback to the in-memory engine.
-        Fallback(node) => {
+        Fallback(_node) => {
             todo!()
         },
     };
 
-    ctx.phys_to_g.insert(phys_node_key, graph_key);
+    ctx.phys_to_graph.insert(phys_node_key, graph_key);
     Ok(graph_key)
 }

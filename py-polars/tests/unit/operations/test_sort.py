@@ -1,12 +1,47 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes, series
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
+
+
+@given(
+    s=series(
+        excluded_dtypes=[
+            pl.Object,  # Unsortable type
+            pl.Struct,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+        ],
+    )
+)
+def test_series_sort_idempotent(s: pl.Series) -> None:
+    result = s.sort()
+    assert result.len() == s.len()
+    assert_series_equal(result, result.sort())
+
+
+@given(
+    df=dataframes(
+        excluded_dtypes=[
+            pl.Object,  # Unsortable type
+            pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
+            pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
+        ]
+    )
+)
+def test_df_sort_idempotent(df: pl.DataFrame) -> None:
+    cols = df.columns
+    result = df.sort(cols, maintain_order=True)
+    assert result.shape == df.shape
+    assert_frame_equal(result, result.sort(cols, maintain_order=True))
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -247,7 +282,7 @@ def test_sort_aggregation_fast_paths() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
-def test_sorted_join_and_dtypes(dtype: pl.PolarsDataType) -> None:
+def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
     df_a = (
         pl.DataFrame({"a": [-5, -2, 3, 3, 9, 10]})
         .with_row_index()
@@ -264,7 +299,7 @@ def test_sorted_join_and_dtypes(dtype: pl.PolarsDataType) -> None:
         "a": [-2, 3, 3, 10],
     }
 
-    result_left = df_a.join(df_b, on="a", how="left", coalesce=True)
+    result_left = df_a.join(df_b, on="a", how="left")
     assert result_left.to_dict(as_series=False) == {
         "index": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
@@ -783,3 +818,9 @@ def test_sort_string_nulls() -> None:
         None,
         None,
     ]
+
+
+def test_sort_by_unequal_lengths_7207() -> None:
+    df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col.a.sort_by(["a", 1]))

@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::metadata::MetadataTrait;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -38,6 +39,11 @@ macro_rules! invalid_operation_panic {
     };
 }
 
+pub enum BitRepr {
+    Small(UInt32Chunked),
+    Large(UInt64Chunked),
+}
+
 pub(crate) mod private {
     use ahash::RandomState;
 
@@ -46,15 +52,10 @@ pub(crate) mod private {
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
 
     pub trait PrivateSeriesNumeric {
-        fn bit_repr_is_large(&self) -> bool {
-            false
-        }
-        fn bit_repr_large(&self) -> UInt64Chunked {
-            unimplemented!()
-        }
-        fn bit_repr_small(&self) -> UInt32Chunked {
-            unimplemented!()
-        }
+        /// Return a bit representation
+        ///
+        /// If there is no available bit representation this returns `None`.
+        fn bit_repr(&self) -> Option<BitRepr>;
     }
 
     pub trait PrivateSeries {
@@ -193,11 +194,7 @@ pub trait SeriesTrait:
         polars_bail!(opq = bitxor, self._dtype());
     }
 
-    fn get_metadata_min_value(&self) -> Option<Scalar> {
-        None
-    }
-
-    fn get_metadata_max_value(&self) -> Option<Scalar> {
+    fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
         None
     }
 
@@ -376,6 +373,8 @@ pub trait SeriesTrait:
     }
 
     /// Get unique values in the Series.
+    ///
+    /// A `null` value also counts as a unique value.
     fn n_unique(&self) -> PolarsResult<usize> {
         polars_bail!(opq = n_unique, self._dtype());
     }

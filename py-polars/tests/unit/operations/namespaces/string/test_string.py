@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -42,7 +43,7 @@ def test_str_slice_expr() -> None:
     assert_frame_equal(out, expected)
 
     # negative length is not allowed
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("a").str.slice(0, -1))
 
 
@@ -237,9 +238,9 @@ def test_str_decode() -> None:
 
 def test_str_decode_exception() -> None:
     s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s.str.decode(encoding="hex")
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
@@ -291,7 +292,7 @@ def test_str_find_invalid_regex() -> None:
     df = pl.DataFrame({"txt": ["AbCdEfG"]})
     rx_invalid = "(?i)AB.))"
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.with_columns(pl.col("txt").str.find(rx_invalid, strict=True))
 
     res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))
@@ -408,7 +409,7 @@ def test_str_to_integer() -> None:
         check_exact=True,
     )
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         hex.str.to_integer(base=16)
 
 
@@ -423,7 +424,7 @@ def test_str_to_integer_base_expr() -> None:
     # test strict raise
     df = pl.DataFrame({"str": ["110", "ff00", "cafe", None], "base": [2, 10, 10, 8]})
 
-    with pytest.raises(pl.ComputeError, match="failed for 2 value"):
+    with pytest.raises(ComputeError, match="failed for 2 value"):
         df.select(pl.col("str").str.to_integer(base="base"))
 
 
@@ -447,7 +448,7 @@ def test_str_to_integer_base_literal() -> None:
     )
     assert_frame_equal(result, expected)
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.with_columns(
             pl.col("bin").str.to_integer(base=2),
             pl.col("hex").str.to_integer(base=16),
@@ -782,7 +783,7 @@ def test_contains() -> None:
         pl.Series([None, None, None]).cast(pl.Boolean).to_list()
         == s_txt.str.contains("(not_valid_regex", literal=False, strict=False).to_list()
     )
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s_txt.str.contains("(not_valid_regex", literal=False, strict=True)
     assert (
         pl.Series([True, False, False]).cast(pl.Boolean).to_list()
@@ -850,7 +851,7 @@ def test_contains_expr() -> None:
         "contains_lit": [False, True, False, None, None, False],
     }
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.select(
             pl.col("text").str.contains(pl.col("pattern"), literal=False, strict=True)
         )
@@ -941,7 +942,7 @@ def test_replace_all() -> None:
             )["text"].to_list()
         )
         # invalid regex (but valid literal - requires "literal=True")
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             df["text"].str.replace_all("*", "")
 
     assert (
@@ -1134,7 +1135,7 @@ def test_decode_strict() -> None:
     expected = {"strings": [b"\xd0\x86\xd0\xbd77", None, None]}
     assert result.to_dict(as_series=False) == expected
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.select(pl.col("strings").str.decode("base64", strict=True))
 
 

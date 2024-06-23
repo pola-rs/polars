@@ -31,17 +31,15 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_core::prelude::*;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
+use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
 use crate::frame::cached_arenas::CachedArena;
-use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::{
-    create_physical_expr, create_physical_plan, ExpressionConversionState,
-};
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
@@ -439,7 +437,10 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop<I, T>(self, columns: I) -> Self
+    ///
+    /// If `strict` is `true`, then any given columns that are not in the schema will
+    /// give a [`PolarsError::ColumnNotFound`] error while materializing the [`LazyFrame`].
+    fn _drop<I, T>(self, columns: I, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -450,8 +451,37 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop, strict).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Removes columns from the DataFrame.
+    /// Note that it's better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    ///
+    /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
+    /// error while materializing the [`LazyFrame`].
+    #[inline]
+    pub fn drop<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self._drop(columns, true)
+    }
+
+    /// Removes columns from the DataFrame.
+    /// Note that it's better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    ///
+    /// If a column name does not exist in the schema, it will quietly be ignored.
+    #[inline]
+    pub fn drop_no_validate<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self._drop(columns, false)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -576,9 +606,6 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.comm_subplan_elim {
-            polars_warn!(
-                "Cannot combine 'streaming' with 'comm_subplan_elim'. CSE will be turned off."
-            );
             opt_state.comm_subplan_elim = false;
         }
         let lp_top = optimize(
@@ -687,7 +714,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "new-streaming")]
+        #[cfg(feature = "new_streaming")]
         {
             if self.opt_state.new_streaming {
                 let alp_plan = self.to_alp_optimized()?;
@@ -1570,12 +1597,12 @@ impl LazyFrame {
         self.slice(neg_tail, n)
     }
 
-    /// Melt the DataFrame from wide to long format.
+    /// Unpivot the DataFrame from wide to long format.
     ///
-    /// See [`MeltArgs`] for information on how to melt a DataFrame.
-    pub fn melt(self, args: MeltArgs) -> LazyFrame {
+    /// See [`UnpivotArgs`] for information on how to unpivot a DataFrame.
+    pub fn unpivot(self, args: UnpivotArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().melt(args).build();
+        let lp = self.get_plan_builder().unpivot(args).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

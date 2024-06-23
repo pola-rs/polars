@@ -7,7 +7,11 @@ unsafe impl IntoSeries for DecimalChunked {
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
 
 impl SeriesWrap<DecimalChunked> {
     fn apply_physical_to_s<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {

@@ -67,10 +67,8 @@ impl PhysicalExpr for AggregationExpr {
 
         match group_by {
             GroupByMethod::Min => {
-                let extensive_use = MetadataEnv::extensive_use();
-
-                if extensive_use {
-                    if let Some(sc) = s.get_metadata_min_value() {
+                if MetadataEnv::experimental_enabled() {
+                    if let Some(sc) = s.get_metadata().and_then(|v| v.min_value()) {
                         return Ok(sc.into_series(s.name()));
                     }
                 }
@@ -102,10 +100,8 @@ impl PhysicalExpr for AggregationExpr {
                 panic!("activate 'propagate_nans' feature")
             },
             GroupByMethod::Max => {
-                let extensive_use = MetadataEnv::extensive_use();
-
-                if extensive_use {
-                    if let Some(sc) = s.get_metadata_max_value() {
+                if MetadataEnv::experimental_enabled() {
+                    if let Some(sc) = s.get_metadata().and_then(|v| v.max_value()) {
                         return Ok(sc.into_series(s.name()));
                     }
                 }
@@ -154,9 +150,17 @@ impl PhysicalExpr for AggregationExpr {
                 allow_threading,
             ),
             GroupByMethod::Groups => unreachable!(),
-            GroupByMethod::NUnique => s
-                .n_unique()
-                .map(|count| UInt32Chunked::from_slice(s.name(), &[count as u32]).into_series()),
+            GroupByMethod::NUnique => {
+                if MetadataEnv::experimental_enabled() {
+                    if let Some(count) = s.get_metadata().and_then(|v| v.distinct_count()) {
+                        let count = count + IdxSize::from(s.null_count() > 0);
+                        return Ok(IdxCa::from_slice(s.name(), &[count]).into_series());
+                    }
+                }
+
+                s.n_unique()
+                    .map(|count| IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series())
+            },
             GroupByMethod::Count { include_nulls } => {
                 let count = s.len() - s.null_count() * !include_nulls as usize;
 
@@ -569,7 +573,7 @@ impl PartitionedAggregation for AggregationExpr {
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;
-                        Ok(rename_series(agg_s, new_name))
+                        Ok(rename_series(agg_s?, new_name))
                     },
                     _ => Ok(Series::full_null(
                         new_name,

@@ -8,7 +8,8 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
-use crate::{PyDataFrame, PyPolarsErr, Wrap};
+use crate::error::PyPolarsErr;
+use crate::{PyDataFrame, Wrap};
 
 #[pyclass]
 #[repr(transparent)]

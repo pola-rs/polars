@@ -9,6 +9,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -643,7 +644,7 @@ def test_group_by_binary_agg_with_literal() -> None:
 
 @pytest.mark.slow()
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
-def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> None:
+def test_overflow_mean_partitioned_group_by_5194(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(
         [
             pl.Series("data", [10_00_00_00] * 100_000, dtype=dtype),
@@ -1027,7 +1028,7 @@ def test_schema_on_agg() -> None:
 
 def test_group_by_schema_err() -> None:
     lf = pl.LazyFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]})
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         lf.group_by("not-existent").agg(
             pl.col("bar").max().alias("max_bar")
         ).collect_schema()
@@ -1059,8 +1060,8 @@ def test_group_by_schema_err() -> None:
 def test_schemas(
     data: dict[str, list[Any]],
     expr: pl.Expr,
-    expected_select: dict[str, pl.PolarsDataType],
-    expected_gb: dict[str, pl.PolarsDataType],
+    expected_select: dict[str, PolarsDataType],
+    expected_gb: dict[str, PolarsDataType],
 ) -> None:
     df = pl.DataFrame(data)
 

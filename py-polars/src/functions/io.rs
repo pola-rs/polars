@@ -6,9 +6,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::prelude::ArrowDataType;
-use crate::PyPolarsErr;
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
@@ -79,13 +79,4 @@ pub fn write_clipboard_string(s: &str) -> PyResult<()> {
         .set_text(s)
         .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
     Ok(())
-}
-
-#[cfg(feature = "cloud")]
-#[pyfunction]
-pub fn get_file_cache_prefix() -> PyResult<String> {
-    Ok(polars_io::file_cache::FILE_CACHE_PREFIX
-        .to_str()
-        .unwrap()
-        .to_string())
 }

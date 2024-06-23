@@ -1,6 +1,6 @@
 use polars_core::chunked_array::ops::SortMultipleOptions;
 use polars_ops::prelude::*;
-use polars_plan::logical_plan::expr_ir::ExprIR;
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(
