@@ -6,8 +6,8 @@ use polars_io::RowIndex;
 use polars_plan::plans::{DslPlan, FileScan};
 use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
 
-use super::*;
 use crate::prelude::LazyFrame;
+use crate::scan::file_list_reader::LazyFileListReader;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {

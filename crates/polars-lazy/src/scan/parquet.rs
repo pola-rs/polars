@@ -5,8 +5,8 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
 use polars_io::{HiveOptions, RowIndex};
 
-use super::get_glob_start_idx;
 use crate::prelude::*;
+use crate::scan::file_list_reader::get_glob_start_idx;
 
 #[derive(Clone)]
 pub struct ScanArgsParquet {
