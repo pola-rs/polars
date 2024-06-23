@@ -41,10 +41,20 @@ mod tests {
     }
 
     #[test]
-    fn fails_for_bad_size() -> Result<(), ParquetError> {
+    fn fails_for_invalid_values_size() -> Result<(), ParquetError> {
         let buffer = vec![0; 12];
 
         let result = Decoder::try_new(&buffer, 8);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn fails_for_invalid_element_size() -> Result<(), ParquetError> {
+        let buffer = vec![0; 16];
+
+        let result = Decoder::try_new(&buffer, 16);
         assert!(result.is_err());
 
         Ok(())
