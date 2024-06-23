@@ -1117,6 +1117,7 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+@pytest.mark.slow()
 @pytest.mark.parametrize("nullable", [True, False])
 def test_read_byte_stream_split(nullable: bool) -> None:
     rng = np.random.default_rng(123)
@@ -1148,6 +1149,7 @@ def test_read_byte_stream_split(nullable: bool) -> None:
     assert_frame_equal(read, df)
 
 
+@pytest.mark.slow()
 @pytest.mark.parametrize("rows_nullable", [True, False])
 @pytest.mark.parametrize("item_nullable", [True, False])
 def test_read_byte_stream_split_arrays(
