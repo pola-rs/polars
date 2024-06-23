@@ -108,15 +108,12 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
     """Parse an input into a Polars data type."""
     if isinstance(input, ForwardRef):
         annotation = input.__forward_arg__
+        formatted = re.sub(r"(^None \|)|(\| None$)", "", annotation).strip()
         input = (
-            PY_STR_TO_DTYPE.get(
-                re.sub(r"(^None \|)|(\| None$)", "", annotation).strip(), input
-            )
+            PY_STR_TO_DTYPE.get(formatted, input)
             if isinstance(annotation, str)  # type: ignore[redundant-expr]
             else annotation
         )
-    elif type(input).__name__ == "InitVar":
-        input = input.type
 
     if is_polars_dtype(input):
         return input
