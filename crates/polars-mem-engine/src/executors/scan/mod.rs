@@ -19,7 +19,7 @@ pub(crate) use ipc::IpcExec;
 pub(crate) use ndjson::JsonExec;
 #[cfg(feature = "parquet")]
 pub(crate) use parquet::ParquetExec;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_io::predicates::PhysicalIoExpr;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_io::prelude::*;
