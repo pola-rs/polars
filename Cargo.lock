@@ -3540,6 +3540,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-stream",
  "polars-time",
  "polars-utils",
  "pyo3",
