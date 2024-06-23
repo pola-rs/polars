@@ -1,4 +1,6 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
+#[cfg(feature = "cse")]
+use std::fmt::Formatter;
 
 use polars_core::prelude::{Field, Schema};
 use polars_utils::unitvec;
@@ -143,11 +145,13 @@ impl AexprNode {
     }
 }
 
+#[cfg(feature = "cse")]
 pub struct AExprArena<'a> {
     node: Node,
     arena: &'a Arena<AExpr>,
 }
 
+#[cfg(feature = "cse")]
 impl Debug for AExprArena<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "AexprArena: {}", self.node.0)
@@ -155,6 +159,7 @@ impl Debug for AExprArena<'_> {
 }
 
 impl AExpr {
+    #[cfg(feature = "cse")]
     fn is_equal_node(&self, other: &Self) -> bool {
         use AExpr::*;
         match (self, other) {
@@ -221,6 +226,7 @@ impl AExpr {
     }
 }
 
+#[cfg(feature = "cse")]
 impl<'a> AExprArena<'a> {
     fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
@@ -237,6 +243,7 @@ impl<'a> AExprArena<'a> {
     }
 }
 
+#[cfg(feature = "cse")]
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
         let mut scratch1 = vec![];
