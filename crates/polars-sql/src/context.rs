@@ -9,9 +9,9 @@ use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg, GroupByExpr, Ident, JoinConstraint,
-    JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr,
-    SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
-    Value as SQLValue, Values, WildcardAdditionalOptions,
+    JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, RenameSelectItem, Select,
+    SelectItem, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias, TableFactor,
+    TableWithJoins, UnaryOperator, Value as SQLValue, Values, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -590,13 +590,11 @@ impl SQLContext {
 
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
-        // Determine involved dataframes.
-        // Note: implicit joins require more work in query parsing,
-        // explicit joins are preferred for now (ref: #16662)
-
         let mut lf = if select_stmt.from.is_empty() {
             DataFrame::empty().lazy()
         } else {
+            // Note: implicit joins need more work to support properly,
+            // explicit joins are preferred for now (ref: #16662)
             let from = select_stmt.clone().from;
             if from.len() > 1 {
                 polars_bail!(SQLInterface: "multiple tables in FROM clause are not currently supported (found {}); use explicit JOIN syntax instead", from.len())
@@ -604,12 +602,16 @@ impl SQLContext {
             self.execute_from_statement(from.first().unwrap())?
         };
 
-        // Filter expression.
+        // Filter expression (WHERE clause)
         let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
         lf = self.process_where(lf, &select_stmt.selection)?;
 
-        // Column projections.
-        let mut excluded_cols = Vec::new();
+        // 'SELECT *' modifiers
+        let mut excluded_cols = vec![];
+        let mut replace_exprs = vec![];
+        let mut rename_cols = (&mut vec![], &mut vec![]);
+
+        // Column projections (SELECT clause)
         let projections: Vec<Expr> = select_stmt
             .projection
             .iter()
@@ -627,6 +629,8 @@ impl SQLContext {
                             obj_name,
                             wildcard_options,
                             &mut excluded_cols,
+                            &mut rename_cols,
+                            &mut replace_exprs,
                             Some(schema.deref()),
                         )?,
                     SelectItem::Wildcard(wildcard_options) => {
@@ -639,6 +643,9 @@ impl SQLContext {
                             cols,
                             wildcard_options,
                             &mut excluded_cols,
+                            &mut rename_cols,
+                            &mut replace_exprs,
+                            Some(schema.deref()),
                         )?
                     },
                 })
@@ -700,8 +707,8 @@ impl SQLContext {
                 // No sort, select cols as given
                 lf.select(projections)
             } else {
-                // Add all projections to the base frame as any of
-                // the original columns may be required for the sort
+                // Add projections to the base frame as any of the
+                // original columns may be required for the sort
                 lf = lf.with_columns(projections.clone());
 
                 // Final/selected cols (also ensures accurate ordinal position refs)
@@ -737,7 +744,7 @@ impl SQLContext {
             }
         };
 
-        // Apply optional 'distinct' clause.
+        // Apply optional DISTINCT clause.
         lf = match &select_stmt.distinct {
             Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
@@ -764,6 +771,13 @@ impl SQLContext {
             None => lf,
         };
 
+        // Apply final 'SELECT *' modifiers
+        if !replace_exprs.is_empty() {
+            lf = lf.with_columns(replace_exprs);
+        }
+        if !rename_cols.0.is_empty() {
+            lf = lf.rename(rename_cols.0, rename_cols.1);
+        }
         Ok(lf)
     }
 
@@ -1160,13 +1174,22 @@ impl SQLContext {
         ObjectName(idents): &ObjectName,
         options: &WildcardAdditionalOptions,
         excluded_cols: &mut Vec<String>,
+        rename_cols: &mut (&mut Vec<String>, &mut Vec<String>),
+        replace_exprs: &mut Vec<Expr>,
         schema: Option<&Schema>,
     ) -> PolarsResult<Vec<Expr>> {
         let mut new_idents = idents.clone();
         new_idents.push(Ident::new("*"));
 
         let expr = resolve_compound_identifier(self, new_idents.deref(), schema);
-        self.process_wildcard_additional_options(expr?, options, excluded_cols)
+        self.process_wildcard_additional_options(
+            expr?,
+            options,
+            excluded_cols,
+            rename_cols,
+            replace_exprs,
+            schema,
+        )
     }
 
     fn process_wildcard_additional_options(
@@ -1174,25 +1197,47 @@ impl SQLContext {
         exprs: Vec<Expr>,
         options: &WildcardAdditionalOptions,
         excluded_cols: &mut Vec<String>,
+        rename_cols: &mut (&mut Vec<String>, &mut Vec<String>),
+        replace_exprs: &mut Vec<Expr>,
+        schema: Option<&Schema>,
     ) -> PolarsResult<Vec<Expr>> {
-        // bail on unsupported wildcard options
-        if options.opt_ilike.is_some() {
-            polars_bail!(SQLSyntax: "ILIKE wildcard option is unsupported")
-        } else if options.opt_rename.is_some() {
-            polars_bail!(SQLSyntax: "RENAME wildcard option is unsupported")
-        } else if options.opt_replace.is_some() {
-            polars_bail!(SQLSyntax: "REPLACE wildcard option is unsupported")
-        } else if options.opt_except.is_some() {
-            polars_bail!(SQLSyntax: "EXCEPT wildcard option is unsupported (use EXCLUDE instead)")
+        // bail on (currently) unsupported wildcard options
+        if options.opt_except.is_some() {
+            polars_bail!(SQLInterface: "EXCEPT wildcard option is unsupported (use EXCLUDE instead)")
+        } else if options.opt_ilike.is_some() {
+            polars_bail!(SQLInterface: "ILIKE wildcard option is currently unsupported")
+        } else if options.opt_rename.is_some() && options.opt_replace.is_some() {
+            // pending an upstream fix: https://github.com/sqlparser-rs/sqlparser-rs/pull/1321
+            polars_bail!(SQLInterface: "RENAME and REPLACE wildcard options cannot (yet) be used simultaneously")
         }
 
-        if let Some(exc_items) = &options.opt_exclude {
-            *excluded_cols = match exc_items {
+        if let Some(items) = &options.opt_exclude {
+            *excluded_cols = match items {
                 ExcludeSelectItem::Single(ident) => vec![ident.value.clone()],
                 ExcludeSelectItem::Multiple(idents) => {
                     idents.iter().map(|i| i.value.clone()).collect()
                 },
             };
+        }
+        if let Some(items) = &options.opt_rename {
+            match items {
+                RenameSelectItem::Single(rename) => {
+                    rename_cols.0.push(rename.ident.value.clone());
+                    rename_cols.1.push(rename.alias.value.clone());
+                },
+                RenameSelectItem::Multiple(renames) => {
+                    for rn in renames {
+                        rename_cols.0.push(rn.ident.value.clone());
+                        rename_cols.1.push(rn.alias.value.clone());
+                    }
+                },
+            }
+        }
+        if let Some(replacements) = &options.opt_replace {
+            for rp in &replacements.items {
+                let replacement_expr = parse_sql_expr(&rp.expr, self, schema);
+                replace_exprs.push(replacement_expr?.alias(rp.column_name.value.as_str()));
+            }
         }
         Ok(exprs)
     }
