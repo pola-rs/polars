@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from builtins import any as standard_any
+from typing import cast
 
 import polars.functions as F
 from polars.expr import Expr
@@ -13,7 +14,7 @@ def into_expr(*names: str | Expr) -> Expr:
         msg = "`names` input must be either a set of strings or a single expression"
         raise TypeError(msg)
 
-    return names[0] if contains_expr else F.col(*names)
+    return cast(Expr, names[0]) if contains_expr else F.col(cast(tuple[str], names))
 
 
 def all(*names: str | Expr, ignore_nulls: bool = True) -> Expr:
