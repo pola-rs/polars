@@ -752,7 +752,11 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
-    pub fn sink_parquet(self, path: impl AsRef<Path>, options: ParquetWriteOptions) -> PolarsResult<()> {
+    pub fn sink_parquet(
+        self,
+        path: impl AsRef<Path>,
+        options: ParquetWriteOptions,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
