@@ -60,6 +60,7 @@ impl Hash for IRAggExpr {
     }
 }
 
+#[cfg(feature = "cse")]
 impl IRAggExpr {
     pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
         use IRAggExpr::*;
