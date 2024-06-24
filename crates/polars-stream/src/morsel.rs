@@ -23,6 +23,17 @@ impl MorselSeq {
     pub fn new(seq: u64) -> Self {
         Self(seq.checked_mul(2).unwrap())
     }
+
+    // The morsel sequence id which comes after this morsel.
+    pub fn successor(self) -> Self {
+        // We increment by two because in the future we want to use the least
+        // significant bit to indicate the final morsel with that sequence id.
+        Self(self.0.checked_add(2).unwrap())
+    }
+
+    pub fn to_u64(self) -> u64 {
+        self.0
+    }
 }
 
 pub struct Morsel {

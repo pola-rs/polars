@@ -8,6 +8,7 @@
 .yarn/
 coverage.lcov
 coverage.xml
+profile.json
 polars/vendor
 
 # OS

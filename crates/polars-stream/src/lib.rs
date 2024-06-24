@@ -13,3 +13,4 @@ mod graph;
 mod morsel;
 mod nodes;
 mod physical_plan;
+mod utils;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::PolarsResult;
+use polars_error::{polars_err, PolarsResult};
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 
@@ -35,7 +35,14 @@ impl ComputeNode for FilterNode {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.try_map(|df| {
                     let mask = self.predicate.evaluate(&df, state)?;
-                    df.filter(mask.bool().unwrap())
+                    let mask = mask.bool().map_err(|_| {
+                        polars_err!(
+                            ComputeError: "filter predicate must be of type `Boolean`, got `{}`", mask.dtype()
+                        )
+                    })?;
+
+                    // We already parallelize, call the sequential filter.
+                    df._filter_seq(mask)
                 })?;
 
                 if morsel.df().is_empty() {

@@ -3395,6 +3395,7 @@ dependencies = [
  "polars-plan",
  "polars-utils",
  "rand",
+ "rayon",
  "recursive",
  "slotmap",
  "version_check",
