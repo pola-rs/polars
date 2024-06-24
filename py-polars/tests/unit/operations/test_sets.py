@@ -20,6 +20,21 @@ def test_set_intersection_13765() -> None:
     df.select(pl.col("a").list.set_intersection("a_other")).to_dict(as_series=False)
 
 
+def test_set_intersection_st_17129() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [2, 2, 4]})
+
+    assert df.with_columns(
+        pl.col("b")
+        .over("a", mapping_strategy="join")
+        .list.set_intersection([4, 8])
+        .alias("intersect")
+    ).to_dict(as_series=False) == {
+        "a": [1, 2, 2],
+        "b": [2, 2, 4],
+        "intersect": [[], [4], [4]],
+    }
+
+
 @pytest.mark.parametrize(
     ("set_operation", "outcome"),
     [
