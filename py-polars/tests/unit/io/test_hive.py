@@ -1,6 +1,8 @@
+import os
 import warnings
 from collections import OrderedDict
 from functools import partial
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,13 +14,11 @@ from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-@pytest.mark.skip(
-    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
-)
-@pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk()
-def test_hive_partitioned_predicate_pushdown(
-    io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
+def impl_test_hive_partitioned_predicate_pushdown(
+    io_files_path: Path,
+    tmp_path: Path,
+    monkeypatch: Any,
+    capfd: Any,
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
@@ -72,6 +72,79 @@ def test_hive_partitioned_predicate_pushdown(
     )
 
 
+@pytest.mark.xdist_group("streaming")
+@pytest.mark.write_disk()
+def test_hive_partitioned_predicate_pushdown(
+    io_files_path: Path,
+    tmp_path: Path,
+    monkeypatch: Any,
+    capfd: Any,
+) -> None:
+    impl_test_hive_partitioned_predicate_pushdown(
+        io_files_path,
+        tmp_path,
+        monkeypatch,
+        capfd,
+    )
+
+
+def init_env_spawned_single_threaded_async() -> None:
+    os.environ["SPAWNED_PROCESS"] = "1"
+    os.environ["POLARS_MAX_THREADS"] = "1"
+    os.environ["POLARS_PREFETCH_SIZE"] = "1"
+
+
+@pytest.mark.xdist_group("streaming")
+@pytest.mark.write_disk()
+def test_hive_partitioned_predicate_pushdown_single_threaded_async(
+    io_files_path: Path,
+    tmp_path: Path,
+    monkeypatch: Any,
+    capfd: Any,
+) -> None:
+    # We need to run this in a separate process to avoid leakage of
+    # `POLARS_MAX_THREADS`. You can test this locally (on a
+    # system with > 1 threads) by removing the process-spawning logic and
+    # directly calling `init_env_spawned_single_threaded_async`, and then
+    # running:
+    # ```
+    # python -m pytest py-polars/tests/unit/io/ -m '' -k \
+    #   test_hive_partitioned_predicate_pushdown
+    # ```
+    # And observe that the below assertion of `thread_pool_size` will fail.
+    if "SPAWNED_PROCESS" not in os.environ:
+        with get_context("spawn").Pool(
+            1, initializer=init_env_spawned_single_threaded_async
+        ) as p:
+            pytest_path = Path(__file__).relative_to(Path.cwd())
+            pytest_path: str = f"{pytest_path}::test_hive_partitioned_predicate_pushdown_single_threaded_async"  # type: ignore[no-redef]
+
+            assert (
+                p.map(
+                    pytest.main,  # type: ignore[arg-type]
+                    [
+                        [
+                            pytest_path,
+                            "-m",
+                            "",
+                        ]
+                    ],
+                )[0]
+                == 0
+            )
+
+        return
+
+    assert pl.thread_pool_size() == 1
+
+    impl_test_hive_partitioned_predicate_pushdown(
+        io_files_path,
+        tmp_path,
+        monkeypatch,
+        capfd,
+    )
+
+
 @pytest.mark.write_disk()
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
@@ -102,9 +175,6 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     assert result.to_dict(as_series=False) == expected
 
 
-@pytest.mark.skip(
-    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
-)
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
@@ -139,9 +209,6 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
         ]
 
 
-@pytest.mark.skip(
-    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
-)
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(
@@ -443,3 +510,31 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
         out = pl.scan_parquet(tmp_path).collect()
 
         assert_series_equal(out["a"], expected[i])
+
+
+@pytest.mark.write_disk()
+def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+
+    dfs = [
+        pl.DataFrame({"x": 1}),
+        pl.DataFrame({"x": 2}),
+        pl.DataFrame({"x": 3}),
+    ]
+
+    paths = [
+        tmp_path / "a=1/b=1/data.bin",
+        tmp_path / "a=2/b=2/data.bin",
+        tmp_path / "a=3/b=3/data.bin",
+    ]
+
+    for i in range(3):
+        paths[i].parent.mkdir(exist_ok=True, parents=True)
+        dfs[i].write_parquet(paths[i])
+
+    lf = pl.scan_parquet(tmp_path)
+
+    assert_frame_equal(
+        lf.collect(), pl.DataFrame({k: [1, 2, 3] for k in ["x", "a", "b"]})
+    )

@@ -378,7 +378,7 @@ impl<'a> PredicatePushDown<'a> {
                                 }
                                 scan_type.remove_metadata();
                             }
-                            if paths.is_empty() {
+                            if new_paths.is_empty() {
                                 let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
                                 let df = DataFrame::from(schema.as_ref());
 
@@ -390,7 +390,7 @@ impl<'a> PredicatePushDown<'a> {
                                 });
                             } else {
                                 paths = Arc::from(new_paths);
-                                scan_hive_parts = Some(new_hive_parts);
+                                scan_hive_parts = Some(Arc::from(new_hive_parts));
                             }
                         }
                     }

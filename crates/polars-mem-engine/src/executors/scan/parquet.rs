@@ -7,7 +7,6 @@ use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetaDataRef;
-use polars_io::parquet::read::materialize_empty_df;
 use polars_io::utils::is_cloud_url;
 use polars_io::RowIndex;
 
@@ -16,7 +15,7 @@ use super::*;
 pub struct ParquetExec {
     paths: Arc<[PathBuf]>,
     file_info: FileInfo,
-    hive_parts: Option<Vec<Arc<HivePartitions>>>,
+    hive_parts: Option<Arc<[HivePartitions]>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     #[allow(dead_code)]
@@ -31,7 +30,7 @@ impl ParquetExec {
     pub(crate) fn new(
         paths: Arc<[PathBuf]>,
         file_info: FileInfo,
-        hive_parts: Option<Vec<Arc<HivePartitions>>>,
+        hive_parts: Option<Arc<[HivePartitions]>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
@@ -186,7 +185,12 @@ impl ParquetExec {
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_index = self.file_options.row_index.take();
         let mut processed = 0;
-        for (batch_idx, paths) in self.paths.chunks(batch_size).enumerate() {
+
+        for batch_start in (0..self.paths.len()).step_by(batch_size) {
+            let end = std::cmp::min(batch_start.saturating_add(batch_size), self.paths.len());
+            let paths = &self.paths[batch_start..end];
+            let hive_parts = self.hive_parts.as_ref().map(|x| &x[batch_start..end]);
+
             if remaining_rows_to_read == 0 && !result.is_empty() {
                 return Ok(result);
             }
@@ -201,7 +205,7 @@ impl ParquetExec {
 
             // First initialize the readers and get the metadata concurrently.
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
-                let first_file = batch_idx == 0 && i == 0;
+                let first_file = batch_start == 0 && i == 0;
                 // use the cached one as this saves a cloud call
                 let (metadata, schema) = if first_file {
                     (first_metadata.clone(), Some((*first_schema).clone()))
@@ -255,8 +259,7 @@ impl ParquetExec {
             let iter = readers_and_metadata.into_iter().enumerate().map(
                 |(i, (num_rows_this_file, reader))| {
                     let (remaining_rows_to_read, cumulative_read) = &rows_statistics[i];
-                    let hive_partitions = self
-                        .hive_parts
+                    let hive_partitions = hive_parts
                         .as_ref()
                         .map(|x| x[i].materialize_partition_columns());
 
@@ -324,34 +327,7 @@ impl ParquetExec {
             .and_then(|_| self.predicate.take())
             .map(phys_expr_to_io_expr);
 
-        let is_cloud = match self.paths.first() {
-            Some(p) => is_cloud_url(p.as_path()),
-            None => {
-                let hive_partitions = self
-                    .hive_parts
-                    .as_ref()
-                    .filter(|x| !x.is_empty())
-                    .map(|x| x.first().unwrap().materialize_partition_columns());
-                let (projection, _) = prepare_scan_args(
-                    None,
-                    &mut self.file_options.with_columns,
-                    &mut self.file_info.schema,
-                    self.file_options.row_index.is_some(),
-                    hive_partitions.as_deref(),
-                );
-                return Ok(materialize_empty_df(
-                    projection.as_deref(),
-                    self.file_info
-                        .reader_schema
-                        .as_ref()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap_left(),
-                    hive_partitions.as_deref(),
-                    self.file_options.row_index.as_ref(),
-                ));
-            },
-        };
+        let is_cloud = is_cloud_url(self.paths.first().unwrap());
         let force_async = config::force_async();
 
         let out = if is_cloud || force_async {
