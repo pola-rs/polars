@@ -28,13 +28,13 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
 
 
+UnionTypeOld = type(Union[int, str])
 if sys.version_info >= (3, 10):
     from types import NoneType, UnionType
 else:
     # Define equivalent for older Python versions
     NoneType = type(None)
-    UnionType = type(int | str)
-UnionTypeOld = type(Union[int, str])
+    UnionType = UnionTypeOld
 
 
 def parse_into_dtype(input: Any) -> PolarsDataType:
@@ -108,9 +108,6 @@ def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
         _raise_on_invalid_dtype(input)
 
     inner_types = input.__args__
-    if inner_types is None:
-        return List
-
     inner_type = inner_types[0]
     if len(inner_types) > 1:
         all_equal = all(t in (inner_type, ...) for t in inner_types)
