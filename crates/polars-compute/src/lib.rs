@@ -9,11 +9,11 @@ use arrow::types::NativeType;
 
 pub mod arithmetic;
 pub mod comparisons;
-pub mod distinct_count;
 pub mod filter;
 pub mod float_sum;
 pub mod if_then_else;
 pub mod min_max;
+pub mod unique;
 
 pub mod arity;
 
