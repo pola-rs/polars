@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.datatypes._parse import (
     _parse_forward_ref_into_dtype,
+    _parse_generic_into_dtype,
     _parse_union_type_into_dtype,
     parse_into_dtype,
     parse_py_type_into_dtype,
@@ -50,6 +51,31 @@ def test_parse_py_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
+        (list[int], pl.List(pl.Int64())),
+        (tuple[str, ...], pl.List(pl.String())),
+        (tuple[datetime, datetime], pl.List(pl.Datetime("us"))),
+    ],
+)
+def test_parse_generic_into_dtype(input: Any, expected: PolarsDataType) -> None:
+    result = _parse_generic_into_dtype(input)
+    assert_dtype_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        tuple[int, str],
+        tuple[float, date, ...],
+    ],
+)
+def test_parse_generic_into_dtype_invalid(input: Any) -> None:
+    with pytest.raises(TypeError):
+        _parse_generic_into_dtype(input)
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
         (ForwardRef("date"), pl.Date()),
     ],
 )
@@ -72,7 +98,13 @@ def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> No
     assert_dtype_equal(result, expected)
 
 
-@pytest.mark.parametrize("input", [Union[int, float], Optional[Union[int, str]]])
+@pytest.mark.parametrize(
+    "input",
+    [
+        Union[int, float],
+        Optional[Union[int, str]],
+    ],
+)
 def test_parse_union_type_into_dtype_invalid(input: Any) -> None:
     with pytest.raises(TypeError):
         _parse_union_type_into_dtype(input)

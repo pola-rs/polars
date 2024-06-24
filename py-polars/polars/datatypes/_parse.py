@@ -38,16 +38,20 @@ UnionTypeOld = type(Union[int, str])
 
 
 def parse_into_dtype(input: Any) -> PolarsDataType:
-    """Parse an input into a Polars data type."""
+    """
+    Parse an input into a Polars data type.
+
+    Raises
+    ------
+    TypeError
+        If the input cannot be parsed into a Polars data type.
+    """
     if is_polars_dtype(input):
         return input
-
     elif isinstance(input, ForwardRef):
         return _parse_forward_ref_into_dtype(input)
-
     elif isinstance(input, (UnionType, UnionTypeOld)):
         return _parse_union_type_into_dtype(input)
-
     else:
         return parse_py_type_into_dtype(input)
 
@@ -91,18 +95,31 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return List
 
     elif hasattr(input, "__origin__") and hasattr(input, "__args__"):
-        base_type = input.__origin__
-        if base_type is not None:
-            dtype = parse_py_type_into_dtype(base_type)
-            nested = input.__args__
-            if len(nested) == 1:
-                nested = nested[0]
-            return (
-                dtype if nested is None else dtype(parse_py_type_into_dtype(nested))  # type: ignore[operator]
-            )
+        return _parse_generic_into_dtype(input)
 
     else:
         _raise_on_invalid_dtype(input)
+
+
+def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
+    """Parse a generic type into a Polars data type."""
+    base_type = input.__origin__
+    if base_type not in (tuple, list):
+        _raise_on_invalid_dtype(input)
+
+    inner_types = input.__args__
+    if inner_types is None:
+        return List
+
+    inner_type = inner_types[0]
+    if len(inner_types) > 1:
+        all_equal = all(t in (inner_type, ...) for t in inner_types)
+        if not all_equal:
+            _raise_on_invalid_dtype(input)
+
+    inner_type = inner_types[0]
+    inner_dtype = parse_py_type_into_dtype(inner_type)
+    return List(inner_dtype)
 
 
 PY_TYPE_STR_TO_DTYPE: SchemaDict = {
@@ -114,9 +131,9 @@ PY_TYPE_STR_TO_DTYPE: SchemaDict = {
     "date": Date(),
     "time": Time(),
     "datetime": Datetime("us"),
-    "timedelta": Duration("us"),
     "object": Object(),
     "NoneType": Null(),
+    "timedelta": Duration,
     "Decimal": Decimal,
     "list": List,
     "tuple": List,
@@ -150,7 +167,7 @@ def _parse_union_type_into_dtype(input: UnionType | UnionTypeOld) -> PolarsDataT
     # Strip "optional" designation - Polars data types are always nullable
     inner_types = [tp for tp in get_args(input) if tp is not NoneType]
 
-    if len(inner_types) > 1:
+    if len(inner_types) != 1:
         _raise_on_invalid_dtype(input)
 
     input = inner_types[0]
