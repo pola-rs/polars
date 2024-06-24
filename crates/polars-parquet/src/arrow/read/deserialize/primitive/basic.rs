@@ -12,7 +12,7 @@ use super::super::utils::{
 };
 use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 
@@ -97,6 +97,8 @@ where
     OptionalDictionary(OptionalPageValidity<'a>, ValuesDictionary<'a, T>),
     FilteredRequired(FilteredRequiredValues<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
+    RequiredByteStreamSplit(byte_stream_split::Decoder<'a>),
+    OptionalByteStreamSplit(OptionalPageValidity<'a>, byte_stream_split::Decoder<'a>),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -111,6 +113,8 @@ where
             State::OptionalDictionary(optional, _) => optional.len(),
             State::FilteredRequired(values) => values.len(),
             State::FilteredOptional(optional, _) => optional.len(),
+            State::RequiredByteStreamSplit(decoder) => decoder.len(),
+            State::OptionalByteStreamSplit(optional, _) => optional.len(),
         }
     }
 }
@@ -191,6 +195,20 @@ where
                 FilteredOptionalPageValidity::try_new(page)?,
                 Values::try_new::<P>(page)?,
             )),
+            (Encoding::ByteStreamSplit, _, false, false) => {
+                let values = split_buffer(page)?.values;
+                Ok(State::RequiredByteStreamSplit(
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
+            (Encoding::ByteStreamSplit, _, true, false) => {
+                let validity = OptionalPageValidity::try_new(page)?;
+                let values = split_buffer(page)?.values;
+                Ok(State::OptionalByteStreamSplit(
+                    validity,
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -260,6 +278,16 @@ where
                     page_values.values.by_ref().map(decode).map(self.op),
                 );
             },
+            State::RequiredByteStreamSplit(decoder) => {
+                values.extend(decoder.iter_converted(decode).map(self.op).take(remaining));
+            },
+            State::OptionalByteStreamSplit(page_validity, decoder) => utils::extend_from_decoder(
+                validity,
+                page_validity,
+                Some(remaining),
+                values,
+                decoder.iter_converted(decode).map(self.op),
+            ),
         }
         Ok(())
     }

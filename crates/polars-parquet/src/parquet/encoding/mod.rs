@@ -1,4 +1,5 @@
 pub mod bitpacked;
+pub mod byte_stream_split;
 pub mod delta_bitpacked;
 pub mod delta_byte_array;
 pub mod delta_length_byte_array;
