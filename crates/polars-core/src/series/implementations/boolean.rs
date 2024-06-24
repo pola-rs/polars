@@ -101,8 +101,8 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
-    fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
-        self.metadata().map(|v| v as &dyn MetadataTrait)
+    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        self.metadata_dyn()
     }
 
     fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
