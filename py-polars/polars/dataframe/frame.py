@@ -654,7 +654,6 @@ class DataFrame:
         Format measure_b values to two decimal places:
 
         >>> df.style.fmt_number("measure_b", decimals=2)  # doctest: +SKIP
-
         """
         if not _GREAT_TABLES_AVAILABLE:
             msg = "great_tables is required for `.style`"
@@ -3601,7 +3600,7 @@ class DataFrame:
             Additional options to pass to the engine's associated insert method:
 
             * "sqlalchemy" - currently inserts using Pandas' `to_sql` method, though
-              this will eventually be phased out in favour of a native solution.
+              this will eventually be phased out in favor of a native solution.
             * "adbc" - inserts using the ADBC cursor's `adbc_ingest` method.
 
         Examples
