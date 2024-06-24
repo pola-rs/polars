@@ -663,6 +663,45 @@ fn scan_anonymous_fn() -> PolarsResult<()> {
 }
 
 #[test]
+fn scan_anonymous_fn_with_options() -> PolarsResult<()> {
+    struct MyScan {}
+
+    impl AnonymousScan for MyScan {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn allows_projection_pushdown(&self) -> bool {
+            true
+        }
+
+        fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
+            assert_eq!(scan_opts.with_columns.clone().unwrap().len(), 2);
+            assert_eq!(scan_opts.n_rows, Some(3));
+            let out = fruits_cars().select(scan_opts.with_columns.unwrap().as_ref())?;
+            Ok(out.slice(0, scan_opts.n_rows.unwrap()))
+        }
+    }
+
+    let function = Arc::new(MyScan {});
+
+    let args = ScanArgsAnonymous {
+        schema: Some(Arc::new(fruits_cars().schema())),
+        ..ScanArgsAnonymous::default()
+    };
+
+    let q = LazyFrame::anonymous_scan(function, args)?
+        .with_column((col("A") * lit(2)).alias("A2"))
+        .select([col("A2"), col("fruits")])
+        .limit(3);
+
+    let df = q.collect()?;
+
+    assert_eq!(df.shape(), (3, 2));
+    Ok(())
+}
+
+#[test]
 #[cfg(feature = "dtype-full")]
 fn scan_small_dtypes() -> PolarsResult<()> {
     let small_dt = vec![
