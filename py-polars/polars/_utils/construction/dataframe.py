@@ -650,7 +650,7 @@ def _sequence_of_tuple_to_pydf(
     orient: Orientation | None,
     infer_schema_length: int | None,
 ) -> PyDataFrame:
-    # infer additional meta information if named tuple
+    # infer additional meta information if namedtuple
     if is_namedtuple(first_element.__class__):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, ForwardRef, Optional, Union
+from typing import TYPE_CHECKING, Any, ForwardRef, NamedTuple, Optional, Union
 
 import pytest
 
@@ -108,3 +108,17 @@ def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> No
 def test_parse_union_type_into_dtype_invalid(input: Any) -> None:
     with pytest.raises(TypeError):
         _parse_union_type_into_dtype(input)
+
+
+def test_parse_dtype_namedtuple_fields() -> None:
+    # Utilizes ForwardRef parsing
+
+    class MyTuple(NamedTuple):
+        a: str
+        b: int
+        c: str | None = None
+
+    schema = {c: parse_into_dtype(a) for c, a in MyTuple.__annotations__.items()}
+
+    expected = pl.Schema({"a": pl.String(), "b": pl.Int64(), "c": pl.String()})
+    assert schema == expected
