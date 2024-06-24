@@ -1,5 +1,7 @@
-use arrow::array::{Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray};
-use arrow::types::NativeType;
+use arrow::array::{
+    Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
+};
+use arrow::types::{NativeType, Offset};
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;
@@ -133,6 +135,68 @@ impl MinMaxKernel for Utf8ViewArray {
     #[inline(always)]
     fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
         self.to_binview().max_ignore_nan_kernel().map(|s| unsafe {
+            // SAFETY: the lifetime is the same, and it is valid UTF-8.
+            #[allow(clippy::transmute_bytes_to_str)]
+            std::mem::transmute::<&[u8], &str>(s)
+        })
+    }
+
+    #[inline(always)]
+    fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.min_ignore_nan_kernel()
+    }
+
+    #[inline(always)]
+    fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.max_ignore_nan_kernel()
+    }
+}
+
+impl<O: Offset> MinMaxKernel for BinaryArray<O> {
+    type Scalar<'a> = &'a [u8];
+
+    fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        if self.null_count() == 0 {
+            self.values_iter().reduce(MinMax::min_ignore_nan)
+        } else {
+            self.non_null_values_iter().reduce(MinMax::min_ignore_nan)
+        }
+    }
+
+    fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        if self.null_count() == 0 {
+            self.values_iter().reduce(MinMax::max_ignore_nan)
+        } else {
+            self.non_null_values_iter().reduce(MinMax::max_ignore_nan)
+        }
+    }
+
+    #[inline(always)]
+    fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.min_ignore_nan_kernel()
+    }
+
+    #[inline(always)]
+    fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.max_ignore_nan_kernel()
+    }
+}
+
+impl<O: Offset> MinMaxKernel for Utf8Array<O> {
+    type Scalar<'a> = &'a str;
+
+    #[inline(always)]
+    fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.to_binary().min_ignore_nan_kernel().map(|s| unsafe {
+            // SAFETY: the lifetime is the same, and it is valid UTF-8.
+            #[allow(clippy::transmute_bytes_to_str)]
+            std::mem::transmute::<&[u8], &str>(s)
+        })
+    }
+
+    #[inline(always)]
+    fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+        self.to_binary().max_ignore_nan_kernel().map(|s| unsafe {
             // SAFETY: the lifetime is the same, and it is valid UTF-8.
             #[allow(clippy::transmute_bytes_to_str)]
             std::mem::transmute::<&[u8], &str>(s)
