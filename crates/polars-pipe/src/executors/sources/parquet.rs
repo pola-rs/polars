@@ -40,7 +40,7 @@ pub struct ParquetSource {
     cloud_options: Option<CloudOptions>,
     metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
-    hive_parts: Option<Vec<Arc<HivePartitions>>>,
+    hive_parts: Option<Arc<[HivePartitions]>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -192,7 +192,7 @@ impl ParquetSource {
         metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        hive_parts: Option<Vec<Arc<HivePartitions>>>,
+        hive_parts: Option<Arc<[HivePartitions]>>,
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {

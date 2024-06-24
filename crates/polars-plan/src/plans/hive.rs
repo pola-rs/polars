@@ -9,7 +9,7 @@ use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HivePartitions {
     /// Single value Series that can be used to run the predicate against.
     /// They are to be broadcasted if the predicates don't filter them out.
@@ -17,6 +17,32 @@ pub struct HivePartitions {
 }
 
 impl HivePartitions {
+    pub fn get_projection_schema_and_indices<T: AsRef<str>>(
+        &self,
+        names: &[T],
+    ) -> (SchemaRef, Vec<usize>) {
+        let names = names.iter().map(T::as_ref).collect::<PlHashSet<&str>>();
+        let mut out_schema = Schema::with_capacity(self.stats.schema().len());
+        let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
+
+        for (i, cs) in self.stats.column_stats().iter().enumerate() {
+            let name = cs.field_name();
+            if names.contains(name.as_str()) {
+                out_indices.push(i);
+                out_schema
+                    .insert_at_index(out_schema.len(), name.clone(), cs.dtype().clone())
+                    .unwrap();
+            }
+        }
+
+        (out_schema.into(), out_indices)
+    }
+
+    pub fn apply_projection(&mut self, new_schema: SchemaRef, column_indices: &[usize]) {
+        self.stats.with_schema(new_schema);
+        self.stats.take_indices(column_indices);
+    }
+
     pub fn get_statistics(&self) -> &BatchStats {
         &self.stats
     }
@@ -40,7 +66,7 @@ pub fn hive_partitions_from_paths(
     paths: &[PathBuf],
     hive_start_idx: usize,
     schema: Option<SchemaRef>,
-) -> PolarsResult<Option<Vec<Arc<HivePartitions>>>> {
+) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
     let Some(path) = paths.first() else {
         return Ok(None);
     };
@@ -131,10 +157,10 @@ pub fn hive_partitions_from_paths(
 
         let stats = BatchStats::new(hive_schema.clone(), column_stats, None);
 
-        hive_partitions.push(Arc::new(HivePartitions { stats }));
+        hive_partitions.push(HivePartitions { stats });
     }
 
-    Ok(Some(hive_partitions))
+    Ok(Some(Arc::from(hive_partitions)))
 }
 
 /// Determine the path separator for identifying Hive partitions.

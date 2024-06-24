@@ -81,7 +81,7 @@ pub enum DslPlan {
         paths: Arc<[PathBuf]>,
         // Option as this is mostly materialized on the IR phase.
         file_info: Option<FileInfo>,
-        hive_parts: Option<Vec<Arc<HivePartitions>>>,
+        hive_parts: Option<Arc<[HivePartitions]>>,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
         scan_type: FileScan,
