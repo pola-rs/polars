@@ -19,9 +19,17 @@ def df_struct() -> pl.DataFrame:
     ).select(pl.struct(pl.all()).alias("json_msg"))
 
 
-def test_struct_field_selection(df_struct: pl.DataFrame) -> None:
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        "ORDER BY json_msg.id DESC",
+        "ORDER BY 2 DESC",
+        "",
+    ],
+)
+def test_struct_field_selection(order_by: str, df_struct: pl.DataFrame) -> None:
     res = df_struct.sql(
-        """
+        f"""
         SELECT
           -- validate table alias resolution
           frame.json_msg.id AS ID,
@@ -32,10 +40,12 @@ def test_struct_field_selection(df_struct: pl.DataFrame) -> None:
         WHERE
           json_msg.age > 20 AND
           json_msg.other.n IS NOT NULL  -- note: nested struct field
-        ORDER BY
-          json_msg.name DESC
+        {order_by}
         """
     )
+    if not order_by:
+        res = res.sort(by="ID", descending=True)
+
     expected = pl.DataFrame({"ID": [400, 200], "NAME": ["Zoe", "Bob"], "AGE": [45, 45]})
     assert_frame_equal(expected, res)
 

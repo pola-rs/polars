@@ -5,21 +5,30 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import DuplicateError
+from polars.exceptions import DuplicateError, SQLInterfaceError
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture()
 def df() -> pl.DataFrame:
-    return pl.DataFrame({"num": [999, 666], "str": ["b", "a"], "val": [2.0, 0.5]})
+    return pl.DataFrame(
+        {
+            "ID": [333, 999],
+            "FirstName": ["Bruce", "Clark"],
+            "LastName": ["Wayne", "Kent"],
+            "Address": ["The Batcave", "Fortress of Solitude"],
+            "City": ["Gotham", "Metropolis"],
+        }
+    )
 
 
 @pytest.mark.parametrize(
     ("excluded", "expected"),
     [
-        ("num", ["str", "val"]),
-        ("(val, num)", ["str"]),
-        ("(str, num)", ["val"]),
-        ("(str, val, num)", []),
+        ("ID", ["FirstName", "LastName", "Address", "City"]),
+        ("(ID)", ["FirstName", "LastName", "Address", "City"]),
+        ("(Address, LastName, FirstName)", ["ID", "City"]),
+        ('("ID", "FirstName", "LastName", "Address", "City")', []),
     ],
 )
 def test_select_exclude(
@@ -30,18 +39,65 @@ def test_select_exclude(
     assert df.sql(f"SELECT * EXCLUDE {excluded} FROM self").columns == expected
 
 
+def test_select_exclude_order_by(
+    df: pl.DataFrame,
+) -> None:
+    expected = pl.DataFrame(
+        {
+            "FirstName": ["Clark", "Bruce"],
+            "Address": ["Fortress of Solitude", "The Batcave"],
+        }
+    )
+    for order_by in ("ORDER BY 2", "ORDER BY 1 DESC"):
+        actual = df.sql(f"SELECT * EXCLUDE (ID,LastName,City) FROM self {order_by}")
+        assert_frame_equal(actual, expected)
+
+
 def test_select_exclude_error(df: pl.DataFrame) -> None:
-    with pytest.raises(DuplicateError, match="the name 'num' is duplicate"):
-        # note: missing "()" around the exclude option results in dupe col
-        assert df.sql("SELECT * EXCLUDE val, num FROM self")
+    # EXCLUDE and ILIKE are not allowed together
+    with pytest.raises(SQLInterfaceError, match="ILIKE"):
+        assert df.sql("SELECT * EXCLUDE Address ILIKE '%o%' FROM self")
+
+    # note: missing "()" around the exclude option results in dupe col
+    with pytest.raises(DuplicateError, match="the name 'City' is duplicate"):
+        assert df.sql("SELECT * EXCLUDE Address, City FROM self")
+
+
+def test_ilike(df: pl.DataFrame) -> None:
+    assert df.sql("SELECT * ILIKE 'a%e' FROM self").columns == []
+    assert df.sql("SELECT * ILIKE '%nam_' FROM self").columns == [
+        "FirstName",
+        "LastName",
+    ]
+    assert df.sql("SELECT * ILIKE '%a%e%' FROM self").columns == [
+        "FirstName",
+        "LastName",
+        "Address",
+    ]
+    assert df.sql(
+        """SELECT * ILIKE '%I%' RENAME (FirstName AS Name) FROM self"""
+    ).columns == [
+        "ID",
+        "Name",
+        "City",
+    ]
 
 
 @pytest.mark.parametrize(
     ("renames", "expected"),
     [
-        ("val AS value", ["num", "str", "value"]),
-        ("(num AS flt)", ["flt", "str", "val"]),
-        ("(val AS value, num AS flt)", ["flt", "str", "value"]),
+        (
+            "Address AS Location",
+            ["ID", "FirstName", "LastName", "Location", "City"],
+        ),
+        (
+            '(Address AS "Location")',
+            ["ID", "FirstName", "LastName", "Location", "City"],
+        ),
+        (
+            '("Address" AS Location, "ID" AS PersonID)',
+            ["PersonID", "FirstName", "LastName", "Location", "City"],
+        ),
     ],
 )
 def test_select_rename(
@@ -53,27 +109,30 @@ def test_select_rename(
 
 
 @pytest.mark.parametrize(
-    ("replacements", "check_cols", "expected"),
+    ("replacements", "order_by", "check_cols", "expected"),
     [
         (
-            "(num // 3 AS num)",
-            ["num"],
-            [(333,), (222,)],
+            "(ID // 3 AS ID)",
+            "",
+            ["ID"],
+            [(111,), (333,)],
         ),
         (
-            "((str || str) AS str, num / 3 AS num)",
-            ["num", "str"],
-            [(333, "bb"), (222, "aa")],
+            "((City || ':' || City) AS City, ID // 3 AS ID)",
+            "ORDER BY ID DESC",
+            ["City", "ID"],
+            [("Metropolis:Metropolis", 333), ("Gotham:Gotham", 111)],
         ),
     ],
 )
 def test_select_replace(
     replacements: str,
+    order_by: str,
     check_cols: list[str],
     expected: list[tuple[Any]],
     df: pl.DataFrame,
 ) -> None:
-    res = df.sql(f"SELECT * REPLACE {replacements} FROM self")
+    res = df.sql(f"SELECT * REPLACE {replacements} FROM self {order_by}")
 
     assert res.select(check_cols).rows() == expected
     assert res.columns == df.columns
