@@ -1,5 +1,10 @@
 use polars_utils::min_max::MinMax;
 
+pub use self::dyn_array::{
+    dyn_array_max_ignore_nan, dyn_array_max_propagate_nan, dyn_array_min_ignore_nan,
+    dyn_array_min_propagate_nan,
+};
+
 // Low-level min/max kernel.
 pub trait MinMaxKernel {
     type Scalar<'a>: MinMax
@@ -33,6 +38,7 @@ impl NotSimdPrimitive for u128 {}
 #[cfg(feature = "simd")]
 impl NotSimdPrimitive for i128 {}
 
+mod dyn_array;
 mod scalar;
 
 #[cfg(feature = "simd")]
