@@ -1,7 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
+use arrow::scalar::PrimitiveScalar;
 use arrow::types::NativeType;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::total_ord::TotalOrd;
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
@@ -175,19 +175,23 @@ where
         max_value: options
             .max_value
             .then(|| {
-                array
-                    .non_null_values_iter()
-                    .max_by(TotalOrd::tot_cmp)
-                    .map(T::as_)
+                let scalar =
+                    polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array);
+                scalar.and_then(|s| {
+                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
+                    s.value().map(|x| x.as_())
+                })
             })
             .flatten(),
         min_value: options
             .min_value
             .then(|| {
-                array
-                    .non_null_values_iter()
-                    .min_by(TotalOrd::tot_cmp)
-                    .map(T::as_)
+                let scalar =
+                    polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array);
+                scalar.and_then(|s| {
+                    let s = s.as_any().downcast_ref::<PrimitiveScalar<T>>().unwrap();
+                    s.value().map(|x| x.as_())
+                })
             })
             .flatten(),
     }
