@@ -429,9 +429,7 @@ impl ProjectionPushDown {
                             &file_info.schema,
                             scan_type.sort_projection(&file_options),
                         )?;
-                        // Hive partitions are created AFTER the projection, so the output
-                        // schema is incorrect. Here we ensure the columns that are projected and hive
-                        // parts are added at the proper place in the schema, which is at the end.
+
                         hive_parts = if let Some(hive_parts) = hive_parts {
                             let (new_schema, projected_indices) = hive_parts[0]
                                 .get_projection_schema_and_indices(with_columns.as_ref());
@@ -453,6 +451,9 @@ impl ProjectionPushDown {
                             hive_parts
                         };
 
+                        // Hive partitions are created AFTER the projection, so the output
+                        // schema is incorrect. Here we ensure the columns that are projected and hive
+                        // parts are added at the proper place in the schema, which is at the end.
                         if let Some(ref mut hive_parts) = hive_parts {
                             let partition_schema = hive_parts.first().unwrap().schema();
 
