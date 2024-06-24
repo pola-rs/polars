@@ -370,6 +370,7 @@ impl PyDataFrame {
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
+        float_scientific: Option<bool>,
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
@@ -390,6 +391,7 @@ impl PyDataFrame {
                     .with_datetime_format(datetime_format)
                     .with_date_format(date_format)
                     .with_time_format(time_format)
+                    .with_float_scientific(float_scientific)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
                     .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
@@ -408,6 +410,7 @@ impl PyDataFrame {
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)
                 .with_time_format(time_format)
+                .with_float_scientific(float_scientific)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())

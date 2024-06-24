@@ -721,7 +721,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, include_bom, include_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, include_bom, include_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_scientific, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
@@ -735,6 +735,7 @@ impl PyLazyFrame {
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
+        float_scientific: Option<bool>,
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
@@ -747,6 +748,7 @@ impl PyLazyFrame {
             date_format,
             time_format,
             datetime_format,
+            float_scientific,
             float_precision,
             separator,
             quote_char,

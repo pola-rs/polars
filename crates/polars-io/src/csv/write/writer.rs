@@ -115,6 +115,14 @@ where
         self
     }
 
+    /// Set the CSV file's forced scientific notation for floats.
+    pub fn with_float_scientific(mut self, scientific: Option<bool>) -> Self {
+        if scientific.is_some() {
+            self.options.float_scientific = scientific;
+        }
+        self
+    }
+
     /// Set the CSV file's float precision.
     pub fn with_float_precision(mut self, precision: Option<usize>) -> Self {
         if precision.is_some() {
