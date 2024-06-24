@@ -153,7 +153,7 @@ def _parse_forward_ref_into_dtype(input: ForwardRef) -> PolarsDataType:
         _raise_on_invalid_dtype(input)
 
 
-def _parse_union_type_into_dtype(input: UnionType | UnionTypeOld) -> PolarsDataType:
+def _parse_union_type_into_dtype(input: Any) -> PolarsDataType:
     """
     Parse a union of types into a Polars data type.
 

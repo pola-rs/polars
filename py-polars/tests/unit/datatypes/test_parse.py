@@ -65,7 +65,7 @@ def test_parse_generic_into_dtype(input: Any, expected: PolarsDataType) -> None:
     "input",
     [
         tuple[int, str],
-        tuple[float, date, ...],
+        tuple[int, float, float],
     ],
 )
 def test_parse_generic_into_dtype_invalid(input: Any) -> None:
