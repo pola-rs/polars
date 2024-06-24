@@ -5,7 +5,7 @@ pub use self::dyn_array::{
     dyn_array_min_propagate_nan,
 };
 
-// Low-level min/max kernel.
+/// Low-level min/max kernel.
 pub trait MinMaxKernel {
     type Scalar<'a>: MinMax
     where
