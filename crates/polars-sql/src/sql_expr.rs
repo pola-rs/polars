@@ -1218,6 +1218,8 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
         },
         Expr::Literal(LiteralValue::Int(n)) if n < 0 => idx,
         Expr::Literal(LiteralValue::Int(n)) => lit(n - 1),
+        // TODO: when 'saturating_sub' is available, should be able
+        //  to streamline the when/then/otherwise block below -
         _ => when(idx.clone().gt(lit(0)))
             .then(idx.clone() - lit(1))
             .otherwise(if null_if_zero {
