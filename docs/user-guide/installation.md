@@ -67,9 +67,13 @@ To use the library import it into your project
     use polars::prelude::*;
     ```
 
-## Feature Flags
+## Feature flags
 
-By using the above command you install the core of Polars onto your system. However depending on your use case you might want to install the optional dependencies as well. These are made optional to minimize the footprint. The flags are different depending on the programming language. Throughout the user guide we will mention when a functionality is used that requires an additional dependency.
+By using the above command you install the core of Polars onto your system.
+However, depending on your use case, you might want to install the optional dependencies as well.
+These are made optional to minimize the footprint.
+The flags are different depending on the programming language.
+Throughout the user guide we will mention when a functionality is used that requires an additional dependency.
 
 ### Python
 
@@ -78,19 +82,65 @@ By using the above command you install the core of Polars onto your system. Howe
 pip install 'polars[numpy,fsspec]'
 ```
 
-| Tag        | Description                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| all        | Install all optional dependencies (all of the following)                                                                              |
-| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series                                                          |
-| numpy      | Install with numpy for converting data to and from numpy arrays                                                                       |
-| pyarrow    | Reading data formats using PyArrow                                                                                                    |
-| fsspec     | Support for reading from remote file systems                                                                                          |
-| connectorx | Support for reading from SQL databases                                                                                                |
-| xlsx2csv   | Support for reading from Excel files                                                                                                  |
-| deltalake  | Support for reading from Delta Lake Tables                                                                                            |
-| plot       | Support for plotting Dataframes                                                                                                       |
-| style      | Support for styling Dataframes                                                                                                        |
-| timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
+#### All
+
+| Tag | Description                       |
+| --- | --------------------------------- |
+| all | Install all optional dependencies |
+
+#### Interop
+
+| Tag      | Description                                       |
+| -------- | ------------------------------------------------- |
+| pandas   | Convert data to and from pandas DataFrames/Series |
+| numpy    | Convert data to and from NumPy arrays             |
+| pyarrow  | Convert data to and from PyArrow tables/arrays    |
+| pydantic | Convert data from Pydantic models to Polars       |
+
+#### Excel
+
+| Tag        | Description                                     |
+| ---------- | ----------------------------------------------- |
+| calamine   | Read from Excel files with the calamine engine  |
+| openpyxl   | Read from Excel files with the openpyxl engine  |
+| xlsx2csv   | Read from Excel files with the xlsx2csv engine  |
+| xlsxwriter | Write to Excel files with the XlsxWriter engine |
+| excel      | Install all supported Excel engines             |
+
+#### Database
+
+| Tag        | Description                                                                         |
+| ---------- | ----------------------------------------------------------------------------------- |
+| adbc       | Read from and write to databases with the Arrow Database Connectivity (ADBC) engine |
+| connectorx | Read from databases with the ConnectorX engine                                      |
+| sqlalchemy | Write to databases with the SQLAlchemy engine                                       |
+| database   | Install all supported database engines                                              |
+
+#### Cloud
+
+| Tag    | Description                                |
+| ------ | ------------------------------------------ |
+| fsspec | Read from and write to remote file systems |
+
+#### Other I/O
+
+| Tag       | Description                         |
+| --------- | ----------------------------------- |
+| deltalake | Read from and write to Delta tables |
+| iceberg   | Read from Apache Iceberg tables     |
+
+#### Other
+
+| Tag         | Description                                    |
+| ----------- | ---------------------------------------------- |
+| async       | Collect LazyFrames asynchronously              |
+| cloudpickle | Serialize user-defined functions               |
+| graph       | Visualize LazyFrames as a graph                |
+| plot        | Plot DataFrames through the `plot` namespace   |
+| style       | Style DataFrames through the `style` namespace |
+| timezone    | Timezone support*                              |
+
+_* Only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows_
 
 ### Rust
 
