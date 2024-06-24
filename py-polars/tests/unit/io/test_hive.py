@@ -117,7 +117,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async(
             1, initializer=init_env_spawned_single_threaded_async
         ) as p:
             pytest_path = Path(__file__).relative_to(Path.cwd())
-            pytest_path = f"{pytest_path}::test_hive_partitioned_predicate_pushdown_single_threaded_async"
+            pytest_path: str = f"{pytest_path}::test_hive_partitioned_predicate_pushdown_single_threaded_async"  # type: ignore[no-redef]
 
             assert (
                 p.map(
