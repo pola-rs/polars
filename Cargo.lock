@@ -3525,6 +3525,7 @@ dependencies = [
  "built",
  "ciborium",
  "either",
+ "flate2",
  "itoa",
  "jemallocator",
  "libc",
