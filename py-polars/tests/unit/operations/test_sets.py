@@ -65,3 +65,15 @@ def test_set_operations_cats(set_operation: str, outcome: list[set[str]]) -> Non
         )
         assert df.get_column("b").dtype == pl.List(pl.Categorical)
         assert [set(el) for el in df["b"].to_list()] == outcome
+
+
+def test_set_invalid_types() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2, 3, 3], "b": [2, 2, 4, 7, 8]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.with_columns(
+            pl.col("b")
+            .implode()
+            .over("a", mapping_strategy="join")
+            .list.set_intersection([1])
+        )
