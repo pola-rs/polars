@@ -5,7 +5,7 @@ import re
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, ForwardRef, Optional, Union, get_args
+from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Optional, Union, get_args
 
 from polars.datatypes.classes import (
     Binary,
@@ -37,56 +37,6 @@ else:
     UnionType = type(Union[int, float])
 
 
-@functools.lru_cache(16)
-def parse_py_type_into_dtype(
-    python_dtype: PythonDataType | type[object],
-) -> PolarsDataType:
-    """Convert Python data type to Polars data type."""
-    if python_dtype is int:
-        return Int64()
-    elif python_dtype is float:
-        return Float64()
-    elif python_dtype is str:
-        return String()
-    elif python_dtype is bool:
-        return Boolean()
-    elif issubclass(python_dtype, datetime):
-        # `datetime` is a subclass of `date`,
-        # so need to check `datetime` first
-        return Datetime("us")
-    elif issubclass(python_dtype, date):
-        return Date()
-    elif python_dtype is timedelta:
-        return Duration
-    elif python_dtype is time:
-        return Time()
-    elif python_dtype is PyDecimal:
-        return Decimal
-    elif python_dtype is bytes:
-        return Binary()
-    elif python_dtype is object:
-        return Object()
-    elif python_dtype is None.__class__:
-        return Null()
-    elif python_dtype is list or python_dtype is tuple:
-        return List
-
-    elif hasattr(python_dtype, "__origin__") and hasattr(python_dtype, "__args__"):
-        base_type = python_dtype.__origin__
-        if base_type is not None:
-            dtype = parse_py_type_into_dtype(base_type)
-            nested = python_dtype.__args__
-            if len(nested) == 1:
-                nested = nested[0]
-            return (
-                dtype if nested is None else dtype(parse_py_type_into_dtype(nested))  # type: ignore[operator]
-            )
-
-    else:
-        msg = f"unrecognized Python type: {python_dtype!r}"
-        raise TypeError(msg)
-
-
 def parse_into_dtype(input: Any) -> PolarsDataType:
     """Parse an input into a Polars data type."""
     if is_polars_dtype(input):
@@ -101,12 +51,63 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
         possible_types = [tp for tp in get_args(input) if tp is not NoneType]
         if len(possible_types) == 1:
             input = possible_types[0]
-
-    try:
         return parse_py_type_into_dtype(input)
-    except (KeyError, TypeError):  # pragma: no cover
-        msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
-        raise TypeError(msg) from None
+
+    else:
+        return parse_py_type_into_dtype(input)
+
+
+def try_parse_into_dtype(input: Any) -> PolarsDataType | None:
+    """Try parsing an input into a Polars data type, returning None on failure."""
+    try:
+        return parse_into_dtype(input)
+    except TypeError:
+        return None
+
+
+@functools.lru_cache(16)
+def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsDataType:
+    """Convert Python data type to Polars data type."""
+    if input is int:
+        return Int64()
+    elif input is float:
+        return Float64()
+    elif input is str:
+        return String()
+    elif input is bool:
+        return Boolean()
+    elif input is date:
+        return Date()
+    elif input is datetime:
+        return Datetime("us")
+    elif input is timedelta:
+        return Duration
+    elif input is time:
+        return Time()
+    elif input is PyDecimal:
+        return Decimal
+    elif input is bytes:
+        return Binary()
+    elif input is object:
+        return Object()
+    elif input is type(None):
+        return Null()
+    elif input is list or input is tuple:
+        return List
+
+    elif hasattr(input, "__origin__") and hasattr(input, "__args__"):
+        base_type = input.__origin__
+        if base_type is not None:
+            dtype = parse_py_type_into_dtype(base_type)
+            nested = input.__args__
+            if len(nested) == 1:
+                nested = nested[0]
+            return (
+                dtype if nested is None else dtype(parse_py_type_into_dtype(nested))  # type: ignore[operator]
+            )
+
+    else:
+        _raise_invalid_dtype(input)
 
 
 PY_TYPE_STR_TO_DTYPE: SchemaDict = {
@@ -137,13 +138,17 @@ def _parse_forward_ref_into_dtype(input: ForwardRef) -> PolarsDataType:
     try:
         return PY_TYPE_STR_TO_DTYPE[formatted]
     except KeyError:
-        msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
-        raise TypeError(msg) from None
+        _raise_invalid_dtype(input)
 
 
-def try_parse_into_dtype(input: Any) -> PolarsDataType | None:
-    """Try parsing an input into a Polars data type, returning None on failure."""
-    try:
-        return parse_into_dtype(input)
-    except TypeError:
-        return None
+def _parse_union_type_into_dtype(input: Any) -> PolarsDataType:
+    # not exhaustive; handles the common "type | None" case, but
+    possible_types = [tp for tp in get_args(input) if tp is not NoneType]
+    if len(possible_types) == 1:
+        input = possible_types[0]
+    return parse_py_type_into_dtype(input)
+
+
+def _raise_invalid_dtype(input: Any) -> NoReturn:
+    msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
+    raise TypeError(msg) from None

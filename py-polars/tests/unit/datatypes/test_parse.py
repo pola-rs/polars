@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, ForwardRef
 
 import pytest
 
 import polars as pl
-from polars.datatypes._parse import _parse_forward_ref_into_dtype, parse_into_dtype
+from polars.datatypes._parse import (
+    _parse_forward_ref_into_dtype,
+    parse_into_dtype,
+    parse_py_type_into_dtype,
+)
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
+
+
+def assert_dtype_equal(left: PolarsDataType, right: PolarsDataType) -> None:
+    assert left == right
+    assert type(left) == type(right)
+    assert hash(left) == hash(right)
 
 
 @pytest.mark.parametrize(
@@ -20,10 +31,19 @@ if TYPE_CHECKING:
 )
 def test_parse_dtype(input: Any, expected: PolarsDataType) -> None:
     result = parse_into_dtype(input)
+    assert_dtype_equal(result, expected)
 
-    assert result == expected
-    assert type(result) == type(expected)
-    assert hash(result) == hash(expected)
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        (datetime, pl.Datetime("us")),
+        (date, pl.Date()),
+    ],
+)
+def test_parse_py_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
+    result = parse_py_type_into_dtype(input)
+    assert_dtype_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -34,7 +54,4 @@ def test_parse_dtype(input: Any, expected: PolarsDataType) -> None:
 )
 def test_parse_forward_ref_into_dtype(input: Any, expected: PolarsDataType) -> None:
     result = _parse_forward_ref_into_dtype(input)
-
-    assert result == expected
-    assert type(result) == type(expected)
-    assert hash(result) == hash(expected)
+    assert_dtype_equal(result, expected)
