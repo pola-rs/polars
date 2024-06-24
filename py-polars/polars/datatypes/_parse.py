@@ -5,7 +5,7 @@ import re
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Optional, Union, get_args
+from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Union, get_args
 
 from polars.datatypes.classes import (
     Binary,
@@ -28,13 +28,13 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
 
 
-OptionType = type(Optional[type])
 if sys.version_info >= (3, 10):
     from types import NoneType, UnionType
 else:
-    # infer equivalent class
+    # Define equivalent for older Python versions
     NoneType = type(None)
-    UnionType = type(Union[int, float])
+    UnionType = type(int | str)
+UnionTypeOld = type(Union[int, str])
 
 
 def parse_into_dtype(input: Any) -> PolarsDataType:
@@ -45,13 +45,8 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
     elif isinstance(input, ForwardRef):
         return _parse_forward_ref_into_dtype(input)
 
-    elif isinstance(input, (OptionType, UnionType)):
-        # not exhaustive; handles the common "type | None" case, but
-        # should probably pick appropriate supertype when n_types > 1?
-        possible_types = [tp for tp in get_args(input) if tp is not NoneType]
-        if len(possible_types) == 1:
-            input = possible_types[0]
-        return parse_py_type_into_dtype(input)
+    elif isinstance(input, (UnionType, UnionTypeOld)):
+        return _parse_union_type_into_dtype(input)
 
     else:
         return parse_py_type_into_dtype(input)
@@ -90,7 +85,7 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Binary()
     elif input is object:
         return Object()
-    elif input is type(None):
+    elif input is NoneType:
         return Null()
     elif input is list or input is tuple:
         return List
@@ -107,7 +102,7 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
             )
 
     else:
-        _raise_invalid_dtype(input)
+        _raise_on_invalid_dtype(input)
 
 
 PY_TYPE_STR_TO_DTYPE: SchemaDict = {
@@ -138,17 +133,31 @@ def _parse_forward_ref_into_dtype(input: ForwardRef) -> PolarsDataType:
     try:
         return PY_TYPE_STR_TO_DTYPE[formatted]
     except KeyError:
-        _raise_invalid_dtype(input)
+        _raise_on_invalid_dtype(input)
 
 
-def _parse_union_type_into_dtype(input: Any) -> PolarsDataType:
-    # not exhaustive; handles the common "type | None" case, but
-    possible_types = [tp for tp in get_args(input) if tp is not NoneType]
-    if len(possible_types) == 1:
-        input = possible_types[0]
-    return parse_py_type_into_dtype(input)
+def _parse_union_type_into_dtype(input: UnionType | UnionTypeOld) -> PolarsDataType:
+    """
+    Parse a union of types into a Polars data type.
+
+    Unions of multiple non-null types (e.g. `int | float`) are not supported.
+
+    Parameters
+    ----------
+    input
+        A union type, e.g. `str | None` (new syntax) or `Union[str, None]` (old syntax).
+    """
+    # Strip "optional" designation - Polars data types are always nullable
+    inner_types = [tp for tp in get_args(input) if tp is not NoneType]
+
+    if len(inner_types) > 1:
+        _raise_on_invalid_dtype(input)
+
+    input = inner_types[0]
+    return parse_into_dtype(input)
 
 
-def _raise_invalid_dtype(input: Any) -> NoReturn:
+def _raise_on_invalid_dtype(input: Any) -> NoReturn:
+    """Raise an informative error if the input could not be parsed."""
     msg = f"cannot parse input of type {type(input).__name__!r} into Polars data type: {input!r}"
     raise TypeError(msg) from None
