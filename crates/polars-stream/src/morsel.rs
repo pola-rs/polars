@@ -26,6 +26,8 @@ impl MorselSeq {
 
     // The morsel sequence id which comes after this morsel.
     pub fn successor(self) -> Self {
+        // We increment by two because in the future we want to use the least
+        // significant bit to indicate the final morsel with that sequence id.
         Self(self.0.checked_add(2).unwrap())
     }
 
