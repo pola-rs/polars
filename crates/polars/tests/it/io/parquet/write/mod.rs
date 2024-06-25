@@ -11,7 +11,7 @@ use polars::io::SerReader;
 use polars_core::df;
 use polars_core::prelude::*;
 use polars_parquet::parquet::compression::{BrotliLevel, CompressionOptions};
-use polars_parquet::parquet::error::Result;
+use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::metadata::{Descriptor, SchemaDescriptor};
 use polars_parquet::parquet::page::Page;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
@@ -30,7 +30,7 @@ pub fn array_to_page(
     array: &Array,
     options: &WriteOptions,
     descriptor: &Descriptor,
-) -> Result<Page> {
+) -> ParquetResult<Page> {
     // using plain encoding format
     match array {
         Array::Int32(array) => primitive::array_to_page_v1(array, options, descriptor),
@@ -43,7 +43,7 @@ pub fn array_to_page(
     }
 }
 
-fn read_column<R: Read + Seek>(reader: &mut R) -> Result<(Array, Option<Statistics>)> {
+fn read_column<R: Read + Seek>(reader: &mut R) -> ParquetResult<(Array, Option<Statistics>)> {
     let (a, statistics) = super::read::read_column(reader, 0, "col")?;
     Ok((a, statistics))
 }
@@ -54,12 +54,12 @@ async fn read_column_async<
     R: futures::AsyncRead + futures::AsyncSeek + Send + std::marker::Unpin,
 >(
     reader: &mut R,
-) -> Result<(Array, Option<Statistics>)> {
+) -> ParquetResult<(Array, Option<Statistics>)> {
     let (a, statistics) = super::read::read_column_async(reader, 0, "col").await?;
     Ok((a, statistics))
 }
 
-fn test_column(column: &str, compression: CompressionOptions) -> Result<()> {
+fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<()> {
     let array = alltypes_plain(column);
 
     let options = WriteOptions {
@@ -112,27 +112,27 @@ fn test_column(column: &str, compression: CompressionOptions) -> Result<()> {
 }
 
 #[test]
-fn int32() -> Result<()> {
+fn int32() -> ParquetResult<()> {
     test_column("id", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn int32_snappy() -> Result<()> {
+fn int32_snappy() -> ParquetResult<()> {
     test_column("id", CompressionOptions::Snappy)
 }
 
 #[test]
-fn int32_lz4() -> Result<()> {
+fn int32_lz4() -> ParquetResult<()> {
     test_column("id", CompressionOptions::Lz4Raw)
 }
 
 #[test]
-fn int32_lz4_short_i32_array() -> Result<()> {
+fn int32_lz4_short_i32_array() -> ParquetResult<()> {
     test_column("id-short-array", CompressionOptions::Lz4Raw)
 }
 
 #[test]
-fn int32_brotli() -> Result<()> {
+fn int32_brotli() -> ParquetResult<()> {
     test_column(
         "id",
         CompressionOptions::Brotli(Some(BrotliLevel::default())),
@@ -141,42 +141,42 @@ fn int32_brotli() -> Result<()> {
 
 #[test]
 #[ignore = "Native boolean writer not yet implemented"]
-fn bool() -> Result<()> {
+fn bool() -> ParquetResult<()> {
     test_column("bool_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn tinyint() -> Result<()> {
+fn tinyint() -> ParquetResult<()> {
     test_column("tinyint_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn smallint_col() -> Result<()> {
+fn smallint_col() -> ParquetResult<()> {
     test_column("smallint_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn int_col() -> Result<()> {
+fn int_col() -> ParquetResult<()> {
     test_column("int_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn bigint_col() -> Result<()> {
+fn bigint_col() -> ParquetResult<()> {
     test_column("bigint_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn float_col() -> Result<()> {
+fn float_col() -> ParquetResult<()> {
     test_column("float_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn double_col() -> Result<()> {
+fn double_col() -> ParquetResult<()> {
     test_column("double_col", CompressionOptions::Uncompressed)
 }
 
 #[test]
-fn basic() -> Result<()> {
+fn basic() -> ParquetResult<()> {
     let array = vec![
         Some(0),
         Some(1),
@@ -234,7 +234,7 @@ fn basic() -> Result<()> {
 
 #[cfg(feature = "async")]
 #[allow(dead_code)]
-async fn test_column_async(column: &str, compression: CompressionOptions) -> Result<()> {
+async fn test_column_async(column: &str, compression: CompressionOptions) -> ParquetResult<()> {
     let array = alltypes_plain(column);
 
     let options = WriteOptions {

@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 from polars._utils.construction.utils import try_get_type_hints
-from polars.datatypes import PolarsDataType, numpy_char_code_to_dtype
+from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -23,7 +24,8 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import PolarsDataType
+
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -662,6 +664,7 @@ def test_init_numpy_scalars() -> None:
     df_expected = pl.from_records(
         data=[(True, 16, 1234), (False, 64, 9876)],
         schema=OrderedDict([("bool", pl.Boolean), ("i8", pl.Int8), ("u32", pl.UInt32)]),
+        orient="row",
     )
     assert_frame_equal(df, df_expected)
 
@@ -836,13 +839,14 @@ def test_init_py_dtype_misc_float() -> None:
 
 def test_init_seq_of_seq() -> None:
     # List of lists
-    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
+    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"], orient="row")
     expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
     assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         [[1, 2, 3], [4, 5, 6]],
         schema=[("a", pl.Int8), ("b", pl.Int16), ("c", pl.Int32)],
+        orient="row",
     )
     assert df.schema == {"a": pl.Int8, "b": pl.Int16, "c": pl.Int32}
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
@@ -959,11 +963,11 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
 def test_init_errors() -> None:
     # Length mismatch
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
 
     # Columns don't match data dimensions
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         pl.DataFrame([[1, 2], [3, 4]], schema=["a", "b", "c"])
 
     # Unmatched input
@@ -1113,7 +1117,7 @@ def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
 
 
 def test_from_dict_upcast_primitive() -> None:
-    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]})
+    df = pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}, strict=False)
     assert df.dtypes == [pl.Float64, pl.Float64]
 
 
@@ -1297,7 +1301,7 @@ def test_from_records_nullable_structs() -> None:
         {"id": 1, "items": [{"item_id": 100, "description": "hi"}]},
     ]
 
-    schema: list[tuple[str, pl.PolarsDataType]] = [
+    schema: list[tuple[str, PolarsDataType]] = [
         ("id", pl.UInt16),
         (
             "items",
@@ -1309,7 +1313,7 @@ def test_from_records_nullable_structs() -> None:
         ),
     ]
 
-    schema_options: list[list[tuple[str, pl.PolarsDataType]] | None] = [schema, None]
+    schema_options: list[list[tuple[str, PolarsDataType]] | None] = [schema, None]
     for s in schema_options:
         result = pl.DataFrame(records, schema=s, orient="row")
         expected = {
@@ -1327,7 +1331,7 @@ def test_from_records_nullable_structs() -> None:
     assert df.to_dict(as_series=False) == {"id": [], "items": []}
     assert df.schema == dict_schema
 
-    dtype: pl.PolarsDataType = dict_schema["items"]
+    dtype: PolarsDataType = dict_schema["items"]
     series = pl.Series("items", dtype=dtype)
     assert series.to_frame().to_dict(as_series=False) == {"items": []}
     assert series.dtype == dict_schema["items"]

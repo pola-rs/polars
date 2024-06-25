@@ -31,6 +31,7 @@ pub struct OptState {
     pub fast_projection: bool,
     /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
     pub row_estimate: bool,
+    pub new_streaming: bool,
 }
 
 impl Default for OptState {
@@ -52,6 +53,7 @@ impl Default for OptState {
             fast_projection: true,
             eager: false,
             row_estimate: true,
+            new_streaming: false,
         }
     }
 }

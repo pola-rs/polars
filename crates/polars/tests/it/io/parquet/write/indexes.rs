@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use polars_parquet::parquet::compression::CompressionOptions;
-use polars_parquet::parquet::error::Result;
+use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::indexes::{
     select_pages, BoundaryOrder, Index, Interval, NativeIndex, PageIndex, PageLocation,
 };
@@ -18,7 +18,7 @@ use super::super::read::collect;
 use super::primitive::array_to_page_v1;
 use super::Array;
 
-fn write_file() -> Result<Vec<u8>> {
+fn write_file() -> ParquetResult<Vec<u8>> {
     let page1 = vec![Some(0), Some(1), None, Some(3), Some(4), Some(5), Some(6)];
     let page2 = vec![Some(10), Some(11)];
 
@@ -57,7 +57,7 @@ fn write_file() -> Result<Vec<u8>> {
 }
 
 #[test]
-fn read_indexed_page() -> Result<()> {
+fn read_indexed_page() -> ParquetResult<()> {
     let data = write_file()?;
     let mut reader = Cursor::new(data);
 
@@ -86,7 +86,7 @@ fn read_indexed_page() -> Result<()> {
 }
 
 #[test]
-fn read_indexes_and_locations() -> Result<()> {
+fn read_indexes_and_locations() -> ParquetResult<()> {
     let data = write_file()?;
     let mut reader = Cursor::new(data);
 

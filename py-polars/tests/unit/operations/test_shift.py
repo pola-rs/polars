@@ -111,6 +111,7 @@ def test_shift_fill_value_group_logicals() -> None:
             (date(2001, 1, 4), "B"),
         ],
         schema=["d", "s"],
+        orient="row",
     )
     result = df.select(pl.col("d").shift(fill_value=pl.col("d").max(), n=-1).over("s"))
 

@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
@@ -11,7 +12,6 @@ use polars_pipe::pipeline::{
 };
 use polars_plan::prelude::expr_ir::ExprIR;
 
-use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::streaming::tree::{PipelineNode, Tree};
 use crate::prelude::*;
 
@@ -241,8 +241,7 @@ fn get_pipeline_node(
         df: Arc::new(DataFrame::empty()),
         schema: Arc::new(Schema::new()),
         output_schema: None,
-        projection: None,
-        selection: None,
+        filter: None,
     });
 
     IR::MapFunction {

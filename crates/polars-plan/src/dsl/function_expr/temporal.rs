@@ -202,12 +202,12 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
     match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
-            result_naive.datetime().unwrap(),
+            result_naive?.datetime().unwrap(),
             Some(tz),
             &StringChunked::from_iter(std::iter::once("raise")),
             NonExistent::Raise,
         )?
         .into()),
-        _ => Ok(result_naive),
+        _ => result_naive,
     }
 }

@@ -138,7 +138,7 @@ def test_out_of_core_sort_9503(
     # ensure we create many chunks
     # this will ensure we create more files
     # and that creates contention while dumping
-    q = pl.concat(
+    df = pl.concat(
         [
             pl.DataFrame(
                 [
@@ -149,12 +149,14 @@ def test_out_of_core_sort_9503(
             for _ in range(num_tables)
         ],
         rechunk=False,
-    ).lazy()
-    q = q.sort(q.columns)
-    df = q.collect(streaming=True)
-    assert df.shape == (1_000_000, 2)
-    assert df["column_0"].flags["SORTED_ASC"]
-    assert df.head(20).to_dict(as_series=False) == {
+    )
+    lf = df.lazy()
+
+    result = lf.sort(df.columns).collect(streaming=True)
+
+    assert result.shape == (1_000_000, 2)
+    assert result["column_0"].flags["SORTED_ASC"]
+    assert result.head(20).to_dict(as_series=False) == {
         "column_0": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         "column_1": [
             242,

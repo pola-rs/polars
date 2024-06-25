@@ -9,6 +9,12 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -146,9 +152,9 @@ def test_join_on_expressions() -> None:
 
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]})
 
-    assert df_a.join(df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b"))[
-        "a"
-    ].to_list() == [1, 4, 9, 9]
+    assert df_a.join(
+        df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b")
+    ).to_dict(as_series=False) == {"a": [1, 2, 3, 3], "b": [1, 4, 9, 9]}
 
 
 def test_join() -> None:
@@ -243,12 +249,14 @@ def test_join_on_cast() -> None:
     assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
+        "a_right": [-2, 3, 3, 10],
     }
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
+        "a_right": [-2, 3, 3, 10],
     }
 
 
@@ -280,7 +288,6 @@ def test_join_chunks_alignment_4720() -> None:
             df3,
             on=["index1", "index2", "index3"],
             how="left",
-            coalesce=True,
         )
     ).to_dict(as_series=False) == {
         "index1": [0, 0, 1, 1],
@@ -293,74 +300,12 @@ def test_join_chunks_alignment_4720() -> None:
             df3,
             on=["index3", "index1", "index2"],
             how="left",
-            coalesce=True,
         )
     ).to_dict(as_series=False) == {
         "index1": [0, 0, 1, 1],
         "index2": [10, 10, 11, 11],
         "index3": [100, 101, 100, 101],
     }
-
-
-def test_sorted_flag_after_joins() -> None:
-    np.random.seed(1)
-    dfa = pl.DataFrame(
-        {
-            "a": np.random.randint(0, 13, 20),
-            "b": np.random.randint(0, 13, 20),
-        }
-    ).sort("a")
-
-    dfb = pl.DataFrame(
-        {
-            "a": np.random.randint(0, 13, 10),
-            "b": np.random.randint(0, 13, 10),
-        }
-    )
-
-    dfapd = dfa.to_pandas()
-    dfbpd = dfb.to_pandas()
-
-    def test_with_pd(
-        dfa: pd.DataFrame, dfb: pd.DataFrame, on: str, how: str, joined: pl.DataFrame
-    ) -> None:
-        a = (
-            dfa.merge(
-                dfb,
-                on=on,
-                how=how,  # type: ignore[arg-type]
-                suffixes=("", "_right"),
-            )
-            .sort_values(["a", "b"])
-            .reset_index(drop=True)
-        )
-        b = joined.sort(["a", "b"]).to_pandas()
-        pd.testing.assert_frame_equal(a, b)
-
-    joined = dfa.join(dfb, on="b", how="left", coalesce=True)
-    assert joined["a"].flags["SORTED_ASC"]
-    test_with_pd(dfapd, dfbpd, "b", "left", joined)
-
-    joined = dfa.join(dfb, on="b", how="inner")
-    assert joined["a"].flags["SORTED_ASC"]
-    test_with_pd(dfapd, dfbpd, "b", "inner", joined)
-
-    joined = dfa.join(dfb, on="b", how="semi")
-    assert joined["a"].flags["SORTED_ASC"]
-    joined = dfa.join(dfb, on="b", how="semi")
-    assert joined["a"].flags["SORTED_ASC"]
-
-    joined = dfb.join(dfa, on="b", how="left", coalesce=True)
-    assert not joined["a"].flags["SORTED_ASC"]
-    test_with_pd(dfbpd, dfapd, "b", "left", joined)
-
-    joined = dfb.join(dfa, on="b", how="inner")
-    assert not joined["a"].flags["SORTED_ASC"]
-
-    joined = dfb.join(dfa, on="b", how="semi")
-    assert not joined["a"].flags["SORTED_ASC"]
-    joined = dfb.join(dfa, on="b", how="anti")
-    assert not joined["a"].flags["SORTED_ASC"]
 
 
 def test_jit_sort_joins() -> None:
@@ -389,7 +334,7 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = pd.Index(["a", "b", "b_right"])
 
         # left key sorted right is not
-        pl_result = dfa_pl.join(dfb_pl, on="a", how=how, coalesce=True).sort(
+        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(
             ["a", "b"], maintain_order=True
         )
 
@@ -404,7 +349,7 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pd_result = dfb.merge(dfa, on="a", how=how)
         pd_result.columns = pd.Index(["a", "b", "b_right"])
-        pl_result = dfb_pl.join(dfa_pl, on="a", how=how, coalesce=True).sort(
+        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(
             ["a", "b"], maintain_order=True
         )
 
@@ -422,7 +367,7 @@ def test_join_panic_on_binary_expr_5915() -> None:
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]}).lazy()
 
     z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
-    assert z.collect().to_dict(as_series=False) == {"a": [4]}
+    assert z.collect().to_dict(as_series=False) == {"a": [3], "b": [4]}
 
 
 def test_semi_join_projection_pushdown_6423() -> None:
@@ -652,7 +597,6 @@ def test_join_sorted_fast_paths_null() -> None:
     }
     assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
         "x": [0, 0, 1],
-        "x_right": [0, 0, None],
         "y": [0, 0, None],
     }
     assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
@@ -687,24 +631,24 @@ def test_join_validation() -> None:
             duplicate, on=on, how=how, validate="1:m"
         )
 
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_many_fail_inner = duplicate.join(
                 unique, on=on, how=how, validate="1:m"
             )
 
         # one to one
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_one_fail_1_inner = unique.join(
                 duplicate, on=on, how=how, validate="1:1"
             )
 
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _one_to_one_fail_2_inner = duplicate.join(
                 unique, on=on, how=how, validate="1:1"
             )
 
         # many to one
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             _many_to_one_fail_inner = unique.join(
                 duplicate, on=on, how=how, validate="m:1"
             )
@@ -791,7 +735,7 @@ def test_join_validation_many_keys() -> None:
 
     for join_type in ["inner", "left", "full"]:
         for val in ["1:1", "1:m"]:
-            with pytest.raises(pl.ComputeError):
+            with pytest.raises(ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
     # many in rhs
@@ -810,7 +754,7 @@ def test_join_validation_many_keys() -> None:
 
     for join_type in ["inner", "left", "full"]:
         for val in ["m:1", "1:1"]:
-            with pytest.raises(pl.ComputeError):
+            with pytest.raises(ComputeError):
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
 
@@ -847,7 +791,7 @@ def test_join_on_wildcard_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="wildcard column selection not supported at this point",
     ):
         df.join(df2, on=pl.all())
@@ -857,7 +801,7 @@ def test_join_on_nth_error() -> None:
     df = pl.DataFrame({"x": [1]})
     df2 = pl.DataFrame({"x": [1], "y": [2]})
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match=r"nth column selection not supported at this point \(n=0\)",
     ):
         df.join(df2, on=pl.first())
@@ -873,7 +817,7 @@ def test_join_results_in_duplicate_names() -> None:
         }
     )
     rhs = lhs.clone()
-    with pytest.raises(pl.DuplicateError, match="'c_right' already exists"):
+    with pytest.raises(DuplicateError, match="'c_right' already exists"):
         lhs.join(rhs, on=["a", "b"], how="left")
 
 
@@ -881,7 +825,7 @@ def test_join_projection_invalid_name_contains_suffix_15243() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).lazy()
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         (
             df1.join(df2, on="a")
             .select(pl.col("b").filter(pl.col("b") == pl.col("foo_right")))
@@ -984,17 +928,17 @@ def test_join_coalesce(how: JoinStrategy) -> None:
     how = "inner"
     q = a.join(b, on="a", coalesce=False, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "a_right", "b_right", "c"]
 
     q = a.join(b, on=["a", "b"], coalesce=False, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "a_right", "b_right", "c"]
 
     q = a.join(b, on=["a", "b"], coalesce=True, how=how)
     out = q.collect()
-    assert q.schema == out.schema
+    assert q.collect_schema() == out.schema
     assert out.columns == ["a", "b", "c"]
 
 
@@ -1010,7 +954,7 @@ def test_join_empties(how: JoinStrategy) -> None:
 def test_join_raise_on_redundant_keys() -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+    with pytest.raises(InvalidOperationError, match="already joined on"):
         left.join(right, on=["a", "a"], how="full", coalesce=True)
 
 
@@ -1018,7 +962,38 @@ def test_join_raise_on_redundant_keys() -> None:
 def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(pl.InvalidOperationError, match="already joined on"):
+    with pytest.raises(InvalidOperationError, match="already joined on"):
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )
+
+
+def test_join_lit_panic_11410() -> None:
+    df = pl.LazyFrame({"date": [1, 2, 3], "symbol": [4, 5, 6]})
+    dates = df.select("date").unique(maintain_order=True)
+    symbols = df.select("symbol").unique(maintain_order=True)
+    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).collect().to_dict(
+        as_series=False
+    ) == {"symbol": [4], "date": [1]}
+
+
+def test_join_empty_literal_17027() -> None:
+    df1 = pl.DataFrame({"a": [1]})
+    df2 = pl.DataFrame(schema={"a": pl.Int64})
+
+    assert df1.join(df2, on=pl.lit(0), how="left").height == 1
+    assert df1.join(df2, on=pl.lit(0), how="inner").height == 0
+    assert (
+        df1.lazy()
+        .join(df2.lazy(), on=pl.lit(0), how="inner")
+        .collect(streaming=True)
+        .height
+        == 0
+    )
+    assert (
+        df1.lazy()
+        .join(df2.lazy(), on=pl.lit(0), how="left")
+        .collect(streaming=True)
+        .height
+        == 1
+    )

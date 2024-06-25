@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
 
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Date,
     Datetime,
     Float64,
@@ -16,6 +14,7 @@ from polars.datatypes import (
     Struct,
     Time,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.dependencies import json
 from polars.exceptions import DuplicateError
 from polars.selectors import _expand_selector_dicts, _expand_selectors

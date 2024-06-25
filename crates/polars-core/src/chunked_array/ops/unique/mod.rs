@@ -236,17 +236,17 @@ impl ChunkUnique for BinaryChunked {
 
 impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
-        // can be None, Some(true), Some(false)
-        let mut unique = Vec::with_capacity(3);
-        for v in self {
-            if unique.len() == 3 {
-                break;
-            }
-            if !unique.contains(&v) {
-                unique.push(v)
-            }
-        }
-        Ok(ChunkedArray::new(self.name(), &unique))
+        let mut iter = self.downcast_iter();
+        let Some(arr) = iter.next() else {
+            return Ok(Self::with_chunk(
+                self.name(),
+                BooleanArray::new_empty(self.field.as_ref().data_type().to_arrow(false)),
+            ));
+        };
+
+        let unique = polars_compute::unique::UniqueKernel::unique_fold(arr, iter);
+
+        Ok(Self::with_chunk(self.name(), unique))
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {

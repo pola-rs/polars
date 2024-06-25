@@ -102,7 +102,7 @@ impl PyDataFrame {
                 .with_projection(projection.map(Arc::new))
                 .with_rechunk(rechunk)
                 .with_chunk_size(chunk_size)
-                .with_columns(columns.map(Arc::new))
+                .with_columns(columns.map(Arc::from))
                 .with_n_threads(n_threads)
                 .with_schema_overwrite(overwrite_dtype.map(Arc::new))
                 .with_dtype_overwrite(overwrite_dtype_slice.map(Arc::new))
@@ -190,10 +190,10 @@ impl PyDataFrame {
     pub fn deserialize(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
         use crate::file::read_if_bytesio;
         py_f = read_if_bytesio(py_f);
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.allow_threads(move || {
-            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
+            let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
             let bytes = mmap_read.deref();
             match serde_json::from_slice::<DataFrame>(bytes) {
                 Ok(df) => Ok(df.into()),
@@ -370,6 +370,7 @@ impl PyDataFrame {
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
+        float_scientific: Option<bool>,
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
@@ -390,6 +391,7 @@ impl PyDataFrame {
                     .with_datetime_format(datetime_format)
                     .with_date_format(date_format)
                     .with_time_format(time_format)
+                    .with_float_scientific(float_scientific)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
                     .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
@@ -408,6 +410,7 @@ impl PyDataFrame {
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)
                 .with_time_format(time_format)
+                .with_float_scientific(float_scientific)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
@@ -472,18 +475,20 @@ impl PyDataFrame {
         JsonWriter::new(file)
             .with_json_format(JsonFormat::Json)
             .finish(&mut self.df)
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
+            .map_err(PyPolarsErr::from)?;
+        Ok(())
     }
 
     #[cfg(feature = "json")]
     pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
-        let r = JsonWriter::new(file)
+        JsonWriter::new(file)
             .with_json_format(JsonFormat::JsonLines)
-            .finish(&mut self.df);
+            .finish(&mut self.df)
+            .map_err(PyPolarsErr::from)?;
 
-        r.map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
+        Ok(())
     }
 
     #[cfg(feature = "ipc")]
@@ -523,12 +528,14 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<IpcCompression>>,
+        future: bool,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
             let f = std::fs::File::create(&*s)?;
             py.allow_threads(|| {
                 IpcStreamWriter::new(f)
                     .with_compression(compression.0)
+                    .with_pl_flavor(future)
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -537,6 +544,7 @@ impl PyDataFrame {
 
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
+                .with_pl_flavor(future)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

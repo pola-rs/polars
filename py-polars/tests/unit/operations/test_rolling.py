@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -221,14 +222,14 @@ def test_rolling_dynamic_sortedness_check() -> None:
         }
     )
 
-    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
+    with pytest.raises(ComputeError, match=r"input data is not sorted"):
         df.rolling("idx", period="2i", group_by="group").agg(
             pl.col("idx").alias("idx1")
         )
 
     # no `group_by` argument
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="argument in operation 'rolling' is not sorted",
     ):
         df.rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))

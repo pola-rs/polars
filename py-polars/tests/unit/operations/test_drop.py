@@ -95,19 +95,19 @@ def test_drop_nulls_lazy() -> None:
 
 def test_drop_columns() -> None:
     out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop(["a", "b"])
-    assert out.columns == ["c"]
+    assert out.collect_schema().names() == ["c"]
 
     out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop(~cs.starts_with("c"))
-    assert out.columns == ["c"]
+    assert out.collect_schema().names() == ["c"]
 
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop("a")
-    assert out.columns == ["b", "c"]
+    out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop("a")
+    assert out.collect_schema().names() == ["b", "c"]
 
     out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop("a", "b")
-    assert out2.columns == ["c"]
+    assert out2.collect_schema().names() == ["c"]
 
     out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop({"a", "b", "c"})
-    assert out2.columns == []
+    assert out2.collect_schema().names() == []
 
 
 def test_drop_nan_ignore_null_3525() -> None:
@@ -125,3 +125,15 @@ def test_drop_without_parameters() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     assert_frame_equal(df.drop(), df)
     assert_frame_equal(df.lazy().drop(*[]), df.lazy())
+
+
+def test_drop_strict() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+
+    df.drop("a")
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match="b"):
+        df.drop("b")
+
+    df.drop("a", strict=False)
+    df.drop("b", strict=False)

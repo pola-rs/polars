@@ -453,7 +453,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         parallel = ParallelStrategy::None;
     }
 
-    let reader = ReaderBytes::from(&reader);
+    let reader = ReaderBytes::from(&mut reader);
     let bytes = reader.deref();
     let store = mmap::ColumnStore::Local(bytes);
 

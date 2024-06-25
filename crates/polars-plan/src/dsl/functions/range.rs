@@ -89,7 +89,7 @@ pub fn datetime_range(
         }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             allow_rename: true,
             ..Default::default()
         },
@@ -118,7 +118,7 @@ pub fn datetime_ranges(
         }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             allow_rename: true,
             ..Default::default()
         },

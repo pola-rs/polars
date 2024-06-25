@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -112,7 +114,7 @@ def test_streaming_group_by_types() -> None:
             "date_max": [date(2022, 1, 1)],
         }
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         (
             df.lazy()
             .group_by("person_id")
@@ -320,7 +322,7 @@ def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
     dfc = dfa.join(dfb, how="cross")
 
     for keys in [["x", "y"], "z"]:
-        for dtype in [pl.Boolean, *pl.INTEGER_DTYPES]:
+        for dtype in [*INTEGER_DTYPES, pl.Boolean]:
             # the alias checks if the schema is correctly handled
             dfd = (
                 dfc.lazy()

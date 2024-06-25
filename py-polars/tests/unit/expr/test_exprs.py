@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import (
+from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import (
     DATETIME_DTYPES,
     DURATION_DTYPES,
     FLOAT_DTYPES,
@@ -16,10 +17,11 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
 )
-from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
+
+    from polars.type_aliases import PolarsDataType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -466,7 +468,7 @@ def test_logical_boolean() -> None:
 
 
 def test_lit_dtypes() -> None:
-    def lit_series(value: Any, dtype: pl.PolarsDataType | None) -> pl.Series:
+    def lit_series(value: Any, dtype: PolarsDataType | None) -> pl.Series:
         return pl.select(pl.lit(value, dtype=dtype)).to_series()
 
     d = datetime(2049, 10, 5, 1, 2, 3, 987654)
@@ -678,7 +680,7 @@ def test_head() -> None:
     assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").head(pl.len() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").head(pl.len() // 2)).to_dict(as_series=False) == {
         "a": [1, 2]
     }
 
@@ -690,7 +692,7 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4, 5]
     }
-    assert df.select(pl.col("a").tail(pl.len() / 2)).to_dict(as_series=False) == {
+    assert df.select(pl.col("a").tail(pl.len() // 2)).to_dict(as_series=False) == {
         "a": [4, 5]
     }
 
@@ -732,3 +734,16 @@ def test_replace_no_cse() -> None:
         .explain()
     )
     assert "POLARS_CSER" not in plan
+
+
+def test_slice_rejects_non_integral() -> None:
+    df = pl.LazyFrame({"a": [0, 1, 2, 3], "b": [1.5, 2, 3, 4]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("a").slice(pl.col("b").slice(0, 1), None)).collect()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("a").slice(0, pl.col("b").slice(1, 2))).collect()
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("a").slice(pl.lit("1"), None)).collect()

@@ -1,6 +1,6 @@
 /// Utility that allows use to send pointers to another thread.
 /// This is better than going through `usize` as MIRI can follow these.
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct SyncPtr<T>(*mut T);
 
@@ -37,6 +37,12 @@ impl<T> SyncPtr<T> {
     }
 }
 
+impl<T> Copy for SyncPtr<T> {}
+impl<T> Clone for SyncPtr<T> {
+    fn clone(&self) -> SyncPtr<T> {
+        *self
+    }
+}
 unsafe impl<T> Sync for SyncPtr<T> {}
 unsafe impl<T> Send for SyncPtr<T> {}
 

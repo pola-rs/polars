@@ -8,7 +8,7 @@ use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
 use super::reader::{finish_page, get_page_header, PageMetaData};
 use super::PageFilter;
 use crate::parquet::compression::Compression;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
 use crate::parquet::page::{CompressedPage, ParquetPageHeader};
 
@@ -19,7 +19,7 @@ pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_page_size: usize,
-) -> Result<impl Stream<Item = Result<CompressedPage>> + 'a> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
     get_page_stream_with_page_meta(
         column_metadata.into(),
         reader,
@@ -37,7 +37,7 @@ pub async fn get_page_stream_from_column_start<'a, R: AsyncRead + Unpin + Send>(
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_header_size: usize,
-) -> Result<impl Stream<Item = Result<CompressedPage>> + 'a> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + 'a> {
     let page_metadata: PageMetaData = column_metadata.into();
     Ok(_get_page_stream(
         reader,
@@ -57,7 +57,7 @@ pub async fn get_page_stream_with_page_meta<RR: AsyncRead + Unpin + Send + Async
     scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_page_size: usize,
-) -> Result<impl Stream<Item = Result<CompressedPage>> + '_> {
+) -> ParquetResult<impl Stream<Item = ParquetResult<CompressedPage>> + '_> {
     let column_start = page_metadata.column_start;
     reader.seek(SeekFrom::Start(column_start)).await?;
     Ok(_get_page_stream(
@@ -79,7 +79,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
     mut scratch: Vec<u8>,
     pages_filter: PageFilter,
     max_page_size: usize,
-) -> impl Stream<Item = Result<CompressedPage>> + '_ {
+) -> impl Stream<Item = ParquetResult<CompressedPage>> + '_ {
     let mut seen_values = 0i64;
     try_stream! {
         while seen_values < total_num_values {
@@ -100,7 +100,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
             }
 
             if read_size > max_page_size {
-                Err(Error::WouldOverAllocate)?
+                Err(ParquetError::WouldOverAllocate)?
             }
 
             // followed by the buffer
@@ -111,7 +111,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
                 .read_to_end(&mut scratch).await?;
 
             if bytes_read != read_size {
-                Err(Error::oos(
+                Err(ParquetError::oos(
                     "The page header reported the wrong page size".to_string(),
                 ))?
             }
@@ -131,7 +131,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 async fn read_page_header<R: AsyncRead + Unpin + Send>(
     reader: &mut R,
     max_page_size: usize,
-) -> Result<ParquetPageHeader> {
+) -> ParquetResult<ParquetPageHeader> {
     let mut prot = TCompactInputStreamProtocol::new(reader, max_page_size);
     let page_header = ParquetPageHeader::stream_from_in_protocol(&mut prot).await?;
     Ok(page_header)

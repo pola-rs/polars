@@ -15,7 +15,7 @@ pub mod pivot;
     feature = "csv",
     feature = "json"
 ))]
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -31,17 +31,15 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_core::prelude::*;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
+use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 use smartstring::alias::String as SmartString;
 
 use crate::frame::cached_arenas::CachedArena;
-use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::{
-    create_physical_expr, create_physical_plan, ExpressionConversionState,
-};
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
@@ -151,6 +149,7 @@ impl LazyFrame {
             eager: false,
             fast_projection: false,
             row_estimate: false,
+            new_streaming: false,
         })
     }
 
@@ -207,6 +206,11 @@ impl LazyFrame {
     /// Run nodes that are capably of doing so on the streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.streaming = toggle;
+        self
+    }
+
+    pub fn with_new_streaming(mut self, toggle: bool) -> Self {
+        self.opt_state.new_streaming = toggle;
         self
     }
 
@@ -433,7 +437,10 @@ impl LazyFrame {
     /// Removes columns from the DataFrame.
     /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
-    pub fn drop<I, T>(self, columns: I) -> Self
+    ///
+    /// If `strict` is `true`, then any given columns that are not in the schema will
+    /// give a [`PolarsError::ColumnNotFound`] error while materializing the [`LazyFrame`].
+    fn _drop<I, T>(self, columns: I, strict: bool) -> Self
     where
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
@@ -444,8 +451,37 @@ impl LazyFrame {
             .collect::<PlHashSet<_>>();
 
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().drop(to_drop).build();
+        let lp = self.get_plan_builder().drop(to_drop, strict).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Removes columns from the DataFrame.
+    /// Note that it's better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    ///
+    /// Any given columns that are not in the schema will give a [`PolarsError::ColumnNotFound`]
+    /// error while materializing the [`LazyFrame`].
+    #[inline]
+    pub fn drop<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self._drop(columns, true)
+    }
+
+    /// Removes columns from the DataFrame.
+    /// Note that it's better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    ///
+    /// If a column name does not exist in the schema, it will quietly be ignored.
+    #[inline]
+    pub fn drop_no_validate<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        self._drop(columns, false)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -570,9 +606,6 @@ impl LazyFrame {
         let streaming = self.opt_state.streaming;
         #[cfg(feature = "cse")]
         if streaming && self.opt_state.comm_subplan_elim {
-            polars_warn!(
-                "Cannot combine 'streaming' with 'comm_subplan_elim'. CSE will be turned off."
-            );
             opt_state.comm_subplan_elim = false;
         }
         let lp_top = optimize(
@@ -681,6 +714,22 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "new_streaming")]
+        {
+            if self.opt_state.new_streaming {
+                let alp_plan = self.to_alp_optimized()?;
+                let lp_top = alp_plan.lp_top;
+                let mut ir_arena = alp_plan.lp_arena;
+                let expr_arena = alp_plan.expr_arena;
+
+                let lp_top = ir_arena.add(IR::Sink {
+                    input: lp_top,
+                    payload: SinkType::Memory,
+                });
+
+                return polars_stream::run_query(lp_top, ir_arena, expr_arena);
+            }
+        }
         self._collect_post_opt(|_, _, _| Ok(()))
     }
 
@@ -703,10 +752,14 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
-    pub fn sink_parquet(self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+    pub fn sink_parquet(
+        self,
+        path: impl AsRef<Path>,
+        options: ParquetWriteOptions,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Parquet(options),
             },
             "collect().write_parquet()",
@@ -738,10 +791,10 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
-    pub fn sink_ipc(self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
+    pub fn sink_ipc(self, path: impl AsRef<Path>, options: IpcWriterOptions) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Ipc(options),
             },
             "collect().write_ipc()",
@@ -783,10 +836,10 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "csv")]
-    pub fn sink_csv(self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
+    pub fn sink_csv(self, path: impl AsRef<Path>, options: CsvWriterOptions) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Csv(options),
             },
             "collect().write_csv()",
@@ -797,10 +850,10 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "json")]
-    pub fn sink_json(self, path: PathBuf, options: JsonWriterOptions) -> PolarsResult<()> {
+    pub fn sink_json(self, path: impl AsRef<Path>, options: JsonWriterOptions) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Json(options),
             },
             "collect().write_ndjson()` or `collect().write_json()",
@@ -1548,12 +1601,12 @@ impl LazyFrame {
         self.slice(neg_tail, n)
     }
 
-    /// Melt the DataFrame from wide to long format.
+    /// Unpivot the DataFrame from wide to long format.
     ///
-    /// See [`MeltArgs`] for information on how to melt a DataFrame.
-    pub fn melt(self, args: MeltArgs) -> LazyFrame {
+    /// See [`UnpivotArgs`] for information on how to unpivot a DataFrame.
+    pub fn unpivot(self, args: UnpivotArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().melt(args).build();
+        let lp = self.get_plan_builder().unpivot(args).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

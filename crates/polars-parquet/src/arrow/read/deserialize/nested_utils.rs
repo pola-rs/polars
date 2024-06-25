@@ -11,234 +11,171 @@ use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::read::levels::get_bit_width;
 
-/// trait describing deserialized repetition and definition levels
-pub trait Nested: std::fmt::Debug + Send + Sync {
-    fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>);
-
-    fn push(&mut self, length: i64, is_valid: bool);
-
-    fn is_nullable(&self) -> bool;
-
-    fn is_repeated(&self) -> bool {
-        false
-    }
-
-    // Whether the Arrow container requires all items to be filled.
-    fn is_required(&self) -> bool;
-
-    /// number of rows
-    fn len(&self) -> usize;
-
-    /// number of values associated to the primitive type this nested tracks
-    fn num_values(&self) -> usize;
+#[derive(Debug)]
+pub enum Nested {
+    Primitive(NestedPrimitive),
+    List(NestedList),
+    FixedSizeList(NestedFixedSizeList),
+    Struct(NestedStruct),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct NestedPrimitive {
     is_nullable: bool,
     length: usize,
 }
 
-impl NestedPrimitive {
-    pub fn new(is_nullable: bool) -> Self {
-        Self {
-            is_nullable,
-            length: 0,
-        }
-    }
+#[derive(Debug)]
+pub struct NestedList {
+    validity: Option<MutableBitmap>,
+    offsets: Vec<i64>,
 }
 
-impl Nested for NestedPrimitive {
-    fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>) {
-        (Default::default(), Default::default())
-    }
-
-    fn is_nullable(&self) -> bool {
-        self.is_nullable
-    }
-
-    fn is_required(&self) -> bool {
-        false
-    }
-
-    fn push(&mut self, _value: i64, _is_valid: bool) {
-        self.length += 1
-    }
-
-    fn len(&self) -> usize {
-        self.length
-    }
-
-    fn num_values(&self) -> usize {
-        self.length
-    }
+#[derive(Debug)]
+pub struct NestedFixedSizeList {
+    validity: Option<MutableBitmap>,
+    length: usize,
+    width: usize,
 }
 
-#[derive(Debug, Default)]
-pub struct NestedOptional {
-    pub validity: MutableBitmap,
-    pub offsets: Vec<i64>,
-}
-
-impl Nested for NestedOptional {
-    fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>) {
-        let offsets = std::mem::take(&mut self.offsets);
-        let validity = std::mem::take(&mut self.validity);
-        (offsets, Some(validity))
-    }
-
-    fn is_nullable(&self) -> bool {
-        true
-    }
-
-    fn is_repeated(&self) -> bool {
-        true
-    }
-
-    fn is_required(&self) -> bool {
-        // it may be for FixedSizeList
-        false
-    }
-
-    fn push(&mut self, value: i64, is_valid: bool) {
-        self.offsets.push(value);
-        self.validity.push(is_valid);
-    }
-
-    fn len(&self) -> usize {
-        self.offsets.len()
-    }
-
-    fn num_values(&self) -> usize {
-        self.offsets.last().copied().unwrap_or(0) as usize
-    }
-}
-
-impl NestedOptional {
-    pub fn with_capacity(capacity: usize) -> Self {
-        let offsets = Vec::<i64>::with_capacity(capacity + 1);
-        let validity = MutableBitmap::with_capacity(capacity);
-        Self { validity, offsets }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct NestedValid {
-    pub offsets: Vec<i64>,
-}
-
-impl Nested for NestedValid {
-    fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>) {
-        let offsets = std::mem::take(&mut self.offsets);
-        (offsets, None)
-    }
-
-    fn is_nullable(&self) -> bool {
-        false
-    }
-
-    fn is_repeated(&self) -> bool {
-        true
-    }
-
-    fn is_required(&self) -> bool {
-        // it may be for FixedSizeList
-        false
-    }
-
-    fn push(&mut self, value: i64, _is_valid: bool) {
-        self.offsets.push(value);
-    }
-
-    fn len(&self) -> usize {
-        self.offsets.len()
-    }
-
-    fn num_values(&self) -> usize {
-        self.offsets.last().copied().unwrap_or(0) as usize
-    }
-}
-
-impl NestedValid {
-    pub fn with_capacity(capacity: usize) -> Self {
-        let offsets = Vec::<i64>::with_capacity(capacity + 1);
-        Self { offsets }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct NestedStructValid {
+#[derive(Debug)]
+pub struct NestedStruct {
+    validity: Option<MutableBitmap>,
     length: usize,
 }
 
-impl NestedStructValid {
-    pub fn new() -> Self {
-        Self { length: 0 }
-    }
-}
-
-impl Nested for NestedStructValid {
-    fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>) {
-        (Default::default(), None)
+impl Nested {
+    fn primitive(is_nullable: bool) -> Self {
+        Self::Primitive(NestedPrimitive {
+            is_nullable,
+            length: 0,
+        })
     }
 
-    fn is_nullable(&self) -> bool {
-        false
+    fn list_with_capacity(is_nullable: bool, capacity: usize) -> Self {
+        let offsets = Vec::with_capacity(capacity);
+        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        Self::List(NestedList { offsets, validity })
     }
 
-    fn is_required(&self) -> bool {
-        true
+    fn fixedlist_with_capacity(is_nullable: bool, width: usize, capacity: usize) -> Self {
+        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        Self::FixedSizeList(NestedFixedSizeList {
+            length: 0,
+            width,
+            validity,
+        })
     }
 
-    fn push(&mut self, _value: i64, _is_valid: bool) {
-        self.length += 1;
+    fn struct_with_capacity(is_nullable: bool, capacity: usize) -> Self {
+        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        Self::Struct(NestedStruct {
+            length: 0,
+            validity,
+        })
     }
 
-    fn len(&self) -> usize {
-        self.length
-    }
-
-    fn num_values(&self) -> usize {
-        self.length
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct NestedStruct {
-    validity: MutableBitmap,
-}
-
-impl NestedStruct {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            validity: MutableBitmap::with_capacity(capacity),
+    pub fn take(self) -> (Vec<i64>, Option<MutableBitmap>) {
+        match self {
+            Nested::Primitive(_) => (Vec::new(), None),
+            Nested::List(n) => (n.offsets, n.validity),
+            Nested::FixedSizeList(n) => (Vec::new(), n.validity),
+            Nested::Struct(n) => (Vec::new(), n.validity),
         }
     }
-}
-
-impl Nested for NestedStruct {
-    fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>) {
-        (Default::default(), Some(std::mem::take(&mut self.validity)))
-    }
 
     fn is_nullable(&self) -> bool {
-        true
+        match self {
+            Nested::Primitive(n) => n.is_nullable,
+            Nested::List(n) => n.validity.is_some(),
+            Nested::FixedSizeList(n) => n.validity.is_some(),
+            Nested::Struct(n) => n.validity.is_some(),
+        }
+    }
+
+    fn is_repeated(&self) -> bool {
+        match self {
+            Nested::Primitive(_) => false,
+            Nested::List(_) => true,
+            Nested::FixedSizeList(_) => true,
+            Nested::Struct(_) => false,
+        }
     }
 
     fn is_required(&self) -> bool {
-        true
+        match self {
+            Nested::Primitive(_) => false,
+            Nested::List(_) => false,
+            Nested::FixedSizeList(_) => false,
+            Nested::Struct(_) => true,
+        }
     }
 
-    fn push(&mut self, _value: i64, is_valid: bool) {
-        self.validity.push(is_valid)
+    fn push_default(&mut self, length: i64) {
+        match self {
+            Nested::Primitive(n) => n.length += 1,
+            Nested::List(n) => {
+                if let Some(validity) = n.validity.as_mut() {
+                    validity.push(false);
+                }
+                n.offsets.push(length);
+            },
+            Nested::FixedSizeList(n) => {
+                if let Some(validity) = n.validity.as_mut() {
+                    validity.push(false);
+                }
+                n.length += 1;
+            },
+            Nested::Struct(n) => {
+                if let Some(validity) = n.validity.as_mut() {
+                    validity.push(false);
+                }
+                n.length += 1;
+            },
+        }
     }
 
+    fn push(&mut self, value: i64, is_valid: bool) {
+        match self {
+            Nested::Primitive(n) => n.length += 1,
+            Nested::List(n) => {
+                if let Some(validity) = n.validity.as_mut() {
+                    validity.push(is_valid);
+                }
+                n.offsets.push(value);
+            },
+            Nested::FixedSizeList(n) => {
+                if let Some(validity) = n.validity.as_mut() {
+                    validity.push(is_valid);
+                }
+                n.length += 1;
+            },
+            Nested::Struct(n) => {
+                if let Some(validity) = n.validity.as_mut() {
+                    validity.push(is_valid);
+                }
+                n.length += 1;
+            },
+        }
+    }
+
+    /// number of rows
     fn len(&self) -> usize {
-        self.validity.len()
+        match self {
+            Nested::Primitive(n) => n.length,
+            Nested::List(n) => n.offsets.len(),
+            Nested::FixedSizeList(n) => n.length,
+            Nested::Struct(n) => n.length,
+        }
     }
 
-    fn num_values(&self) -> usize {
-        self.validity.len()
+    fn invalid_num_values(&self) -> usize {
+        match self {
+            Nested::Primitive(_) => 0,
+            Nested::List(_) => 0,
+            Nested::FixedSizeList(n) => n.width,
+            Nested::Struct(_) => 1,
+        }
     }
 }
 
@@ -275,34 +212,28 @@ pub enum InitNested {
     Primitive(bool),
     /// List data types
     List(bool),
+    /// Fixed-Size List data types
+    FixedSizeList(bool, usize),
     /// Struct data types
     Struct(bool),
 }
 
 /// Initialize [`NestedState`] from `&[InitNested]`.
 pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
+    use {InitNested as IN, Nested as N};
+
     let container = init
         .iter()
         .map(|init| match init {
-            InitNested::Primitive(is_nullable) => {
-                Box::new(NestedPrimitive::new(*is_nullable)) as Box<dyn Nested>
+            IN::Primitive(is_nullable) => N::primitive(*is_nullable),
+            IN::List(is_nullable) => N::list_with_capacity(*is_nullable, capacity),
+            IN::FixedSizeList(is_nullable, width) => {
+                N::fixedlist_with_capacity(*is_nullable, *width, capacity)
             },
-            InitNested::List(is_nullable) => {
-                if *is_nullable {
-                    Box::new(NestedOptional::with_capacity(capacity)) as Box<dyn Nested>
-                } else {
-                    Box::new(NestedValid::with_capacity(capacity)) as Box<dyn Nested>
-                }
-            },
-            InitNested::Struct(is_nullable) => {
-                if *is_nullable {
-                    Box::new(NestedStruct::with_capacity(capacity)) as Box<dyn Nested>
-                } else {
-                    Box::new(NestedStructValid::new()) as Box<dyn Nested>
-                }
-            },
+            IN::Struct(is_nullable) => N::struct_with_capacity(*is_nullable, capacity),
         })
         .collect();
+
     NestedState::new(container)
 }
 
@@ -312,7 +243,9 @@ pub struct NestedPage<'a> {
 
 impl<'a> NestedPage<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let (rep_levels, def_levels, _) = split_buffer(page)?;
+        let split = split_buffer(page)?;
+        let rep_levels = split.rep;
+        let def_levels = split.def;
 
         let max_rep_level = page.descriptor.max_rep_level;
         let max_def_level = page.descriptor.max_def_level;
@@ -337,12 +270,12 @@ impl<'a> NestedPage<'a> {
 #[derive(Debug)]
 pub struct NestedState {
     /// The nesteds composing `NestedState`.
-    pub nested: Vec<Box<dyn Nested>>,
+    pub nested: Vec<Nested>,
 }
 
 impl NestedState {
     /// Creates a new [`NestedState`].
-    pub fn new(nested: Vec<Box<dyn Nested>>) -> Self {
+    pub fn new(nested: Vec<Nested>) -> Self {
         Self { nested }
     }
 
@@ -399,6 +332,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
                 &mut cum_sum,
                 &mut cum_rep,
             )?;
+
             first_item_is_fully_read |= is_fully_read;
             *remaining -= nested.len() - existing;
             items.push_back((nested, decoded));
@@ -428,29 +362,31 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     page: &mut NestedPage<'a>,
     values_state: &mut D::State,
-    nested: &mut [Box<dyn Nested>],
+    nested: &mut [Nested],
     decoded: &mut D::DecodedState,
     decoder: &D,
     additional: usize,
     // Amortized allocations
-    cum_sum: &mut Vec<u32>,
-    cum_rep: &mut Vec<u32>,
+    def_levels: &mut Vec<u32>,
+    rep_levels: &mut Vec<u32>,
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
 
-    cum_sum.resize(max_depth + 1, 0);
-    cum_rep.resize(max_depth + 1, 0);
+    def_levels.resize(max_depth + 1, 0);
+    rep_levels.resize(max_depth + 1, 0);
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
         unsafe {
-            *cum_sum.get_unchecked_release_mut(i + 1) = *cum_sum.get_unchecked_release(i) + delta;
+            *def_levels.get_unchecked_release_mut(i + 1) =
+                *def_levels.get_unchecked_release(i) + delta;
         }
     }
 
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_repeated() as u32;
         unsafe {
-            *cum_rep.get_unchecked_release_mut(i + 1) = *cum_rep.get_unchecked_release(i) + delta;
+            *rep_levels.get_unchecked_release_mut(i + 1) =
+                *rep_levels.get_unchecked_release(i) + delta;
         }
     }
 
@@ -476,37 +412,80 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
 
         let mut is_required = false;
 
-        // SAFETY: only bound check elision.
-        unsafe {
-            for depth in 0..max_depth {
-                let right_level = rep <= *cum_rep.get_unchecked_release(depth)
-                    && def >= *cum_sum.get_unchecked_release(depth);
-                if is_required || right_level {
-                    let length = nested
-                        .get(depth + 1)
+        for depth in 0..max_depth {
+            // Defines whether this element is defined at `depth`
+            //
+            // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
+            // [ [ [ 1 ] ] ].
+            let is_defined_at_this_depth = rep <= rep_levels[depth] && def >= def_levels[depth];
+
+            let length = nested
+                .get(depth + 1)
+                .map(|x| x.len() as i64)
+                // the last depth is the leaf, which is always increased by 1
+                .unwrap_or(1);
+
+            let nest = &mut nested[depth];
+
+            let is_valid = !nest.is_nullable() || def > def_levels[depth];
+
+            if is_defined_at_this_depth && !is_valid {
+                let mut num_elements = 1;
+
+                nest.push(length, is_valid);
+
+                for embed_depth in depth..max_depth {
+                    let embed_length = nested
+                        .get(embed_depth + 1)
                         .map(|x| x.len() as i64)
                         // the last depth is the leaf, which is always increased by 1
                         .unwrap_or(1);
 
-                    let nest = nested.get_unchecked_release_mut(depth);
+                    let embed_nest = &mut nested[embed_depth];
 
-                    let is_valid =
-                        nest.is_nullable() && def > *cum_sum.get_unchecked_release(depth);
-                    nest.push(length, is_valid);
-                    is_required = nest.is_required() && !is_valid;
+                    if embed_depth > depth {
+                        for _ in 0..num_elements {
+                            embed_nest.push_default(embed_length);
+                        }
+                    }
 
-                    if depth == max_depth - 1 {
-                        // the leaf / primitive
-                        let is_valid =
-                            (def != *cum_sum.get_unchecked_release(depth)) || !nest.is_nullable();
-                        if right_level && is_valid {
-                            decoder.push_valid(values_state, decoded)?;
-                        } else {
+                    if embed_depth == max_depth - 1 {
+                        for _ in 0..num_elements {
                             decoder.push_null(decoded);
                         }
+
+                        break;
+                    }
+
+                    let embed_num_values = embed_nest.invalid_num_values();
+
+                    if embed_num_values == 0 {
+                        break;
+                    }
+
+                    num_elements *= embed_num_values;
+                }
+
+                break;
+            }
+
+            if is_required || is_defined_at_this_depth {
+                nest.push(length, is_valid);
+
+                if depth == max_depth - 1 {
+                    // the leaf / primitive
+                    let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
+
+                    if is_valid {
+                        decoder.push_valid(values_state, decoded)?;
+                    } else {
+                        decoder.push_null(decoded);
                     }
                 }
             }
+
+            is_required =
+                (is_required || is_defined_at_this_depth) && nest.is_required() && !is_valid;
         }
 
         if page.iter.len() == 0 {

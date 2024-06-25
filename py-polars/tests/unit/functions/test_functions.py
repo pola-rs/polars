@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -165,7 +165,7 @@ def test_concat_horizontal_duplicate_col() -> None:
     a = pl.LazyFrame({"a": ["a", "b"], "b": [1, 2]})
     b = pl.LazyFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         pl.concat([a, b], how="horizontal").collect()
 
 
@@ -181,6 +181,12 @@ def test_concat_vertical() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_extend_ints() -> None:
+    a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
+    with pytest.raises(pl.exceptions.SchemaError):
+        a.extend(a.select(pl.lit(0, dtype=pl.Int32).alias("a")))
 
 
 def test_null_handling_correlation() -> None:

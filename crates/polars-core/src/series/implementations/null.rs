@@ -36,8 +36,11 @@ impl NullChunked {
     }
 }
 impl PrivateSeriesNumeric for NullChunked {
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        UInt32Chunked::full_null(self.name.as_ref(), self.len())
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(BitRepr::Small(UInt32Chunked::full_null(
+            self.name.as_ref(),
+            self.len(),
+        )))
     }
 }
 

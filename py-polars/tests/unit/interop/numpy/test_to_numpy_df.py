@@ -10,12 +10,13 @@ from hypothesis import given
 from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
+from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars.type_aliases import IndexOrder
+    from polars.type_aliases import IndexOrder, PolarsDataType
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
@@ -202,7 +203,7 @@ def test_df_to_numpy_not_zero_copy() -> None:
     ],
 )
 def test_df_to_numpy_empty_dtype_viewable(
-    schema: dict[str, pl.PolarsDataType], expected_dtype: npt.DTypeLike
+    schema: dict[str, PolarsDataType], expected_dtype: npt.DTypeLike
 ) -> None:
     df = pl.DataFrame(schema=schema)
     result = df.to_numpy(allow_copy=False)
@@ -274,3 +275,13 @@ def test_to_numpy_chunked_16375() -> None:
         ).to_numpy()
         == np.array([[1, 2], [1, 3], [2, 4], [1, 2], [1, 3], [2, 4]])
     ).all()
+
+
+def test_to_numpy_c_order_1700() -> None:
+    rng = np.random.default_rng()
+    df = pl.DataFrame({f"col_{i}": rng.normal(size=20) for i in range(3)})
+    df_chunked = pl.concat([df.slice(i * 10, 10) for i in range(3)])
+    assert_frame_equal(
+        df_chunked,
+        pl.from_numpy(df_chunked.to_numpy(order="c"), schema=df_chunked.schema),
+    )

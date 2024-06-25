@@ -10,13 +10,15 @@ ND = "ND"
 ba = "ba"
 nd = "nd"
 opt_nd = "opt_nd"
-ser = "ser"
+ANDed = "ANDed"
 
 [default.extend-words]
 arange = "arange"
 strat = "strat"
 '"r0ot"' = "r0ot"
 wee = "wee"
+ser = "ser"
+ND = "ND"
 
 [type.csv]
 extend-glob = ["*.csv"]

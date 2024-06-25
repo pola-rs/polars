@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Sequence
 
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -477,7 +477,7 @@ class ExprArrayNameSpace:
         └───────────────┴─────┴─────┘
 
         """
-        index = parse_as_expression(index)
+        index = parse_into_expression(index)
         return wrap_expr(self._pyexpr.arr_get(index, null_on_oob))
 
     def first(self) -> Expr:
@@ -572,7 +572,7 @@ class ExprArrayNameSpace:
         └───────────────┴───────────┴──────┘
 
         """
-        separator = parse_as_expression(separator, str_as_lit=True)
+        separator = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
 
     def explode(self) -> Expr:
@@ -641,7 +641,7 @@ class ExprArrayNameSpace:
         └───────────────┴──────────┘
 
         """
-        item = parse_as_expression(item, str_as_lit=True)
+        item = parse_into_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_contains(item))
 
     def count_matches(self, element: IntoExpr) -> Expr:
@@ -670,7 +670,7 @@ class ExprArrayNameSpace:
         │ [2, 2]        ┆ 2              │
         └───────────────┴────────────────┘
         """
-        element = parse_as_expression(element, str_as_lit=True)
+        element = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_count_matches(element))
 
     def to_struct(
@@ -777,5 +777,5 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ [6, null, null] │
         └───────────────┴─────────────────┘
         """
-        n = parse_as_expression(n)
+        n = parse_into_expression(n)
         return wrap_expr(self._pyexpr.arr_shift(n))

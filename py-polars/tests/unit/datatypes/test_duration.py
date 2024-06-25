@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 
 import polars as pl
+from polars.exceptions import PanicException
 from polars.testing import assert_frame_equal
 
 
@@ -57,5 +58,5 @@ def test_series_duration_std_var() -> None:
 
 def test_series_duration_var_overflow() -> None:
     s = pl.Series([timedelta(days=10), timedelta(days=20), timedelta(days=40)])
-    with pytest.raises(pl.PolarsPanicError, match="OverflowError"):
+    with pytest.raises(PanicException, match="OverflowError"):
         s.var()

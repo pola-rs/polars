@@ -83,7 +83,7 @@ impl ExprNameNameSpace {
                         .iter()
                         .map(|fd| Field::new(&f(fd.name()), fd.data_type().clone()))
                         .collect();
-                    DataType::Struct(fields)
+                    Ok(DataType::Struct(fields))
                 },
                 _ => panic!("Only struct dtype is supported for `map_fields`."),
             }),

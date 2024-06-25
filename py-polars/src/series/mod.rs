@@ -643,11 +643,13 @@ impl PySeries {
 
         let result: AnyValue = if lhs_dtype.is_float() || rhs_dtype.is_float() {
             (&self.series * &other.series)
+                .map_err(PyPolarsErr::from)?
                 .sum::<f64>()
                 .map_err(PyPolarsErr::from)?
                 .into()
         } else {
             (&self.series * &other.series)
+                .map_err(PyPolarsErr::from)?
                 .sum::<i64>()
                 .map_err(PyPolarsErr::from)?
                 .into()
@@ -755,10 +757,16 @@ impl PySeries {
         self.series.tail(Some(n)).into()
     }
 
-    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> PyResult<PyDataFrame> {
+    fn value_counts(
+        &self,
+        sort: bool,
+        parallel: bool,
+        name: String,
+        normalize: bool,
+    ) -> PyResult<PyDataFrame> {
         let out = self
             .series
-            .value_counts(sort, parallel, name)
+            .value_counts(sort, parallel, name, normalize)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "dtype-decimal")]
 use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
-    ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
+    ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat, CastKind,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    Interval, JoinConstraint, ObjectName, OrderByExpr, Query as Subquery, SelectItem, TimezoneInfo,
+    Interval, JoinConstraint, ObjectName, Query as Subquery, SelectItem, Subscript, TimezoneInfo,
     TrimWhereField, UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
@@ -43,7 +43,7 @@ fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
         Some(n) if (4u64..=6u64).contains(n) => TimeUnit::Microseconds,
         Some(n) if (7u64..=9u64).contains(n) => TimeUnit::Nanoseconds,
         Some(n) => {
-            polars_bail!(SQLSyntax: "invalid temporal type precision; expected 1-9, found {}", n)
+            polars_bail!(SQLSyntax: "invalid temporal type precision (expected 1-9, found {})", n)
         },
     })
 }
@@ -54,7 +54,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         // array/list
         // ---------------------------------
         SQLDataType::Array(ArrayElemTypeDef::AngleBracket(inner_type))
-        | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type)) => {
+        | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, _)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
 
@@ -101,7 +101,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
             Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
             Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
             Some(n) => {
-                polars_bail!(SQLSyntax: "unsupported `float` size; expected a value between 1 and 53, found {}", n)
+                polars_bail!(SQLSyntax: "unsupported `float` size (expected a value between 1 and 53, found {})", n)
             },
             None => DataType::Float64,
         },
@@ -204,15 +204,15 @@ impl SQLExprVisitor<'_> {
                 SQLExpr::Value(v) => self.visit_any_value(v, None),
                 SQLExpr::UnaryOp { op, expr } => match expr.as_ref() {
                     SQLExpr::Value(v) => self.visit_any_value(v, Some(op)),
-                    _ => Err(polars_err!(SQLInterface: "expression {:?} is not yet supported", e)),
+                    _ => Err(polars_err!(SQLInterface: "expression {:?} is not currently supported", e)),
                 },
                 SQLExpr::Array(_) => {
                     // TODO: nested arrays (handle FnMut issues)
                     // let srs = self.array_expr_to_series(&[e.clone()])?;
                     // Ok(AnyValue::List(srs))
-                    Err(polars_err!(SQLInterface: "nested array literals are not yet supported:\n{:?}", e))
+                    Err(polars_err!(SQLInterface: "nested array literals are not currently supported:\n{:?}", e))
                 },
-                _ => Err(polars_err!(SQLInterface: "expression {:?} is not yet supported", e)),
+                _ => Err(polars_err!(SQLInterface: "expression {:?} is not currently supported", e)),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -232,7 +232,6 @@ impl SQLExprVisitor<'_> {
                 right,
             } => self.visit_any(left, compare_op, right),
             SQLExpr::Array(arr) => self.visit_array_expr(&arr.elem, true, None),
-            SQLExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SQLExpr::Between {
                 expr,
                 negated,
@@ -241,10 +240,11 @@ impl SQLExprVisitor<'_> {
             } => self.visit_between(expr, *negated, low, high),
             SQLExpr::BinaryOp { left, op, right } => self.visit_binary_op(left, op, right),
             SQLExpr::Cast {
+                kind,
                 expr,
                 data_type,
                 format,
-            } => self.visit_cast(expr, data_type, format, true),
+            } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Extract { field, expr } => {
@@ -295,7 +295,7 @@ impl SQLExprVisitor<'_> {
             } => self.visit_like(*negated, expr, pattern, escape_char, true),
             SQLExpr::Nested(expr) => self.visit_expr(expr),
             SQLExpr::Position { expr, r#in } => Ok(
-                // note: SQL is 1-indexed, not 0-indexed
+                // note: SQL is 1-indexed
                 (self
                     .visit_expr(r#in)?
                     .str()
@@ -316,6 +316,7 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
+            SQLExpr::Subscript { expr, subscript } => self.visit_subscript(expr, subscript),
             SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
             SQLExpr::Trim {
                 expr,
@@ -323,16 +324,11 @@ impl SQLExprVisitor<'_> {
                 trim_what,
                 trim_characters,
             } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
-            SQLExpr::TryCast {
-                expr,
-                data_type,
-                format,
-            } => self.visit_cast(expr, data_type, format, false),
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(value) => self.visit_literal(value),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
-                polars_bail!(SQLInterface: "expression {:?} is not yet supported", other)
+                polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
             },
         }
     }
@@ -343,9 +339,8 @@ impl SQLExprVisitor<'_> {
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
         if subquery.with.is_some() {
-            polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE `with` clause");
+            polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE 'WITH' clause");
         }
-
         let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
         let schema = lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
 
@@ -381,42 +376,9 @@ impl SQLExprVisitor<'_> {
 
     /// Visit a compound SQL identifier
     ///
-    /// e.g. df.column or "df"."column"
+    /// e.g. tbl.column, struct.field, tbl.struct.field (inc. nested struct fields)
     fn visit_compound_identifier(&mut self, idents: &[Ident]) -> PolarsResult<Expr> {
-        match idents {
-            [tbl_name, column_name] => {
-                let mut lf = self
-                    .ctx
-                    .get_table_from_current_scope(&tbl_name.value)
-                    .ok_or_else(|| {
-                        polars_err!(
-                            SQLInterface: "no table or alias named '{}' found",
-                            tbl_name
-                        )
-                    })?;
-
-                let schema =
-                    lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
-                if let Some((_, name, _)) = schema.get_full(&column_name.value) {
-                    let resolved = &self.ctx.resolve_name(&tbl_name.value, &column_name.value);
-                    Ok(if name != resolved {
-                        col(resolved).alias(name)
-                    } else {
-                        col(name)
-                    })
-                } else {
-                    polars_bail!(
-                        SQLInterface: "no column named '{}' found in table '{}'",
-                        column_name,
-                        tbl_name
-                    )
-                }
-            },
-            _ => polars_bail!(
-                SQLInterface: "invalid identifier {:?}",
-                idents
-            ),
-        }
+        Ok(resolve_compound_identifier(self.ctx, idents, self.active_schema)?[0].clone())
     }
 
     fn visit_interval(&self, interval: &Interval) -> PolarsResult<Expr> {
@@ -425,7 +387,7 @@ impl SQLExprVisitor<'_> {
             || interval.leading_precision.is_some()
             || interval.fractional_seconds_precision.is_some()
         {
-            polars_bail!(SQLSyntax: "unsupported interval syntax: '{}'", interval)
+            polars_bail!(SQLSyntax: "unsupported interval syntax ('{}')", interval)
         }
         let s = match &*interval.value {
             SQLExpr::UnaryOp { .. } => {
@@ -448,11 +410,11 @@ impl SQLExprVisitor<'_> {
         negated: bool,
         expr: &SQLExpr,
         pattern: &SQLExpr,
-        escape_char: &Option<char>,
+        escape_char: &Option<String>,
         case_insensitive: bool,
     ) -> PolarsResult<Expr> {
         if escape_char.is_some() {
-            polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not yet supported; found '{}'", escape_char.unwrap());
+            polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
         }
         let pat = match self.visit_expr(pattern) {
             Ok(Expr::Literal(LiteralValue::String(s))) => s,
@@ -480,6 +442,19 @@ impl SQLExprVisitor<'_> {
             let matches = expr.str().contains(lit(rx), true);
             Ok(if negated { matches.not() } else { matches })
         }
+    }
+
+    fn visit_subscript(&mut self, expr: &SQLExpr, subscript: &Subscript) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        Ok(match subscript {
+            Subscript::Index { index } => {
+                let idx = adjust_one_indexed_param(self.visit_expr(index)?, true);
+                expr.list().get(idx, true)
+            },
+            Subscript::Slice { .. } => {
+                polars_bail!(SQLSyntax: "array slice syntax is not currently supported")
+            },
+        })
     }
 
     /// Handle implicit temporal string comparisons.
@@ -602,7 +577,7 @@ impl SQLExprVisitor<'_> {
                 },
             },
             other => {
-                polars_bail!(SQLInterface: "SQL operator {:?} is not yet supported", other)
+                polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)
             },
         })
     }
@@ -725,7 +700,7 @@ impl SQLExprVisitor<'_> {
         expr: &SQLExpr,
         data_type: &SQLDataType,
         format: &Option<CastFormat>,
-        strict: bool,
+        cast_kind: &CastKind,
     ) -> PolarsResult<Expr> {
         if format.is_some() {
             return Err(
@@ -739,10 +714,9 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(None, None));
         }
         let polars_type = map_sql_polars_datatype(data_type)?;
-        Ok(if strict {
-            expr.strict_cast(polars_type)
-        } else {
-            expr.cast(polars_type)
+        Ok(match cast_kind {
+            CastKind::Cast | CastKind::DoubleColon => expr.strict_cast(polars_type),
+            CastKind::TryCast | CastKind::SafeCast => expr.cast(polars_type),
         })
     }
 
@@ -779,7 +753,7 @@ impl SQLExprVisitor<'_> {
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
-            other => polars_bail!(SQLInterface: "SQL value {:?} is not supported", other),
+            other => polars_bail!(SQLInterface: "value {:?} is not supported", other),
         })
     }
 
@@ -833,7 +807,7 @@ impl SQLExprVisitor<'_> {
             SQLValue::SingleQuotedString(s) | SQLValue::DoubleQuotedString(s) => {
                 AnyValue::StringOwned(s.into())
             },
-            other => polars_bail!(SQLInterface: "SQL value {:?} is not yet supported", other),
+            other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }
 
@@ -852,11 +826,11 @@ impl SQLExprVisitor<'_> {
 
         let low = self.convert_temporal_strings(&expr, &low);
         let high = self.convert_temporal_strings(&expr, &high);
-        if negated {
-            Ok(expr.clone().lt(low).or(expr.gt(high)))
+        Ok(if negated {
+            expr.clone().lt(low).or(expr.gt(high))
         } else {
-            Ok(expr.clone().gt_eq(low).and(expr.lt_eq(high)))
-        }
+            expr.clone().gt_eq(low).and(expr.lt_eq(high))
+        })
     }
 
     /// Visit a SQL `TRIM` function.
@@ -889,33 +863,6 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// Visit a SQL `ARRAY_AGG` expression.
-    fn visit_arr_agg(&mut self, expr: &ArrayAgg) -> PolarsResult<Expr> {
-        let mut base = self.visit_expr(&expr.expr)?;
-        if let Some(order_by) = expr.order_by.as_ref() {
-            let (order_by, descending) = self.visit_order_by(order_by)?;
-            base = base.sort_by(
-                order_by,
-                SortMultipleOptions::default().with_order_descending_multi(descending),
-            );
-        }
-        if let Some(limit) = &expr.limit {
-            let limit = match self.visit_expr(limit)? {
-                Expr::Literal(LiteralValue::Int(n)) if n >= 0 => n as usize,
-                _ => polars_bail!(SQLSyntax: "limit in ARRAY_AGG must be a positive integer"),
-            };
-            base = base.head(Some(limit));
-        }
-        if expr.distinct {
-            base = base.unique_stable();
-        }
-        polars_ensure!(
-            !expr.within_group,
-            SQLInterface: "ARRAY_AGG WITHIN GROUP is not yet supported"
-        );
-        Ok(base.implode())
-    }
-
     /// Visit a SQL subquery inside and `IN` expression.
     fn visit_in_subquery(
         &mut self,
@@ -925,25 +872,11 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
-        if negated {
-            Ok(expr.is_in(subquery_result).not())
+        Ok(if negated {
+            expr.is_in(subquery_result).not()
         } else {
-            Ok(expr.is_in(subquery_result))
-        }
-    }
-
-    /// Visit a SQL `ORDER BY` expression.
-    fn visit_order_by(&mut self, order_by: &[OrderByExpr]) -> PolarsResult<(Vec<Expr>, Vec<bool>)> {
-        let mut expr = Vec::with_capacity(order_by.len());
-        let mut descending = Vec::with_capacity(order_by.len());
-        for order_by_expr in order_by {
-            let e = self.visit_expr(&order_by_expr.expr)?;
-            expr.push(e);
-            let desc = order_by_expr.asc.unwrap_or(false);
-            descending.push(desc);
-        }
-
-        Ok((expr, descending))
+            expr.is_in(subquery_result)
+        })
     }
 
     /// Visit `CASE` control flow expression.
@@ -1024,7 +957,7 @@ impl SQLExprVisitor<'_> {
     }
 
     fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
-        polars_bail!(SQLInterface: "expression {:?} is not yet supported", expr);
+        polars_bail!(SQLInterface: "expression {:?} is not currently supported", expr);
     }
 }
 
@@ -1271,6 +1204,34 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
     })
 }
 
+/// Allow an expression that represents a 1-indexed parameter to
+/// be adjusted from 1-indexed (SQL) to 0-indexed (Rust/Polars)
+pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
+    match idx {
+        Expr::Literal(Null) => lit(Null),
+        Expr::Literal(LiteralValue::Int(0)) => {
+            if null_if_zero {
+                lit(Null)
+            } else {
+                idx
+            }
+        },
+        Expr::Literal(LiteralValue::Int(n)) if n < 0 => idx,
+        Expr::Literal(LiteralValue::Int(n)) => lit(n - 1),
+        // TODO: when 'saturating_sub' is available, should be able
+        //  to streamline the when/then/otherwise block below -
+        _ => when(idx.clone().gt(lit(0)))
+            .then(idx.clone() - lit(1))
+            .otherwise(if null_if_zero {
+                when(idx.clone().eq(lit(0)))
+                    .then(lit(Null))
+                    .otherwise(idx.clone())
+            } else {
+                idx.clone()
+            }),
+    }
+}
+
 fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
     let n_bits = b.len();
     if !b.chars().all(|c| c == '0' || c == '1') || n_bits > 64 {
@@ -1287,4 +1248,84 @@ fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
         17..=32 => u32::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
         _ => u64::from_str_radix(s, 2).unwrap().to_be_bytes().to_vec(),
     }))
+}
+
+pub(crate) fn resolve_compound_identifier(
+    ctx: &mut SQLContext,
+    idents: &[Ident],
+    active_schema: Option<&Schema>,
+) -> PolarsResult<Vec<Expr>> {
+    // inference priority: table > struct > column
+    let ident_root = &idents[0];
+    let mut remaining_idents = idents.iter().skip(1);
+    let mut lf = ctx.get_table_from_current_scope(&ident_root.value);
+
+    let schema = if let Some(ref mut lf) = lf {
+        lf.schema_with_arenas(&mut ctx.lp_arena, &mut ctx.expr_arena)
+    } else {
+        Ok(Arc::new(if let Some(active_schema) = active_schema {
+            active_schema.clone()
+        } else {
+            Schema::new()
+        }))
+    }?;
+
+    let col_dtype: PolarsResult<(Expr, Option<&DataType>)> = if lf.is_none() && schema.is_empty() {
+        Ok((col(&ident_root.value), None))
+    } else {
+        let name = &remaining_idents.next().unwrap().value;
+        if lf.is_some() && name == "*" {
+            return Ok(schema
+                .iter_names()
+                .map(|name| col(name))
+                .collect::<Vec<_>>());
+        } else if let Some((_, name, dtype)) = schema.get_full(name) {
+            let resolved = &ctx.resolve_name(&ident_root.value, name);
+            Ok((
+                if name != resolved {
+                    col(resolved).alias(name)
+                } else {
+                    col(name)
+                },
+                Some(dtype),
+            ))
+        } else if lf.is_none() {
+            remaining_idents = idents.iter().skip(1);
+            Ok((col(&ident_root.value), schema.get(&ident_root.value)))
+        } else {
+            polars_bail!(
+                SQLInterface: "no column named '{}' found in table '{}'",
+                name,
+                ident_root
+            )
+        }
+    };
+
+    // additional ident levels index into struct fields
+    let (mut column, mut dtype) = col_dtype?;
+    for ident in remaining_idents {
+        let name = ident.value.as_str();
+        match dtype {
+            Some(DataType::Struct(fields)) if name == "*" => {
+                return Ok(fields
+                    .iter()
+                    .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                    .collect())
+            },
+            Some(DataType::Struct(fields)) => {
+                dtype = fields
+                    .iter()
+                    .find(|fld| fld.name == name)
+                    .map(|fld| &fld.dtype);
+            },
+            Some(dtype) if name == "*" => {
+                polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
+            },
+            _ => {
+                dtype = None;
+            },
+        }
+        column = column.struct_().field_by_name(name);
+    }
+    Ok(vec![column])
 }

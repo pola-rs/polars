@@ -1,23 +1,23 @@
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
 
 use polars_core::prelude::*;
 use polars_io::RowIndex;
+use polars_plan::plans::{DslPlan, FileScan};
+use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
 
-use super::*;
-use crate::prelude::{LazyFrame, ScanArgsAnonymous};
+use crate::prelude::LazyFrame;
+use crate::scan::file_list_reader::LazyFileListReader;
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
-    pub(crate) path: PathBuf,
-    paths: Arc<[PathBuf]>,
+    pub(crate) paths: Arc<[PathBuf]>,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
-    pub(crate) schema: Arc<RwLock<Option<SchemaRef>>>,
+    pub(crate) schema: Option<SchemaRef>,
     pub(crate) row_index: Option<RowIndex>,
-    pub(crate) infer_schema_length: Option<usize>,
+    pub(crate) infer_schema_length: Option<NonZeroUsize>,
     pub(crate) n_rows: Option<usize>,
     pub(crate) ignore_errors: bool,
 }
@@ -29,14 +29,13 @@ impl LazyJsonLineReader {
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
-            path: path.as_ref().to_path_buf(),
-            paths: Arc::new([]),
+            paths: Arc::new([path.as_ref().to_path_buf()]),
             batch_size: None,
             low_memory: false,
             rechunk: false,
-            schema: Arc::new(Default::default()),
+            schema: None,
             row_index: None,
-            infer_schema_length: Some(100),
+            infer_schema_length: NonZeroUsize::new(100),
             ignore_errors: false,
             n_rows: None,
         }
@@ -66,14 +65,14 @@ impl LazyJsonLineReader {
     /// Ignored when the schema is specified explicitly using [`Self::with_schema`].
     /// Setting to `None` will do a full table scan, very slow.
     #[must_use]
-    pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
+    pub fn with_infer_schema_length(mut self, num_rows: Option<NonZeroUsize>) -> Self {
         self.infer_schema_length = num_rows;
         self
     }
     /// Set the JSON file's schema
     #[must_use]
     pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
-        self.schema = Arc::new(RwLock::new(schema));
+        self.schema = schema;
         self
     }
 
@@ -92,30 +91,78 @@ impl LazyJsonLineReader {
 }
 
 impl LazyFileListReader for LazyJsonLineReader {
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let options = ScanArgsAnonymous {
-            name: "JSON SCAN",
-            infer_schema_length: self.infer_schema_length,
+    fn finish(self) -> PolarsResult<LazyFrame> {
+        if !self.glob() {
+            return self.finish_no_glob();
+        }
+
+        let paths = self.expand_paths(false)?.0;
+
+        let file_options = FileScanOptions {
             n_rows: self.n_rows,
-            row_index: self.row_index.clone(),
-            schema: self.schema.read().unwrap().clone(),
-            ..ScanArgsAnonymous::default()
+            with_columns: None,
+            cache: false,
+            row_index: self.row_index,
+            rechunk: self.rechunk,
+            file_counter: 0,
+            hive_options: Default::default(),
         };
 
-        LazyFrame::anonymous_scan(std::sync::Arc::new(self), options)
+        let options = NDJsonReadOptions {
+            n_threads: None,
+            infer_schema_length: self.infer_schema_length,
+            chunk_size: NonZeroUsize::new(1 << 18).unwrap(),
+            low_memory: self.low_memory,
+            ignore_errors: self.ignore_errors,
+            schema: self.schema,
+        };
+
+        let scan_type = FileScan::NDJson { options };
+
+        Ok(LazyFrame::from(DslPlan::Scan {
+            paths,
+            file_info: None,
+            hive_parts: None,
+            predicate: None,
+            file_options,
+            scan_type,
+        }))
     }
 
-    fn path(&self) -> &Path {
-        &self.path
+    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+        let file_options = FileScanOptions {
+            n_rows: self.n_rows,
+            with_columns: None,
+            cache: false,
+            row_index: self.row_index.clone(),
+            rechunk: self.rechunk,
+            file_counter: 0,
+            hive_options: Default::default(),
+        };
+
+        let options = NDJsonReadOptions {
+            n_threads: None,
+            infer_schema_length: self.infer_schema_length,
+            chunk_size: NonZeroUsize::new(1 << 18).unwrap(),
+            low_memory: self.low_memory,
+            ignore_errors: self.ignore_errors,
+            schema: self.schema,
+        };
+
+        let scan_type = FileScan::NDJson { options };
+
+        Ok(LazyFrame::from(DslPlan::Scan {
+            paths: self.paths,
+            file_info: None,
+            hive_parts: None,
+            predicate: None,
+            file_options,
+            scan_type,
+        }))
     }
 
     fn paths(&self) -> &[PathBuf] {
         &self.paths
-    }
-
-    fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
-        self
     }
 
     fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {

@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out = df
         .lazy()
-        .select([fold_exprs(lit(0), |acc, x| Ok(Some(acc + x)), [col("*")]).alias("sum")])
+        .select([fold_exprs(lit(0), |acc, x| (acc + x).map(Some), [col("*")]).alias("sum")])
         .collect()?;
     println!("{}", out);
     // --8<-- [end:mansum]

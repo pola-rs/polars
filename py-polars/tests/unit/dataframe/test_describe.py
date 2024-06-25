@@ -132,6 +132,7 @@ def test_df_describe_nested() -> None:
         ],
         schema=["statistic"] + df.columns,
         schema_overrides={"struct": pl.Float64, "list": pl.Float64},
+        orient="row",
     )
     assert_frame_equal(result, expected)
 
@@ -154,6 +155,7 @@ def test_df_describe_custom_percentiles() -> None:
             ("max", 2.0),
         ],
         schema=["statistic"] + df.columns,
+        orient="row",
     )
     assert_frame_equal(result, expected)
 
@@ -172,6 +174,7 @@ def test_df_describe_no_percentiles(pcts: list[float] | None) -> None:
             ("max", 2.0),
         ],
         schema=["statistic"] + df.columns,
+        orient="row",
     )
     assert_frame_equal(result, expected)
 
@@ -192,6 +195,7 @@ def test_df_describe_empty_column() -> None:
             ("max", None),
         ],
         schema=["statistic"] + df.columns,
+        orient="row",
     )
     assert_frame_equal(result, expected)
 

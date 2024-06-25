@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import SchemaError
 from polars.testing import assert_series_equal
 
 
@@ -68,5 +69,5 @@ def test_array_contains_literal(
 
 def test_array_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.List(pl.Int8)})
-    with pytest.raises(pl.SchemaError, match="invalid series dtype: expected `Array`"):
+    with pytest.raises(SchemaError, match="invalid series dtype: expected `Array`"):
         df.select(pl.col("a").arr.contains(2))

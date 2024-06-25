@@ -64,6 +64,7 @@ Manipulation/selection
     DataFrame.transpose
     DataFrame.unique
     DataFrame.unnest
+    DataFrame.unpivot
     DataFrame.unstack
     DataFrame.update
     DataFrame.upsample

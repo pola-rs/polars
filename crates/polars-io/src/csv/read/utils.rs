@@ -129,6 +129,9 @@ fn decompress_impl<R: Read>(
                     },
                 };
             }
+            if line_count == n_rows {
+                out.truncate(buf_pos); // retain only first n_rows in out
+            }
             out
         },
     })

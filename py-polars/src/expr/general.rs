@@ -251,8 +251,11 @@ impl PyExpr {
     fn len(&self) -> Self {
         self.inner.clone().len().into()
     }
-    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> Self {
-        self.inner.clone().value_counts(sort, parallel, name).into()
+    fn value_counts(&self, sort: bool, parallel: bool, name: String, normalize: bool) -> Self {
+        self.inner
+            .clone()
+            .value_counts(sort, parallel, name, normalize)
+            .into()
     }
     fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
@@ -921,7 +924,11 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
-    fn replace(
+    fn replace(&self, old: PyExpr, new: PyExpr) -> Self {
+        self.inner.clone().replace(old.inner, new.inner).into()
+    }
+
+    fn replace_strict(
         &self,
         old: PyExpr,
         new: PyExpr,
@@ -930,7 +937,7 @@ impl PyExpr {
     ) -> Self {
         self.inner
             .clone()
-            .replace(
+            .replace_strict(
                 old.inner,
                 new.inner,
                 default.map(|e| e.inner),

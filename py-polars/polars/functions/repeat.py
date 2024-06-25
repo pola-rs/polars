@@ -6,11 +6,9 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Array,
     Boolean,
     Decimal,
@@ -18,6 +16,7 @@ from polars.datatypes import (
     List,
     Utf8,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -139,7 +138,7 @@ def repeat(
     """
     if isinstance(n, int):
         n = F.lit(n)
-    value = parse_as_expression(value, str_as_lit=True, list_as_lit=True, dtype=dtype)
+    value = parse_into_expression(value, str_as_lit=True, dtype=dtype)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if eager:
         return F.select(expr).to_series()

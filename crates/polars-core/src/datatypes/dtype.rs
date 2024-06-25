@@ -53,9 +53,9 @@ pub enum DataType {
     Int64,
     Float32,
     Float64,
-    #[cfg(feature = "dtype-decimal")]
     /// Fixed point decimal type optional precision and non-negative scale.
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
+    #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
     String,
@@ -76,14 +76,14 @@ pub enum DataType {
     Array(Box<DataType>, usize),
     /// A nested list with a variable size in each row
     List(Box<DataType>),
-    #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
+    #[cfg(feature = "object")]
     Object(&'static str, Option<Arc<ObjectRegistry>>),
     Null,
-    #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
     // This is ignored with comparisons, hashing etc.
+    #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-categorical")]
     Enum(Option<Arc<RevMapping>>, CategoricalOrdering),
@@ -140,6 +140,7 @@ impl PartialEq for DataType {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
                     _ => l == r,
                 },
+                // TODO: Add Decimal equality
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -236,6 +237,10 @@ impl DataType {
             Array(inner, size) => Array(Box::new(inner.cast_leaf(to)), *size),
             _ => to,
         }
+    }
+
+    pub fn implode(self) -> DataType {
+        DataType::List(Box::new(self))
     }
 
     /// Convert to the physical data type

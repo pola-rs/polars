@@ -53,6 +53,7 @@ methods. All classes and functions exposed in the ``polars.*`` namespace are pub
            :maxdepth: 2
 
            datatypes
+           schema/index
 
 
 .. grid::

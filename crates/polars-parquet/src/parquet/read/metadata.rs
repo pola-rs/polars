@@ -6,7 +6,7 @@ use parquet_format_safe::FileMetaData as TFileMetaData;
 
 use super::super::metadata::FileMetaData;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 
 pub(super) fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
@@ -27,7 +27,7 @@ fn stream_len(seek: &mut impl Seek) -> std::result::Result<u64, std::io::Error> 
 }
 
 /// Reads a [`FileMetaData`] from the reader, located at the end of the file.
-pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetaData> {
+pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> ParquetResult<FileMetaData> {
     // check file is large enough to hold footer
     let file_size = stream_len(reader)?;
     read_metadata_with_size(reader, file_size)
@@ -37,9 +37,9 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetaData> {
 pub fn read_metadata_with_size<R: Read + Seek>(
     reader: &mut R,
     file_size: u64,
-) -> Result<FileMetaData> {
+) -> ParquetResult<FileMetaData> {
     if file_size < HEADER_SIZE + FOOTER_SIZE {
-        return Err(Error::oos(
+        return Err(ParquetError::oos(
             "A parquet file must contain a header and footer with at least 12 bytes",
         ));
     }
@@ -56,7 +56,7 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 
     // check this is indeed a parquet file
     if buffer[default_end_len - 4..] != PARQUET_MAGIC {
-        return Err(Error::oos("The file must end with PAR1"));
+        return Err(ParquetError::oos("The file must end with PAR1"));
     }
 
     let metadata_len = metadata_len(&buffer, default_end_len);
@@ -65,7 +65,7 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 
     let footer_len = FOOTER_SIZE + metadata_len;
     if footer_len > file_size {
-        return Err(Error::oos(
+        return Err(ParquetError::oos(
             "The footer size must be smaller or equal to the file's size",
         ));
     }
@@ -92,7 +92,7 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 }
 
 /// Parse loaded metadata bytes
-pub fn deserialize_metadata<R: Read>(reader: R, max_size: usize) -> Result<FileMetaData> {
+pub fn deserialize_metadata<R: Read>(reader: R, max_size: usize) -> ParquetResult<FileMetaData> {
     let mut prot = TCompactInputProtocol::new(reader, max_size);
     let metadata = TFileMetaData::read_from_in_protocol(&mut prot)?;
 

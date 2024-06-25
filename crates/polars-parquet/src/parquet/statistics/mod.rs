@@ -8,7 +8,7 @@ pub use boolean::BooleanStatistics;
 pub use fixed_len_binary::FixedLenStatistics;
 pub use primitive::PrimitiveStatistics;
 
-use crate::parquet::error::Result;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 pub use crate::parquet::thrift_format::Statistics as ParquetStatistics;
 
@@ -49,7 +49,7 @@ impl Statistics {
     pub fn deserialize(
         statistics: &ParquetStatistics,
         primitive_type: PrimitiveType,
-    ) -> Result<Self> {
+    ) -> ParquetResult<Self> {
         use {PhysicalType as T, PrimitiveStatistics as PrimStat};
         Ok(match primitive_type.physical_type {
             T::ByteArray => BinaryStatistics::deserialize(statistics, primitive_type)?.into(),

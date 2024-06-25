@@ -17,6 +17,7 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
+use crate::chunked_array::metadata::MetadataEnv;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -94,9 +95,7 @@ where
 
         // There is at least one non-null value.
 
-        let md = self.effective_metadata();
-
-        match md.is_sorted() {
+        let result = match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
                 unsafe { self.get_unchecked(idx) }
@@ -109,7 +108,13 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
+        };
+
+        if MetadataEnv::experimental_enabled() {
+            self.interior_mut_metadata().set_min_value(result);
         }
+
+        result
     }
 
     fn max(&self) -> Option<T::Native> {
@@ -118,9 +123,7 @@ where
         }
         // There is at least one non-null value.
 
-        let md = self.effective_metadata();
-
-        match md.is_sorted() {
+        let result = match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = if T::get_dtype().is_float() {
                     float_arg_max_sorted_ascending(self)
@@ -143,7 +146,13 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
+        };
+
+        if MetadataEnv::experimental_enabled() {
+            self.interior_mut_metadata().set_max_value(result);
         }
+
+        result
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
@@ -152,9 +161,7 @@ where
         }
         // There is at least one non-null value.
 
-        let md = self.effective_metadata();
-
-        match md.is_sorted() {
+        let result = match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
                 let max = {
@@ -191,7 +198,21 @@ where
                         MinMax::max_ignore_nan(max1, max2),
                     )
                 }),
+        };
+
+        if MetadataEnv::experimental_enabled() {
+            let (min, max) = match result {
+                Some((min, max)) => (Some(min), Some(max)),
+                None => (None, None),
+            };
+
+            let mut md = self.interior_mut_metadata();
+
+            md.set_min_value(min);
+            md.set_max_value(max);
         }
+
+        result
     }
 
     fn mean(&self) -> Option<f64> {

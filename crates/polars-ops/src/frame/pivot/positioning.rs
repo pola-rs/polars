@@ -2,6 +2,7 @@ use std::hash::Hash;
 
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::*;
+use polars_core::series::BitRepr;
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
@@ -231,39 +232,43 @@ pub(super) fn compute_col_idx(
     let column_agg = unsafe { column_s.agg_first(groups) };
     let column_agg_physical = column_agg.to_physical_repr();
 
-    use DataType::*;
+    use DataType as T;
     let col_locations = match column_agg_physical.dtype() {
-        Int32 | UInt32 => {
-            let ca = column_agg_physical.bit_repr_small();
+        T::Int32 | T::UInt32 => {
+            let Some(BitRepr::Small(ca)) = column_agg_physical.bit_repr() else {
+                polars_bail!(ComputeError: "Expected 32-bit bit representation to be available. This should never happen");
+            };
             compute_col_idx_numeric(&ca)
         },
-        Int64 | UInt64 => {
-            let ca = column_agg_physical.bit_repr_large();
+        T::Int64 | T::UInt64 => {
+            let Some(BitRepr::Large(ca)) = column_agg_physical.bit_repr() else {
+                polars_bail!(ComputeError: "Expected 64-bit bit representation to be available. This should never happen");
+            };
             compute_col_idx_numeric(&ca)
         },
-        Float64 => {
+        T::Float64 => {
             let ca: &ChunkedArray<Float64Type> = column_agg_physical.as_ref().as_ref().as_ref();
             compute_col_idx_numeric(ca)
         },
-        Float32 => {
+        T::Float32 => {
             let ca: &ChunkedArray<Float32Type> = column_agg_physical.as_ref().as_ref().as_ref();
             compute_col_idx_numeric(ca)
         },
-        Struct(_) => {
+        T::Struct(_) => {
             let ca = column_agg_physical.struct_().unwrap();
             let ca = ca.rows_encode()?;
             compute_col_idx_gen(&ca)
         },
-        String => {
+        T::String => {
             let ca = column_agg_physical.str().unwrap();
             let ca = ca.as_binary();
             compute_col_idx_gen(&ca)
         },
-        Binary => {
+        T::Binary => {
             let ca = column_agg_physical.binary().unwrap();
             compute_col_idx_gen(ca)
         },
-        Boolean => {
+        T::Boolean => {
             let ca = column_agg_physical.bool().unwrap();
             compute_col_idx_gen(ca)
         },
@@ -393,34 +398,38 @@ pub(super) fn compute_row_idx(
         let index_agg = unsafe { index_s.agg_first(groups) };
         let index_agg_physical = index_agg.to_physical_repr();
 
-        use DataType::*;
+        use DataType as T;
         match index_agg_physical.dtype() {
-            Int32 | UInt32 => {
-                let ca = index_agg_physical.bit_repr_small();
+            T::Int32 | T::UInt32 => {
+                let Some(BitRepr::Small(ca)) = index_agg_physical.bit_repr() else {
+                    polars_bail!(ComputeError: "Expected 32-bit bit representation to be available. This should never happen");
+                };
                 compute_row_index(index, &ca, count, index_s.dtype())
             },
-            Int64 | UInt64 => {
-                let ca = index_agg_physical.bit_repr_large();
+            T::Int64 | T::UInt64 => {
+                let Some(BitRepr::Large(ca)) = index_agg_physical.bit_repr() else {
+                    polars_bail!(ComputeError: "Expected 64-bit bit representation to be available. This should never happen");
+                };
                 compute_row_index(index, &ca, count, index_s.dtype())
             },
-            Float64 => {
+            T::Float64 => {
                 let ca: &ChunkedArray<Float64Type> = index_agg_physical.as_ref().as_ref().as_ref();
                 compute_row_index(index, ca, count, index_s.dtype())
             },
-            Float32 => {
+            T::Float32 => {
                 let ca: &ChunkedArray<Float32Type> = index_agg_physical.as_ref().as_ref().as_ref();
                 compute_row_index(index, ca, count, index_s.dtype())
             },
-            Boolean => {
+            T::Boolean => {
                 let ca = index_agg_physical.bool().unwrap();
                 compute_row_index(index, ca, count, index_s.dtype())
             },
-            Struct(_) => {
+            T::Struct(_) => {
                 let ca = index_agg_physical.struct_().unwrap();
                 let ca = ca.rows_encode()?;
                 compute_row_index_struct(index, &index_agg, &ca, count)
             },
-            String => {
+            T::String => {
                 let ca = index_agg_physical.str().unwrap();
                 compute_row_index(index, ca, count, index_s.dtype())
             },

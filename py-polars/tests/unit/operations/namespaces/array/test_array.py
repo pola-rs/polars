@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars import ComputeError
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -33,7 +33,7 @@ def test_array_min_max_dtype_12123() -> None:
         min=pl.col("a").arr.min().alias("min"),
     )
 
-    assert df.schema == {
+    assert df.collect_schema() == {
         "a": pl.Array(pl.Float64, 2),
         "b": pl.Float64,
         "max": pl.Float64,
@@ -149,7 +149,7 @@ def test_array_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     # Out-of-bounds index literal.
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         out = s.arr.get(100, null_on_oob=False)
 
     # Negative index literal.
@@ -158,7 +158,7 @@ def test_array_get() -> None:
     assert_series_equal(out, expected)
 
     # Test index expr.
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         out = s.arr.get(pl.Series([1, -2, 100]), null_on_oob=False)
 
     out = s.arr.get(pl.Series([1, -2, 0]), null_on_oob=False)
@@ -175,7 +175,7 @@ def test_array_get() -> None:
         ],
         dtype=pl.Array(pl.Date, 2),
     )
-    with pytest.raises(pl.ComputeError, match="get index is out of bounds"):
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
         out = s.arr.get(pl.Series([1, -2, 4]), null_on_oob=False)
 
 

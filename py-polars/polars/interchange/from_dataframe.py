@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 import polars.functions as F
 from polars.datatypes import Boolean, Enum, Int64, String, UInt8, UInt32
-from polars.exceptions import ComputeError
+from polars.exceptions import InvalidOperationError
 from polars.interchange.dataframe import PolarsDataFrame
 from polars.interchange.protocol import ColumnNullType, CopyNotAllowedError, DtypeKind
 from polars.interchange.utils import (
@@ -278,7 +278,7 @@ def _construct_validity_buffer(
             if column_dtype.is_temporal():
                 sentinel = sentinel.cast(column_dtype)
             return data != sentinel  # noqa: TRY300
-        except ComputeError as e:
+        except InvalidOperationError as e:
             msg = f"invalid sentinel value for column of type {column_dtype}: {null_value!r}"
             raise TypeError(msg) from e
 

@@ -1,5 +1,3 @@
-use polars_ops::prelude::JoinCoalesce;
-
 use super::*;
 
 #[cfg(feature = "parquet")]
@@ -31,7 +29,7 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
         matches!(
             lp,
             DataFrameScan {
-                selection: Some(_),
+                filter: Some(_),
                 ..
             } | Scan {
                 predicate: Some(_),
@@ -50,7 +48,7 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
         matches!(
             lp,
             DataFrameScan {
-                selection: Some(_),
+                filter: Some(_),
                 ..
             } | Scan {
                 predicate: Some(_),
@@ -156,11 +154,7 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
             df2.lazy(),
             [col("idx1")],
             [col("idx2")],
-            JoinArgs {
-                how: JoinType::Left,
-                coalesce: JoinCoalesce::CoalesceColumns,
-                ..Default::default()
-            },
+            JoinType::Left.into(),
         )
         .filter(col("bar").eq(lit(5i32)))
         .collect()?;
@@ -208,11 +202,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
             q2,
             [col("category")],
             [col("category")],
-            JoinArgs {
-                how: JoinType::Left,
-                coalesce: JoinCoalesce::CoalesceColumns,
-                ..Default::default()
-            },
+            JoinType::Left.into(),
         )
         .slice(1, 3)
         // this inserts a cache and blocks slice pushdown
@@ -480,11 +470,10 @@ fn test_with_column_prune() -> PolarsResult<()> {
     (&lp_arena).iter(lp).for_each(|(_, lp)| {
         use IR::*;
         match lp {
-            DataFrameScan { projection, .. } => {
-                let projection = projection.as_ref().unwrap();
-                let projection = projection.as_slice();
+            DataFrameScan { output_schema, .. } => {
+                let projection = output_schema.as_ref().unwrap();
                 assert_eq!(projection.len(), 1);
-                let name = &projection[0];
+                let name = projection.get_at_index(0).unwrap().0;
                 assert_eq!(name, "c1");
             },
             HStack { exprs, .. } => {
@@ -503,7 +492,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use IR::*;
 
-        matches!(lp, IR::SimpleProjection { .. } | DataFrameScan { .. })
+        matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),

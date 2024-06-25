@@ -1,6 +1,6 @@
 use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
-use polars_plan::logical_plan::IR;
+use polars_plan::plans::IR;
 use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
@@ -294,6 +294,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Scan {
             paths,
             file_info: _,
+            hive_parts: _,
             predicate,
             output_schema: _,
             scan_type,
@@ -311,6 +312,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 FileScan::Csv { .. } => "csv".into_py(py),
                 FileScan::Parquet { .. } => "parquet".into_py(py),
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
+                FileScan::NDJson { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
                 FileScan::Anonymous { .. } => {
                     return Err(PyNotImplementedError::new_err("anonymous scan"))
                 },
@@ -320,14 +322,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::DataFrameScan {
             df,
             schema: _,
-            output_schema: _,
-            projection,
-            selection,
+            output_schema,
+            filter: selection,
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
-            projection: projection
-                .as_ref()
-                .map_or_else(|| py.None(), |f| f.to_object(py)),
+            projection: output_schema.as_ref().map_or_else(
+                || py.None(),
+                |s| {
+                    s.iter_names()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .to_object(py)
+                },
+            ),
             selection: selection.as_ref().map(|e| e.into()),
         }
         .into_py(py),
@@ -513,13 +520,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
                 )
                     .to_object(py),
-                FunctionNode::Melt { args, schema: _ } => (
-                    "melt",
-                    args.id_vars.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    args.value_vars
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
+                FunctionNode::Unpivot { args, schema: _ } => (
+                    "unpivot",
+                    args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                    args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.variable_name
                         .as_ref()
                         .map_or_else(|| py.None(), |s| s.as_str().to_object(py)),

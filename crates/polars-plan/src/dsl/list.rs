@@ -4,6 +4,8 @@ use std::sync::RwLock;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
+#[cfg(feature = "list_sets")]
+use polars_core::utils::SuperTypeOptions;
 
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
@@ -298,7 +300,7 @@ impl ListNameSpace {
                     let out = out_dtype.read().unwrap();
                     match out.as_ref() {
                         // dtype already set
-                        Some(dt) => dt.clone(),
+                        Some(dt) => Ok(dt.clone()),
                         // dtype still unknown, set it
                         None => {
                             drop(out);
@@ -314,7 +316,7 @@ impl ListNameSpace {
                             let dt = DataType::Struct(fields);
 
                             *lock = Some(dt.clone());
-                            dt
+                            Ok(dt)
                         },
                     }
                 }),
@@ -359,17 +361,17 @@ impl ListNameSpace {
 
     #[cfg(feature = "list_sets")]
     fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
-        self.0
-            .map_many_private(
-                FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
-                &[other],
-                false,
-                true,
-            )
-            .with_function_options(|mut options| {
-                options.input_wildcard_expansion = true;
-                options
-            })
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                returns_scalar: false,
+                cast_to_supertypes: Some(SuperTypeOptions { implode_list: true }),
+                input_wildcard_expansion: true,
+                ..Default::default()
+            },
+        }
     }
 
     /// Return the SET UNION between both list arrays.

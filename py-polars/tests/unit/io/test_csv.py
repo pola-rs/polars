@@ -7,6 +7,7 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal as D
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
@@ -17,7 +18,7 @@ import zstandard
 
 import polars as pl
 from polars._utils.various import normalize_filepath
-from polars.exceptions import ComputeError, NoDataError
+from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
 from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -1347,6 +1348,52 @@ def test_float_precision(dtype: pl.Float32 | pl.Float64) -> None:
     assert df.write_csv(float_precision=3) == "col\n1.000\n2.200\n3.330\n"
 
 
+def test_float_scientific() -> None:
+    df = (
+        pl.Series(
+            "colf64",
+            [3.141592653589793 * mult for mult in (1e-8, 1e-3, 1e3, 1e17)],
+            dtype=pl.Float64,
+        )
+        .to_frame()
+        .with_columns(pl.col("colf64").cast(pl.Float32).alias("colf32"))
+    )
+
+    assert (
+        df.write_csv(float_precision=None, float_scientific=False)
+        == "colf64,colf32\n0.00000003141592653589793,0.00000003141592586075603\n0.0031415926535897933,0.0031415927223861217\n3141.592653589793,3141.5927734375\n314159265358979300,314159265516355600\n"
+    )
+    assert (
+        df.write_csv(float_precision=0, float_scientific=False)
+        == "colf64,colf32\n0,0\n0,0\n3142,3142\n314159265358979328,314159265516355584\n"
+    )
+    assert (
+        df.write_csv(float_precision=1, float_scientific=False)
+        == "colf64,colf32\n0.0,0.0\n0.0,0.0\n3141.6,3141.6\n314159265358979328.0,314159265516355584.0\n"
+    )
+    assert (
+        df.write_csv(float_precision=3, float_scientific=False)
+        == "colf64,colf32\n0.000,0.000\n0.003,0.003\n3141.593,3141.593\n314159265358979328.000,314159265516355584.000\n"
+    )
+
+    assert (
+        df.write_csv(float_precision=None, float_scientific=True)
+        == "colf64,colf32\n3.141592653589793e-8,3.1415926e-8\n3.1415926535897933e-3,3.1415927e-3\n3.141592653589793e3,3.1415928e3\n3.141592653589793e17,3.1415927e17\n"
+    )
+    assert (
+        df.write_csv(float_precision=0, float_scientific=True)
+        == "colf64,colf32\n3e-8,3e-8\n3e-3,3e-3\n3e3,3e3\n3e17,3e17\n"
+    )
+    assert (
+        df.write_csv(float_precision=1, float_scientific=True)
+        == "colf64,colf32\n3.1e-8,3.1e-8\n3.1e-3,3.1e-3\n3.1e3,3.1e3\n3.1e17,3.1e17\n"
+    )
+    assert (
+        df.write_csv(float_precision=3, float_scientific=True)
+        == "colf64,colf32\n3.142e-8,3.142e-8\n3.142e-3,3.142e-3\n3.142e3,3.142e3\n3.142e17,3.142e17\n"
+    )
+
+
 def test_skip_rows_different_field_len() -> None:
     csv = io.StringIO(
         textwrap.dedent(
@@ -1732,7 +1779,7 @@ def test_csv_9929() -> None:
     f = io.BytesIO()
     df.write_csv(f)
     f.seek(0)
-    with pytest.raises(pl.NoDataError):
+    with pytest.raises(NoDataError):
         pl.read_csv(f, skip_rows=10**6)
 
 
@@ -1759,34 +1806,35 @@ def test_csv_quote_styles() -> None:
             "date": [dt, None, dt],
             "datetime": [None, dtm, dtm],
             "time": [tm, tm, None],
+            "decimal": [D("1.0"), D("2.0"), None],
         }
     )
 
     assert df.write_csv(quote_style="always", **temporal_formats) == (
-        '"float","string","int","bool","date","datetime","time"\n'
-        '"1.0","a","1","true","2077-07-05","","03:01:00"\n'
-        '"2.0","a,bc","2","false","","2077-07-05T03:01:00","03:01:00"\n'
-        '"","""hello","3","","2077-07-05","2077-07-05T03:01:00",""\n'
+        '"float","string","int","bool","date","datetime","time","decimal"\n'
+        '"1.0","a","1","true","2077-07-05","","03:01:00","1.0"\n'
+        '"2.0","a,bc","2","false","","2077-07-05T03:01:00","03:01:00","2.0"\n'
+        '"","""hello","3","","2077-07-05","2077-07-05T03:01:00","",""\n'
     )
     assert df.write_csv(quote_style="necessary", **temporal_formats) == (
-        "float,string,int,bool,date,datetime,time\n"
-        "1.0,a,1,true,2077-07-05,,03:01:00\n"
-        '2.0,"a,bc",2,false,,2077-07-05T03:01:00,03:01:00\n'
-        ',"""hello",3,,2077-07-05,2077-07-05T03:01:00,\n'
+        "float,string,int,bool,date,datetime,time,decimal\n"
+        '1.0,a,1,true,2077-07-05,,03:01:00,"1.0"\n'
+        '2.0,"a,bc",2,false,,2077-07-05T03:01:00,03:01:00,"2.0"\n'
+        ',"""hello",3,,2077-07-05,2077-07-05T03:01:00,,""\n'
     )
     assert df.write_csv(quote_style="never", **temporal_formats) == (
-        "float,string,int,bool,date,datetime,time\n"
-        "1.0,a,1,true,2077-07-05,,03:01:00\n"
-        "2.0,a,bc,2,false,,2077-07-05T03:01:00,03:01:00\n"
-        ',"hello,3,,2077-07-05,2077-07-05T03:01:00,\n'
+        "float,string,int,bool,date,datetime,time,decimal\n"
+        "1.0,a,1,true,2077-07-05,,03:01:00,1.0\n"
+        "2.0,a,bc,2,false,,2077-07-05T03:01:00,03:01:00,2.0\n"
+        ',"hello,3,,2077-07-05,2077-07-05T03:01:00,,\n'
     )
     assert df.write_csv(
         quote_style="non_numeric", quote_char="8", **temporal_formats
     ) == (
-        "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8\n"
-        "1.0,8a8,1,8true8,82077-07-058,,803:01:008\n"
-        "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008\n"
-        ',8"hello8,3,,82077-07-058,82077-07-05T03:01:008,\n'
+        "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8,8decimal8\n"
+        "1.0,8a8,1,8true8,82077-07-058,,803:01:008,81.08\n"
+        "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008,82.08\n"
+        ',8"hello8,3,,82077-07-058,82077-07-05T03:01:008,,88\n'
     )
 
 
@@ -1804,7 +1852,7 @@ def test_ignore_errors_casting_dtypes() -> None:
         ignore_errors=True,
     ).to_dict(as_series=False) == {"inventory": [10, None, None, 90]}
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_csv(
             source=io.StringIO(csv),
             schema_overrides={"inventory": pl.Int8},
@@ -1814,7 +1862,7 @@ def test_ignore_errors_casting_dtypes() -> None:
 
 def test_ignore_errors_date_parser() -> None:
     data_invalid_date = "int,float,date\n3,3.4,X"
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_csv(
             source=io.StringIO(data_invalid_date),
             schema_overrides={"date": pl.Date},
@@ -1838,9 +1886,9 @@ def test_csv_ragged_lines() -> None:
     )
 
     for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
-        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+        with pytest.raises(ComputeError, match=r"found more fields than defined"):
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
-        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+        with pytest.raises(ComputeError, match=r"found more fields than defined"):
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
 
 
@@ -1936,7 +1984,7 @@ def test_csv_no_new_line_last() -> None:
 
 
 def test_invalid_csv_raise() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_csv(
             b"""
     "WellCompletionCWI","FacilityID","ProductionMonth","ReportedHoursProdInj","ProdAccountingProductType","ReportedVolume","VolumetricActivityType"
@@ -1997,7 +2045,7 @@ def test_read_csv_single_column(columns: list[str] | str) -> None:
 
 
 def test_csv_invalid_escape_utf8_14960() -> None:
-    with pytest.raises(pl.ComputeError, match=r"field is not properly escaped"):
+    with pytest.raises(ComputeError, match=r"field is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
 
 
@@ -2108,7 +2156,7 @@ def test_csv_float_decimal() -> None:
 
     floats = b"a;b\n12,239;1,233\n13,908;87,32"
     with pytest.raises(
-        pl.InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
+        InvalidOperationError, match=r"'decimal_comma' argument cannot be combined"
     ):
         pl.read_csv(floats, decimal_comma=True)
 

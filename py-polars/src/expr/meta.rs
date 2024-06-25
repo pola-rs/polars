@@ -3,10 +3,11 @@ use std::io::BufWriter;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::error::PyPolarsErr;
 use crate::expr::ToPyExprs;
 use crate::file::get_file_like;
 use crate::prelude::polars_err;
-use crate::{PyExpr, PyPolarsErr};
+use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {

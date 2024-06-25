@@ -147,5 +147,5 @@ def test_rename_schema_order_6660() -> None:
 
     computed = renamed.select([pl.all(), pl.col("4").alias("computed")])
 
-    assert renamed.schema == renamed.collect().schema
-    assert computed.schema == computed.collect().schema
+    assert renamed.collect_schema() == renamed.collect().schema
+    assert computed.collect_schema() == computed.collect().schema

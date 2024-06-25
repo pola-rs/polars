@@ -27,17 +27,19 @@ def test_order_by_basic(foods_ipc_path: Path) -> None:
         "category": ["vegetables", "seafood", "meat", "fruit"]
     }
 
-    order_by_group_by_res = foods.sql(
-        """
-        SELECT category
-        FROM self
-        GROUP BY category
-        ORDER BY category DESC
-        """
-    ).collect()
-    assert order_by_group_by_res.to_dict(as_series=False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit"]
-    }
+    for category in ("category", "category AS cat"):
+        category_col = category.split(" ")[-1]
+        order_by_group_by_res = foods.sql(
+            f"""
+            SELECT {category}
+            FROM self
+            GROUP BY category
+            ORDER BY {category_col} DESC
+            """
+        ).collect()
+        assert order_by_group_by_res.to_dict(as_series=False) == {
+            category_col: ["vegetables", "seafood", "meat", "fruit"]
+        }
 
     order_by_constructed_group_by_res = foods.sql(
         """
@@ -108,8 +110,8 @@ def test_order_by_misc_selection() -> None:
     assert res.to_dict(as_series=False) == {"x": [1, None, 3, 2]}
 
     # order by expression
-    res = df.sql("SELECT (x % y) AS xmy FROM self ORDER BY x % y")
-    assert res.to_dict(as_series=False) == {"xmy": [1, 3, None, None]}
+    res = df.sql("SELECT (x % y) AS xmy FROM self ORDER BY -(x % y)")
+    assert res.to_dict(as_series=False) == {"xmy": [3, 1, None, None]}
 
     res = df.sql("SELECT (x % y) AS xmy FROM self ORDER BY x % y NULLS FIRST")
     assert res.to_dict(as_series=False) == {"xmy": [None, None, 1, 3]}
@@ -237,6 +239,6 @@ def test_order_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match="negative ordinals values are invalid for ORDER BY; found -1",
+        match="negative ordinal values are invalid for ORDER BY; found -1",
     ):
         df.sql("SELECT * FROM self ORDER BY -1")

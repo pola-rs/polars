@@ -114,7 +114,7 @@ if __name__ == "__main__":
     IGNORE_RESULT = doctest.register_optionflag("IGNORE_RESULT")
 
     # Set doctests to fail on warnings
-    warnings.simplefilter("error", DeprecationWarning)
+    warnings.simplefilter("error", Warning)
     warnings.filterwarnings(
         "ignore",
         message="datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*",

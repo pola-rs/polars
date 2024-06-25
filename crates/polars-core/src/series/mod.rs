@@ -26,7 +26,7 @@ use num_traits::NumCast;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::{Metadata, MetadataFlags};
+use crate::chunked_array::metadata::{IMMetadata, Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{handle_casting_failures, materialize_dyn_int, Wrap};
@@ -280,7 +280,7 @@ impl Series {
             return false;
         }
 
-        inner.as_mut().md = Some(Arc::new(metadata));
+        inner.as_mut().md = Arc::new(IMMetadata::new(metadata));
         true
     }
 
@@ -634,7 +634,7 @@ impl Series {
 
     #[cfg(feature = "dot_product")]
     pub fn dot(&self, other: &Series) -> PolarsResult<f64> {
-        (self * other).sum::<f64>()
+        std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
     /// Get the sum of the Series as a new Series of length 1.

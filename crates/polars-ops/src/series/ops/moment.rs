@@ -26,13 +26,13 @@ fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult
                 #[allow(clippy::redundant_clone)]
                 a_zero_mean.clone()
             } else {
-                &a_zero_mean * &a_zero_mean
+                (&a_zero_mean * &a_zero_mean)?
             };
 
             for n in n_list.iter().rev() {
-                s = &s * &s;
+                s = (&s * &s)?;
                 if n % 2 == 1 {
-                    s = &s * &a_zero_mean;
+                    s = (&s * &a_zero_mean)?;
                 }
             }
             s.mean()

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use super::reader::{finish_page, read_page_header, PageMetaData};
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 use crate::parquet::indexes::{FilteredPage, Interval};
 use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
 use crate::parquet::page::{CompressedDictPage, CompressedPage, ParquetPageHeader};
@@ -44,7 +44,7 @@ fn read_page<R: Read + Seek>(
     length: usize,
     buffer: &mut Vec<u8>,
     data: &mut Vec<u8>,
-) -> Result<ParquetPageHeader, Error> {
+) -> Result<ParquetPageHeader, ParquetError> {
     // seek to the page
     reader.seek(SeekFrom::Start(start))?;
 
@@ -73,14 +73,14 @@ fn read_dict_page<R: Read + Seek>(
     data: &mut Vec<u8>,
     compression: Compression,
     descriptor: &Descriptor,
-) -> Result<CompressedDictPage, Error> {
+) -> Result<CompressedDictPage, ParquetError> {
     let page_header = read_page(reader, start, length, buffer, data)?;
 
     let page = finish_page(page_header, data, compression, descriptor, None)?;
     if let CompressedPage::Dict(page) = page {
         Ok(page)
     } else {
-        Err(Error::oos(
+        Err(ParquetError::oos(
             "The first page is not a dictionary page but it should",
         ))
     }
@@ -129,7 +129,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
         start: u64,
         length: usize,
         selected_rows: Vec<Interval>,
-    ) -> Result<CompressedPage, Error> {
+    ) -> Result<CompressedPage, ParquetError> {
         // it will be read - take buffer
         let mut data = std::mem::take(&mut self.data_buffer);
 
@@ -144,7 +144,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
         )
     }
 
-    fn read_dict(&mut self) -> Option<Result<CompressedPage, Error>> {
+    fn read_dict(&mut self) -> Option<Result<CompressedPage, ParquetError>> {
         // a dictionary page exists iff the first data page is not at the start of
         // the column
         let (start, length) = match self.pages.front() {
@@ -176,7 +176,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
 }
 
 impl<R: Read + Seek> Iterator for IndexedPageReader<R> {
-    type Item = Result<CompressedPage, Error>;
+    type Item = Result<CompressedPage, ParquetError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {

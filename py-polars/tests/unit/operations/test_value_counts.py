@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
 
 
@@ -14,6 +15,15 @@ def test_value_counts() -> None:
     )
     result_sorted = result.sort("a")
     assert_frame_equal(result_sorted, expected)
+
+    out = pl.Series("a", [12, 3345, 12, 3, 4, 4, 1, 12]).value_counts(
+        normalize=True, sort=True
+    )
+    assert out["proportion"].sum() == 1.0
+    assert out.to_dict(as_series=False) == {
+        "a": [12, 4, 3345, 3, 1],
+        "proportion": [0.375, 0.25, 0.125, 0.125, 0.125],
+    }
 
 
 def test_value_counts_logical_type() -> None:
@@ -55,7 +65,7 @@ def test_value_counts_duplicate_name() -> None:
 
     # default name is 'count' ...
     with pytest.raises(
-        pl.DuplicateError,
+        DuplicateError,
         match="duplicate column names; change `name` to fix",
     ):
         s.value_counts()

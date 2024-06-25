@@ -5,13 +5,20 @@ use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub use self::collect::MetadataCollectable;
 pub use self::env::MetadataEnv;
+pub use self::guard::MetadataReadGuard;
+pub use self::interior_mutable::IMMetadata;
+pub use self::md_trait::MetadataTrait;
 use super::PolarsDataType;
 use crate::series::IsSorted;
 
 #[macro_use]
 mod env;
 mod collect;
+mod guard;
+mod interior_mutable;
+mod md_trait;
 
 macro_rules! mdenv_may_bail {
     (get: $field:literal, $value:expr $(=> $default:expr)?) => {{
@@ -64,16 +71,6 @@ pub struct Metadata<T: PolarsDataType> {
     distinct_count: Option<IdxSize>,
 }
 
-pub trait MetadataCollectable<T>: Sized {
-    fn collect_cheap_metadata(&mut self) {}
-
-    #[inline(always)]
-    fn with_cheap_metadata(mut self) -> Self {
-        self.collect_cheap_metadata();
-        self
-    }
-}
-
 bitflags! {
     #[derive(Default, Debug, Clone, Copy, PartialEq)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
@@ -116,7 +113,7 @@ impl MetadataFlags {
 
     pub fn set_fast_explode_list(&mut self, fast_explode_list: bool) {
         mdenv_may_bail!(set: "fast_explode_list", fast_explode_list);
-        self.insert(Self::FAST_EXPLODE_LIST)
+        self.set(Self::FAST_EXPLODE_LIST, fast_explode_list)
     }
 
     pub fn get_fast_explode_list(&self) -> bool {
@@ -398,6 +395,9 @@ impl<T: PolarsDataType> Metadata<T> {
         self.flags.set_fast_explode_list(value);
     }
 
+    pub fn is_sorted_any(&self) -> bool {
+        self.flags.get_sorted_flag() != IsSorted::Not
+    }
     pub fn is_sorted(&self) -> IsSorted {
         self.flags.get_sorted_flag()
     }
@@ -406,6 +406,10 @@ impl<T: PolarsDataType> Metadata<T> {
         self.flags.set_sorted_flag(is_sorted)
     }
 
+    pub fn set_flags(&mut self, flags: MetadataFlags) {
+        mdenv_may_bail!(set: "flags", flags);
+        self.flags = flags;
+    }
     pub fn set_min_value(&mut self, min_value: Option<T::OwnedPhysical>) {
         mdenv_may_bail!(set: "min_value", min_value);
         self.min_value = min_value;
@@ -419,11 +423,10 @@ impl<T: PolarsDataType> Metadata<T> {
         self.distinct_count = distinct_count;
     }
 
-    pub fn set_flags(&mut self, flags: MetadataFlags) {
-        mdenv_may_bail!(set: "flags", flags);
-        self.flags = flags;
+    pub fn get_flags(&self) -> MetadataFlags {
+        let flags = self.flags;
+        mdenv_may_bail!(get: "flags", flags => MetadataFlags::empty())
     }
-
     pub fn get_min_value(&self) -> Option<&T::OwnedPhysical> {
         let min_value = self.min_value.as_ref();
         mdenv_may_bail!(get: "min_value", min_value => None)
@@ -435,9 +438,5 @@ impl<T: PolarsDataType> Metadata<T> {
     pub fn get_distinct_count(&self) -> Option<IdxSize> {
         let distinct_count = self.distinct_count;
         mdenv_may_bail!(get: "distinct_count", distinct_count => None)
-    }
-    pub fn get_flags(&self) -> MetadataFlags {
-        let flags = self.flags;
-        mdenv_may_bail!(get: "flags", flags => MetadataFlags::empty())
     }
 }

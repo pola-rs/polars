@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 import pytest
 
 import polars as pl
+from polars.exceptions import DataOrientationWarning, InvalidOperationError
 
 
 def test_df_mixed_dtypes_string() -> None:
@@ -105,17 +106,14 @@ def test_df_init_strict() -> None:
 
     df = pl.DataFrame(data, schema=schema, strict=False)
 
-    # TODO: This should result in a Float Series without nulls
-    # https://github.com/pola-rs/polars/issues/14427
-    assert df["a"].to_list() == [1, 2, None]
-
+    assert df["a"].to_list() == [1, 2, 3]
     assert df["a"].dtype == pl.Int8
 
 
 def test_df_init_from_series_strict() -> None:
     s = pl.Series("a", [-1, 0, 1])
     schema = {"a": pl.UInt8}
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(InvalidOperationError):
         pl.DataFrame(s, schema=schema, strict=True)
 
     df = pl.DataFrame(s, schema=schema, strict=False)
@@ -191,3 +189,16 @@ def test_list_null_constructor_schema() -> None:
     expected = pl.List(pl.Null)
     assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
     assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
+
+
+def test_df_init_schema_object() -> None:
+    schema = pl.Schema({"a": pl.Int8(), "b": pl.String()})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}, schema=schema)
+
+    assert df.columns == schema.names()
+    assert df.dtypes == schema.dtypes()
+
+
+def test_df_init_data_orientation_inference_warning() -> None:
+    with pytest.warns(DataOrientationWarning):
+        pl.from_records([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])

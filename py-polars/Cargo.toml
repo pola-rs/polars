@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.0.0-alpha.1"
+version = "1.0.0-rc.2"
 edition = "2021"
 
 [lib]
@@ -10,12 +10,16 @@ crate-type = ["cdylib"]
 [dependencies]
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
+polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-ops = { workspace = true }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
+
+# TODO! remove this once truly activated. This is required to make sdist building work
+polars-stream = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
@@ -157,6 +161,7 @@ cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/htt
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
+new_streaming = ["polars-lazy/new_streaming"]
 
 dtype-i8 = []
 dtype-i16 = []
@@ -235,6 +240,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
+  # "new_streaming",
 ]
 
 # we cannot conditionally activate simd

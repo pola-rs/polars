@@ -215,11 +215,7 @@ fn upsample_single_impl(
                         source,
                         &[index_col_name],
                         &[index_col_name],
-                        JoinArgs {
-                            how: JoinType::Left,
-                            coalesce: JoinCoalesce::CoalesceColumns,
-                            ..Default::default()
-                        },
+                        JoinArgs::new(JoinType::Left),
                     )
                 },
                 _ => polars_bail!(

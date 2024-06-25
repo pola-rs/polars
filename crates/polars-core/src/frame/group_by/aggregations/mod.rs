@@ -838,7 +838,7 @@ where
         let ca = &self.0.rechunk();
         match groups {
             GroupsProxy::Idx(groups) => {
-                let arr = self.downcast_iter().next().unwrap();
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
@@ -855,7 +855,7 @@ where
             },
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let arr = ca.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -937,6 +937,8 @@ where
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_get(0).unwrap();
                 _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
@@ -952,7 +954,7 @@ where
                         match (self.has_validity(), self.chunks.len()) {
                             (false, 1) => {
                                 take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
-                                    self.downcast_iter().next().unwrap(),
+                                    arr,
                                     idx2usize(idx),
                                     |a, b| a + b,
                                 )
@@ -966,11 +968,7 @@ where
                                         _,
                                         _,
                                     >(
-                                        self.downcast_iter().next().unwrap(),
-                                        idx2usize(idx),
-                                        |a, b| a + b,
-                                        0.0,
-                                        idx.len() as IdxSize,
+                                        arr, idx2usize(idx), |a, b| a + b, 0.0, idx.len() as IdxSize
                                     )
                                 }
                                 .map(|(sum, null_count)| {

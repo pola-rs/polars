@@ -1,4 +1,4 @@
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::*;
 use crate::parquet::types::NativeType;
@@ -23,7 +23,7 @@ fn reduce_vec8(lhs: Option<Vec<u8>>, rhs: &Option<Vec<u8>>, max: bool) -> Option
     }
 }
 
-pub fn reduce(stats: &[&Option<Statistics>]) -> Result<Option<Statistics>> {
+pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>> {
     if stats.is_empty() {
         return Ok(None);
     }
@@ -40,7 +40,9 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> Result<Option<Statistics>> {
         .skip(1)
         .all(|x| x.physical_type() == stats[0].physical_type());
     if !same_type {
-        return Err(Error::oos("The statistics do not have the same data_type"));
+        return Err(ParquetError::oos(
+            "The statistics do not have the same data_type",
+        ));
     };
 
     use PhysicalType as T;
@@ -159,7 +161,7 @@ mod tests {
     use crate::parquet::schema::types::PrimitiveType;
 
     #[test]
-    fn binary() -> Result<()> {
+    fn binary() -> ParquetResult<()> {
         let iter = vec![
             BinaryStatistics {
                 primitive_type: PrimitiveType::from_physical(
@@ -202,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn fixed_len_binary() -> Result<()> {
+    fn fixed_len_binary() -> ParquetResult<()> {
         let iter = vec![
             FixedLenStatistics {
                 primitive_type: PrimitiveType::from_physical(
@@ -245,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn boolean() -> Result<()> {
+    fn boolean() -> ParquetResult<()> {
         let iter = [
             BooleanStatistics {
                 null_count: Some(0),
@@ -276,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn primitive() -> Result<()> {
+    fn primitive() -> ParquetResult<()> {
         let iter = [PrimitiveStatistics {
             null_count: Some(2),
             distinct_count: None,

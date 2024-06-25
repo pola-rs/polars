@@ -300,6 +300,22 @@ pub fn intersects_with_mut(lhs: &MutableBitmap, rhs: &MutableBitmap) -> bool {
     )
 }
 
+/// Compute `out[i] = if selector[i] { truthy[i] } else { falsy }`.
+pub fn select_constant(selector: &Bitmap, truthy: &Bitmap, falsy: bool) -> Bitmap {
+    let falsy_mask: u64 = if falsy {
+        0xFFFF_FFFF_FFFF_FFFF
+    } else {
+        0x0000_0000_0000_0000
+    };
+
+    binary(selector, truthy, |s, t| (s & t) | (!s & falsy_mask))
+}
+
+/// Compute `out[i] = if selector[i] { truthy[i] } else { falsy[i] }`.
+pub fn select(selector: &Bitmap, truthy: &Bitmap, falsy: &Bitmap) -> Bitmap {
+    ternary(selector, truthy, falsy, |s, t, f| (s & t) | (!s & f))
+}
+
 impl PartialEq for Bitmap {
     fn eq(&self, other: &Self) -> bool {
         eq(self, other)

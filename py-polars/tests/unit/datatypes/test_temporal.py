@@ -10,7 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
@@ -21,6 +21,7 @@ from polars.testing import (
     assert_series_equal,
     assert_series_not_equal,
 )
+from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
@@ -571,6 +572,7 @@ def test_asof_join_tolerance_grouper() -> None:
         {
             "date": [date(2020, 1, 5), date(2020, 1, 10)],
             "by": [1, 1],
+            "date_right": [date(2020, 1, 5), None],
             "values": [100, None],
         }
     )
@@ -757,56 +759,56 @@ def test_temporal_dtypes_map_elements(
         PolarsInefficientMapWarning,
         match=r"(?s)Replace this expression.*lambda x:",
     ):
-        assert_frame_equal(
-            df.with_columns(
-                # don't actually do this; native expressions are MUCH faster ;)
-                pl.col("timestamp")
-                .map_elements(
-                    lambda x: const_dtm,
-                    skip_nulls=skip_nulls,
-                    return_dtype=pl.Datetime,
-                )
-                .alias("const_dtm"),
-                # note: the below now trigger a PolarsInefficientMapWarning
-                pl.col("timestamp")
-                .map_elements(
-                    lambda x: x and x.date(),
-                    skip_nulls=skip_nulls,
-                    return_dtype=pl.Date,
-                )
-                .alias("date"),
-                pl.col("timestamp")
-                .map_elements(
-                    lambda x: x and x.time(),
-                    skip_nulls=skip_nulls,
-                    return_dtype=pl.Time,
-                )
-                .alias("time"),
-            ),
-            pl.DataFrame(
-                [
-                    (
-                        datetime(2010, 9, 12, 10, 19, 54),
-                        datetime(2010, 9, 12, 0, 0),
-                        date(2010, 9, 12),
-                        time(10, 19, 54),
-                    ),
-                    (None, expected_value, None, None),
-                    (
-                        datetime(2009, 2, 13, 23, 31, 30),
-                        datetime(2010, 9, 12, 0, 0),
-                        date(2009, 2, 13),
-                        time(23, 31, 30),
-                    ),
-                ],
-                schema={
-                    "timestamp": pl.Datetime("ms"),
-                    "const_dtm": pl.Datetime("us"),
-                    "date": pl.Date,
-                    "time": pl.Time,
-                },
-            ),
+        result = df.with_columns(
+            # don't actually do this; native expressions are MUCH faster ;)
+            pl.col("timestamp")
+            .map_elements(
+                lambda x: const_dtm,
+                skip_nulls=skip_nulls,
+                return_dtype=pl.Datetime,
+            )
+            .alias("const_dtm"),
+            # note: the below now trigger a PolarsInefficientMapWarning
+            pl.col("timestamp")
+            .map_elements(
+                lambda x: x and x.date(),
+                skip_nulls=skip_nulls,
+                return_dtype=pl.Date,
+            )
+            .alias("date"),
+            pl.col("timestamp")
+            .map_elements(
+                lambda x: x and x.time(),
+                skip_nulls=skip_nulls,
+                return_dtype=pl.Time,
+            )
+            .alias("time"),
         )
+    expected = pl.DataFrame(
+        [
+            (
+                datetime(2010, 9, 12, 10, 19, 54),
+                datetime(2010, 9, 12, 0, 0),
+                date(2010, 9, 12),
+                time(10, 19, 54),
+            ),
+            (None, expected_value, None, None),
+            (
+                datetime(2009, 2, 13, 23, 31, 30),
+                datetime(2010, 9, 12, 0, 0),
+                date(2009, 2, 13),
+                time(23, 31, 30),
+            ),
+        ],
+        schema={
+            "timestamp": pl.Datetime("ms"),
+            "const_dtm": pl.Datetime("us"),
+            "date": pl.Date,
+            "time": pl.Time,
+        },
+        orient="row",
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_timelike_init() -> None:
@@ -1225,7 +1227,7 @@ def test_convert_time_zone_lazy_schema() -> None:
     result = ldf.with_columns(
         pl.col("ts_us").dt.convert_time_zone("America/New_York").alias("ts_us_ny"),
         pl.col("ts_ms").dt.convert_time_zone("America/New_York").alias("ts_us_kt"),
-    ).schema
+    ).collect_schema()
     expected = {
         "ts_us": pl.Datetime("us", "UTC"),
         "ts_ms": pl.Datetime("ms", "UTC"),
@@ -1351,7 +1353,7 @@ def test_replace_time_zone_ambiguous_with_ambiguous(
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="Please use `ambiguous` to tell how it should be localized",
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
@@ -2309,13 +2311,13 @@ def test_year_null_backed_by_out_of_range_15313() -> None:
     assert_series_equal(result, expected)
 
 
-def test_series_is_temporal() -> None:
-    for tp in TEMPORAL_DTYPES | {
-        pl.Datetime("ms", "UTC"),
-        pl.Datetime("ns", "Europe/Amsterdam"),
-    }:
-        s = pl.Series([None], dtype=tp)
-        assert s.dtype.is_temporal() is True
+@pytest.mark.parametrize(
+    "dtype",
+    [*TEMPORAL_DTYPES, pl.Datetime("ms", "UTC"), pl.Datetime("ns", "Europe/Amsterdam")],
+)
+def test_series_is_temporal(dtype: pl.DataType) -> None:
+    s = pl.Series([None], dtype=dtype)
+    assert s.dtype.is_temporal() is True
 
 
 @pytest.mark.parametrize(

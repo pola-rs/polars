@@ -1,4 +1,5 @@
 use arrow::array::PrimitiveArray;
+use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::hashing::DirtyHash;
@@ -20,12 +21,14 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, false)?;
 
-        use DataType::*;
+        let lhs_dtype = lhs.dtype();
+        let rhs_dtype = rhs.dtype();
 
-        match lhs.dtype() {
-            String | Binary => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
+        use DataType as T;
+        match lhs_dtype {
+            T::String | T::Binary => {
+                let lhs = lhs.cast(&T::Binary).unwrap();
+                let rhs = rhs.cast(&T::Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, _, _) = prepare_binary::<BinaryType>(lhs, rhs, false);
@@ -33,7 +36,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
             },
-            BinaryOffset => {
+            T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset().unwrap();
                 let (lhs, rhs, _, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, false);
@@ -42,37 +45,59 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
             },
+            x if x.is_float() => {
+                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    num_group_join_left(lhs, rhs, validate, join_nulls)
+                })
+            },
             _ => {
-                if lhs.dtype().is_float() {
-                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                        num_group_join_left(lhs, rhs, validate, join_nulls)
-                    })
-                } else if s_self.bit_repr_is_large() {
-                    let lhs = lhs.bit_repr_large();
-                    let rhs = rhs.bit_repr_large();
-                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
-                } else {
-                    let lhs = lhs.bit_repr_small();
-                    let rhs = rhs.bit_repr_small();
-                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
+                let lhs = s_self.bit_repr();
+                let rhs = other.bit_repr();
+
+                let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
+                    polars_bail!(nyi = "Hash Left Join between {lhs_dtype} and {rhs_dtype}");
+                };
+
+                use BitRepr as B;
+                match (lhs, rhs) {
+                    (B::Small(lhs), B::Small(rhs)) => {
+                        // Turbofish: see #17137.
+                        num_group_join_left::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                    },
+                    (B::Large(lhs), B::Large(rhs)) => {
+                        // Turbofish: see #17137.
+                        num_group_join_left::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                    },
+                    _ => {
+                        polars_bail!(
+                        nyi = "Mismatch bit repr Hash Left Join between {lhs_dtype} and {rhs_dtype}",
+                    );
+                    },
                 }
             },
         }
     }
 
     #[cfg(feature = "semi_anti_join")]
-    fn hash_join_semi_anti(&self, other: &Series, anti: bool, join_nulls: bool) -> Vec<IdxSize> {
+    fn hash_join_semi_anti(
+        &self,
+        other: &Series,
+        anti: bool,
+        join_nulls: bool,
+    ) -> PolarsResult<Vec<IdxSize>> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
 
-        use DataType::*;
+        let lhs_dtype = lhs.dtype();
+        let rhs_dtype = rhs.dtype();
 
-        match lhs.dtype() {
-            String | Binary => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
+        use DataType as T;
+        Ok(match lhs_dtype {
+            T::String | T::Binary => {
+                let lhs = lhs.cast(&T::Binary).unwrap();
+                let rhs = rhs.cast(&T::Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, _, _) = prepare_binary::<BinaryType>(lhs, rhs, false);
@@ -85,7 +110,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     hash_join_tuples_left_semi(lhs, rhs, join_nulls)
                 }
             },
-            BinaryOffset => {
+            T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset().unwrap();
                 let (lhs, rhs, _, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, false);
@@ -98,24 +123,39 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     hash_join_tuples_left_semi(lhs, rhs, join_nulls)
                 }
             },
+            x if x.is_float() => {
+                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    num_group_join_anti_semi(lhs, rhs, anti, join_nulls)
+                })
+            },
             _ => {
-                if lhs.dtype().is_float() {
-                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                        num_group_join_anti_semi(lhs, rhs, anti, join_nulls)
-                    })
-                } else if s_self.bit_repr_is_large() {
-                    let lhs = lhs.bit_repr_large();
-                    let rhs = rhs.bit_repr_large();
-                    num_group_join_anti_semi(&lhs, &rhs, anti, join_nulls)
-                } else {
-                    let lhs = lhs.bit_repr_small();
-                    let rhs = rhs.bit_repr_small();
-                    num_group_join_anti_semi(&lhs, &rhs, anti, join_nulls)
+                let lhs = s_self.bit_repr();
+                let rhs = other.bit_repr();
+
+                let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
+                    polars_bail!(nyi = "Hash Semi-Anti Join between {lhs_dtype} and {rhs_dtype}");
+                };
+
+                use BitRepr as B;
+                match (lhs, rhs) {
+                    (B::Small(lhs), B::Small(rhs)) => {
+                        // Turbofish: see #17137.
+                        num_group_join_anti_semi::<UInt32Type>(&lhs, &rhs, anti, join_nulls)
+                    },
+                    (B::Large(lhs), B::Large(rhs)) => {
+                        // Turbofish: see #17137.
+                        num_group_join_anti_semi::<UInt64Type>(&lhs, &rhs, anti, join_nulls)
+                    },
+                    _ => {
+                        polars_bail!(
+                            nyi = "Mismatch bit repr Hash Semi-Anti Join between {lhs_dtype} and {rhs_dtype}",
+                        );
+                    },
                 }
             },
-        }
+        })
     }
 
     // returns the join tuples and whether or not the lhs tuples are sorted
@@ -129,11 +169,14 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, true)?;
 
-        use DataType::*;
-        match lhs.dtype() {
-            String | Binary => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
+        let lhs_dtype = lhs.dtype();
+        let rhs_dtype = rhs.dtype();
+
+        use DataType as T;
+        match lhs_dtype {
+            T::String | T::Binary => {
+                let lhs = lhs.cast(&T::Binary).unwrap();
+                let rhs = rhs.cast(&T::Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
@@ -145,7 +188,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     !swapped,
                 ))
             },
-            BinaryOffset => {
+            T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset()?;
                 let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
@@ -157,21 +200,36 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     !swapped,
                 ))
             },
+            x if x.is_float() => {
+                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
+                })
+            },
             _ => {
-                if lhs.dtype().is_float() {
-                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                        group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
-                    })
-                } else if s_self.bit_repr_is_large() {
-                    let lhs = s_self.bit_repr_large();
-                    let rhs = other.bit_repr_large();
-                    group_join_inner::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
-                } else {
-                    let lhs = s_self.bit_repr_small();
-                    let rhs = other.bit_repr_small();
-                    group_join_inner::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                let lhs = s_self.bit_repr();
+                let rhs = other.bit_repr();
+
+                let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
+                    polars_bail!(nyi = "Hash Inner Join between {lhs_dtype} and {rhs_dtype}");
+                };
+
+                use BitRepr as B;
+                match (lhs, rhs) {
+                    (B::Small(lhs), B::Small(rhs)) => {
+                        // Turbofish: see #17137.
+                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                    },
+                    (B::Large(lhs), BitRepr::Large(rhs)) => {
+                        // Turbofish: see #17137.
+                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                    },
+                    _ => {
+                        polars_bail!(
+                            nyi = "Mismatch bit repr Hash Inner Join between {lhs_dtype} and {rhs_dtype}"
+                        );
+                    },
                 }
             },
         }
@@ -187,11 +245,14 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, true)?;
 
-        use DataType::*;
-        match lhs.dtype() {
-            String | Binary => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
+        let lhs_dtype = lhs.dtype();
+        let rhs_dtype = rhs.dtype();
+
+        use DataType as T;
+        match lhs_dtype {
+            T::String | T::Binary => {
+                let lhs = lhs.cast(&T::Binary).unwrap();
+                let rhs = rhs.cast(&T::Binary).unwrap();
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
@@ -200,7 +261,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
             },
-            BinaryOffset => {
+            T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
                 let rhs = rhs.binary_offset()?;
                 let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
@@ -209,21 +270,31 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
             },
+            x if x.is_float() => {
+                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    hash_join_outer(lhs, rhs, validate, join_nulls)
+                })
+            },
             _ => {
-                if lhs.dtype().is_float() {
-                    with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                        let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                        let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                        hash_join_outer(lhs, rhs, validate, join_nulls)
-                    })
-                } else if s_self.bit_repr_is_large() {
-                    let lhs = s_self.bit_repr_large();
-                    let rhs = other.bit_repr_large();
-                    hash_join_outer(&lhs, &rhs, validate, join_nulls)
-                } else {
-                    let lhs = s_self.bit_repr_small();
-                    let rhs = other.bit_repr_small();
-                    hash_join_outer(&lhs, &rhs, validate, join_nulls)
+                let (Some(lhs), Some(rhs)) = (s_self.bit_repr(), other.bit_repr()) else {
+                    polars_bail!(nyi = "Hash Join Outer between {lhs_dtype} and {rhs_dtype}");
+                };
+
+                use BitRepr as B;
+                match (lhs, rhs) {
+                    (B::Small(lhs), B::Small(rhs)) => {
+                        // Turbofish: see #17137.
+                        hash_join_outer::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                    },
+                    (B::Large(lhs), B::Large(rhs)) => {
+                        // Turbofish: see #17137.
+                        hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                    },
+                    _ => {
+                        polars_bail!(nyi = "Mismatch bit repr Hash Join Outer between {lhs_dtype} and {rhs_dtype}");
+                    },
                 }
             },
         }

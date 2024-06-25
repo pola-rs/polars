@@ -5,6 +5,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 
@@ -154,7 +155,7 @@ def test_generalized_ufunc_missing_data() -> None:
     add_one = make_add_one()
     s_float = pl.Series("f", [1.0, 2.0, 3.0, None], dtype=pl.Float64)
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="Can't pass a Series with missing data to a generalized ufunc",
     ):
         add_one(s_float)

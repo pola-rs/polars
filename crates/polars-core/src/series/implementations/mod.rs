@@ -27,11 +27,13 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
+use std::sync::RwLockReadGuard;
 
 use ahash::RandomState;
 
 use super::*;
 use crate::chunked_array::comparison::*;
+use crate::chunked_array::metadata::MetadataTrait;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
@@ -68,7 +70,7 @@ where
 }
 
 macro_rules! impl_dyn_series {
-    ($ca: ident) => {
+    ($ca: ident, $pdt:ty) => {
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn compute_len(&mut self) {
                 self.0.compute_len()
@@ -171,18 +173,48 @@ macro_rules! impl_dyn_series {
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = sub,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
             fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = add,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::add_to(&self.0, rhs)
             }
             fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = mul,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::multiply(&self.0, rhs)
             }
             fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = div,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::divide(&self.0, rhs)
             }
             fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = rem,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
             #[cfg(feature = "algorithm_group_by")]
@@ -207,6 +239,10 @@ macro_rules! impl_dyn_series {
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
+            }
+
+            fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+                self.metadata_dyn()
             }
 
             fn bitand(&self, other: &Series) -> PolarsResult<Series> {
@@ -436,46 +472,60 @@ macro_rules! impl_dyn_series {
 }
 
 #[cfg(feature = "dtype-u8")]
-impl_dyn_series!(UInt8Chunked);
+impl_dyn_series!(UInt8Chunked, UInt8Type);
 #[cfg(feature = "dtype-u16")]
-impl_dyn_series!(UInt16Chunked);
-impl_dyn_series!(UInt32Chunked);
-impl_dyn_series!(UInt64Chunked);
+impl_dyn_series!(UInt16Chunked, UInt16Type);
+impl_dyn_series!(UInt32Chunked, UInt32Type);
+impl_dyn_series!(UInt64Chunked, UInt64Type);
 #[cfg(feature = "dtype-i8")]
-impl_dyn_series!(Int8Chunked);
+impl_dyn_series!(Int8Chunked, Int8Type);
 #[cfg(feature = "dtype-i16")]
-impl_dyn_series!(Int16Chunked);
-impl_dyn_series!(Int32Chunked);
-impl_dyn_series!(Int64Chunked);
+impl_dyn_series!(Int16Chunked, Int16Type);
+impl_dyn_series!(Int32Chunked, Int32Type);
+impl_dyn_series!(Int64Chunked, Int64Type);
 
 impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedArray<T>> {
-    fn bit_repr_is_large(&self) -> bool {
-        ChunkedArray::<T>::bit_repr_is_large()
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
-#[cfg(feature = "dtype-array")]
-impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        false
+impl private::PrivateSeriesNumeric for SeriesWrap<StringChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
     }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BinaryOffsetChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+#[cfg(feature = "dtype-array")]
+impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
+impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        let repr = self
+            .0
             .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
             .unwrap()
             .u32()
             .unwrap()
-            .clone()
+            .clone();
+
+        Some(BitRepr::Small(repr))
     }
 }

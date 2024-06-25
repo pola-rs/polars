@@ -19,11 +19,11 @@ class InProcessQuery:
     """
 
     def __init__(self, ipq: PyInProcessQuery) -> None:
-        self.ipq = ipq
+        self._inner = ipq
 
     def cancel(self) -> None:
         """Cancel the query at earliest convenience."""
-        self.ipq.cancel()
+        self._inner.cancel()
 
     def fetch(self) -> DataFrame | None:
         """
@@ -32,11 +32,12 @@ class InProcessQuery:
         If it is ready, a materialized DataFrame is returned.
         If it is not ready it will return `None`.
         """
-        out = self.ipq.fetch()
+        out = self._inner.fetch()
         if out is not None:
             return wrap_df(out)
-        return None
+        else:
+            return None
 
     def fetch_blocking(self) -> DataFrame:
         """Await the result synchronously."""
-        return wrap_df(self.ipq.fetch_blocking())
+        return wrap_df(self._inner.fetch_blocking())

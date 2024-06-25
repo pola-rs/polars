@@ -8,7 +8,7 @@ use super::{
     spec, FieldInfo, GroupConvertedType, GroupLogicalType, PhysicalType, PrimitiveConvertedType,
     PrimitiveLogicalType,
 };
-use crate::parquet::error::Result;
+use crate::parquet::error::ParquetResult;
 
 /// The complete description of a parquet column
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -158,7 +158,7 @@ impl ParquetType {
         converted_type: Option<PrimitiveConvertedType>,
         logical_type: Option<PrimitiveLogicalType>,
         id: Option<i32>,
-    ) -> Result<Self> {
+    ) -> ParquetResult<Self> {
         spec::check_converted_invariants(&physical_type, &converted_type)?;
         spec::check_logical_invariants(&physical_type, &logical_type)?;
 

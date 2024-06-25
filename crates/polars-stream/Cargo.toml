@@ -1,0 +1,33 @@
+[package]
+name = "polars-stream"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Private crate for the streaming execution engine for the Polars DataFrame library"
+
+[dependencies]
+atomic-waker = { workspace = true }
+crossbeam-deque = { workspace = true }
+crossbeam-utils = { workspace = true }
+parking_lot = { workspace = true }
+pin-project-lite = { workspace = true }
+polars-io = { workspace = true, features = ["async"] }
+polars-utils = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+recursive = { workspace = true }
+slotmap = { workspace = true }
+
+polars-core = { workspace = true }
+polars-error = { workspace = true }
+polars-expr = { workspace = true }
+polars-plan = { workspace = true }
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[features]
+nightly = []

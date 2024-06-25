@@ -10,7 +10,7 @@ from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def test_div() -> None:
@@ -124,7 +124,7 @@ def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
-            SQLSyntaxError, match=r"invalid decimals value for ROUND \('!!'\)"
+            SQLSyntaxError, match=r"invalid value for ROUND decimals \('!!'\)"
         ):
             ctx.execute("SELECT ROUND(n,'!!') AS n FROM df")
         with pytest.raises(

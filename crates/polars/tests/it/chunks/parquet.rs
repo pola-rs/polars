@@ -25,16 +25,7 @@ fn test_cast_join_14872() {
     let df2 = ParquetReader::new(buf).finish().unwrap();
 
     let out = df1
-        .join(
-            &df2,
-            ["ints"],
-            ["ints"],
-            JoinArgs {
-                how: JoinType::Left,
-                coalesce: JoinCoalesce::CoalesceColumns,
-                ..Default::default()
-            },
-        )
+        .join(&df2, ["ints"], ["ints"], JoinArgs::new(JoinType::Left))
         .unwrap();
 
     let expected = df![

@@ -97,7 +97,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ModuleUpgradeRequired, ShapeError
+from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -596,32 +596,32 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def __and__(self, other: Series) -> Self:
+    def __and__(self, other: Any) -> Self:
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitand(other._s))
 
-    def __rand__(self, other: Series) -> Series:
+    def __rand__(self, other: Any) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
         return other & self
 
-    def __or__(self, other: Series) -> Self:
+    def __or__(self, other: Any) -> Self:
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitor(other._s))
 
-    def __ror__(self, other: Series) -> Series:
+    def __ror__(self, other: Any) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
         return other | self
 
-    def __xor__(self, other: Series) -> Self:
+    def __xor__(self, other: Any) -> Self:
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitxor(other._s))
 
-    def __rxor__(self, other: Series) -> Series:
+    def __rxor__(self, other: Any) -> Series:
         if not isinstance(other, Series):
             other = Series([other])
         return other ^ self
@@ -961,8 +961,12 @@ class Series:
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
 
-        if isinstance(other, (PyDecimal, int)) and self.dtype.is_decimal():
-            _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
+        if self.dtype.is_decimal() and isinstance(other, (PyDecimal, int)):
+            if isinstance(other, int):
+                pyseries = sequence_to_pyseries(self.name, [other])
+                _s = self._from_pyseries(pyseries).cast(Decimal(scale=0))._s
+            else:
+                _s = sequence_to_pyseries(self.name, [other], dtype=Decimal)
 
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
@@ -1954,7 +1958,7 @@ class Series:
         >>> s.nan_max()
         4
 
-        >>> s = pl.Series("a", [1, float("nan"), 4])
+        >>> s = pl.Series("a", [1.0, float("nan"), 4.0])
         >>> s.nan_max()
         nan
         """
@@ -1973,7 +1977,7 @@ class Series:
         >>> s.nan_min()
         1
 
-        >>> s = pl.Series("a", [1, float("nan"), 4])
+        >>> s = pl.Series("a", [1.0, float("nan"), 4.0])
         >>> s.nan_min()
         nan
         """
@@ -2399,7 +2403,12 @@ class Series:
             return out.struct.unnest()
 
     def value_counts(
-        self, *, sort: bool = False, parallel: bool = False, name: str = "count"
+        self,
+        *,
+        sort: bool = False,
+        parallel: bool = False,
+        name: str | None = None,
+        normalize: bool = False,
     ) -> DataFrame:
         """
         Count the occurrences of unique values.
@@ -2416,7 +2425,11 @@ class Series:
                 This option should likely not be enabled in a group by context,
                 as the computation is already parallelized per group.
         name
-            Give the resulting count column a specific name; defaults to "count".
+            Give the resulting count column a specific name;
+            if `normalize` is True defaults to "count",
+            otherwise defaults to "proportion".
+        normalize
+            If true gives relative frequencies of the unique values
 
         Returns
         -------
@@ -2452,8 +2465,15 @@ class Series:
         │ green ┆ 1   │
         └───────┴─────┘
         """
+        if name is None:
+            if normalize:
+                name = "proportion"
+            else:
+                name = "count"
         return pl.DataFrame._from_pydf(
-            self._s.value_counts(sort=sort, parallel=parallel, name=name)
+            self._s.value_counts(
+                sort=sort, parallel=parallel, name=name, normalize=normalize
+            )
         )
 
     def unique_counts(self) -> Series:
@@ -4411,9 +4431,9 @@ class Series:
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
             if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
-                raise ModuleUpgradeRequired(
+                raise ModuleUpgradeRequiredError(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
                     f", found pyarrow {pa.__version__!r}"
                     if _PYARROW_AVAILABLE
@@ -4710,7 +4730,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3, float("nan")])
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, float("nan")])
         >>> s.fill_nan(0)
         shape: (4,)
         Series: 'a' [f64]
@@ -6473,7 +6493,7 @@ class Series:
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values by different values.
+        Replace values by different values of the same data type.
 
         Parameters
         ----------
@@ -6484,16 +6504,27 @@ class Series:
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.
+
         default
             Set values that were not replaced to this value.
             Defaults to keeping the original value.
             Accepts expression input. Non-expression inputs are parsed as literals.
+
+            .. deprecated:: 0.20.31
+                Use :meth:`replace_all` instead to set a default while replacing values.
+
         return_dtype
-            The data type of the resulting Series. If set to `None` (default),
+            The data type of the resulting expression. If set to `None` (default),
             the data type is determined automatically based on the other inputs.
+
+            .. deprecated:: 0.20.31
+                Use :meth:`replace_all` instead to set a return data type while
+                replacing values.
+
 
         See Also
         --------
+        replace_strict
         str.replace
 
         Notes
@@ -6529,36 +6560,21 @@ class Series:
         ]
 
         Passing a mapping with replacements is also supported as syntactic sugar.
-        Specify a default to set all values that were not matched.
 
         >>> mapping = {2: 100, 3: 200}
-        >>> s.replace(mapping, default=-1)
+        >>> s.replace(mapping)
         shape: (4,)
         Series: '' [i64]
         [
-                -1
+                1
                 100
                 100
                 200
         ]
 
-
-        The default can be another Series.
-
-        >>> default = pl.Series([2.5, 5.0, 7.5, 10.0])
-        >>> s.replace(2, 100, default=default)
-        shape: (4,)
-        Series: '' [f64]
-        [
-                2.5
-                100.0
-                100.0
-                10.0
-        ]
-
-        Replacing by values of a different data type sets the return type based on
-        a combination of the `new` data type and either the original data type or the
-        default data type if it was set.
+        The original data type is preserved when replacing by values of a different
+        data type. Use :meth:`replace_strict` to replace and change the return data
+        type.
 
         >>> s = pl.Series(["x", "y", "z"])
         >>> mapping = {"x": 1, "y": 2, "z": 3}
@@ -6570,7 +6586,116 @@ class Series:
                 "2"
                 "3"
         ]
-        >>> s.replace(mapping, default=None)
+        """
+
+    def replace_strict(
+        self,
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        *,
+        default: IntoExpr | NoDefault = no_default,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace all values by different values.
+
+        Parameters
+        ----------
+        old
+            Value or sequence of values to replace.
+            Also accepts a mapping of values to their replacement as syntactic sugar for
+            `replace_all(old=Series(mapping.keys()), new=Series(mapping.values()))`.
+        new
+            Value or sequence of values to replace by.
+            Length must match the length of `old` or have length 1.
+        default
+            Set values that were not replaced to this value. If no default is specified,
+            (default), an error is raised if any values were not replaced.
+            Accepts expression input. Non-expression inputs are parsed as literals.
+        return_dtype
+            The data type of the resulting Series. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
+
+        Raises
+        ------
+        InvalidOperationError
+            If any non-null values in the original column were not replaced, and no
+            `default` was specified.
+
+        See Also
+        --------
+        replace
+        str.replace
+
+        Notes
+        -----
+        The global string cache must be enabled when replacing categorical values.
+
+        Examples
+        --------
+        Replace values by passing sequences to the `old` and `new` parameters.
+
+        >>> s = pl.Series([1, 2, 2, 3])
+        >>> s.replace_strict([1, 2, 3], [100, 200, 300])
+        shape: (4,)
+        Series: '' [i64]
+        [
+                100
+                200
+                200
+                300
+        ]
+
+        Passing a mapping with replacements is also supported as syntactic sugar.
+
+        >>> mapping = {1: 100, 2: 200, 3: 300}
+        >>> s.replace_strict(mapping)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                100
+                200
+                200
+                300
+        ]
+
+        By default, an error is raised if any non-null values were not replaced.
+        Specify a default to set all values that were not matched.
+
+        >>> mapping = {2: 200, 3: 300}
+        >>> s.replace_strict(mapping)  # doctest: +SKIP
+        Traceback (most recent call last):
+        ...
+        polars.exceptions.InvalidOperationError: incomplete mapping specified for `replace_strict`
+        >>> s.replace_strict(mapping, default=-1)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                -1
+                200
+                200
+                300
+        ]
+
+        The default can be another Series.
+
+        >>> default = pl.Series([2.5, 5.0, 7.5, 10.0])
+        >>> s.replace_strict(2, 200, default=default)
+        shape: (4,)
+        Series: '' [f64]
+        [
+                2.5
+                200.0
+                200.0
+                10.0
+        ]
+
+        Replacing by values of a different data type sets the return type based on
+        a combination of the `new` data type and the `default` data type.
+
+        >>> s = pl.Series(["x", "y", "z"])
+        >>> mapping = {"x": 1, "y": 2, "z": 3}
+        >>> s.replace_strict(mapping)
         shape: (3,)
         Series: '' [i64]
         [
@@ -6578,10 +6703,18 @@ class Series:
                 2
                 3
         ]
+        >>> s.replace_strict(mapping, default="x")
+        shape: (3,)
+        Series: '' [str]
+        [
+                "1"
+                "2"
+                "3"
+        ]
 
         Set the `return_dtype` parameter to control the resulting data type directly.
 
-        >>> s.replace(mapping, return_dtype=pl.UInt8)
+        >>> s.replace_strict(mapping, return_dtype=pl.UInt8)
         shape: (3,)
         Series: '' [u8]
         [
@@ -6589,7 +6722,7 @@ class Series:
                 2
                 3
         ]
-        """
+        """  # noqa: W505
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
@@ -7207,7 +7340,7 @@ class Series:
             "0.9.1"
         ):
             msg = "hvplot>=0.9.1 is required for `.plot`"
-            raise ModuleUpgradeRequired(msg)
+            raise ModuleUpgradeRequiredError(msg)
         hvplot.post_patch()
         return hvplot.plotting.core.hvPlotTabularPolars(self)
 

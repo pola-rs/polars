@@ -1,7 +1,8 @@
 python:
   DataFrame: https://docs.pola.rs/api/python/stable/reference/dataframe/index.html
-  Categorical: https://docs.pola.rs/api/python/stable/reference/api/polars.Categorical.html
+  LazyFrame: https://docs.pola.rs/api/python/stable/reference/lazyframe/index.html
   Series: https://docs.pola.rs/api/python/stable/reference/series/index.html
+  Categorical: https://docs.pola.rs/api/python/stable/reference/api/polars.Categorical.html
   select: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.select.html
   filter: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.filter.html
   with_columns: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.with_columns.html
@@ -98,7 +99,7 @@ python:
   join_asof: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.join_asof.html
   concat: https://docs.pola.rs/api/python/stable/reference/api/polars.concat.html
   pivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.pivot.html
-  melt: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.melt.html
+  unpivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.unpivot.html
   is_between: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_between.html
 
   date_range: https://docs.pola.rs/api/python/stable/reference/api/polars.date_range.html
@@ -151,6 +152,7 @@ python:
 
 rust:
   DataFrame: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html
+  LazyFrame: https://docs.pola.rs/api/rust/dev/polars/prelude/struct.LazyFrame.html
   Series: https://docs.pola.rs/api/rust/dev/polars/series/struct.Series.html
   Categorical:
     name: Categorical
@@ -177,7 +179,7 @@ rust:
 
   DataFrame.explode: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.explode
   pivot: https://docs.pola.rs/api/rust/dev/polars_lazy/frame/pivot/fn.pivot.html
-  melt: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.melt
+  unpivot: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.unpivot
   upsample: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.upsample
   join_asof: https://docs.pola.rs/api/rust/dev/polars/prelude/trait.AsofJoin.html#method.join_asof
   unnest: https://docs.pola.rs/api/rust/dev/polars/frame/struct.DataFrame.html#method.unnest

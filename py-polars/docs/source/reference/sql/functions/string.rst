@@ -230,6 +230,10 @@ LENGTH
 ------
 Returns the character length of the string.
 
+.. admonition:: Function aliases
+
+   `CHAR_LENGTH`, `CHARACTER_LENGTH`
+
 **Example:**
 
 .. code-block:: python

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,7 +18,8 @@ use polars_io::prelude::materialize_projection;
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::{check_projected_arrow_schema, is_cloud_url};
 use polars_io::SerReader;
-use polars_plan::logical_plan::FileInfo;
+use polars_plan::plans::FileInfo;
+use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::IdxSize;
@@ -39,6 +40,7 @@ pub struct ParquetSource {
     cloud_options: Option<CloudOptions>,
     metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
+    hive_parts: Option<Arc<[HivePartitions]>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -78,18 +80,13 @@ impl ParquetSource {
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
-        let mut file_info = self.file_info.clone();
-        file_info.update_hive_partitions(path)?;
-        let hive_partitions = file_info
+        let hive_partitions = self
             .hive_parts
             .as_ref()
-            .map(|hive| hive.materialize_partition_columns());
+            .map(|x| x[index].materialize_partition_columns());
 
         let projection = materialize_projection(
-            file_options
-                .with_columns
-                .as_deref()
-                .map(|cols| cols.deref()),
+            file_options.with_columns.as_deref(),
             &schema,
             hive_partitions.as_deref(),
             false,
@@ -144,11 +141,7 @@ impl ParquetSource {
 
     fn finish_init_reader(&mut self, batched_reader: BatchedParquetReader) -> PolarsResult<()> {
         if self.processed_paths >= 1 {
-            let with_columns = self
-                .file_options
-                .with_columns
-                .as_ref()
-                .map(|v| v.as_slice());
+            let with_columns = self.file_options.with_columns.as_ref().map(|v| v.as_ref());
             check_projected_arrow_schema(
                 batched_reader.schema().as_ref(),
                 self.file_info
@@ -199,6 +192,7 @@ impl ParquetSource {
         metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
+        hive_parts: Option<Arc<[HivePartitions]>>,
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
@@ -223,6 +217,7 @@ impl ParquetSource {
             cloud_options,
             metadata,
             file_info,
+            hive_parts,
             verbose,
             run_async,
             prefetch_size,

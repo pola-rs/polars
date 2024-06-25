@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -174,6 +174,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
             right=pl.DataFrame(
                 data=[expected + expected],
                 schema=["c1", "c2", "c3", "c4"],
+                orient="row",
             ).cast(pl.Int32),
         )
 
@@ -231,7 +232,7 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
     df = pl.DataFrame({"dt": [date(2020, 12, 30)]})
 
     with pytest.raises(
-        ComputeError,
+        InvalidOperationError,
         match="(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
@@ -272,7 +273,7 @@ def test_timestamp_time_unit_errors() -> None:
         for prec in (0, 15):
             with pytest.raises(
                 SQLSyntaxError,
-                match=f"invalid temporal type precision; expected 1-9, found {prec}",
+                match=rf"invalid temporal type precision \(expected 1-9, found {prec}\)",
             ):
                 ctx.execute(f"SELECT ts::timestamp({prec}) FROM frame_data")
 

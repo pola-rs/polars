@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use memmap::Mmap;
 use once_cell::sync::Lazy;
+use polars_core::config::verbose;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::create_file;
 
@@ -130,14 +131,27 @@ impl std::ops::Deref for ReaderBytes<'_> {
     }
 }
 
-impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
-    fn from(m: &'a T) -> Self {
+impl<'a, T: 'a + MmapBytesReader> From<&'a mut T> for ReaderBytes<'a> {
+    fn from(m: &'a mut T) -> Self {
         match m.to_bytes() {
-            Some(s) => ReaderBytes::Borrowed(s),
+            // , but somehow bchk doesn't see that lifetime is 'a.
+            Some(s) => {
+                let s = unsafe { std::mem::transmute::<&[u8], &'a [u8]>(s) };
+                ReaderBytes::Borrowed(s)
+            },
             None => {
-                let f = m.to_file().unwrap();
-                let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
-                ReaderBytes::Mapped(mmap, f)
+                if let Some(f) = m.to_file() {
+                    let f = unsafe { std::mem::transmute::<&File, &'a File>(f) };
+                    let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
+                    ReaderBytes::Mapped(mmap, f)
+                } else {
+                    if verbose() {
+                        eprintln!("could not memory map file; read to buffer.")
+                    }
+                    let mut buf = vec![];
+                    m.read_to_end(&mut buf).expect("could not read");
+                    ReaderBytes::Owned(buf)
+                }
             },
         }
     }

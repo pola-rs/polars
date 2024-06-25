@@ -10,6 +10,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from types import TracebackType
 
+__all__ = [
+    "StringCache",
+    "disable_string_cache",
+    "enable_string_cache",
+    "using_string_cache",
+]
+
 
 class StringCache(contextlib.ContextDecorator):
     """

@@ -4,9 +4,9 @@ import contextlib
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
-from polars._utils.parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
+from polars._utils.parse import (
+    parse_into_expression,
+    parse_into_list_of_expressions,
 )
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Struct, Time
@@ -130,19 +130,19 @@ def datetime_(
     │ 2024-01-01 00:00:00 ┆ 2024-09-01 22:35:30 │
     └─────────────────────┴─────────────────────┘
     """
-    ambiguous_expr = parse_as_expression(ambiguous, str_as_lit=True)
-    year_expr = parse_as_expression(year)
-    month_expr = parse_as_expression(month)
-    day_expr = parse_as_expression(day)
+    ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
+    year_expr = parse_into_expression(year)
+    month_expr = parse_into_expression(month)
+    day_expr = parse_into_expression(day)
 
     if hour is not None:
-        hour = parse_as_expression(hour)
+        hour = parse_into_expression(hour)
     if minute is not None:
-        minute = parse_as_expression(minute)
+        minute = parse_into_expression(minute)
     if second is not None:
-        second = parse_as_expression(second)
+        second = parse_into_expression(second)
     if microsecond is not None:
-        microsecond = parse_as_expression(microsecond)
+        microsecond = parse_into_expression(microsecond)
 
     return wrap_expr(
         plr.datetime(
@@ -393,21 +393,21 @@ def duration(
     └─────────────────────┴─────────────────────┴─────────────────────┘
     """  # noqa: W505
     if weeks is not None:
-        weeks = parse_as_expression(weeks)
+        weeks = parse_into_expression(weeks)
     if days is not None:
-        days = parse_as_expression(days)
+        days = parse_into_expression(days)
     if hours is not None:
-        hours = parse_as_expression(hours)
+        hours = parse_into_expression(hours)
     if minutes is not None:
-        minutes = parse_as_expression(minutes)
+        minutes = parse_into_expression(minutes)
     if seconds is not None:
-        seconds = parse_as_expression(seconds)
+        seconds = parse_into_expression(seconds)
     if milliseconds is not None:
-        milliseconds = parse_as_expression(milliseconds)
+        milliseconds = parse_into_expression(milliseconds)
     if microseconds is not None:
-        microseconds = parse_as_expression(microseconds)
+        microseconds = parse_into_expression(microseconds)
     if nanoseconds is not None:
-        nanoseconds = parse_as_expression(nanoseconds)
+        nanoseconds = parse_into_expression(nanoseconds)
         if time_unit is None:
             time_unit = "ns"
 
@@ -447,6 +447,36 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
 
     Examples
     --------
+    Concatenate two existing list columns. Null values are propagated.
+
+    >>> df = pl.DataFrame({"a": [[1, 2], [3], [4, 5]], "b": [[4], [], None]})
+    >>> df.with_columns(concat_list=pl.concat_list("a", "b"))
+    shape: (3, 3)
+    ┌───────────┬───────────┬─────────────┐
+    │ a         ┆ b         ┆ concat_list │
+    │ ---       ┆ ---       ┆ ---         │
+    │ list[i64] ┆ list[i64] ┆ list[i64]   │
+    ╞═══════════╪═══════════╪═════════════╡
+    │ [1, 2]    ┆ [4]       ┆ [1, 2, 4]   │
+    │ [3]       ┆ []        ┆ [3]         │
+    │ [4, 5]    ┆ null      ┆ null        │
+    └───────────┴───────────┴─────────────┘
+
+    Non-list columns are cast to a list before concatenation. The output data type
+    is the supertype of the concatenated columns.
+
+    >>> df.select("a", concat_list=pl.concat_list("a", pl.lit("x")))
+    shape: (3, 2)
+    ┌───────────┬─────────────────┐
+    │ a         ┆ concat_list     │
+    │ ---       ┆ ---             │
+    │ list[i64] ┆ list[str]       │
+    ╞═══════════╪═════════════════╡
+    │ [1, 2]    ┆ ["1", "2", "x"] │
+    │ [3]       ┆ ["3", "x"]      │
+    │ [4, 5]    ┆ ["4", "5", "x"] │
+    └───────────┴─────────────────┘
+
     Create lagged columns and collect them into a list. This mimics a rolling window.
 
     >>> df = pl.DataFrame({"A": [1.0, 2.0, 9.0, 2.0, 13.0]})
@@ -467,7 +497,7 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     │ [9.0, 2.0, 13.0]  │
     └───────────────────┘
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_list(exprs))
 
 
@@ -563,16 +593,16 @@ def struct(
     Use keyword arguments to easily name each struct field.
 
     >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
-    OrderedDict({'my_struct': Struct({'p': Int64, 'q': Boolean})})
+    Schema({'my_struct': Struct({'p': Int64, 'q': Boolean})})
     """
-    pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
+    pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:
         if not exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
-                plr.as_struct(parse_as_list_of_expressions(list(schema.keys())))
+                plr.as_struct(parse_into_list_of_expressions(list(schema.keys())))
             )
         expr = expr.cast(Struct(schema), strict=False)
 
@@ -640,7 +670,7 @@ def concat_str(
     │ 3   ┆ null ┆ walk ┆ null          │
     └─────┴──────┴──────┴───────────────┘
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_str(exprs, separator, ignore_nulls))
 
 
@@ -689,7 +719,7 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     arguments = iter(args)
     for i, s in enumerate(f_string.split("{}")):
         if i > 0:
-            e = wrap_expr(parse_as_expression(next(arguments)))
+            e = wrap_expr(parse_into_expression(next(arguments)))
             exprs.append(e)
 
         if len(s) > 0:

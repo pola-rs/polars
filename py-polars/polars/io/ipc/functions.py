@@ -137,7 +137,7 @@ def _read_ipc_impl(
     memory_map: bool = True,
 ) -> DataFrame:
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
 
@@ -261,7 +261,7 @@ def _read_ipc_stream_impl(
     rechunk: bool = True,
 ) -> DataFrame:
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
 
@@ -294,7 +294,7 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
         Dictionary mapping column names to datatypes
     """
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
 
     return _read_ipc_schema(source)
 
@@ -312,6 +312,7 @@ def scan_ipc(
     storage_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     retries: int = 0,
+    file_cache_ttl: int | None = None,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -344,15 +345,21 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
     retries
         Number of retries if accessing a cloud instance fails.
+    file_cache_ttl
+        Amount of time to keep downloaded cloud files since their last access time,
+        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
+        (which defaults to 1 hour) if not given.
 
     """
     if isinstance(source, (str, Path)):
         can_use_fsspec = True
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
         sources = []
     else:
         can_use_fsspec = False
-        sources = [normalize_filepath(source) for source in source]
+        sources = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
         source = None  # type: ignore[assignment]
 
     # try fsspec scanner
@@ -374,5 +381,6 @@ def scan_ipc(
         memory_map=memory_map,
         cloud_options=storage_options,
         retries=retries,
+        file_cache_ttl=file_cache_ttl,
     )
     return wrap_ldf(pylf)

@@ -3,21 +3,21 @@ from __future__ import annotations
 import contextlib
 from functools import reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
+from typing import TYPE_CHECKING, Iterable, Sequence, get_args
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.various import ordered_unique
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
-from polars.type_aliases import ConcatMethod, FrameType
+from polars.type_aliases import ConcatMethod
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import JoinStrategy, PolarsType
+    from polars.type_aliases import FrameType, JoinStrategy, PolarsType
 
 
 def concat(
@@ -128,7 +128,7 @@ def concat(
     # unpack/standardise (handles generator input)
     elems = list(items)
 
-    if not len(elems) > 0:
+    if not elems:
         msg = "cannot concat empty list"
         raise ValueError(msg)
     elif len(elems) == 1 and isinstance(
@@ -142,12 +142,12 @@ def concat(
             raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
-        all_columns = list(chain.from_iterable(e.columns for e in elems))
+        all_columns = list(chain.from_iterable(e.collect_schema() for e in elems))
         key = {v: k for k, v in enumerate(ordered_unique(all_columns))}
         common_cols = sorted(
             reduce(
                 lambda x, y: set(x) & set(y),  # type: ignore[arg-type, return-value]
-                chain(e.columns for e in elems),
+                chain(e.collect_schema() for e in elems),
             ),
             key=lambda k: key.get(k, 0),
         )
@@ -423,7 +423,8 @@ def align_frames(
     """  # noqa: W505
     if not frames:
         return []
-    elif len({type(f) for f in frames}) != 1:
+
+    if len({type(f) for f in frames}) != 1:
         msg = (
             "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
@@ -435,26 +436,23 @@ def align_frames(
 
     # create aligned master frame (this is the most expensive part; afterwards
     # we just subselect out the columns representing the component frames)
-    idx_frames = tuple((idx, df.lazy()) for idx, df in enumerate(frames))
+    idx_frames = [(idx, frame.lazy()) for idx, frame in enumerate(frames)]
     alignment_frame = _alignment_join(
         *idx_frames, align_on=align_on, how=how, descending=descending
     )
 
     # select-out aligned components from the master frame
-    aligned_cols = set(alignment_frame.columns)
+    aligned_cols = set(alignment_frame.collect_schema())
     aligned_frames = []
-    for idx, df in idx_frames:
+    for idx, lf in idx_frames:
         sfx = f":{idx}"
         df_cols = [
             F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
-            for c in df.columns
+            for c in lf.collect_schema()
         ]
         f = alignment_frame.select(*df_cols)
         if select is not None:
             f = f.select(select)
         aligned_frames.append(f)
 
-    return cast(
-        List[FrameType],
-        F.collect_all(aligned_frames) if eager else aligned_frames,
-    )
+    return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]

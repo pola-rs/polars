@@ -45,7 +45,7 @@ impl<'a> Iterator for StructIterator<'a> {
             }
         }
         let mut nested = nested.pop().unwrap();
-        let (_, validity) = nested.nested.pop().unwrap().inner();
+        let (_, validity) = nested.nested.pop().unwrap().take();
 
         Some(Ok((
             nested,

@@ -15,6 +15,8 @@ mod is_valid;
 mod iterator;
 pub mod registry;
 
+pub use extension::set_polars_allow_extension;
+
 #[derive(Debug, Clone)]
 pub struct ObjectArray<T>
 where

@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import datetime, time, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import fsspec
 import numpy as np
@@ -14,9 +14,12 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import HealthCheck, given, settings
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -121,11 +124,11 @@ def test_read_parquet_respects_rechunk_16416(
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.write_parquet(buf, compression="lzo", use_pyarrow=False)
     buf.seek(0)
     # Invalid parquet file as writing failed.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         _ = pl.read_parquet(buf)
 
     buf = io.BytesIO()
@@ -134,7 +137,7 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
         df.write_parquet(buf, compression="lzo", use_pyarrow=True)
     buf.seek(0)
     # Invalid parquet file as writing failed.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         _ = pl.read_parquet(buf)
 
 
@@ -158,10 +161,10 @@ def test_to_from_file_lzo(df: pl.DataFrame, tmp_path: Path) -> None:
     file_path = tmp_path / "small.avro"
 
     # Writing lzo compressed parquet files is not supported for now.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.write_parquet(file_path, compression="lzo", use_pyarrow=False)
     # Invalid parquet file as writing failed.
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         _ = pl.read_parquet(file_path)
 
     # Writing lzo compressed parquet files is not supported for now.
@@ -277,8 +280,10 @@ def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -
 
     a = pl.scan_parquet(file_path)
     b = pl.DataFrame({"a": [1]}).lazy()
-    assert a.join(b, how="cross").collect().shape == (3, df.width + b.width)
-    assert b.join(a, how="cross").collect().shape == (3, df.width + b.width)
+
+    expected_shape = (3, df.width + b.collect_schema().len())
+    assert a.join(b, how="cross").collect().shape == expected_shape
+    assert b.join(a, how="cross").collect().shape == expected_shape
 
 
 def test_recursive_logical_type() -> None:
@@ -802,9 +807,115 @@ def test_sliced_dict_with_nulls_14904() -> None:
 
 
 def test_parquet_array_dtype() -> None:
-    df = pl.DataFrame({"x": [[1, 2, 3]]})
+    df = pl.DataFrame({"x": []})
     df = df.cast({"x": pl.Array(pl.Int64, shape=3)})
     test_round_trip(df)
+
+
+def test_parquet_array_dtype_nulls() -> None:
+    df = pl.DataFrame({"x": [[1, 2], None, [None, 3]]})
+    df = df.cast({"x": pl.Array(pl.Int64, shape=2)})
+    test_round_trip(df)
+
+
+@pytest.mark.parametrize(
+    ("series", "dtype"),
+    [
+        ([[1, 2, 3]], pl.List(pl.Int64)),
+        ([[1, None, 3]], pl.List(pl.Int64)),
+        (
+            [{"a": []}, {"a": [1]}, {"a": [1, 2, 3]}],
+            pl.Struct({"a": pl.List(pl.Int64)}),
+        ),
+        ([{"a": None}, None, {"a": [1, 2, None]}], pl.Struct({"a": pl.List(pl.Int64)})),
+        (
+            [[{"a": []}, {"a": [1]}, {"a": [1, 2, 3]}], None, [{"a": []}, {"a": [42]}]],
+            pl.List(pl.Struct({"a": pl.List(pl.Int64)})),
+        ),
+        (
+            [
+                [1, None, 3],
+                None,
+                [1, 3, 4],
+                None,
+                [9, None, 4],
+                [None, 42, 13],
+                [37, 511, None],
+            ],
+            pl.List(pl.Int64),
+        ),
+        ([[1, 2, 3]], pl.Array(pl.Int64, 3)),
+        ([[1, None, 3], None, [1, 2, None]], pl.Array(pl.Int64, 3)),
+        ([[1, 2], None, [None, 3]], pl.Array(pl.Int64, 2)),
+        # @TODO: Enable when zero-width arrays are enabled
+        # ([[], [], []],                       pl.Array(pl.Int64, 0)),
+        # ([[], None, []],                     pl.Array(pl.Int64, 0)),
+        (
+            [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
+            pl.Array(pl.Array(pl.Int8, 3), 2),
+        ),
+        (
+            [[[1, 5, 2], [42, 13, 37]], None, [None, [3, 1, 3]]],
+            pl.Array(pl.Array(pl.Int8, 3), 2),
+        ),
+        (
+            [
+                [[[2, 1], None, [4, 1], None], []],
+                None,
+                [None, [[4, 4], None, [1, 2]]],
+            ],
+            pl.Array(pl.List(pl.Array(pl.Int8, 2)), 2),
+        ),
+        ([[[], []]], pl.Array(pl.List(pl.Array(pl.Int8, 2)), 2)),
+        (
+            [
+                [
+                    [[[42, 13, 37, 15, 9, 20, 0, 0, 5, 10], None]],
+                    [None, [None, [1, 2, 3, 4, 5, 6, 7, 8, 9, 0]], None],
+                ]
+            ],
+            pl.Array(pl.List(pl.Array(pl.Array(pl.Int8, 10), 2)), 2),
+        ),
+        (
+            [
+                None,
+                [None],
+                [[None]],
+                [[[None]]],
+                [[[[None]]]],
+                [[[[[None]]]]],
+                [[[[[1]]]]],
+            ],
+            pl.Array(pl.Array(pl.Array(pl.Array(pl.Array(pl.Int8, 1), 1), 1), 1), 1),
+        ),
+        (
+            [
+                None,
+                [None],
+                [[]],
+                [[None]],
+                [[[None], None]],
+                [[[None], []]],
+                [[[[None]], [[[1]]]]],
+                [[[[[None]]]]],
+                [[[[[1]]]]],
+            ],
+            pl.Array(pl.List(pl.Array(pl.List(pl.Array(pl.Int8, 1)), 1)), 1),
+        ),
+    ],
+)
+@pytest.mark.write_disk()
+def test_complex_types(tmp_path: Path, series: list[Any], dtype: pl.DataType) -> None:
+    xs = pl.Series(series, dtype=dtype)
+    df = pl.DataFrame({"x": xs})
+
+    test_round_trip(df)
+
+
+@pytest.mark.xfail()
+def test_placeholder_zero_array() -> None:
+    # @TODO: if this does not fail anymore please enable the upper test-cases
+    pl.Series([[]], dtype=pl.Array(pl.Int8, 0))
 
 
 @pytest.mark.write_disk()
@@ -972,6 +1083,28 @@ def test_hybrid_rle() -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+@pytest.mark.skip(
+    reason="This test causes too many panics in other parts of the code base"
+)
+@given(
+    df=dataframes(
+        include_dtypes=[pl.List, pl.Array, pl.Int8, pl.Struct],
+        min_size=90,
+        max_size=110,
+    )
+)
+@pytest.mark.slow()
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+def test_roundtrip_parametric(df: pl.DataFrame, tmp_path: Path) -> None:
+    # delete if exists
+    path = tmp_path / "data.parquet"
+
+    df.write_parquet(path)
+    result = pl.read_parquet(path)
+
+    assert str(df) == str(result)
+
+
 def test_parquet_statistics_uint64_16683() -> None:
     u64_max = (1 << 64) - 1
     df = pl.Series("a", [u64_max, 0], dtype=pl.UInt64).to_frame()
@@ -982,3 +1115,98 @@ def test_parquet_statistics_uint64_16683() -> None:
 
     assert statistics.min == 0
     assert statistics.max == u64_max
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("nullable", [True, False])
+def test_read_byte_stream_split(nullable: bool) -> None:
+    rng = np.random.default_rng(123)
+    num_rows = 1_000
+    values = rng.uniform(-1.0e6, 1.0e6, num_rows)
+    if nullable:
+        validity_mask = rng.integers(0, 2, num_rows).astype(np.bool_)
+    else:
+        validity_mask = None
+
+    schema = pa.schema(
+        [
+            pa.field("floats", type=pa.float32(), nullable=nullable),
+            pa.field("doubles", type=pa.float64(), nullable=nullable),
+        ]
+    )
+    arrays = [pa.array(values, type=field.type, mask=validity_mask) for field in schema]
+    table = pa.Table.from_arrays(arrays, schema=schema)
+    df = cast(pl.DataFrame, pl.from_arrow(table))
+
+    f = io.BytesIO()
+    pq.write_table(
+        table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True
+    )
+
+    f.seek(0)
+    read = pl.read_parquet(f)
+
+    assert_frame_equal(read, df)
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("rows_nullable", [True, False])
+@pytest.mark.parametrize("item_nullable", [True, False])
+def test_read_byte_stream_split_arrays(
+    item_nullable: bool, rows_nullable: bool
+) -> None:
+    rng = np.random.default_rng(123)
+    num_rows = 1_000
+    max_array_len = 10
+    array_lengths = rng.integers(0, max_array_len + 1, num_rows)
+    if rows_nullable:
+        row_validity_mask = rng.integers(0, 2, num_rows).astype(np.bool_)
+        array_lengths[row_validity_mask] = 0
+        row_validity_mask = pa.array(row_validity_mask)
+    else:
+        row_validity_mask = None
+
+    offsets = np.zeros(num_rows + 1, dtype=np.int64)
+    np.cumsum(array_lengths, out=offsets[1:])
+    num_values = offsets[-1]
+    values = rng.uniform(-1.0e6, 1.0e6, num_values)
+
+    if item_nullable:
+        element_validity_mask = rng.integers(0, 2, num_values).astype(np.bool_)
+    else:
+        element_validity_mask = None
+
+    schema = pa.schema(
+        [
+            pa.field(
+                "floats",
+                type=pa.list_(pa.field("", pa.float32(), nullable=item_nullable)),
+                nullable=rows_nullable,
+            ),
+            pa.field(
+                "doubles",
+                type=pa.list_(pa.field("", pa.float64(), nullable=item_nullable)),
+                nullable=rows_nullable,
+            ),
+        ]
+    )
+    arrays = [
+        pa.ListArray.from_arrays(
+            pa.array(offsets),
+            pa.array(values, type=field.type.field(0).type, mask=element_validity_mask),
+            mask=row_validity_mask,
+        )
+        for field in schema
+    ]
+    table = pa.Table.from_arrays(arrays, schema=schema)
+    df = cast(pl.DataFrame, pl.from_arrow(table))
+
+    f = io.BytesIO()
+    pq.write_table(
+        table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True
+    )
+
+    f.seek(0)
+    read = pl.read_parquet(f)
+
+    assert_frame_equal(read, df)

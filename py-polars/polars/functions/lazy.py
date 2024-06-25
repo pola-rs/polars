@@ -7,9 +7,9 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
-from polars._utils.parse_expr_input import (
-    parse_as_expression,
-    parse_as_list_of_expressions,
+from polars._utils.parse import (
+    parse_into_expression,
+    parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool
@@ -845,8 +845,8 @@ def corr(
     │ 0.5 │
     └─────┘
     """
-    a = parse_as_expression(a)
-    b = parse_as_expression(b)
+    a = parse_into_expression(a)
+    b = parse_into_expression(b)
 
     if method == "pearson":
         return wrap_expr(plr.pearson_corr(a, b, ddof))
@@ -891,8 +891,8 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     │ 3.0 │
     └─────┘
     """
-    a = parse_as_expression(a)
-    b = parse_as_expression(b)
+    a = parse_into_expression(a)
+    b = parse_into_expression(b)
     return wrap_expr(plr.cov(a, b, ddof))
 
 
@@ -950,7 +950,7 @@ def map_batches(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs, function, return_dtype, map_groups=False, returns_scalar=False
@@ -1034,7 +1034,7 @@ def map_groups(
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs,
@@ -1146,11 +1146,11 @@ def fold(
     └─────┴─────┘
     """
     # in case of col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
+    acc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.fold(acc, function, exprs))
 
 
@@ -1213,7 +1213,7 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.reduce(function, exprs))
 
 
@@ -1271,11 +1271,11 @@ def cum_fold(
     └─────┴─────┴─────┴───────────┘
     """
     # in case of col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
+    acc = parse_into_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
 
 
@@ -1321,7 +1321,7 @@ def cum_reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = parse_as_list_of_expressions(exprs)
+    exprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
 
 
@@ -1600,7 +1600,7 @@ def arg_sort_by(
     │ 3   │
     └─────┘
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     descending = extend_bool(descending, len(exprs), "descending", "exprs")
     nulls_last = extend_bool(nulls_last, len(exprs), "nulls_last", "exprs")
     return wrap_expr(
@@ -1693,6 +1693,7 @@ def collect_all(
             cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False,
         )
         prepared.append(ldf)
 
@@ -1850,6 +1851,7 @@ def collect_all_async(
             cluster_with_columns,
             streaming,
             _eager=False,
+            new_streaming=False,
         )
         prepared.append(ldf)
 
@@ -1949,7 +1951,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             raise ValueError(msg)
         return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
-        condition = parse_as_expression(condition)
+        condition = parse_into_expression(condition)
         return wrap_expr(plr.arg_where(condition))
 
 
@@ -1999,7 +2001,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
     """
-    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
 
 
@@ -2176,7 +2178,7 @@ def sql_expr(sql: Sequence[str]) -> list[Expr]: ...
 
 def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
     """
-    Parse one or more SQL expressions to polars expression(s).
+    Parse one or more SQL expressions to Polars expression(s).
 
     Parameters
     ----------

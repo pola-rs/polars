@@ -7,10 +7,10 @@ pub use encoder::encode;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parquet::error::Error;
+    use crate::parquet::error::ParquetError;
 
     #[test]
-    fn basic() -> Result<(), Error> {
+    fn basic() -> Result<(), ParquetError> {
         let data = vec![b"Hello".as_ref(), b"Helicopter"];
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);

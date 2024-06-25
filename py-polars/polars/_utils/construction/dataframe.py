@@ -30,6 +30,7 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
+    issue_warning,
     parse_version,
 )
 from polars._utils.wrap import wrap_df, wrap_s
@@ -53,7 +54,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -226,6 +227,10 @@ def _unpack_schema(
             else:
                 col = col[0]
             column_names.append(col)
+
+    if n_expected is not None and len(column_names) != n_expected:
+        msg = "data does not match the number of columns"
+        raise ShapeError(msg)
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
@@ -533,18 +538,21 @@ def _sequence_of_sequence_to_pydf(
     infer_schema_length: int | None,
 ) -> PyDataFrame:
     if orient is None:
-        # note: limit type-checking to smaller data; larger values are much more
-        # likely to indicate col orientation anyway, so minimise extra checks.
-        if len(first_element) > 1000:
-            orient = "col" if schema and len(schema) == len(data) else "row"
-        elif (schema is not None and len(schema) == len(data)) or not schema:
-            # check if element types in the first 'row' resolve to a single dtype.
-            row_types = {type(value) for value in first_element if value is not None}
-            if int in row_types and float in row_types:
-                row_types.discard(int)
-            orient = "col" if len(row_types) == 1 else "row"
+        if schema is None:
+            orient = "col"
         else:
-            orient = "row"
+            # Try to infer orientation from schema length and data dimensions
+            is_row_oriented = (len(schema) == len(first_element)) and (
+                len(schema) != len(data)
+            )
+            orient = "row" if is_row_oriented else "col"
+
+            if is_row_oriented:
+                issue_warning(
+                    "Row orientation inferred during DataFrame construction."
+                    ' Explicitly specify the orientation by passing `orient="row"` to silence this warning.',
+                    DataOrientationWarning,
+                )
 
     if orient == "row":
         column_names, schema_overrides = _unpack_schema(
@@ -555,13 +563,6 @@ def _sequence_of_sequence_to_pydf(
             if schema_overrides
             else {}
         )
-        if (
-            column_names
-            and len(first_element) > 0
-            and len(first_element) != len(column_names)
-        ):
-            msg = "the row data does not match the number of columns"
-            raise ShapeError(msg)
 
         unpack_nested = False
         for col, tp in local_schema_override.items():
@@ -589,7 +590,7 @@ def _sequence_of_sequence_to_pydf(
             )
         return pydf
 
-    if orient == "col" or orient is None:
+    elif orient == "col":
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides, n_expected=len(data)
         )
@@ -604,8 +605,9 @@ def _sequence_of_sequence_to_pydf(
         ]
         return PyDataFrame(data_series)
 
-    msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
-    raise ValueError(msg)
+    else:
+        msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
+        raise ValueError(msg)
 
 
 def _sequence_of_series_to_pydf(

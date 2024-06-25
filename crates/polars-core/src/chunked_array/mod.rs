@@ -1,6 +1,6 @@
 //! The typed heart of every Series column.
 use std::iter::Map;
-use std::sync::Arc;
+use std::sync::{Arc, RwLockReadGuard, RwLockWriteGuard};
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
@@ -51,7 +51,10 @@ use std::slice::Iter;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 
-use self::metadata::{Metadata, MetadataFlags, MetadataMerge, MetadataProperties};
+use self::metadata::{
+    IMMetadata, Metadata, MetadataFlags, MetadataMerge, MetadataProperties, MetadataReadGuard,
+    MetadataTrait,
+};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null};
 
@@ -137,10 +140,25 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
-    pub(crate) md: Option<Arc<Metadata<T>>>,
+
+    // While it might be temping to make Arc<...> into Option<Arc<...>>, it is very difficult to
+    // combine with the interior mutability that IMMetadata provides.
+    pub(crate) md: Arc<IMMetadata<T>>,
 
     length: IdxSize,
     null_count: IdxSize,
+}
+
+impl<T: PolarsDataType> ChunkedArray<T>
+where
+    Metadata<T>: MetadataTrait,
+{
+    /// Attempt to get a reference to the trait object containing the [`ChunkedArray`]'s [`Metadata`]
+    ///
+    /// This fails if there is a need to block.
+    pub fn metadata_dyn(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        self.md.as_ref().upcast().try_read().ok()
+    }
 }
 
 impl<T: PolarsDataType> ChunkedArray<T> {
@@ -185,54 +203,52 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Self {
             field,
             chunks,
-            md: None,
+            md: Arc::new(IMMetadata::default()),
 
             length,
             null_count,
         }
     }
 
-    /// Get a reference to the used [`Metadata`]
-    ///
-    /// This results a reference to an empty [`Metadata`] if it's unset for this [`ChunkedArray`].
-    #[inline(always)]
-    pub fn effective_metadata(&self) -> &Metadata<T> {
-        self.md.as_ref().map_or(&Metadata::DEFAULT, AsRef::as_ref)
+    /// Get a guard to read the [`ChunkedArray`]'s [`Metadata`]
+    pub fn metadata(&self) -> MetadataReadGuard<T> {
+        self.md.as_ref().try_read().map_or(
+            MetadataReadGuard::Locked(&Metadata::DEFAULT),
+            MetadataReadGuard::Unlocked,
+        )
     }
 
-    /// Get a reference to the [`ChunkedArray`]'s [`Metadata`]
-    pub fn metadata(&self) -> Option<&Metadata<T>> {
-        self.md.as_ref().map(AsRef::as_ref)
+    /// Get a guard to read/write the [`ChunkedArray`]'s [`Metadata`]
+    pub fn interior_mut_metadata(&self) -> RwLockWriteGuard<Metadata<T>> {
+        self.md.as_ref().write()
     }
 
     /// Get a reference to [`Arc`] that contains the [`ChunkedArray`]'s [`Metadata`]
-    pub fn metadata_arc(&self) -> Option<&Arc<Metadata<T>>> {
-        self.md.as_ref()
+    pub fn metadata_arc(&self) -> &Arc<IMMetadata<T>> {
+        &self.md
     }
 
     /// Get a [`Arc`] that contains the [`ChunkedArray`]'s [`Metadata`]
-    pub fn metadata_owned_arc(&self) -> Arc<Metadata<T>> {
-        self.md
-            .as_ref()
-            .map_or_else(|| Arc::new(Metadata::DEFAULT), Clone::clone)
+    pub fn metadata_owned_arc(&self) -> Arc<IMMetadata<T>> {
+        self.md.clone()
     }
 
     /// Get a mutable reference to the [`Arc`] that contains the [`ChunkedArray`]'s [`Metadata`]
-    pub fn metadata_mut(&mut self) -> &mut Arc<Metadata<T>> {
-        self.md.get_or_insert_with(Default::default)
+    pub fn metadata_mut(&mut self) -> &mut Arc<IMMetadata<T>> {
+        &mut self.md
     }
 
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
-        self.effective_metadata().is_sorted_ascending()
+        self.metadata().is_sorted_ascending()
     }
 
     pub(crate) fn is_sorted_descending_flag(&self) -> bool {
-        self.effective_metadata().is_sorted_descending()
+        self.metadata().is_sorted_descending()
     }
 
     /// Whether `self` is sorted in any direction.
     pub(crate) fn is_sorted_any(&self) -> bool {
-        self.is_sorted_ascending_flag() || self.is_sorted_descending_flag()
+        self.metadata().is_sorted_any()
     }
 
     pub fn unset_fast_explode_list(&mut self) {
@@ -240,7 +256,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn set_fast_explode_list(&mut self, value: bool) {
-        Arc::make_mut(self.metadata_mut()).set_fast_explode_list(value)
+        Arc::make_mut(self.metadata_mut())
+            .get_mut()
+            .set_fast_explode_list(value)
     }
 
     pub fn get_fast_explode_list(&self) -> bool {
@@ -248,23 +266,25 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     pub fn get_flags(&self) -> MetadataFlags {
-        self.effective_metadata().get_flags()
+        self.metadata().get_flags()
     }
 
     /// Set flags for the [`ChunkedArray`]
     pub(crate) fn set_flags(&mut self, flags: MetadataFlags) {
         // @TODO: This should probably just not be here
         let md = Arc::make_mut(self.metadata_mut());
-        md.set_flags(flags);
+        md.get_mut().set_flags(flags);
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        self.md.as_ref().map_or(IsSorted::Not, |md| md.is_sorted())
+        self.metadata().is_sorted()
     }
 
     /// Set the 'sorted' bit meta info.
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        Arc::make_mut(self.metadata_mut()).set_sorted_flag(sorted)
+        Arc::make_mut(self.metadata_mut())
+            .get_mut()
+            .set_sorted_flag(sorted)
     }
 
     /// Set the 'sorted' bit meta info.
@@ -274,27 +294,30 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         out
     }
 
-    pub fn get_min_value(&self) -> Option<&T::OwnedPhysical> {
-        self.md.as_ref()?.get_min_value()
+    pub fn get_min_value(&self) -> Option<T::OwnedPhysical> {
+        self.metadata().get_min_value().cloned()
     }
 
-    pub fn get_max_value(&self) -> Option<&T::OwnedPhysical> {
-        self.md.as_ref()?.get_max_value()
+    pub fn get_max_value(&self) -> Option<T::OwnedPhysical> {
+        self.metadata().get_max_value().cloned()
     }
 
     pub fn get_distinct_count(&self) -> Option<IdxSize> {
-        self.md.as_ref()?.get_distinct_count()
+        self.metadata().get_distinct_count()
     }
 
     pub fn merge_metadata(&mut self, md: Metadata<T>) {
-        let Some(self_md) = self.metadata() else {
-            self.md = Some(Arc::new(md));
-            return;
-        };
+        let self_md = self.metadata_mut();
+        let self_md = self_md.as_ref();
+        let self_md = self_md.read();
 
         match self_md.merge(md) {
             MetadataMerge::Keep => {},
-            MetadataMerge::New(md) => self.md = Some(Arc::new(md)),
+            MetadataMerge::New(md) => {
+                let md = Arc::new(IMMetadata::new(md));
+                drop(self_md);
+                self.md = md;
+            },
             MetadataMerge::Conflict => {
                 panic!("Trying to merge metadata, but got conflicting information")
             },
@@ -337,11 +360,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             return;
         }
 
-        let Some(other_md) = other.metadata() else {
-            return;
-        };
+        let other_md = other.metadata();
 
-        if other.is_empty() {
+        if other_md.is_empty() {
             return;
         }
 
@@ -373,11 +394,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             return;
         }
 
-        let Some(other_md) = other.metadata() else {
-            return;
-        };
+        let other_md = other.metadata();
 
-        if other.is_empty() {
+        if other_md.is_empty() {
             return;
         }
 
@@ -929,7 +948,7 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
         ChunkedArray {
             field: Arc::new(Field::new("default", DataType::Null)),
             chunks: Default::default(),
-            md: None,
+            md: Arc::new(IMMetadata::default()),
             length: 0,
             null_count: 0,
         }

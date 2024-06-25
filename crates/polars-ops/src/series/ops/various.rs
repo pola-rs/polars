@@ -11,7 +11,13 @@ use crate::series::ops::SeriesSealed;
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
     /// with dtype [`IdxType`]
-    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> PolarsResult<DataFrame> {
+    fn value_counts(
+        &self,
+        sort: bool,
+        parallel: bool,
+        name: String,
+        normalize: bool,
+    ) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         polars_ensure!(
             s.name() != name,
@@ -21,6 +27,15 @@ pub trait SeriesMethods: SeriesSealed {
         let groups = s.group_tuples(parallel, sort)?;
         let values = unsafe { s.agg_first(&groups) };
         let counts = groups.group_count().with_name(name.as_str());
+
+        let counts = if normalize {
+            let len = s.len() as f64;
+            let counts: Float64Chunked = counts.apply_values_generic(|count| count as f64 / len);
+            counts.into_series()
+        } else {
+            counts.into_series()
+        };
+
         let cols = vec![values, counts.into_series()];
         let df = unsafe { DataFrame::new_no_checks(cols) };
         if sort {

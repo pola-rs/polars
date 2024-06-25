@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from functools import wraps
 from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
 
-from polars._utils.various import find_stacklevel
+from polars._utils.various import issue_warning
 
 if TYPE_CHECKING:
     import sys
@@ -41,7 +40,7 @@ def issue_deprecation_warning(message: str, *, version: str) -> None:
         This argument is used to help developers determine when to remove the
         deprecated functionality.
     """
-    warnings.warn(message, DeprecationWarning, stacklevel=find_stacklevel())
+    issue_warning(message, DeprecationWarning)
 
 
 def deprecate_function(

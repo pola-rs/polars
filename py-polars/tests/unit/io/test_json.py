@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+import typing
 from collections import OrderedDict
+from decimal import Decimal as D
 from io import BytesIO
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -46,6 +52,14 @@ def test_write_json_duration() -> None:
     value = df.write_json()
     expected = '[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]'
     assert value == expected
+
+
+def test_write_json_decimal() -> None:
+    df = pl.DataFrame({"a": pl.Series([D("1.00"), D("2.00"), None])})
+
+    # we don't guarantee a format, just round-circling
+    value = df.write_json()
+    assert value == """[{"a":"1.00"},{"a":"2.00"},{"a":null}]"""
 
 
 def test_json_infer_schema_length_11148() -> None:
@@ -286,4 +300,75 @@ def test_ndjson_null_inference_13183() -> None:
         "map": ["a", "a", "c", "a"],
         "start_time": [0.795, 1.6239999999999999, 2.184, None],
         "end_time": [1.495, 2.0540000000000003, 2.645, None],
+    }
+
+
+@pytest.mark.write_disk()
+@typing.no_type_check
+def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
+    # this shouldn't be passed, but still we test if we can handle it gracefully
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": ["a", "b", "c"],
+        }
+    )
+    file_path = tmp_path / "test.ndjson"
+    df.write_ndjson(file_path)
+    with open(file_path) as f:  # noqa: PTH123
+        assert_frame_equal(pl.read_ndjson(f), df)
+
+
+def test_json_normalize() -> None:
+    data = [
+        {"id": 1, "name": {"first": "Coleen", "last": "Volk"}},
+        {"name": {"given": "Mark", "family": "Regner"}},
+        {"id": 2, "name": "Faye Raker"},
+    ]
+
+    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name": [
+            '{"first": "Coleen", "last": "Volk"}',
+            '{"given": "Mark", "family": "Regner"}',
+            "Faye Raker",
+        ],
+    }
+
+    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name.first": ["Coleen", None, None],
+        "name.last": ["Volk", None, None],
+        "name.given": [None, "Mark", None],
+        "name.family": [None, "Regner", None],
+        "name": [None, None, "Faye Raker"],
+    }
+
+    data = [
+        {
+            "id": 1,
+            "name": "Cole Volk",
+            "fitness": {"height": 130, "weight": 60},
+        },
+        {"name": "Mark Reg", "fitness": {"height": 130, "weight": 60}},
+        {
+            "id": 2,
+            "name": "Faye Raker",
+            "fitness": {"height": 130, "weight": 60},
+        },
+    ]
+    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness": [
+            '{"height": 130, "weight": 60}',
+            '{"height": 130, "weight": 60}',
+            '{"height": 130, "weight": 60}',
+        ],
+    }
+    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness.height": [130, 130, 130],
+        "fitness.weight": [60, 60, 60],
     }

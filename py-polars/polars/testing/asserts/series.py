@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars.datatypes import (
-    FLOAT_DTYPES,
     Array,
     Categorical,
     List,
@@ -12,7 +11,8 @@ from polars.datatypes import (
     Struct,
     unpack_dtypes,
 )
-from polars.exceptions import ComputeError
+from polars.datatypes.group import FLOAT_DTYPES
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -137,8 +137,7 @@ def _assert_series_values_equal(
         right = _categorical_series_to_string(right)
 
     if not check_order:
-        left = left.sort()
-        right = right.sort()
+        left, right = _sort_series(left, right)
 
     # Determine unequal elements
     try:
@@ -193,6 +192,16 @@ def _assert_series_values_equal(
         rtol=rtol,
         atol=atol,
     )
+
+
+def _sort_series(left: Series, right: Series) -> tuple[Series, Series]:
+    try:
+        left = left.sort()
+        right = right.sort()
+    except InvalidOperationError as exc:
+        msg = "cannot set `check_order=False` on Series with unsortable data type"
+        raise TypeError(msg) from exc
+    return left, right
 
 
 def _assert_series_nested_values_equal(

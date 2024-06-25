@@ -12,7 +12,7 @@ from polars.convert import from_arrow
 from polars.datatypes import (
     N_INFER_DEFAULT,
 )
-from polars.exceptions import ModuleUpgradeRequired, UnsuitableSQLError
+from polars.exceptions import ModuleUpgradeRequiredError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
 from polars.io.database._inference import _infer_dtype_from_cursor_description
@@ -147,7 +147,7 @@ class ConnectionExecutor:
                     break
             if module_version and module_version < parse_version(minimum_version):
                 msg = f"`read_database` queries require at least {module_name} version {minimum_version}"
-                raise ModuleUpgradeRequired(msg)
+                raise ModuleUpgradeRequiredError(msg)
 
     def _fetch_arrow(
         self,
@@ -318,21 +318,30 @@ class ConnectionExecutor:
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
         """Check if the cursor/connection/session object is async."""
-        from sqlalchemy.ext.asyncio import (
-            AsyncConnection,
-            AsyncSession,
-            async_sessionmaker,
-        )
+        try:
+            from sqlalchemy.ext.asyncio import (
+                AsyncConnection,
+                AsyncSession,
+                async_sessionmaker,
+            )
 
-        return isinstance(conn, (AsyncConnection, AsyncSession, async_sessionmaker))
+            return isinstance(conn, (AsyncConnection, AsyncSession, async_sessionmaker))
+        except ImportError:
+            return False
 
     @staticmethod
     def _is_alchemy_engine(conn: Any) -> bool:
         """Check if the cursor/connection/session object is async."""
         from sqlalchemy.engine import Engine
-        from sqlalchemy.ext.asyncio import AsyncEngine
 
-        return isinstance(conn, (Engine, AsyncEngine))
+        if isinstance(conn, Engine):
+            return True
+        try:
+            from sqlalchemy.ext.asyncio import AsyncEngine
+
+            return isinstance(conn, AsyncEngine)
+        except ImportError:
+            return False
 
     @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:

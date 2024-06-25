@@ -2,9 +2,9 @@ use std::fmt::Display;
 use std::ops::BitAnd;
 
 use super::*;
-use crate::logical_plan::alp::tree_format::TreeFmtVisitor;
-use crate::logical_plan::conversion::is_regex_projection;
-use crate::logical_plan::visitor::{AexprNode, TreeWalker};
+use crate::plans::conversion::is_regex_projection;
+use crate::plans::ir::tree_format::TreeFmtVisitor;
+use crate::plans::visitor::{AexprNode, TreeWalker};
 
 /// Specialized expressions for Categorical dtypes.
 pub struct MetaNameSpace(pub(crate) Expr);

@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ def test_ewma_by_date(sort: bool) -> None:
         {"values": [None, 1.0, 1.9116116523516815, None, 3.815410804703363]}
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float64
+    assert result.collect_schema()["values"] == pl.Float64
     assert result.collect().schema["values"] == pl.Float64
 
 
@@ -88,7 +89,7 @@ def test_ewma_f32() -> None:
         schema_overrides={"values": pl.Float32},
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float32
+    assert result.collect_schema()["values"] == pl.Float32
     assert result.collect().schema["values"] == pl.Float32
 
 
@@ -134,7 +135,7 @@ def test_ewma_by_datetime_tz_aware(time_unit: TimeUnit) -> None:
         schema_overrides={"times": pl.Datetime(time_unit, "Asia/Kathmandu")},
     )
     msg = "expected `half_life` to be a constant duration"
-    with pytest.raises(pl.InvalidOperationError, match=msg):
+    with pytest.raises(InvalidOperationError, match=msg):
         df.select(
             pl.col("values").ewm_mean_by("times", half_life="2d"),
         )
@@ -170,7 +171,7 @@ def test_ewma_by_index(data_type: PolarsIntegerType) -> None:
         {"values": [None, 1.0, 1.9116116523516815, None, 3.815410804703363]}
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float64
+    assert result.collect_schema()["values"] == pl.Float64
     assert result.collect().schema["values"] == pl.Float64
 
 
@@ -204,13 +205,13 @@ def test_ewma_by_if_unsorted() -> None:
 
 def test_ewma_by_invalid() -> None:
     df = pl.DataFrame({"values": [1, 2]})
-    with pytest.raises(pl.InvalidOperationError, match="half_life cannot be negative"):
+    with pytest.raises(InvalidOperationError, match="half_life cannot be negative"):
         df.with_row_index().select(
             pl.col("values").ewm_mean_by("index", half_life="-2i"),
         )
     df = pl.DataFrame({"values": [[1, 2], [3, 4]]})
     with pytest.raises(
-        pl.InvalidOperationError, match=r"expected series to be Float64, Float32, .*"
+        InvalidOperationError, match=r"expected series to be Float64, Float32, .*"
     ):
         df.with_row_index().select(
             pl.col("values").ewm_mean_by("index", half_life="2i"),

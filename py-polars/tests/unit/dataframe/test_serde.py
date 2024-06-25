@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, timedelta
+from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -78,7 +80,7 @@ def test_df_serde_enum() -> None:
     [
         ([[1, 2, 3], [None, None, None], [1, None, 3]], pl.Array(pl.Int32(), shape=3)),
         ([["a", "b"], [None, None]], pl.Array(pl.Utf8, shape=2)),
-        ([[True, False, None], [None, None, None]], pl.Array(pl.Utf8, shape=3)),
+        ([[True, False, None], [None, None, None]], pl.Array(pl.Boolean, shape=3)),
         (
             [[[1, 2, 3], [4, None, 5]], None, [[None, None, 2]]],
             pl.List(pl.Array(pl.Int32(), shape=3)),
@@ -89,6 +91,12 @@ def test_df_serde_enum() -> None:
                 [None, None, None],
             ],
             pl.Array(pl.Datetime, shape=3),
+        ),
+        (
+            [[D("1.0"), D("2.0"), D("3.0")], [None, None, None]],
+            # we have to specify precision, because `AnonymousListBuilder::finish`
+            # use `ArrowDataType` which will remap `None` precision to `38`
+            pl.Array(pl.Decimal(precision=38, scale=1), shape=3),
         ),
     ],
 )
@@ -170,8 +178,5 @@ def test_serde_validation() -> None:
     }
     """
     )
-    with pytest.raises(
-        pl.ComputeError,
-        match=r"lengths don't match",
-    ):
+    with pytest.raises(ComputeError, match=r"lengths don't match"):
         pl.DataFrame.deserialize(f)

@@ -33,7 +33,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     };
 
     polars_bail!(
-        ComputeError:
+        InvalidOperation:
         "conversion from `{}` to `{}` failed in column '{}' for {} out of {} values: {}{}",
         input.dtype(),
         output.dtype(),

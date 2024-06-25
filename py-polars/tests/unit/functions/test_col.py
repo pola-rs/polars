@@ -38,7 +38,7 @@ def test_col_series_selection() -> None:
     ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [1]})
     srs = pl.Series(["b", "c"])
 
-    assert ldf.select(pl.col(srs)).columns == ["b", "c"]
+    assert ldf.select(pl.col(srs)).collect_schema().names() == ["b", "c"]
 
 
 def test_col_dot_style() -> None:

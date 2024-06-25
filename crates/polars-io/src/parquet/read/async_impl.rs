@@ -123,7 +123,7 @@ pub async fn fetch_metadata(
             file_byte_length
                 .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize)
                 .ok_or_else(|| {
-                    polars_parquet::parquet::error::Error::OutOfSpec(
+                    polars_parquet::parquet::error::ParquetError::OutOfSpec(
                         "not enough bytes to contain parquet footer".to_string(),
                     )
                 })?..file_byte_length,
@@ -136,13 +136,13 @@ pub async fn fetch_metadata(
         let magic = read_n(reader).unwrap();
         debug_assert!(reader.is_empty());
         if magic != polars_parquet::parquet::PARQUET_MAGIC {
-            return Err(polars_parquet::parquet::error::Error::OutOfSpec(
+            return Err(polars_parquet::parquet::error::ParquetError::OutOfSpec(
                 "incorrect magic in parquet footer".to_string(),
             )
             .into());
         }
         footer_byte_size.try_into().map_err(|_| {
-            polars_parquet::parquet::error::Error::OutOfSpec(
+            polars_parquet::parquet::error::ParquetError::OutOfSpec(
                 "negative footer byte length".to_string(),
             )
         })?
@@ -154,7 +154,7 @@ pub async fn fetch_metadata(
             file_byte_length
                 .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize + footer_byte_length)
                 .ok_or_else(|| {
-                    polars_parquet::parquet::error::Error::OutOfSpec(
+                    polars_parquet::parquet::error::ParquetError::OutOfSpec(
                         "not enough bytes to contain parquet footer".to_string(),
                     )
                 })?..file_byte_length,

@@ -11,9 +11,12 @@ This page gives an overview of all public LazyFrame methods.
    aggregation
    attributes
    descriptive
-   group_by
    modify_select
    miscellaneous
+   group_by
+   in_process
+
+.. _lazyframe:
 
 .. currentmodule:: polars
 

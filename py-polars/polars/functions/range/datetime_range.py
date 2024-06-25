@@ -4,7 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
 
@@ -182,8 +182,8 @@ def datetime_range(
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
     result = wrap_expr(
         plr.datetime_range(
             start_pyexpr, end_pyexpr, interval, closed, time_unit, time_zone
@@ -325,8 +325,8 @@ def datetime_ranges(
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
 
     result = wrap_expr(
         plr.datetime_ranges(
