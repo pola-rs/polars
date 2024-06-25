@@ -14,6 +14,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 pytestmark = [
+    pytest.mark.skip(
+        reason="Causes intermittent failures in CI. See: "
+        "https://github.com/pola-rs/polars/issues/16910"
+    ),
     pytest.mark.xdist_group("aws"),
     pytest.mark.slow(),
 ]
@@ -57,10 +61,6 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     return s3_base
 
 
-@pytest.mark.skip(
-    reason="Causes intermittent failures in CI. See: "
-    "https://github.com/pola-rs/polars/issues/16910"
-)
 @pytest.mark.parametrize(
     ("function", "extension"),
     [
