@@ -71,6 +71,7 @@ pub struct GraphNode {
 }
 
 /// A pipe sends data between nodes.
+#[allow(unused)] // TODO: remove.
 pub struct LogicalPipe {
     // Node that we send data to.
     sender: GraphNodeKey,

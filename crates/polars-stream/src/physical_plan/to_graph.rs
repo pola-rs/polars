@@ -68,6 +68,31 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Select {
+            selectors,
+            input,
+            schema,
+            extend_original,
+        } => {
+            let phys_selectors = selectors
+                .iter()
+                .map(|selector| {
+                    create_physical_expr(
+                        selector,
+                        Context::Default,
+                        ctx.expr_arena,
+                        None,
+                        &mut ctx.expr_conversion_state,
+                    )
+                })
+                .collect::<PolarsResult<_>>()?;
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::select::SelectNode::new(phys_selectors, schema.clone(), *extend_original),
+                [input_key],
+            )
+        },
+
         SimpleProjection { schema, input } => {
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
@@ -76,10 +101,12 @@ fn to_graph_rec<'a>(
             )
         },
 
-        InMemorySink { input } => {
+        InMemorySink { input, schema } => {
             let input_key = to_graph_rec(*input, ctx)?;
-            ctx.graph
-                .add_node(nodes::in_memory_sink::InMemorySink::default(), [input_key])
+            ctx.graph.add_node(
+                nodes::in_memory_sink::InMemorySink::new(schema.clone()),
+                [input_key],
+            )
         },
 
         // Fallback to the in-memory engine.

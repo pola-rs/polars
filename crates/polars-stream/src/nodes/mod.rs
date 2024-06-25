@@ -9,6 +9,7 @@ use crate::morsel::Morsel;
 pub mod filter;
 pub mod in_memory_sink;
 pub mod in_memory_source;
+pub mod select;
 pub mod simple_projection;
 
 pub trait ComputeNode {
