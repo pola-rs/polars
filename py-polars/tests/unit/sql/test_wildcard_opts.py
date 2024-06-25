@@ -62,8 +62,18 @@ def test_select_exclude_error(df: pl.DataFrame) -> None:
     with pytest.raises(SQLInterfaceError, match="ILIKE"):
         assert df.sql("SELECT * EXCLUDE Address ILIKE '%o%' FROM self")
 
+    # these two options are aliases, with EXCLUDE being preferred
+    with pytest.raises(
+        SQLInterfaceError,
+        match="EXCLUDE and EXCEPT wildcard options cannot be used together",
+    ):
+        assert df.sql("SELECT * EXCLUDE Address EXCEPT City FROM self")
+
     # note: missing "()" around the exclude option results in dupe col
-    with pytest.raises(DuplicateError, match="the name 'City' is duplicate"):
+    with pytest.raises(
+        DuplicateError,
+        match="the name 'City' is duplicate",
+    ):
         assert df.sql("SELECT * EXCLUDE Address, City FROM self")
 
 

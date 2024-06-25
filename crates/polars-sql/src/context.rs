@@ -727,8 +727,13 @@ impl SQLContext {
 
         lf = if group_by_keys.is_empty() {
             // Establish final/selected cols, accounting for 'SELECT *' modifiers
-            let mut retained = Vec::with_capacity(projections.len());
+            let mut retained_cols = Vec::with_capacity(projections.len());
             let have_order_by = !query.order_by.is_empty();
+
+            // Note: if there is an 'order by' then we project everything (original cols
+            // and new projections), and *then* select the final cols; the retained cols
+            // are used to ensure a correct final projection. If there's no 'order by',
+            // clause then we can project the final column *expressions* directly.
             for p in projections.iter() {
                 let name = p
                     .to_field(schema.deref(), Context::Default)?
@@ -737,24 +742,22 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
-                    retained.push(if have_order_by {
+                    retained_cols.push(if have_order_by {
                         col(name.as_str())
                     } else {
                         p.clone()
                     });
                 }
             }
-            // Note: when applying ORDER BY we need to retain the original columns for
-            // the sort and then constrain the final projection to the selected columns.
             if have_order_by {
                 self.process_order_by(
                     lf.with_columns(projections),
                     &query.order_by,
-                    Some(&retained),
+                    Some(&retained_cols),
                 )?
-                .select(retained)
+                .select(retained_cols)
             } else {
-                lf.select(retained)
+                lf.select(retained_cols)
             }
         } else {
             lf = self.process_group_by(lf, &group_by_keys, &projections)?;
