@@ -70,7 +70,7 @@ df = pl.DataFrame({"keys": ["a", "a", "b"], "values": [10, 7, 1]})
 
 out = df.select(
     pl.struct(["keys", "values"])
-    .map_elements(lambda x: len(x["keys"]) + x["values"])
+    .map_elements(lambda x: len(x["keys"]) + x["values"], return_dtype=pl.Int64)
     .alias("solution_map_elements"),
     (pl.col("keys").str.len_bytes() + pl.col("values")).alias("solution_expr"),
 )
