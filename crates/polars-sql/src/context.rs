@@ -729,7 +729,7 @@ impl SQLContext {
             let have_order_by = !query.order_by.is_empty();
 
             // Note: if there is an 'order by' then we project everything (original cols
-            // and new projections), and *then* select the final cols; the retained cols
+            // and new projections) and *then* select the final cols; the retained cols
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
             for p in projections.iter() {
@@ -752,11 +752,9 @@ impl SQLContext {
                 if !select_modifiers.rename.is_empty() {
                     lf = lf.with_columns(select_modifiers.renamed_cols());
                 }
-                self.process_order_by(lf, &query.order_by, Some(&retained_cols))?
-                    .select(retained_cols)
-            } else {
-                lf.select(retained_cols)
+                lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?
             }
+            lf.select(retained_cols)
         } else {
             lf = self.process_group_by(lf, &group_by_keys, &projections)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
