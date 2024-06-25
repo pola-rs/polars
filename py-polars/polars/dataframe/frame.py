@@ -52,6 +52,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     is_bool_sequence,
+    no_default,
     normalize_filepath,
     parse_version,
     scale_bytes,
@@ -91,6 +92,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
+    ColumnNotFoundError,
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
@@ -120,6 +122,7 @@ if TYPE_CHECKING:
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
+    from polars._utils.various import NoDefault
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.ml.torch import PolarsDataset
     from polars.type_aliases import (
@@ -7355,18 +7358,21 @@ class DataFrame:
         """
         return [wrap_s(s) for s in self._df.get_columns()]
 
-    def get_column(self, name: str) -> Series:
+    def get_column(self, name: str, *, default: Any | NoDefault = no_default) -> Series:
         """
         Get a single column by name.
 
         Parameters
         ----------
-        name : str
-            Name of the column to retrieve.
+        name
+            String name of the column to retrieve.
+        default
+            Value to return if the column does not exist; if not explicitly set and
+            the column is not present a `ColumnNotFoundError` exception is raised.
 
         Returns
         -------
-        Series
+        Series (or arbitrary default value)
 
         See Also
         --------
@@ -7379,12 +7385,32 @@ class DataFrame:
         shape: (3,)
         Series: 'foo' [i64]
         [
-                1
-                2
-                3
+            1
+            2
+            3
         ]
+
+        Missing column handling; can optionally provide an arbitrary default value
+        to the method (otherwise a `ColumnNotFoundError` exception is raised).
+
+        >>> df.get_column("baz", default=pl.Series("baz", ["?", "?", "?"]))
+        shape: (3,)
+        Series: 'baz' [str]
+        [
+            "?"
+            "?"
+            "?"
+        ]
+        >>> res = df.get_column("baz", default=None)
+        >>> res is None
+        True
         """
-        return wrap_s(self._df.get_column(name))
+        try:
+            return wrap_s(self._df.get_column(name))
+        except ColumnNotFoundError:
+            if default is no_default:
+                raise
+            return default
 
     def fill_null(
         self,
