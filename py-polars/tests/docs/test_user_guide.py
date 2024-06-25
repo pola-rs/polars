@@ -32,8 +32,5 @@ def _change_test_dir() -> Iterator[None]:
 @pytest.mark.docs()
 @pytest.mark.parametrize("path", snippet_paths)
 @pytest.mark.usefixtures("_change_test_dir")
-@pytest.mark.filterwarnings(
-    r"ignore:\nExpr\.map_elements:polars.exceptions.PolarsInefficientMapWarning"
-)
 def test_run_python_snippets(path: Path) -> None:
     runpy.run_path(str(path))

@@ -1,7 +1,11 @@
 # --8<-- [start:setup]
 
-import polars as pl
+import warnings
 
+import polars as pl
+from polars.exceptions import PolarsInefficientMapWarning
+
+warnings.simplefilter("ignore", PolarsInefficientMapWarning)
 # --8<-- [end:setup]
 
 # --8<-- [start:dataframe]
@@ -57,7 +61,7 @@ print(out)
 # --8<-- [end:np_log]
 
 # --8<-- [start:diff_from_mean_numba]
-from numba import guvectorize, int64, float64
+from numba import float64, guvectorize, int64
 
 
 # This will be compiled to machine code, so it will be fast. The Series is
