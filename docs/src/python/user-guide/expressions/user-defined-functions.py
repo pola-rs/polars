@@ -59,6 +59,7 @@ print(out)
 # --8<-- [start:diff_from_mean_numba]
 from numba import guvectorize, int64, float64
 
+
 # This will be compiled to machine code, so it will be fast. The Series is
 # converted to a NumPy array before being passed to the function. See the
 # Numba documentation for more details:
