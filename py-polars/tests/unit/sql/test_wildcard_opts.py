@@ -23,16 +23,17 @@ def df() -> pl.DataFrame:
 
 
 @pytest.mark.parametrize(
-    ("excluded", "expected"),
+    ("excluded", "order_by", "expected"),
     [
-        ("ID", ["FirstName", "LastName", "Address", "City"]),
-        ("(ID)", ["FirstName", "LastName", "Address", "City"]),
-        ("(Address, LastName, FirstName)", ["ID", "City"]),
-        ('("ID", "FirstName", "LastName", "Address", "City")', []),
+        ("ID", "ORDER BY 2, 1", ["FirstName", "LastName", "Address", "City"]),
+        ("(ID)", "ORDER BY City", ["FirstName", "LastName", "Address", "City"]),
+        ("(Address, LastName, FirstName)", "", ["ID", "City"]),
+        ('("ID", "FirstName", "LastName", "Address", "City")', "", []),
     ],
 )
 def test_select_exclude(
     excluded: str,
+    order_by: str,
     expected: list[str],
     df: pl.DataFrame,
 ) -> None:
@@ -52,8 +53,10 @@ def test_select_exclude_order_by(
             "Address": ["Paradise Island", "Fortress of Solitude", "Batcave"],
         }
     )
-    for order_by in ("ORDER BY 1 DESC", "ORDER BY 2 DESC", "ORDER BY Address DESC"):
+    for order_by in ("", "ORDER BY 1 DESC", "ORDER BY 2 DESC", "ORDER BY Address DESC"):
         actual = df.sql(f"SELECT * EXCLUDE (ID,LastName,City) FROM self {order_by}")
+        if not order_by:
+            actual = actual.sort("FirstName", descending=True)
         assert_frame_equal(actual, expected)
 
 
@@ -145,10 +148,13 @@ def test_select_replace(
     expected: list[tuple[Any]],
     df: pl.DataFrame,
 ) -> None:
-    res = df.sql(f"SELECT * REPLACE {replacements} FROM self ORDER BY ID DESC")
+    for order_by in ("", "ORDER BY ID DESC", "ORDER BY -ID ASC"):
+        res = df.sql(f"SELECT * REPLACE {replacements} FROM self {order_by}")
+        if not order_by:
+            res = res.sort("ID", descending=True)
 
-    assert res.select(check_cols).rows() == expected
-    assert res.columns == df.columns
+        assert res.select(check_cols).rows() == expected
+        assert res.columns == df.columns
 
 
 def test_select_wildcard_errors(df: pl.DataFrame) -> None:

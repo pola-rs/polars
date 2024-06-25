@@ -86,28 +86,42 @@ def test_struct_field_group_by_errors(df_struct: pl.DataFrame) -> None:
 
 
 @pytest.mark.parametrize(
-    ("fields", "excluding"),
+    ("fields", "excluding", "rename"),
     [
-        ("json_msg.*", ""),
-        ("self.json_msg.*", ""),
-        ("json_msg.other.*", ""),
-        ("self.json_msg.other.*", ""),
+        ("json_msg.*", "age", {}),
+        ("json_msg.*", "name", {"other": "misc"}),
+        ("self.json_msg.*", "(age,other)", {"name": "ident"}),
+        ("json_msg.other.*", "", {"n": "num"}),
+        ("self.json_msg.other.*", "", {}),
+        ("self.json_msg.other.*", "n", {}),
     ],
 )
-def test_struct_field_wildcard_selection(
+def test_struct_field_selection_wildcards(
     fields: str,
     excluding: str,
+    rename: dict[str, str],
     df_struct: pl.DataFrame,
 ) -> None:
-    query = f"SELECT {fields} {excluding} FROM df_struct ORDER BY json_msg.id"
-    print(query)
-    res = pl.sql(query).collect()
+    exclude_cols = f"EXCLUDE {excluding}" if excluding else ""
+    rename_cols = (
+        f"RENAME ({','.join(f'{k} AS {v}' for k, v in rename.items())})"
+        if rename
+        else ""
+    )
+    res = df_struct.sql(
+        f"""
+        SELECT {fields} {exclude_cols} {rename_cols}
+        FROM self ORDER BY json_msg.id
+    """
+    )
 
     expected = df_struct.unnest("json_msg")
     if fields.endswith(".other.*"):
         expected = expected["other"].struct.unnest()
     if excluding:
-        expected = expected.drop(excluding.split(","))
+        expected = expected.drop(excluding.strip(")(").split(","))
+    if rename:
+        expected = expected.rename(rename)
 
     assert_frame_equal(expected, res)
 
