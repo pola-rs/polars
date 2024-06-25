@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::ops::Deref;
 
-use polars_core::export::regex::{escape, Regex};
+use polars_core::export::regex;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
@@ -30,10 +30,18 @@ struct RenameColumns {
 }
 
 struct SelectModifiers {
-    exclude: PlHashSet<String>, // SELECT * EXCLUDE
-    ilike: Option<Regex>,       // SELECT * ILIKE
-    rename: RenameColumns,      // SELECT * RENAME
-    replace: Vec<Expr>,         // SELECT * REPLACE
+    exclude: PlHashSet<String>,  // SELECT * EXCLUDE
+    ilike: Option<regex::Regex>, // SELECT * ILIKE
+    rename: RenameColumns,       // SELECT * RENAME
+    replace: Vec<Expr>,          // SELECT * REPLACE
+}
+impl SelectModifiers {
+    pub fn matches_ilike(&self, s: &str) -> bool {
+        match &self.ilike {
+            Some(rx) => rx.is_match(s),
+            None => true,
+        }
+    }
 }
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -719,35 +727,34 @@ impl SQLContext {
 
         lf = if group_by_keys.is_empty() {
             // Establish final/selected cols, accounting for 'SELECT *' modifiers
-            let retained_cols: Vec<_> = projections
-                .iter()
-                .filter_map(|e| {
-                    let field = e.to_field(schema.deref(), Context::Default).ok()?;
-                    let name = field.name.to_string();
-                    if select_modifiers
-                        .ilike
-                        .as_ref()
-                        .map_or(true, |rx| rx.is_match(&name))
-                        && !select_modifiers.exclude.contains(&name)
-                    {
-                        Some(col(name.as_str()))
+            let mut retained = Vec::with_capacity(projections.len());
+            let have_order_by = !query.order_by.is_empty();
+            for p in projections.iter() {
+                let name = p
+                    .to_field(schema.deref(), Context::Default)?
+                    .name
+                    .to_string();
+                if select_modifiers.matches_ilike(&name)
+                    && !select_modifiers.exclude.contains(&name)
+                {
+                    retained.push(if have_order_by {
+                        col(name.as_str())
                     } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if query.order_by.is_empty() {
-                if select_modifiers.ilike.is_some() || !select_modifiers.exclude.is_empty() {
-                    lf.select(projections).select(retained_cols)
-                } else {
-                    lf.select(projections)
+                        p.clone()
+                    });
                 }
+            }
+            // Note: when applying ORDER BY we need to retain the original columns for
+            // the sort and then constrain the final projection to the selected columns.
+            if have_order_by {
+                self.process_order_by(
+                    lf.with_columns(projections),
+                    &query.order_by,
+                    Some(&retained),
+                )?
+                .select(retained)
             } else {
-                // Include projections as any of the original columns may be required for the sort
-                lf = lf.with_columns(projections.clone());
-                self.process_order_by(lf, &query.order_by, Some(&retained_cols))?
-                    .select(retained_cols)
+                lf.select(retained)
             }
         } else {
             lf = self.process_group_by(lf, &group_by_keys, &projections)?;
@@ -1210,9 +1217,8 @@ impl SQLContext {
         modifiers: &mut SelectModifiers,
         schema: Option<&Schema>,
     ) -> PolarsResult<Vec<Expr>> {
-        // bail on (currently) unsupported wildcard options
-        if options.opt_except.is_some() {
-            polars_bail!(SQLInterface: "EXCEPT wildcard option is not supported (use EXCLUDE instead)")
+        if options.opt_except.is_some() && options.opt_exclude.is_some() {
+            polars_bail!(SQLInterface: "EXCLUDE and EXCEPT wildcard options cannot be used together (prefer EXCLUDE)")
         } else if options.opt_exclude.is_some() && options.opt_ilike.is_some() {
             polars_bail!(SQLInterface: "EXCLUDE and ILIKE wildcard options cannot be used together")
         } else if options.opt_rename.is_some() && options.opt_replace.is_some() {
@@ -1220,6 +1226,7 @@ impl SQLContext {
             polars_bail!(SQLInterface: "RENAME and REPLACE wildcard options cannot (yet) be used together")
         }
 
+        // SELECT * EXCLUDE
         if let Some(items) = &options.opt_exclude {
             match items {
                 ExcludeSelectItem::Single(ident) => {
@@ -1231,14 +1238,26 @@ impl SQLContext {
                         .extend(idents.iter().map(|i| i.value.clone()));
                 },
             };
-        } else if let Some(item) = &options.opt_ilike {
-            let rx = escape(item.pattern.as_str())
+        }
+
+        // SELECT * EXCEPT
+        if let Some(items) = &options.opt_except {
+            modifiers.exclude.insert(items.first_element.value.clone());
+            modifiers
+                .exclude
+                .extend(items.additional_elements.iter().map(|i| i.value.clone()));
+        }
+
+        // SELECT * ILIKE
+        if let Some(item) = &options.opt_ilike {
+            let rx = regex::escape(item.pattern.as_str())
                 .replace('%', ".*")
                 .replace('_', ".");
 
-            modifiers.ilike = Some(Regex::new(format!("^(?i){}$", rx).as_str()).unwrap());
+            modifiers.ilike = Some(regex::Regex::new(format!("^(?i){}$", rx).as_str()).unwrap());
         }
 
+        // SELECT * RENAME
         if let Some(items) = &options.opt_rename {
             match items {
                 RenameSelectItem::Single(rename) => {
@@ -1254,6 +1273,7 @@ impl SQLContext {
             }
         }
 
+        // SELECT * REPLACE
         if let Some(replacements) = &options.opt_replace {
             for rp in &replacements.items {
                 let replacement_expr = parse_sql_expr(&rp.expr, self, schema);

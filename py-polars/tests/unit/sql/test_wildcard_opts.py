@@ -36,7 +36,11 @@ def test_select_exclude(
     expected: list[str],
     df: pl.DataFrame,
 ) -> None:
-    assert df.sql(f"SELECT * EXCLUDE {excluded} FROM self").columns == expected
+    for exclude_keyword in ("EXCLUDE", "EXCEPT"):
+        assert (
+            df.sql(f"SELECT * {exclude_keyword} {excluded} FROM self").columns
+            == expected
+        )
 
 
 def test_select_exclude_order_by(
