@@ -7358,7 +7358,15 @@ class DataFrame:
         """
         return [wrap_s(s) for s in self._df.get_columns()]
 
-    def get_column(self, name: str, *, default: Any | NoDefault = no_default) -> Series:
+    @overload
+    def get_column(self, name: str, *, default: Series | NoDefault = ...) -> Series: ...
+
+    @overload
+    def get_column(self, name: str, *, default: Any) -> Any: ...
+
+    def get_column(
+        self, name: str, *, default: Any | NoDefault = no_default
+    ) -> Series | Any:
         """
         Get a single column by name.
 
@@ -7372,7 +7380,7 @@ class DataFrame:
 
         Returns
         -------
-        Series (or arbitrary default value)
+        Series (or arbitrary default value, if specified).
 
         See Also
         --------
