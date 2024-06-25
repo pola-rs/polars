@@ -121,34 +121,31 @@ def test_select_rename_exclude_sort(order_by: str, df: pl.DataFrame) -> None:
 
 
 @pytest.mark.parametrize(
-    ("replacements", "order_by", "check_cols", "expected"),
+    ("replacements", "check_cols", "expected"),
     [
         (
             "(ID // 3 AS ID)",
-            "",
             ["ID"],
-            [(111,), (222,), (333,)],
+            [(333,), (222,), (111,)],
         ),
         (
-            "((City || ':' || City) AS City, ID // 3 AS ID)",
-            "ORDER BY ID DESC",
+            "((City || ':' || City) AS City, ID // -3 AS ID)",
             ["City", "ID"],
             [
-                ("Metropolis:Metropolis", 333),
-                ("Themyscira:Themyscira", 222),
-                ("Gotham:Gotham", 111),
+                ("Gotham:Gotham", -111),
+                ("Themyscira:Themyscira", -222),
+                ("Metropolis:Metropolis", -333),
             ],
         ),
     ],
 )
 def test_select_replace(
     replacements: str,
-    order_by: str,
     check_cols: list[str],
     expected: list[tuple[Any]],
     df: pl.DataFrame,
 ) -> None:
-    res = df.sql(f"SELECT * REPLACE {replacements} FROM self {order_by}")
+    res = df.sql(f"SELECT * REPLACE {replacements} FROM self ORDER BY ID DESC")
 
     assert res.select(check_cols).rows() == expected
     assert res.columns == df.columns

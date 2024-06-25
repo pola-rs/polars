@@ -724,7 +724,7 @@ impl SQLContext {
         };
 
         lf = if group_by_keys.is_empty() {
-            // Establish final/selected cols, accounting for 'SELECT *' modifiers
+            // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
             let have_order_by = !query.order_by.is_empty();
 
@@ -747,14 +747,29 @@ impl SQLContext {
                     });
                 }
             }
+
+            // Apply the remaining modifiers and establish the final projection
             if have_order_by {
                 lf = lf.with_columns(projections);
-                if !select_modifiers.rename.is_empty() {
-                    lf = lf.with_columns(select_modifiers.renamed_cols());
-                }
+            }
+            if !select_modifiers.replace.is_empty() {
+                lf = lf.with_columns(&select_modifiers.replace);
+            }
+            if !select_modifiers.rename.is_empty() {
+                lf = lf.with_columns(select_modifiers.renamed_cols());
+            }
+            if have_order_by {
                 lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?
             }
-            lf.select(retained_cols)
+            lf = lf.select(retained_cols);
+
+            if !select_modifiers.rename.is_empty() {
+                lf = lf.rename(
+                    select_modifiers.rename.keys(),
+                    select_modifiers.rename.values(),
+                );
+            };
+            lf
         } else {
             lf = self.process_group_by(lf, &group_by_keys, &projections)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
@@ -793,17 +808,6 @@ impl SQLContext {
             },
             None => lf,
         };
-
-        // Apply final 'SELECT *' REPLACE modifier
-        if !select_modifiers.replace.is_empty() {
-            lf = lf.with_columns(select_modifiers.replace);
-        }
-        if !select_modifiers.rename.is_empty() {
-            lf = lf.rename(
-                select_modifiers.rename.keys(),
-                select_modifiers.rename.values(),
-            );
-        }
         Ok(lf)
     }
 
