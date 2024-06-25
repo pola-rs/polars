@@ -130,7 +130,7 @@ def lit(
     elif isinstance(value, enum.Enum):
         lit_value = value.value
         if dtype is None and isinstance(value, str):
-            dtype = Enum(value.__class__.__members__.values())
+            dtype = Enum(m.value for m in type(value))
         return lit(lit_value, dtype=dtype)
 
     if dtype:
