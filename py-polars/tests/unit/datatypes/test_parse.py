@@ -51,6 +51,8 @@ def test_parse_into_dtype(input: Any, expected: PolarsDataType) -> None:
     [
         (datetime, pl.Datetime("us")),
         (date, pl.Date()),
+        (type(None), pl.Null()),
+        (object, pl.Object()),
     ],
 )
 def test_parse_py_type_into_dtype(input: Any, expected: PolarsDataType) -> None:

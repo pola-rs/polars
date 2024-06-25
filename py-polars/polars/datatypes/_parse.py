@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 UnionTypeOld = type(Union[int, str])
 if sys.version_info >= (3, 10):
     from types import NoneType, UnionType
-else:
+else:  # pragma: no cover
     # Define equivalent for older Python versions
     NoneType = type(None)
     UnionType = UnionTypeOld
