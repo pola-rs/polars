@@ -420,6 +420,7 @@ def dataframes(  # noqa: D417
             version="1.0.0",
         )
         min_size = max_size = size
+    allow_nan = kwargs.pop("allow_nan", None)
 
     if isinstance(include_cols, column):
         include_cols = [include_cols]
@@ -451,6 +452,11 @@ def dataframes(  # noqa: D417
                 c.allow_null = allow_null.get(c.name, True)
             else:
                 c.allow_null = allow_null
+        if c.allow_nan is None:
+            if isinstance(allow_nan, Mapping):
+                c.allow_nan = allow_nan.get(c.name, True)
+            else:
+                c.allow_nan = allow_nan
 
     allow_series_chunks = draw(st.booleans()) if allow_chunks else False
 
@@ -464,6 +470,7 @@ def dataframes(  # noqa: D417
                     max_size=size,
                     strategy=c.strategy,
                     allow_null=c.allow_null,  # type: ignore[arg-type]
+                    allow_nan=c.allow_nan,
                     allow_chunks=allow_series_chunks,
                     unique=c.unique,
                     allowed_dtypes=allowed_dtypes,
@@ -503,6 +510,8 @@ class column:
         supports overriding the default strategy for the given dtype.
     allow_null : bool, optional
         Allow nulls as possible values and allow the `Null` data type by default.
+    allow_nan : bool, optional
+        Allow nans as possible values. Only applicable to float/decimal dtype columns.
     unique : bool, optional
         flag indicating that all values generated for the column should be unique.
 
@@ -540,6 +549,7 @@ class column:
     dtype: PolarsDataType | None = None
     strategy: SearchStrategy[Any] | None = None
     allow_null: bool | None = None
+    allow_nan: bool | None = None
     unique: bool = False
 
     null_probability: float | None = None

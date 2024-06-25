@@ -68,6 +68,18 @@ def test_series_allow_null_allowed_dtypes(s: pl.Series) -> None:
     assert s.dtype == pl.Null
 
 
+@given(
+    s=series(
+        allowed_dtypes=[pl.Float32, pl.Float64],
+        allow_nan=False,
+        allow_null=False,
+        min_size=1,
+    )
+)
+def test_series_allow_nan_false(s: pl.Series) -> None:
+    assert s.is_not_nan().any()
+
+
 @given(s=series(allowed_dtypes=[pl.List(pl.Int8)], allow_null=False))
 def test_series_allow_null_nested(s: pl.Series) -> None:
     for v in s:
@@ -113,6 +125,33 @@ def test_dataframes_allow_null_global(df: pl.DataFrame) -> None:
 def test_dataframes_allow_null_column(df: pl.DataFrame) -> None:
     null_count = sum(df.null_count().row(0))
     assert 0 <= null_count <= df.height * df.width
+
+
+@given(
+    df=dataframes(
+        cols=1,
+        allowed_dtypes=[pl.Float32, pl.Float64],
+        allow_nan=False,
+    ),
+)
+def test_dataframes_allow_nan_false_global(df: pl.DataFrame) -> None:
+    print(df)
+    nan_count = df.select(pl.col("col0").is_nan().sum()).item()
+    assert nan_count == 0
+
+
+@given(
+    df=dataframes(
+        cols=2,
+        allowed_dtypes=[pl.Float32, pl.Float64],
+        allow_nan={"col0": False},
+    ),
+)
+def test_dataframes_allow_nan_false_column(df: pl.DataFrame) -> None:
+    print(df)
+    nan_count = sum(df.select(pl.all().is_nan().sum()).row(0))
+    # The maximum nan count is all values in a single column.
+    assert 0 <= nan_count <= df.height
 
 
 @given(
