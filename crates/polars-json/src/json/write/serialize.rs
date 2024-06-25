@@ -2,6 +2,8 @@ use std::io::Write;
 
 use arrow::array::*;
 use arrow::bitmap::utils::ZipValidity;
+#[cfg(feature = "dtype-decimal")]
+use arrow::compute::decimal::{format_decimal, get_trim_decimal_zeros};
 use arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
 use arrow::io::iterator::BufStreamingIterator;
 use arrow::offset::Offset;
@@ -104,6 +106,25 @@ where
             } else {
                 write_float(buf, *x)
             }
+        } else {
+            buf.extend(b"null")
+        }
+    };
+
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
+#[cfg(feature = "dtype-decimal")]
+fn decimal_serializer<'a>(
+    array: &'a PrimitiveArray<i128>,
+    scale: usize,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+    let trim_zeros = get_trim_decimal_zeros();
+    let f = move |x: Option<&i128>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            utf8::write_str(buf, format_decimal(*x, scale, trim_zeros).as_str()).unwrap()
         } else {
             buf.extend(b"null")
         }
@@ -418,6 +439,10 @@ pub(crate) fn new_serializer<'a>(
         },
         ArrowDataType::Float64 => {
             float_serializer::<f64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        #[cfg(feature = "dtype-decimal")]
+        ArrowDataType::Decimal(_, scale) => {
+            decimal_serializer(array.as_any().downcast_ref().unwrap(), *scale, offset, take)
         },
         ArrowDataType::LargeUtf8 => {
             utf8_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)

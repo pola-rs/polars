@@ -2,7 +2,7 @@
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::{fmt, str};
 
@@ -44,7 +44,6 @@ pub enum FloatFmt {
 static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
-static TRIM_DECIMAL_ZEROS: AtomicBool = AtomicBool::new(false);
 static THOUSANDS_SEPARATOR: AtomicU8 = AtomicU8::new(b'\0');
 static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
 
@@ -70,8 +69,9 @@ pub fn get_thousands_separator() -> String {
         sep.to_string()
     }
 }
+#[cfg(feature = "dtype-decimal")]
 pub fn get_trim_decimal_zeros() -> bool {
-    TRIM_DECIMAL_ZEROS.load(Ordering::Relaxed)
+    arrow::compute::decimal::get_trim_decimal_zeros()
 }
 
 // Numeric formatting setters
@@ -87,8 +87,9 @@ pub fn set_decimal_separator(dec: Option<char>) {
 pub fn set_thousands_separator(sep: Option<char>) {
     THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8, Ordering::Relaxed)
 }
+#[cfg(feature = "dtype-decimal")]
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
-    TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
+    arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
 /// Parses an environment variable value.

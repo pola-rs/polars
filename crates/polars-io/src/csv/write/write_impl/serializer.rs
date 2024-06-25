@@ -238,6 +238,24 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
     })
 }
 
+#[cfg(feature = "dtype-decimal")]
+fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer {
+    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
+
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let value = arrow::compute::decimal::format_decimal(item, scale, trim_zeros);
+        buf.extend_from_slice(value.as_str().as_bytes());
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i128>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-time",
@@ -665,6 +683,18 @@ pub(super) fn serializer_for<'a>(
                 },
                 array,
             )
+        },
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, scale) => {
+            let array = array.as_any().downcast_ref().unwrap();
+            match options.quote_style {
+                QuoteStyle::Never => Box::new(decimal_serializer(array, scale.unwrap_or(0)))
+                    as Box<dyn Serializer + Send>,
+                _ => Box::new(quote_serializer(decimal_serializer(
+                    array,
+                    scale.unwrap_or(0),
+                ))),
+            }
         },
         _ => polars_bail!(ComputeError: "datatype {dtype} cannot be written to csv"),
     };

@@ -7,6 +7,7 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal as D
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
@@ -1805,34 +1806,35 @@ def test_csv_quote_styles() -> None:
             "date": [dt, None, dt],
             "datetime": [None, dtm, dtm],
             "time": [tm, tm, None],
+            "decimal": [D("1.0"), D("2.0"), None],
         }
     )
 
     assert df.write_csv(quote_style="always", **temporal_formats) == (
-        '"float","string","int","bool","date","datetime","time"\n'
-        '"1.0","a","1","true","2077-07-05","","03:01:00"\n'
-        '"2.0","a,bc","2","false","","2077-07-05T03:01:00","03:01:00"\n'
-        '"","""hello","3","","2077-07-05","2077-07-05T03:01:00",""\n'
+        '"float","string","int","bool","date","datetime","time","decimal"\n'
+        '"1.0","a","1","true","2077-07-05","","03:01:00","1.0"\n'
+        '"2.0","a,bc","2","false","","2077-07-05T03:01:00","03:01:00","2.0"\n'
+        '"","""hello","3","","2077-07-05","2077-07-05T03:01:00","",""\n'
     )
     assert df.write_csv(quote_style="necessary", **temporal_formats) == (
-        "float,string,int,bool,date,datetime,time\n"
-        "1.0,a,1,true,2077-07-05,,03:01:00\n"
-        '2.0,"a,bc",2,false,,2077-07-05T03:01:00,03:01:00\n'
-        ',"""hello",3,,2077-07-05,2077-07-05T03:01:00,\n'
+        "float,string,int,bool,date,datetime,time,decimal\n"
+        '1.0,a,1,true,2077-07-05,,03:01:00,"1.0"\n'
+        '2.0,"a,bc",2,false,,2077-07-05T03:01:00,03:01:00,"2.0"\n'
+        ',"""hello",3,,2077-07-05,2077-07-05T03:01:00,,""\n'
     )
     assert df.write_csv(quote_style="never", **temporal_formats) == (
-        "float,string,int,bool,date,datetime,time\n"
-        "1.0,a,1,true,2077-07-05,,03:01:00\n"
-        "2.0,a,bc,2,false,,2077-07-05T03:01:00,03:01:00\n"
-        ',"hello,3,,2077-07-05,2077-07-05T03:01:00,\n'
+        "float,string,int,bool,date,datetime,time,decimal\n"
+        "1.0,a,1,true,2077-07-05,,03:01:00,1.0\n"
+        "2.0,a,bc,2,false,,2077-07-05T03:01:00,03:01:00,2.0\n"
+        ',"hello,3,,2077-07-05,2077-07-05T03:01:00,,\n'
     )
     assert df.write_csv(
         quote_style="non_numeric", quote_char="8", **temporal_formats
     ) == (
-        "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8\n"
-        "1.0,8a8,1,8true8,82077-07-058,,803:01:008\n"
-        "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008\n"
-        ',8"hello8,3,,82077-07-058,82077-07-05T03:01:008,\n'
+        "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8,8decimal8\n"
+        "1.0,8a8,1,8true8,82077-07-058,,803:01:008,81.08\n"
+        "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008,82.08\n"
+        ',8"hello8,3,,82077-07-058,82077-07-05T03:01:008,,88\n'
     )
 
 
