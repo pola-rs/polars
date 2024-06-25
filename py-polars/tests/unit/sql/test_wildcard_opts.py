@@ -13,11 +13,11 @@ from polars.testing import assert_frame_equal
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "ID": [333, 999],
-            "FirstName": ["Bruce", "Clark"],
-            "LastName": ["Wayne", "Kent"],
-            "Address": ["The Batcave", "Fortress of Solitude"],
-            "City": ["Gotham", "Metropolis"],
+            "ID": [333, 666, 999],
+            "FirstName": ["Bruce", "Diana", "Clark"],
+            "LastName": ["Wayne", "Prince", "Kent"],
+            "Address": ["Batcave", "Paradise Island", "Fortress of Solitude"],
+            "City": ["Gotham", "Themyscira", "Metropolis"],
         }
     )
 
@@ -48,33 +48,13 @@ def test_select_exclude_order_by(
 ) -> None:
     expected = pl.DataFrame(
         {
-            "FirstName": ["Clark", "Bruce"],
-            "Address": ["Fortress of Solitude", "The Batcave"],
+            "FirstName": ["Diana", "Clark", "Bruce"],
+            "Address": ["Paradise Island", "Fortress of Solitude", "Batcave"],
         }
     )
-    for order_by in ("ORDER BY 2", "ORDER BY 1 DESC"):
+    for order_by in ("ORDER BY 1 DESC", "ORDER BY 2 DESC", "ORDER BY Address DESC"):
         actual = df.sql(f"SELECT * EXCLUDE (ID,LastName,City) FROM self {order_by}")
         assert_frame_equal(actual, expected)
-
-
-def test_select_exclude_error(df: pl.DataFrame) -> None:
-    # EXCLUDE and ILIKE are not allowed together
-    with pytest.raises(SQLInterfaceError, match="ILIKE"):
-        assert df.sql("SELECT * EXCLUDE Address ILIKE '%o%' FROM self")
-
-    # these two options are aliases, with EXCLUDE being preferred
-    with pytest.raises(
-        SQLInterfaceError,
-        match="EXCLUDE and EXCEPT wildcard options cannot be used together",
-    ):
-        assert df.sql("SELECT * EXCLUDE Address EXCEPT City FROM self")
-
-    # note: missing "()" around the exclude option results in dupe col
-    with pytest.raises(
-        DuplicateError,
-        match="the name 'City' is duplicate",
-    ):
-        assert df.sql("SELECT * EXCLUDE Address, City FROM self")
 
 
 def test_ilike(df: pl.DataFrame) -> None:
@@ -122,6 +102,24 @@ def test_select_rename(
     assert df.sql(f"SELECT * RENAME {renames} FROM self").columns == expected
 
 
+@pytest.mark.parametrize("order_by", ["1 DESC", "Name DESC", "FirstName DESC"])
+def test_select_rename_exclude_sort(order_by: str, df: pl.DataFrame) -> None:
+    actual = df.sql(
+        f"""
+        SELECT * EXCLUDE (ID, City, LastName) RENAME FirstName AS Name
+        FROM self
+        ORDER BY {order_by}
+        """
+    )
+    expected = pl.DataFrame(
+        {
+            "Name": ["Diana", "Clark", "Bruce"],
+            "Address": ["Paradise Island", "Fortress of Solitude", "Batcave"],
+        }
+    )
+    assert_frame_equal(expected, actual)
+
+
 @pytest.mark.parametrize(
     ("replacements", "order_by", "check_cols", "expected"),
     [
@@ -129,13 +127,17 @@ def test_select_rename(
             "(ID // 3 AS ID)",
             "",
             ["ID"],
-            [(111,), (333,)],
+            [(111,), (222,), (333,)],
         ),
         (
             "((City || ':' || City) AS City, ID // 3 AS ID)",
             "ORDER BY ID DESC",
             ["City", "ID"],
-            [("Metropolis:Metropolis", 333), ("Gotham:Gotham", 111)],
+            [
+                ("Metropolis:Metropolis", 333),
+                ("Themyscira:Themyscira", 222),
+                ("Gotham:Gotham", 111),
+            ],
         ),
     ],
 )
@@ -150,3 +152,23 @@ def test_select_replace(
 
     assert res.select(check_cols).rows() == expected
     assert res.columns == df.columns
+
+
+def test_select_wildcard_errors(df: pl.DataFrame) -> None:
+    # EXCLUDE and ILIKE are not allowed together
+    with pytest.raises(SQLInterfaceError, match="ILIKE"):
+        assert df.sql("SELECT * EXCLUDE Address ILIKE '%o%' FROM self")
+
+    # these two options are aliases, with EXCLUDE being preferred
+    with pytest.raises(
+        SQLInterfaceError,
+        match="EXCLUDE and EXCEPT wildcard options cannot be used together",
+    ):
+        assert df.sql("SELECT * EXCLUDE Address EXCEPT City FROM self")
+
+    # note: missing "()" around the exclude option results in dupe col
+    with pytest.raises(
+        DuplicateError,
+        match="the name 'City' is duplicate",
+    ):
+        assert df.sql("SELECT * EXCLUDE Address, City FROM self")

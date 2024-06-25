@@ -24,23 +24,24 @@ use crate::sql_expr::{
 };
 use crate::table_functions::PolarsTableFunctions;
 
-struct RenameColumns {
-    before: Vec<String>,
-    after: Vec<String>,
-}
-
 struct SelectModifiers {
-    exclude: PlHashSet<String>,  // SELECT * EXCLUDE
-    ilike: Option<regex::Regex>, // SELECT * ILIKE
-    rename: RenameColumns,       // SELECT * RENAME
-    replace: Vec<Expr>,          // SELECT * REPLACE
+    exclude: PlHashSet<String>,        // SELECT * EXCLUDE
+    ilike: Option<regex::Regex>,       // SELECT * ILIKE
+    rename: PlHashMap<String, String>, // SELECT * RENAME
+    replace: Vec<Expr>,                // SELECT * REPLACE
 }
 impl SelectModifiers {
-    pub fn matches_ilike(&self, s: &str) -> bool {
+    fn matches_ilike(&self, s: &str) -> bool {
         match &self.ilike {
             Some(rx) => rx.is_match(s),
             None => true,
         }
+    }
+    fn renamed_cols(&self) -> Vec<Expr> {
+        self.rename
+            .iter()
+            .map(|(before, after)| col(before).alias(after))
+            .collect()
     }
 }
 
@@ -631,10 +632,7 @@ impl SQLContext {
         let mut select_modifiers = SelectModifiers {
             ilike: None,
             exclude: PlHashSet::new(),
-            rename: RenameColumns {
-                before: vec![],
-                after: vec![],
-            },
+            rename: PlHashMap::new(),
             replace: vec![],
         };
 
@@ -750,12 +748,12 @@ impl SQLContext {
                 }
             }
             if have_order_by {
-                self.process_order_by(
-                    lf.with_columns(projections),
-                    &query.order_by,
-                    Some(&retained_cols),
-                )?
-                .select(retained_cols)
+                lf = lf.with_columns(projections);
+                if !select_modifiers.rename.is_empty() {
+                    lf = lf.with_columns(select_modifiers.renamed_cols());
+                }
+                self.process_order_by(lf, &query.order_by, Some(&retained_cols))?
+                    .select(retained_cols)
             } else {
                 lf.select(retained_cols)
             }
@@ -798,14 +796,14 @@ impl SQLContext {
             None => lf,
         };
 
-        // Apply final 'SELECT *' REPLACE/RENAME modifiers
+        // Apply final 'SELECT *' REPLACE modifier
         if !select_modifiers.replace.is_empty() {
             lf = lf.with_columns(select_modifiers.replace);
         }
-        if !select_modifiers.rename.before.is_empty() {
+        if !select_modifiers.rename.is_empty() {
             lf = lf.rename(
-                select_modifiers.rename.before,
-                select_modifiers.rename.after,
+                select_modifiers.rename.keys(),
+                select_modifiers.rename.values(),
             );
         }
         Ok(lf)
@@ -1262,17 +1260,15 @@ impl SQLContext {
 
         // SELECT * RENAME
         if let Some(items) = &options.opt_rename {
-            match items {
-                RenameSelectItem::Single(rename) => {
-                    modifiers.rename.before.push(rename.ident.value.clone());
-                    modifiers.rename.after.push(rename.alias.value.clone());
-                },
-                RenameSelectItem::Multiple(renames) => {
-                    for rn in renames {
-                        modifiers.rename.before.push(rn.ident.value.clone());
-                        modifiers.rename.after.push(rn.alias.value.clone());
-                    }
-                },
+            let renames = match items {
+                RenameSelectItem::Single(rename) => vec![rename],
+                RenameSelectItem::Multiple(renames) => renames.iter().collect(),
+            };
+            for rn in renames {
+                let (before, after) = (rn.ident.value.clone(), rn.alias.value.clone());
+                if before != after {
+                    modifiers.rename.insert(before, after);
+                }
             }
         }
 
