@@ -528,6 +528,7 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
         lf.collect(), pl.DataFrame({k: [1, 2, 3] for k in ["x", "a", "b"]})
     )
 
+
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("projection_pushdown", [True, False])
 def test_hive_partition_columns_contained_in_file(
