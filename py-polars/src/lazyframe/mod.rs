@@ -336,7 +336,6 @@ impl PyLazyFrame {
             enabled: hive_partitioning,
             hive_start_idx: 0,
             schema: hive_schema,
-            materialize: true,
         };
 
         let args = ScanArgsParquet {

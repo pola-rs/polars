@@ -284,7 +284,7 @@ fn create_physical_plan_impl(
                 } => Ok(Box::new(executors::ParquetExec::new(
                     paths,
                     file_info,
-                    hive_parts.filter(|_| file_options.hive_options.materialize),
+                    hive_parts,
                     predicate,
                     options,
                     cloud_options,

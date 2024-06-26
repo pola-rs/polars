@@ -106,6 +106,7 @@ pub fn hive_partitions_from_paths(
             PlHashMap::with_capacity(16);
 
         for (name, _) in get_hive_parts_iter!(path_string) {
+            // If the column is also in the file we can use the dtype stored there.
             if let Some(dtype) = reader_schema.get(name) {
                 hive_schema.insert_at_index(hive_schema.len(), name.into(), dtype.clone())?;
                 continue;

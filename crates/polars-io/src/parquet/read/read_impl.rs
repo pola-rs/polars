@@ -168,6 +168,7 @@ pub(crate) fn materialize_hive_partitions(
         };
 
         if reader_schema.index_of(first.name()).is_some() {
+            // Insert these hive columns in the order they are stored in the file.
             for s in hive_columns {
                 let i = match df.get_columns().binary_search_by_key(
                     &reader_schema.index_of(s.name()).unwrap_or(usize::MAX),
