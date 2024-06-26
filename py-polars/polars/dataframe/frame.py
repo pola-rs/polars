@@ -563,9 +563,14 @@ class DataFrame:
         return self
 
     @property
+    @unstable()
     def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Polars does not implement plotting logic itself, but instead defers to
         hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
