@@ -180,7 +180,7 @@ def test_order_by_multi_nulls_first_last() -> None:
     }
 
     res1 = df.sql("SELECT * FROM self ORDER BY x NULLS FIRST, y NULLS FIRST")
-    res2 = df.sql("SELECT * FROM self ORDER BY ALL NULLS FIRST")
+    res2 = df.sql("SELECT * FROM self ORDER BY All NULLS FIRST")
     for res in (res1, res2):
         assert res.to_dict(as_series=False) == {
             "x": [None, None, 1, 3],
@@ -188,7 +188,7 @@ def test_order_by_multi_nulls_first_last() -> None:
         }
 
     res1 = df.sql("SELECT * FROM self ORDER BY x DESC NULLS FIRST, y DESC NULLS FIRST")
-    res2 = df.sql("SELECT * FROM self ORDER BY ALL DESC NULLS FIRST")
+    res2 = df.sql("SELECT * FROM self ORDER BY all DESC NULLS FIRST")
     for res in (res1, res2):
         assert res.to_dict(as_series=False) == {
             "x": [None, None, 3, 1],
