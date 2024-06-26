@@ -65,7 +65,7 @@ pub(super) struct ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
     pub dict: &'a Vec<T>,
 }
 
@@ -74,7 +74,7 @@ where
     T: NativeType,
 {
     pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?;
+        let values = utils::dict_indices_decoder(page)?.into_iter();
 
         Ok(Self { dict, values })
     }

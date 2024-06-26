@@ -10,7 +10,7 @@ use super::super::super::PagesIter;
 use super::super::nested_utils::*;
 use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
 use super::finish_key;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::hybrid_rle::BufferedHybridRleDecoderIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
@@ -18,13 +18,13 @@ use crate::parquet::schema::Repetition;
 // The state of a required DataPage with a boolean physical type
 #[derive(Debug)]
 pub struct Required<'a> {
-    values: HybridRleDecoder<'a>,
+    values: BufferedHybridRleDecoderIter<'a>,
     length: usize,
 }
 
 impl<'a> Required<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
+        let values = dict_indices_decoder(page)?.into_iter();
         let length = page.num_values();
         Ok(Self { values, length })
     }
@@ -34,7 +34,7 @@ impl<'a> Required<'a> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum State<'a> {
-    Optional(HybridRleDecoder<'a>),
+    Optional(BufferedHybridRleDecoderIter<'a>),
     Required(Required<'a>),
 }
 
@@ -89,7 +89,9 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
 
         match (page.encoding(), is_optional, is_filtered) {
             (Encoding::RleDictionary | Encoding::PlainDictionary, true, false) => {
-                dict_indices_decoder(page).map(State::Optional)
+                dict_indices_decoder(page)
+                    .map(|v| v.into_iter())
+                    .map(State::Optional)
             },
             (Encoding::RleDictionary | Encoding::PlainDictionary, false, false) => {
                 Required::try_new(page).map(State::Required)
@@ -161,7 +163,7 @@ pub fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Arr
     match iter.next() {
         Err(e) => MaybeNext::Some(Err(e.into())),
         Ok(Some(page)) => {
-            let (page, dict) = match (&dict, page) {
+            let (page, dict) = match (&dict, &page) {
                 (None, Page::Data(_)) => {
                     return MaybeNext::Some(Err(polars_err!(ComputeError:
                         "not implemented: dictionary arrays from non-dict-encoded pages",

@@ -3,7 +3,7 @@ mod encode;
 mod pack;
 mod unpack;
 
-pub use decode::Decoder;
+pub use decode::{Decoder, DecoderIter};
 pub use encode::{encode, encode_pack};
 
 /// A byte slice (e.g. `[u8; 8]`) denoting types that represent complete packs.

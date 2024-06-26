@@ -1,6 +1,6 @@
 use super::super::{bitpacked, uleb128, zigzag_leb128};
 use crate::parquet::encoding::ceil8;
-use crate::parquet::error::ParquetError;
+use crate::parquet::error::{ParquetError, ParquetResult};
 
 /// An [`Iterator`] of [`i64`]
 #[derive(Debug)]
@@ -15,7 +15,7 @@ struct Block<'a> {
     remaining: usize,     // number of elements
     current_index: usize, // invariant: < values_per_mini_block
     // None represents a relative delta of zero, in which case there is no miniblock.
-    current_miniblock: Option<bitpacked::Decoder<'a, u64>>,
+    current_miniblock: Option<bitpacked::DecoderIter<u64>>,
     // number of bytes consumed.
     consumed_bytes: usize,
 }
@@ -26,7 +26,7 @@ impl<'a> Block<'a> {
         num_mini_blocks: usize,
         values_per_mini_block: usize,
         length: usize,
-    ) -> Result<Self, ParquetError> {
+    ) -> ParquetResult<Self> {
         let length = std::cmp::min(length, num_mini_blocks * values_per_mini_block);
 
         let mut consumed_bytes = 0;
@@ -61,7 +61,7 @@ impl<'a> Block<'a> {
         Ok(block)
     }
 
-    fn advance_miniblock(&mut self) -> Result<(), ParquetError> {
+    fn advance_miniblock(&mut self) -> ParquetResult<()> {
         // unwrap is ok: we sliced it by num_mini_blocks in try_new
         let num_bits = self.bitwidths.next().copied().unwrap() as usize;
 
@@ -79,7 +79,11 @@ impl<'a> Block<'a> {
             self.values = remainder;
             self.consumed_bytes += miniblock_length;
 
-            Some(bitpacked::Decoder::try_new(miniblock, num_bits, length).unwrap())
+            Some(
+                bitpacked::Decoder::try_new(miniblock, num_bits, length)
+                    .unwrap()
+                    .collect_into_iter(),
+            )
         } else {
             None
         };

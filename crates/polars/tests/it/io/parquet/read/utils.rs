@@ -1,5 +1,7 @@
 use polars_parquet::parquet::deserialize::{HybridDecoderBitmapIter, HybridEncoded, HybridRleIter};
-use polars_parquet::parquet::encoding::hybrid_rle::{self, BitmapIter, HybridRleDecoder};
+use polars_parquet::parquet::encoding::hybrid_rle::{
+    self, BitmapIter, BufferedHybridRleDecoderIter, HybridRleDecoder,
+};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
@@ -23,7 +25,11 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<HybridRleDe
     }
     let indices_buffer = &indices_buffer[1..];
 
-    hybrid_rle::HybridRleDecoder::try_new(indices_buffer, bit_width as u32, page.num_values())
+    Ok(hybrid_rle::HybridRleDecoder::new(
+        indices_buffer,
+        bit_width as u32,
+        page.num_values(),
+    ))
 }
 
 /// Decoder of definition levels.
@@ -35,7 +41,7 @@ pub enum DefLevelsDecoder<'a> {
     /// that decodes the runs, but not the individual values
     Bitmap(HybridDecoderBitmapIter<'a>),
     /// When the maximum definition level is larger than 1
-    Levels(HybridRleDecoder<'a>, u32),
+    Levels(BufferedHybridRleDecoderIter<'a>, u32),
 }
 
 impl<'a> DefLevelsDecoder<'a> {
@@ -52,11 +58,9 @@ impl<'a> DefLevelsDecoder<'a> {
             let iter = HybridRleIter::new(iter, page.num_values());
             Self::Bitmap(iter)
         } else {
-            let iter = HybridRleDecoder::try_new(
-                def_levels,
-                get_bit_width(max_def_level),
-                page.num_values(),
-            )?;
+            let iter =
+                HybridRleDecoder::new(def_levels, get_bit_width(max_def_level), page.num_values())
+                    .iter();
             Self::Levels(iter, max_def_level as u32)
         })
     }
@@ -137,7 +141,7 @@ fn deserialize_bitmap<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
 }
 
 fn deserialize_levels<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
-    levels: HybridRleDecoder,
+    levels: BufferedHybridRleDecoderIter,
     max: u32,
     mut values: I,
 ) -> Result<Vec<Option<C>>, ParquetError> {

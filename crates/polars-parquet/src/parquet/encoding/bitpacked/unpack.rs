@@ -45,6 +45,11 @@ macro_rules! unpack_impl {
                 )
             };
 
+            // @NOTE
+            // I was surprised too, but this macro vs. a for loop saves around 4.5 - 5x on
+            // performance in a microbenchmark. Although the code it generates is completely
+            // insane. There should be something we can do here to make this less code, sane code
+            // and faster code.
             seq_macro::seq!(i in 0..$bits {
                 let start_bit = i * NUM_BITS;
                 let end_bit = start_bit + NUM_BITS;
@@ -79,6 +84,10 @@ macro_rules! unpack {
         /// Unpack packed `input` into `output` with a bit width of `num_bits`
         pub fn $name(input: &[u8], output: &mut [$t; $bits], num_bits: usize) {
             // This will get optimised into a jump table
+            //
+            // @NOTE
+            // This jumptable appoach saves around 2 - 2.5x on performance over no jumptable and no
+            // generics.
             seq_macro::seq!(i in 0..=$bits {
                 if i == num_bits {
                     return $name::unpack::<i>(input, output);
