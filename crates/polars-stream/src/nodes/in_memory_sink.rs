@@ -1,15 +1,12 @@
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
+use polars_core::schema::Schema;
+use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_core::utils::rayon::iter::{IntoParallelIterator, ParallelIterator};
-use polars_core::POOL;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
-use polars_utils::priority::Priority;
-use polars_utils::sync::SyncPtr;
 
 use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskScope};
@@ -17,9 +14,18 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
 use crate::utils::in_memory_linearize::linearize;
 
-#[derive(Default)]
 pub struct InMemorySink {
     morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
+    schema: Arc<Schema>,
+}
+
+impl InMemorySink {
+    pub fn new(schema: Arc<Schema>) -> Self {
+        Self {
+            morsels_per_pipe: Mutex::default(),
+            schema,
+        }
+    }
 }
 
 impl ComputeNode for InMemorySink {
@@ -51,8 +57,12 @@ impl ComputeNode for InMemorySink {
     }
 
     fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
-        let mut morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
+        let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
         let dataframes = linearize(morsels_per_pipe);
-        Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
+        if dataframes.is_empty() {
+            Ok(Some(DataFrame::empty_with_schema(&self.schema)))
+        } else {
+            Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
+        }
     }
 }

@@ -34,7 +34,7 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<Morsel>>) -> Vec<DataFrame> {
 
     let morsels_per_p = &morsels_per_pipe;
     let mut dataframes: Vec<DataFrame> = Vec::with_capacity(num_morsels);
-    let mut dataframes_ptr = unsafe { SyncPtr::new(dataframes.as_mut_ptr()) };
+    let dataframes_ptr = unsafe { SyncPtr::new(dataframes.as_mut_ptr()) };
     rayon::scope(|s| {
         let mut out_offset = 0;
         let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];

@@ -1,6 +1,5 @@
 #![allow(unused)] // TODO: remove.
 
-#[allow(unused)] // TODO: remove.
 mod async_executor;
 #[allow(unused)] // TODO: remove.
 mod async_primitives;
