@@ -2,7 +2,7 @@ use polars_core::prelude::{IdxSize, UniqueKeepStrategy};
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
 use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionNode};
-use pyo3::exceptions::PyNotImplementedError;
+use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 
 use super::super::visit::PyExprIR;
@@ -308,11 +308,35 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 inner: file_options.clone(),
             },
             scan_type: match scan_type {
-                // TODO: Actually send options through since those are important for correct reads
-                FileScan::Csv { .. } => "csv".into_py(py),
-                FileScan::Parquet { .. } => "parquet".into_py(py),
+                FileScan::Csv {
+                    options,
+                    cloud_options,
+                } => {
+                    // Since these options structs are serializable,
+                    // we just use the serde json representation
+                    let options = serde_json::to_string(options)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+                    let cloud_options = serde_json::to_string(cloud_options)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+                    ("csv", options, cloud_options).into_py(py)
+                },
+                FileScan::Parquet {
+                    options,
+                    cloud_options,
+                    ..
+                } => {
+                    let options = serde_json::to_string(options)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+                    let cloud_options = serde_json::to_string(cloud_options)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+                    ("parquet", options, cloud_options).into_py(py)
+                },
                 FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
-                FileScan::NDJson { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
+                FileScan::NDJson { options } => {
+                    let options = serde_json::to_string(options)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+                    ("ndjson", options).into_py(py)
+                },
                 FileScan::Anonymous { .. } => {
                     return Err(PyNotImplementedError::new_err("anonymous scan"))
                 },
