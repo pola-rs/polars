@@ -1,3 +1,4 @@
+use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 
@@ -86,7 +87,7 @@ pub fn to_alp_impl(
             paths,
             predicate,
             mut scan_type,
-            file_options,
+            mut file_options,
         } => {
             let mut file_info = if let Some(file_info) = file_info {
                 file_info
@@ -137,18 +138,65 @@ pub fn to_alp_impl(
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
             } else if file_options.hive_options.enabled.unwrap() {
+                #[allow(unused_assignments)]
+                let mut owned = None;
+
                 hive_partitions_from_paths(
                     paths.as_ref(),
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
+                    match file_info.reader_schema.as_ref().unwrap() {
+                        Either::Left(v) => {
+                            owned = Some(Schema::from(v));
+                            owned.as_ref().unwrap()
+                        },
+                        Either::Right(v) => v.as_ref(),
+                    },
                 )?
             } else {
                 None
             };
 
             if let Some(ref hive_parts) = hive_parts {
-                file_info.update_schema_with_hive_schema(hive_parts[0].schema().clone())?;
+                let hive_schema = hive_parts[0].schema();
+                file_info.update_schema_with_hive_schema(hive_schema.clone());
             }
+
+            (|| {
+                // Update `with_columns` with a projection so that hive columns aren't loaded from the
+                // file
+                let Some(ref hive_parts) = hive_parts else {
+                    return;
+                };
+
+                let hive_schema = hive_parts[0].schema();
+
+                let Some((first_hive_name, _)) = hive_schema.get_at_index(0) else {
+                    return;
+                };
+
+                let names = match file_info.reader_schema.as_ref().unwrap() {
+                    Either::Left(ref v) => {
+                        let names = v.get_names();
+                        names.contains(&first_hive_name.as_str()).then_some(names)
+                    },
+                    Either::Right(ref v) => {
+                        v.contains(first_hive_name.as_str()).then(|| v.get_names())
+                    },
+                };
+
+                let Some(names) = names else {
+                    return;
+                };
+
+                file_options.with_columns = Some(
+                    names
+                        .iter()
+                        .filter(|x| !hive_schema.contains(x))
+                        .map(ToString::to_string)
+                        .collect::<Arc<[_]>>(),
+                );
+            })();
 
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);

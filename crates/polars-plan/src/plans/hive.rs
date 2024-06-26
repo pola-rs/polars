@@ -17,11 +17,10 @@ pub struct HivePartitions {
 }
 
 impl HivePartitions {
-    pub fn get_projection_schema_and_indices<T: AsRef<str>>(
+    pub fn get_projection_schema_and_indices(
         &self,
-        names: &[T],
+        names: &PlHashSet<String>,
     ) -> (SchemaRef, Vec<usize>) {
-        let names = names.iter().map(T::as_ref).collect::<PlHashSet<&str>>();
         let mut out_schema = Schema::with_capacity(self.stats.schema().len());
         let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
 
@@ -66,6 +65,7 @@ pub fn hive_partitions_from_paths(
     paths: &[PathBuf],
     hive_start_idx: usize,
     schema: Option<SchemaRef>,
+    reader_schema: &Schema,
 ) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
     let Some(path) = paths.first() else {
         return Ok(None);
@@ -88,14 +88,29 @@ pub fn hive_partitions_from_paths(
         }};
     }
 
-    let hive_schema = if let Some(v) = schema {
-        v
+    let hive_schema = if let Some(ref schema) = schema {
+        Arc::new(get_hive_parts_iter!(path_string).map(|(name, _)| {
+            let Some(dtype) = schema.get(name) else {
+                polars_bail!(
+                    SchemaFieldNotFound:
+                    "path contains column not present in the given Hive schema: {:?}, path = {:?}",
+                    name,
+                    path
+                )
+            };
+            Ok(Field::new(name, dtype.clone()))
+        }).collect::<PolarsResult<Schema>>()?)
     } else {
         let mut hive_schema = Schema::with_capacity(16);
         let mut schema_inference_map: PlHashMap<&str, PlHashSet<DataType>> =
             PlHashMap::with_capacity(16);
 
         for (name, _) in get_hive_parts_iter!(path_string) {
+            if let Some(dtype) = reader_schema.get(name) {
+                hive_schema.insert_at_index(hive_schema.len(), name.into(), dtype.clone())?;
+                continue;
+            }
+
             hive_schema.insert_at_index(hive_schema.len(), name.into(), DataType::String)?;
             schema_inference_map.insert(name, PlHashSet::with_capacity(4));
         }

@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
+from polars.exceptions import SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -245,17 +245,6 @@ def test_hive_partitioned_projection_pushdown(
         result = q.select("category").collect()
 
         assert_frame_equal(result, expected)
-
-
-@pytest.mark.write_disk()
-def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
-    df = pl.read_ipc(io_files_path / "*.ipc")
-    root = tmp_path / "sugars_g=10"
-    root.mkdir()
-    df.write_parquet(root / "file.parquet")
-
-    with pytest.raises(DuplicateError, match="invalid Hive partition schema"):
-        pl.scan_parquet(tmp_path, hive_partitioning=True).collect()
 
 
 @pytest.mark.write_disk()
@@ -538,3 +527,52 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
     assert_frame_equal(
         lf.collect(), pl.DataFrame({k: [1, 2, 3] for k in ["x", "a", "b"]})
     )
+
+
+@pytest.mark.parametrize("projection_pushdown", [True, False])
+def test_hive_partition_columns_contained_in_file(
+    tmp_path: Path, projection_pushdown: bool
+) -> None:
+    path = tmp_path / "a=1/b=2/data.bin"
+    path.parent.mkdir(exist_ok=True, parents=True)
+    df = pl.DataFrame(
+        {"x": 1, "y": 1, "a": 1, "b": 2},
+        schema={"x": pl.Int32, "y": pl.Int32, "a": pl.Int8, "b": pl.Int16},
+    )
+    df.write_parquet(path)
+
+    def assert_with_projections(lf: pl.LazyFrame, df: pl.DataFrame) -> None:
+        for projection in [
+            ["a"],
+            ["b"],
+            ["x"],
+            ["y"],
+            ["a", "x"],
+            ["b", "x"],
+            ["a", "y"],
+            ["b", "y"],
+            ["x", "y"],
+            ["a", "b", "x"],
+            ["a", "b", "y"],
+        ]:
+            assert_frame_equal(
+                lf.select(projection).collect(projection_pushdown=projection_pushdown),
+                df.select(projection),
+            )
+
+    lf = pl.scan_parquet(path, hive_partitioning=True)
+    rhs = df
+    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_with_projections(lf, rhs)
+
+    lf = pl.scan_parquet(
+        path,
+        hive_schema={"a": pl.String, "b": pl.String},
+        hive_partitioning=True,
+    )
+    rhs = df.with_columns(pl.col("a", "b").cast(pl.String))
+    assert_frame_equal(
+        lf.collect(projection_pushdown=projection_pushdown),
+        rhs,
+    )
+    assert_with_projections(lf, rhs)

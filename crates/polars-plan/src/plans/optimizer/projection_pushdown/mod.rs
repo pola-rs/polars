@@ -9,6 +9,7 @@ mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
+use either::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -35,7 +36,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 
 /// utility function to get names of the columns needed in projection at scan level
 fn get_scan_columns(
-    acc_projections: &mut Vec<ColumnNode>,
+    acc_projections: &Vec<ColumnNode>,
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
 ) -> Option<Arc<[String]>> {
@@ -378,7 +379,7 @@ impl ProjectionPushDown {
                 mut options,
                 predicate,
             } => {
-                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena, None);
+                options.with_columns = get_scan_columns(&acc_projections, expr_arena, None);
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -417,7 +418,7 @@ impl ProjectionPushDown {
 
                 if do_optimization {
                     file_options.with_columns = get_scan_columns(
-                        &mut acc_projections,
+                        &acc_projections,
                         expr_arena,
                         file_options.row_index.as_ref(),
                     );
@@ -432,7 +433,9 @@ impl ProjectionPushDown {
 
                         hive_parts = if let Some(hive_parts) = hive_parts {
                             let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(with_columns.as_ref());
+                                .get_projection_schema_and_indices(
+                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
+                                );
 
                             Some(
                                 hive_parts
@@ -448,14 +451,21 @@ impl ProjectionPushDown {
                                     .collect::<Arc<[_]>>(),
                             )
                         } else {
-                            hive_parts
+                            None
                         };
 
                         // Hive partitions are created AFTER the projection, so the output
                         // schema is incorrect. Here we ensure the columns that are projected and hive
                         // parts are added at the proper place in the schema, which is at the end.
-                        if let Some(ref mut hive_parts) = hive_parts {
+                        if let Some(ref hive_parts) = hive_parts {
                             let partition_schema = hive_parts.first().unwrap().schema();
+
+                            file_options.with_columns = file_options.with_columns.map(|x| {
+                                x.iter()
+                                    .filter(|x| !partition_schema.contains(x))
+                                    .cloned()
+                                    .collect::<Arc<[_]>>()
+                            });
 
                             for (name, _) in partition_schema.iter() {
                                 if let Some(dt) = schema.shift_remove(name) {
@@ -465,6 +475,41 @@ impl ProjectionPushDown {
                         }
                         Some(Arc::new(schema))
                     } else {
+                        (|| {
+                            // Update `with_columns` with a projection so that hive columns aren't loaded from the
+                            // file
+                            let Some(ref hive_parts) = hive_parts else {
+                                return;
+                            };
+
+                            let hive_schema = hive_parts[0].schema();
+
+                            let Some((first_hive_name, _)) = hive_schema.get_at_index(0) else {
+                                return;
+                            };
+
+                            let names = match file_info.reader_schema.as_ref().unwrap() {
+                                Either::Left(ref v) => {
+                                    let names = v.get_names();
+                                    names.contains(&first_hive_name.as_str()).then_some(names)
+                                },
+                                Either::Right(ref v) => {
+                                    v.contains(first_hive_name.as_str()).then(|| v.get_names())
+                                },
+                            };
+
+                            let Some(names) = names else {
+                                return;
+                            };
+
+                            file_options.with_columns = Some(
+                                names
+                                    .iter()
+                                    .filter(|x| !hive_schema.contains(x))
+                                    .map(ToString::to_string)
+                                    .collect::<Arc<[_]>>(),
+                            );
+                        })();
                         None
                     };
                 }
