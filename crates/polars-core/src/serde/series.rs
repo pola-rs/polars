@@ -281,9 +281,9 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
                     },
                     DataType::Null => {
-                        let values: Vec<Option<Cow<[usize]>>> = map.next_value()?;
-                        let len = values.len();
-                        Ok(Series::new_null(&name, len))
+                        let values: Vec<usize> = map.next_value()?;
+                        let len = values.first().unwrap();
+                        Ok(Series::new_null(&name, *len))
                     },
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")

@@ -188,10 +188,7 @@ impl Serialize for NullChunked {
             let mut state = serializer.serialize_map(Some(3))?;
             state.serialize_entry("name", self.name())?;
             state.serialize_entry("datatype", self.dtype())?;
-            state.serialize_entry(
-                "values",
-                &IterSer::new(std::iter::repeat(None::<()>).take(self.len())),
-            )?;
+            state.serialize_entry("values", &IterSer::new(std::iter::once(self.len())))?;
             state.end()
         }
     }
