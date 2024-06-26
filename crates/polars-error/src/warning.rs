@@ -1,5 +1,7 @@
+use std::sync::RwLock;
+
 type WarningFunction = fn(&str, PolarsWarning);
-static mut WARNING_FUNCTION: Option<WarningFunction> = None;
+static WARNING_FUNCTION: RwLock<Option<WarningFunction>> = RwLock::new(None);
 
 /// Set the function that will be called by the `polars_warn!` macro.
 /// You can use this to set logging in polars.
@@ -7,8 +9,9 @@ static mut WARNING_FUNCTION: Option<WarningFunction> = None;
 /// # Safety
 /// The caller must ensure there is no other thread accessing this function
 /// or calling `polars_warn!`.
-pub unsafe fn set_warning_function(function: WarningFunction) {
-    WARNING_FUNCTION = Some(function)
+pub fn set_warning_function(function: WarningFunction) {
+    let mut w = WARNING_FUNCTION.write().unwrap();
+    *w = Some(function)
 }
 #[derive(Debug)]
 pub enum PolarsWarning {
@@ -22,7 +25,7 @@ fn eprintln(fmt: &str, warning: PolarsWarning) {
 }
 
 pub fn get_warning_function() -> WarningFunction {
-    unsafe { WARNING_FUNCTION.unwrap_or(eprintln) }
+    WARNING_FUNCTION.read().unwrap().unwrap_or(eprintln)
 }
 #[macro_export]
 macro_rules! polars_warn {
