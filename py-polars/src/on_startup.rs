@@ -97,7 +97,7 @@ pub fn __register_startup_deps() {
         // register DATAFRAME UDF
         unsafe { python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df) }
         // register warning function for `polars_warn!`
-        unsafe { polars_error::set_warning_function(warning_function) };
+        polars_error::set_warning_function(warning_function);
         Python::with_gil(|py| {
             // init AnyValue LUT
             crate::conversion::any_value::LUT

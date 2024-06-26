@@ -5,10 +5,6 @@ static WARNING_FUNCTION: RwLock<Option<WarningFunction>> = RwLock::new(None);
 
 /// Set the function that will be called by the `polars_warn!` macro.
 /// You can use this to set logging in polars.
-///
-/// # Safety
-/// The caller must ensure there is no other thread accessing this function
-/// or calling `polars_warn!`.
 pub fn set_warning_function(function: WarningFunction) {
     let mut w = WARNING_FUNCTION.write().unwrap();
     *w = Some(function)
