@@ -176,13 +176,13 @@ def test_init_dict() -> None:
 
 
 def test_error_string_dtypes() -> None:
-    with pytest.raises(ValueError, match="cannot infer dtype"):
+    with pytest.raises(TypeError, match="cannot parse input"):
         pl.DataFrame(
             data={"x": [1, 2], "y": [3, 4], "z": [5, 6]},
             schema={"x": "i16", "y": "i32", "z": "f32"},  # type: ignore[dict-item]
         )
 
-    with pytest.raises(ValueError, match="not a valid Polars data type"):
+    with pytest.raises(TypeError, match="cannot parse input"):
         pl.Series("n", [1, 2, 3], dtype="f32")  # type: ignore[arg-type]
 
 
@@ -326,117 +326,120 @@ def test_init_structured_objects_unhashable() -> None:
     assert df.rows() == test_data
 
 
-def test_init_structured_objects_nested() -> None:
-    for Foo, Bar, Baz in (
+@pytest.mark.parametrize(
+    ("foo", "bar", "baz"),
+    [
         (_TestFooDC, _TestBarDC, _TestBazDC),
         (_TestFooPD, _TestBarPD, _TestBazPD),
         (_TestFooNT, _TestBarNT, _TestBazNT),
-    ):
-        data = [
-            Foo(
-                x=100,
-                y=Bar(
-                    a="hello",
-                    b=800,
-                    c=Baz(d=datetime(2023, 4, 12, 10, 30), e=-10.5, f="world"),
-                ),
-            )
-        ]
-        df = pl.DataFrame(data)
-        # shape: (1, 2)
-        # ┌─────┬───────────────────────────────────┐
-        # │ x   ┆ y                                 │
-        # │ --- ┆ ---                               │
-        # │ i64 ┆ struct[3]                         │
-        # ╞═════╪═══════════════════════════════════╡
-        # │ 100 ┆ {"hello",800,{2023-04-12 10:30:0… │
-        # └─────┴───────────────────────────────────┘
-
-        assert df.schema == {
-            "x": pl.Int64,
-            "y": pl.Struct(
-                [
-                    pl.Field("a", pl.String),
-                    pl.Field("b", pl.Int64),
-                    pl.Field(
-                        "c",
-                        pl.Struct(
-                            [
-                                pl.Field("d", pl.Datetime("us")),
-                                pl.Field("e", pl.Float64),
-                                pl.Field("f", pl.String),
-                            ]
-                        ),
-                    ),
-                ]
+    ],
+)
+def test_init_structured_objects_nested(foo: Any, bar: Any, baz: Any) -> None:
+    data = [
+        foo(
+            x=100,
+            y=bar(
+                a="hello",
+                b=800,
+                c=baz(d=datetime(2023, 4, 12, 10, 30), e=-10.5, f="world"),
             ),
+        )
+    ]
+    df = pl.DataFrame(data)
+    # shape: (1, 2)
+    # ┌─────┬───────────────────────────────────┐
+    # │ x   ┆ y                                 │
+    # │ --- ┆ ---                               │
+    # │ i64 ┆ struct[3]                         │
+    # ╞═════╪═══════════════════════════════════╡
+    # │ 100 ┆ {"hello",800,{2023-04-12 10:30:0… │
+    # └─────┴───────────────────────────────────┘
+
+    assert df.schema == {
+        "x": pl.Int64,
+        "y": pl.Struct(
+            [
+                pl.Field("a", pl.String),
+                pl.Field("b", pl.Int64),
+                pl.Field(
+                    "c",
+                    pl.Struct(
+                        [
+                            pl.Field("d", pl.Datetime("us")),
+                            pl.Field("e", pl.Float64),
+                            pl.Field("f", pl.String),
+                        ]
+                    ),
+                ),
+            ]
+        ),
+    }
+    assert df.row(0) == (
+        100,
+        {
+            "a": "hello",
+            "b": 800,
+            "c": {
+                "d": datetime(2023, 4, 12, 10, 30),
+                "e": -10.5,
+                "f": "world",
+            },
+        },
+    )
+
+    # validate nested schema override
+    override_struct_schema: dict[str, PolarsDataType] = {
+        "x": pl.Int16,
+        "y": pl.Struct(
+            [
+                pl.Field("a", pl.String),
+                pl.Field("b", pl.Int32),
+                pl.Field(
+                    name="c",
+                    dtype=pl.Struct(
+                        [
+                            pl.Field("d", pl.Datetime("ms")),
+                            pl.Field("e", pl.Float32),
+                            pl.Field("f", pl.String),
+                        ]
+                    ),
+                ),
+            ]
+        ),
+    }
+    for schema, schema_overrides in (
+        (None, override_struct_schema),
+        (override_struct_schema, None),
+    ):
+        df = (
+            pl.DataFrame(data, schema=schema, schema_overrides=schema_overrides)
+            .unnest("y")
+            .unnest("c")
+        )
+        # shape: (1, 6)
+        # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
+        # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
+        # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
+        # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
+        # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
+        # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
+        # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
+        assert df.schema == {
+            "x": pl.Int16,
+            "a": pl.String,
+            "b": pl.Int32,
+            "d": pl.Datetime("ms"),
+            "e": pl.Float32,
+            "f": pl.String,
         }
         assert df.row(0) == (
             100,
-            {
-                "a": "hello",
-                "b": 800,
-                "c": {
-                    "d": datetime(2023, 4, 12, 10, 30),
-                    "e": -10.5,
-                    "f": "world",
-                },
-            },
+            "hello",
+            800,
+            datetime(2023, 4, 12, 10, 30),
+            -10.5,
+            "world",
         )
-
-        # validate nested schema override
-        override_struct_schema: dict[str, PolarsDataType] = {
-            "x": pl.Int16,
-            "y": pl.Struct(
-                [
-                    pl.Field("a", pl.String),
-                    pl.Field("b", pl.Int32),
-                    pl.Field(
-                        name="c",
-                        dtype=pl.Struct(
-                            [
-                                pl.Field("d", pl.Datetime("ms")),
-                                pl.Field("e", pl.Float32),
-                                pl.Field("f", pl.String),
-                            ]
-                        ),
-                    ),
-                ]
-            ),
-        }
-        for schema, schema_overrides in (
-            (None, override_struct_schema),
-            (override_struct_schema, None),
-        ):
-            df = (
-                pl.DataFrame(data, schema=schema, schema_overrides=schema_overrides)
-                .unnest("y")
-                .unnest("c")
-            )
-            # shape: (1, 6)
-            # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
-            # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
-            # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
-            # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
-            # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
-            # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
-            # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
-            assert df.schema == {
-                "x": pl.Int16,
-                "a": pl.String,
-                "b": pl.Int32,
-                "d": pl.Datetime("ms"),
-                "e": pl.Float32,
-                "f": pl.String,
-            }
-            assert df.row(0) == (
-                100,
-                "hello",
-                800,
-                datetime(2023, 4, 12, 10, 30),
-                -10.5,
-                "world",
-            )
 
 
 def test_dataclasses_initvar_typing() -> None:

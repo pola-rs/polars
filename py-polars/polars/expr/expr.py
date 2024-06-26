@@ -46,11 +46,7 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars.datatypes import (
-    Int64,
-    is_polars_dtype,
-    py_type_to_dtype,
-)
+from polars.datatypes import Int64, is_polars_dtype, parse_into_dtype
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
@@ -1748,7 +1744,7 @@ class Expr:
         │ 3.0 ┆ 6   │
         └─────┴─────┘
         """
-        dtype = py_type_to_dtype(dtype)
+        dtype = parse_into_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
@@ -4378,7 +4374,7 @@ class Expr:
 
         """
         if return_dtype is not None:
-            return_dtype = py_type_to_dtype(return_dtype)
+            return_dtype = parse_into_dtype(return_dtype)
 
         return self._from_pyexpr(
             self._pyexpr.map_batches(

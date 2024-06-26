@@ -325,8 +325,8 @@ def test_datetime_time_add_err() -> None:
 
 def test_invalid_dtype() -> None:
     with pytest.raises(
-        ValueError,
-        match=r"given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
+        TypeError,
+        match="cannot parse input of type 'str' into Polars data type: 'mayonnaise'",
     ):
         pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
 
