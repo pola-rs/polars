@@ -22,6 +22,8 @@ pub struct HiveOptions {
     pub enabled: Option<bool>,
     pub hive_start_idx: usize,
     pub schema: Option<SchemaRef>,
+    /// This is false if the partitions columns are contained in the file
+    pub materialize: bool,
 }
 
 impl Default for HiveOptions {
@@ -30,6 +32,7 @@ impl Default for HiveOptions {
             enabled: Some(true),
             hive_start_idx: 0,
             schema: None,
+            materialize: true,
         }
     }
 }
