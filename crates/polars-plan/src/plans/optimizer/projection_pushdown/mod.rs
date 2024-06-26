@@ -9,7 +9,6 @@ mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
-use either::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -475,41 +474,10 @@ impl ProjectionPushDown {
                         }
                         Some(Arc::new(schema))
                     } else {
-                        (|| {
-                            // Update `with_columns` with a projection so that hive columns aren't loaded from the
-                            // file
-                            let Some(ref hive_parts) = hive_parts else {
-                                return;
-                            };
-
-                            let hive_schema = hive_parts[0].schema();
-
-                            let Some((first_hive_name, _)) = hive_schema.get_at_index(0) else {
-                                return;
-                            };
-
-                            let names = match file_info.reader_schema.as_ref().unwrap() {
-                                Either::Left(ref v) => {
-                                    let names = v.get_names();
-                                    names.contains(&first_hive_name.as_str()).then_some(names)
-                                },
-                                Either::Right(ref v) => {
-                                    v.contains(first_hive_name.as_str()).then(|| v.get_names())
-                                },
-                            };
-
-                            let Some(names) = names else {
-                                return;
-                            };
-
-                            file_options.with_columns = Some(
-                                names
-                                    .iter()
-                                    .filter(|x| !hive_schema.contains(x))
-                                    .map(ToString::to_string)
-                                    .collect::<Arc<[_]>>(),
-                            );
-                        })();
+                        file_options.with_columns = maybe_init_projection_excluding_hive(
+                            file_info.reader_schema.as_ref().unwrap(),
+                            hive_parts.as_ref(),
+                        );
                         None
                     };
                 }
