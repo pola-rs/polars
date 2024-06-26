@@ -3,6 +3,7 @@ use chrono::DateTime;
 mod patterns;
 mod strptime;
 use chrono::ParseError;
+use chrono::format::ParseErrorKind;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
@@ -52,22 +53,8 @@ struct ParseErrorByteCopy(ParseErrorKind);
 
 impl From<ParseError> for ParseErrorByteCopy {
     fn from(e: ParseError) -> Self {
-        // We need to do this until chrono ParseErrorKind is public
-        // blocked by https://github.com/chronotope/chrono/pull/588.
-        unsafe { std::mem::transmute(e) }
+        ParseErrorByteCopy(e.kind())
     }
-}
-
-#[allow(dead_code)]
-enum ParseErrorKind {
-    OutOfRange,
-    Impossible,
-    NotEnough,
-    Invalid,
-    /// The input string has been prematurely ended.
-    TooShort,
-    TooLong,
-    BadFormat,
 }
 
 fn get_first_val(ca: &StringChunked) -> PolarsResult<&str> {
