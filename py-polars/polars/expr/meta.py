@@ -277,6 +277,11 @@ class ExprMetaNameSpace:
         --------
         Expr.deserialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
         Serialize the expression into a JSON string.

@@ -420,8 +420,6 @@ class DataFrame:
         """
         Read a serialized DataFrame from a file.
 
-        .. versionadded:: 0.20.31
-
         Parameters
         ----------
         source
@@ -432,6 +430,11 @@ class DataFrame:
         See Also
         --------
         DataFrame.serialize
+
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
 
         Examples
         --------
@@ -2367,6 +2370,11 @@ class DataFrame:
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
 
         Examples
         --------
