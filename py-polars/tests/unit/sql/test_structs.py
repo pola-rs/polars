@@ -86,6 +86,30 @@ def test_struct_field_group_by_errors(df_struct: pl.DataFrame) -> None:
 
 
 @pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        ("nested #> '{c,1}'", 2),
+        ("nested #> '{c,-1}'", 1),
+        ("nested #>> '{c,0}'", "3"),
+        ("nested -> '0' -> 0", "baz"),
+        ("nested -> 'c' -> -1", 1),
+        ("nested -> 'c' ->> 2", "1"),
+    ],
+)
+def test_struct_field_operator_access(expr: str, expected: int | str) -> None:
+    df = pl.DataFrame(
+        {
+            "nested": {
+                "0": ["baz"],
+                "b": ["foo", "bar"],
+                "c": [3, 2, 1],
+            },
+        },
+    )
+    assert df.sql(f"SELECT {expr} FROM self").item() == expected
+
+
+@pytest.mark.parametrize(
     ("fields", "excluding", "rename"),
     [
         ("json_msg.*", "age", {}),
