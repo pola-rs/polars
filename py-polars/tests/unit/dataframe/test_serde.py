@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 @given(
     df=dataframes(
         excluded_dtypes=[
-            pl.Null,  # Not implemented yet
             pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
             pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
         ],
@@ -170,9 +169,8 @@ def test_df_serde_float_inf_nan() -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.xfail(reason="Not implemented yet")
 def test_df_serde_null() -> None:
-    df = pl.DataFrame({"a": [None, None]})
+    df = pl.DataFrame({"a": [None, None]}, schema={"a": pl.Null})
     ser = df.serialize()
     result = pl.DataFrame.deserialize(io.StringIO(ser))
     assert_frame_equal(result, df)

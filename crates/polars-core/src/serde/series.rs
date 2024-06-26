@@ -75,6 +75,10 @@ impl Serialize for Series {
                 let ca = self.decimal().unwrap();
                 ca.serialize(serializer)
             },
+            DataType::Null => {
+                let ca = self.null().unwrap();
+                ca.serialize(serializer)
+            },
             dt => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
@@ -275,6 +279,11 @@ impl<'de> Deserialize<'de> for Series {
                     dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
+                    },
+                    DataType::Null => {
+                        let values: Vec<usize> = map.next_value()?;
+                        let len = values.first().unwrap();
+                        Ok(Series::new_null(&name, *len))
                     },
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")
