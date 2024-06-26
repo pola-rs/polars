@@ -138,7 +138,9 @@ pub fn to_alp_impl(
 
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
-            } else if file_options.hive_options.enabled.unwrap() {
+            } else if file_options.hive_options.enabled.unwrap()
+                && file_info.reader_schema.is_some()
+            {
                 #[allow(unused_assignments)]
                 let mut owned = None;
 
@@ -163,10 +165,14 @@ pub fn to_alp_impl(
                 file_info.update_schema_with_hive_schema(hive_schema.clone());
             }
 
-            file_options.with_columns = maybe_init_projection_excluding_hive(
-                file_info.reader_schema.as_ref().unwrap(),
-                hive_parts.as_ref().map(|x| &x[0]),
-            );
+            file_options.with_columns = if file_info.reader_schema.is_some() {
+                maybe_init_projection_excluding_hive(
+                    file_info.reader_schema.as_ref().unwrap(),
+                    hive_parts.as_ref().map(|x| &x[0]),
+                )
+            } else {
+                None
+            };
 
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
