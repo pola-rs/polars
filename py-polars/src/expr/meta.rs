@@ -106,7 +106,7 @@ impl PyExpr {
         self.inner.clone().meta()._into_selector().into()
     }
 
-    #[cfg(all(feature = "json", feature = "serde_json"))]
+    #[cfg(feature = "json")]
     fn serialize(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         serde_json::to_writer(file, &self.inner)
