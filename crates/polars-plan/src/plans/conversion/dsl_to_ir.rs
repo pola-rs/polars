@@ -833,15 +833,11 @@ pub(crate) fn maybe_init_projection_excluding_hive(
 ) -> Option<Arc<[String]>> {
     // Update `with_columns` with a projection so that hive columns aren't loaded from the
     // file
-    let Some(hive_parts) = hive_parts else {
-        return None;
-    };
+    let hive_parts = hive_parts?;
 
     let hive_schema = hive_parts.schema();
 
-    let Some((first_hive_name, _)) = hive_schema.get_at_index(0) else {
-        return None;
-    };
+    let (first_hive_name, _) = hive_schema.get_at_index(0)?;
 
     let names = match reader_schema {
         Either::Left(ref v) => {
@@ -851,9 +847,7 @@ pub(crate) fn maybe_init_projection_excluding_hive(
         Either::Right(ref v) => v.contains(first_hive_name.as_str()).then(|| v.get_names()),
     };
 
-    let Some(names) = names else {
-        return None;
-    };
+    let names = names?;
 
     Some(
         names
