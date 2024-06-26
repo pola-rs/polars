@@ -276,6 +276,8 @@ def _instantiate_nested_dtype(
     allow_time_zones: bool = True,
 ) -> DataType:
     """Take a nested data type and instantiate it."""
+    # TODO: Remove when nested categoricals are supported
+    inner = inner.filter(lambda dt: dt not in (Categorical, Enum))
 
     def instantiate_inner(inner_dtype: PolarsDataType | None) -> DataType:
         if inner_dtype is None:
