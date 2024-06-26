@@ -165,7 +165,7 @@ pub fn to_alp_impl(
 
             file_options.with_columns = maybe_init_projection_excluding_hive(
                 file_info.reader_schema.as_ref().unwrap(),
-                hive_parts.as_ref(),
+                hive_parts.as_ref().map(|x| &x[0]),
             );
 
             if let Some(row_index) = &file_options.row_index {
@@ -823,15 +823,15 @@ where
 
 pub(crate) fn maybe_init_projection_excluding_hive(
     reader_schema: &Either<ArrowSchemaRef, SchemaRef>,
-    hive_parts: Option<&Arc<[HivePartitions]>>,
+    hive_parts: Option<&HivePartitions>,
 ) -> Option<Arc<[String]>> {
     // Update `with_columns` with a projection so that hive columns aren't loaded from the
     // file
-    let Some(ref hive_parts) = hive_parts else {
+    let Some(hive_parts) = hive_parts else {
         return None;
     };
 
-    let hive_schema = hive_parts[0].schema();
+    let hive_schema = hive_parts.schema();
 
     let Some((first_hive_name, _)) = hive_schema.get_at_index(0) else {
         return None;

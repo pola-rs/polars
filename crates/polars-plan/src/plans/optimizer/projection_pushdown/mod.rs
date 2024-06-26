@@ -476,7 +476,7 @@ impl ProjectionPushDown {
                     } else {
                         file_options.with_columns = maybe_init_projection_excluding_hive(
                             file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref(),
+                            hive_parts.as_ref().map(|x| &x[0]),
                         );
                         None
                     };
