@@ -3126,6 +3126,7 @@ dependencies = [
  "fs4",
  "futures",
  "home",
+ "http 1.1.0",
  "itoa",
  "memchr",
  "memmap2",
