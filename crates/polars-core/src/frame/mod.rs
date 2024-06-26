@@ -1121,7 +1121,7 @@ impl DataFrame {
         series: Series,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
-            series.len() == self.height(),
+            self.height() == 0 || series.len() == self.height(),
             ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
             series.len(), self.height(),
         );
