@@ -717,18 +717,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"invalid serialization format: {format!r}"
             raise ValueError(msg)
 
-        def serialize_to_bytes() -> str:
+        def serialize_to_bytes() -> bytes:
             with BytesIO() as buf:
                 serializer(buf)
                 serialized = buf.getvalue()
             return serialized
 
         if file is None:
-            seralized = serialize_to_bytes()
+            serialized = serialize_to_bytes()
             if format == "json":
-                return seralized.decode()
+                return serialized.decode()
             else:
-                return seralized
+                return serialized
         elif isinstance(file, StringIO):
             serialized_str = serialize_to_bytes().decode()
             file.write(serialized_str)
