@@ -19,11 +19,11 @@ pub fn lower_ir(
 ) -> PolarsResult<PhysNodeKey> {
     let ir_node = ir_arena.get(node);
     match ir_node {
-        IR::Filter { input, predicate } if is_streamable(predicate.node(), expr_arena) => {
-            let predicate = predicate.clone();
+        IR::SimpleProjection { input, columns } => {
+            let schema = columns.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
-            Ok(phys_sm.insert(PhysNode::Filter { input, predicate }))
-        },
+            Ok(phys_sm.insert(PhysNode::SimpleProjection { input, schema }))
+        }
 
         // TODO: split partially streamable selections to avoid fallback as much as possible.
         IR::Select {
@@ -59,6 +59,12 @@ pub fn lower_ir(
                 schema,
                 extend_original: true,
             }))
+        },
+
+        IR::Filter { input, predicate } if is_streamable(predicate.node(), expr_arena) => {
+            let predicate = predicate.clone();
+            let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
+            Ok(phys_sm.insert(PhysNode::Filter { input, predicate }))
         },
 
         IR::DataFrameScan {
