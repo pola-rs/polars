@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import pickle
 from datetime import datetime, timedelta
 
@@ -8,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import ComputeError, SchemaError
+from polars.exceptions import SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -22,15 +21,6 @@ def test_pickling_as_struct_11100() -> None:
     e = pl.struct("a")
     buf = pickle.dumps(e)
     assert str(pickle.loads(buf)) == str(e)
-
-
-def test_lazyframe_serde() -> None:
-    lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-
-    json = lf.serialize()
-    result = pl.LazyFrame.deserialize(io.StringIO(json))
-
-    assert_series_equal(result.collect().to_series(), pl.Series("a", [1, 2, 3]))
 
 
 def test_serde_time_unit() -> None:
@@ -193,45 +183,6 @@ def test_serde_array_dtype() -> None:
         dtype=pl.List(pl.Array(pl.Int32(), 3)),
     )
     assert_series_equal(pickle.loads(pickle.dumps(nested_s)), nested_s)
-
-
-def test_expr_serialization_roundtrip() -> None:
-    expr = pl.col("foo").sum().over("bar")
-    json = expr.meta.serialize()
-    round_tripped = pl.Expr.deserialize(io.StringIO(json))
-    assert round_tripped.meta == expr
-
-
-def test_expr_deserialize_file_not_found() -> None:
-    with pytest.raises(FileNotFoundError):
-        pl.Expr.deserialize("abcdef")
-
-
-def test_expr_deserialize_invalid_json() -> None:
-    with pytest.raises(
-        ComputeError, match="could not deserialize input into an expression"
-    ):
-        pl.Expr.deserialize(io.StringIO("abcdef"))
-
-
-def test_expr_write_json_from_json_deprecated() -> None:
-    expr = pl.col("foo").sum().over("bar")
-
-    with pytest.deprecated_call():
-        json = expr.meta.write_json()
-
-    with pytest.deprecated_call():
-        round_tripped = pl.Expr.from_json(json)
-
-    assert round_tripped.meta == expr
-
-
-def test_expression_json_13991() -> None:
-    expr = pl.col("foo").cast(pl.Decimal)
-    json = expr.meta.serialize()
-
-    round_tripped = pl.Expr.deserialize(io.StringIO(json))
-    assert round_tripped.meta == expr
 
 
 def test_serde_data_type_class() -> None:

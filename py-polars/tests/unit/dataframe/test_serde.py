@@ -6,13 +6,30 @@ from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@given(
+    df=dataframes(
+        excluded_dtypes=[
+            pl.Null,  # Not implemented yet
+            pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
+            pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
+        ],
+    )
+)
+def test_df_serde_roundtrip(df: pl.DataFrame) -> None:
+    serialized = df.serialize()
+    result = pl.DataFrame.deserialize(io.StringIO(serialized))
+    assert_frame_equal(result, df, categorical_as_str=True)
 
 
 def test_df_serialize() -> None:
@@ -23,7 +40,7 @@ def test_df_serialize() -> None:
 
 
 @pytest.mark.parametrize("buf", [io.BytesIO(), io.StringIO()])
-def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
+def test_df_serde_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
     df.serialize(buf)
     buf.seek(0)
     read_df = pl.DataFrame.deserialize(buf)
@@ -31,7 +48,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
 
 
 @pytest.mark.write_disk()
-def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
+def test_df_serde_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "small.json"
@@ -39,13 +56,6 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     out = pl.DataFrame.deserialize(file_path)
 
     assert_frame_equal(df, out, categorical_as_str=True)
-
-
-def test_write_json_to_string() -> None:
-    # Tests if it runs if no arg given
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    expected_str = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]}'
-    assert df.serialize() == expected_str
 
 
 def test_write_json(df: pl.DataFrame) -> None:
@@ -100,7 +110,7 @@ def test_df_serde_enum() -> None:
         ),
     ],
 )
-def test_write_read_json_array(data: Any, dtype: pl.DataType) -> None:
+def test_df_serde_array(data: Any, dtype: pl.DataType) -> None:
     df = pl.DataFrame({"foo": data}, schema={"foo": dtype})
     buf = io.StringIO()
     df.serialize(buf)
@@ -135,9 +145,7 @@ def test_write_read_json_array(data: Any, dtype: pl.DataType) -> None:
         ),
     ],
 )
-def test_write_read_json_array_logical_inner_type(
-    data: Any, dtype: pl.DataType
-) -> None:
+def test_df_serde_array_logical_inner_type(data: Any, dtype: pl.DataType) -> None:
     df = pl.DataFrame({"foo": data}, schema={"foo": dtype})
     buf = io.StringIO()
     df.serialize(buf)
@@ -147,14 +155,30 @@ def test_write_read_json_array_logical_inner_type(
     assert deserialized_df.to_dict(as_series=False) == df.to_dict(as_series=False)
 
 
-def test_json_deserialize_empty_list_10458() -> None:
+def test_df_serde_empty_list_10458() -> None:
     schema = {"LIST_OF_STRINGS": pl.List(pl.String)}
     serialized_schema = pl.DataFrame(schema=schema).serialize()
     df = pl.DataFrame.deserialize(io.StringIO(serialized_schema))
     assert df.schema == schema
 
 
-def test_serde_validation() -> None:
+@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/17211")
+def test_df_serde_float_inf_nan() -> None:
+    df = pl.DataFrame({"a": [1.0, float("inf"), float("-inf"), float("nan")]})
+    ser = df.serialize()
+    result = pl.DataFrame.deserialize(io.StringIO(ser))
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.xfail(reason="Not implemented yet")
+def test_df_serde_null() -> None:
+    df = pl.DataFrame({"a": [None, None]})
+    ser = df.serialize()
+    result = pl.DataFrame.deserialize(io.StringIO(ser))
+    assert_frame_equal(result, df)
+
+
+def test_df_deserialize_validation() -> None:
     f = io.StringIO(
         """
     {
