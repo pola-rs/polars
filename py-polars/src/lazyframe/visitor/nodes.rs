@@ -292,6 +292,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         }
         .into_py(py),
         IR::Scan {
+            hive_parts: Some(_),
+            ..
+        } => {
+            return Err(PyNotImplementedError::new_err(
+                "scan with hive partitioning",
+            ))
+        },
+        IR::Scan {
             paths,
             file_info: _,
             hive_parts: _,
