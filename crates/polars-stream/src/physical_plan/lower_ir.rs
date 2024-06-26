@@ -23,7 +23,7 @@ pub fn lower_ir(
             let schema = columns.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
             Ok(phys_sm.insert(PhysNode::SimpleProjection { input, schema }))
-        }
+        },
 
         // TODO: split partially streamable selections to avoid fallback as much as possible.
         IR::Select {
