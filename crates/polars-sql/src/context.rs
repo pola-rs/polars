@@ -478,7 +478,7 @@ impl SQLContext {
                 None => {
                     let tbl = table_name.to_string();
                     if let Some(lf) = self.table_map.get_mut(&tbl) {
-                        *lf = DataFrame::from(
+                        *lf = DataFrame::empty_with_schema(
                             lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
                                 .unwrap()
                                 .as_ref(),

@@ -17,7 +17,7 @@ pub fn materialize_empty_df(
     } else {
         Cow::Borrowed(reader_schema)
     };
-    let mut df = DataFrame::from(schema.as_ref());
+    let mut df = DataFrame::empty_with_arrow_schema(&schema);
 
     if let Some(row_index) = row_index {
         df.insert_column(0, Series::new_empty(&row_index.name, &IDX_DTYPE))

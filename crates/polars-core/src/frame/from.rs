@@ -28,24 +28,3 @@ impl TryFrom<StructArray> for DataFrame {
         DataFrame::new(columns)
     }
 }
-
-impl From<&Schema> for DataFrame {
-    fn from(schema: &Schema) -> Self {
-        let cols = schema
-            .iter()
-            .map(|(name, dtype)| Series::new_empty(name, dtype))
-            .collect();
-        unsafe { DataFrame::new_no_checks(cols) }
-    }
-}
-
-impl From<&ArrowSchema> for DataFrame {
-    fn from(schema: &ArrowSchema) -> Self {
-        let cols = schema
-            .fields
-            .iter()
-            .map(|fld| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
-            .collect();
-        unsafe { DataFrame::new_no_checks(cols) }
-    }
-}

@@ -380,7 +380,7 @@ impl<'a> PredicatePushDown<'a> {
                             }
                             if new_paths.is_empty() {
                                 let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
-                                let df = DataFrame::from(schema.as_ref());
+                                let df = DataFrame::empty_with_schema(schema);
 
                                 return Ok(DataFrameScan {
                                     df: Arc::new(df),

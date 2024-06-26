@@ -60,13 +60,7 @@ impl ComputeNode for InMemorySink {
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
         let dataframes = linearize(morsels_per_pipe);
         if dataframes.is_empty() {
-            let cols = self
-                .schema
-                .iter()
-                .map(|(name, dtype)| Series::new_empty(name, dtype))
-                .collect();
-            let df = unsafe { DataFrame::new_no_checks(cols) };
-            Ok(Some(df))
+            Ok(Some(DataFrame::empty_with_schema(&self.schema)))
         } else {
             Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
         }
