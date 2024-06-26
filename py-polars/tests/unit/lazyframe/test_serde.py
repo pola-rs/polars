@@ -18,8 +18,9 @@ if TYPE_CHECKING:
     lf=dataframes(
         lazy=True,
         excluded_dtypes=[
-            pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
-            pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
+            pl.Null,  # Bug: https://github.com/pola-rs/polars/issues/17230
+            pl.Float32,  # Bug: https://github.com/pola-rs/polars/issues/17211
+            pl.Float64,  # Bug: https://github.com/pola-rs/polars/issues/17211
         ],
     )
 )

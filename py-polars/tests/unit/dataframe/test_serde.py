@@ -20,12 +20,14 @@ if TYPE_CHECKING:
 @given(
     df=dataframes(
         excluded_dtypes=[
+            pl.Null,  # Bug: https://github.com/pola-rs/polars/issues/17230
             pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
             pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
         ],
     )
 )
 def test_df_serde_roundtrip(df: pl.DataFrame) -> None:
+    print(df)
     serialized = df.serialize()
     result = pl.DataFrame.deserialize(io.StringIO(serialized))
     assert_frame_equal(result, df, categorical_as_str=True)

@@ -1,6 +1,6 @@
+import hypothesis.strategies as st
 import pytest
 from hypothesis import given
-from hypothesis.strategies import booleans
 
 import polars as pl
 from polars.exceptions import ComputeError
@@ -361,7 +361,15 @@ def test_top_k_empty() -> None:
     assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
 
 
-@given(s=series(excluded_dtypes=[pl.Null, pl.Struct]), should_sort=booleans())
+@given(
+    s=series(
+        excluded_dtypes=[
+            pl.Struct,  #  Bug: https://github.com/pola-rs/polars/issues/17009
+            pl.List,  # Bug: https://github.com/pola-rs/polars/issues/17225
+        ]
+    ),
+    should_sort=st.booleans(),
+)
 def test_top_k_nulls(s: pl.Series, should_sort: bool) -> None:
     if should_sort:
         s = s.sort()
@@ -377,7 +385,15 @@ def test_top_k_nulls(s: pl.Series, should_sort: bool) -> None:
     assert_series_equal(result, s, check_order=False)
 
 
-@given(s=series(excluded_dtypes=[pl.Null, pl.Struct]), should_sort=booleans())
+@given(
+    s=series(
+        excluded_dtypes=[
+            pl.Struct,  #  Bug: https://github.com/pola-rs/polars/issues/17009
+            pl.List,  # Bug: https://github.com/pola-rs/polars/issues/17225
+        ]
+    ),
+    should_sort=st.booleans(),
+)
 def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
     if should_sort:
         s = s.sort()
