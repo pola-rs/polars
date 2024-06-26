@@ -1,5 +1,7 @@
+use arrow::datatypes::ArrowSchemaRef;
+use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
-use hive::hive_partitions_from_paths;
+use hive::{hive_partitions_from_paths, HivePartitions};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -86,7 +88,7 @@ pub fn to_alp_impl(
             paths,
             predicate,
             mut scan_type,
-            file_options,
+            mut file_options,
         } => {
             let mut file_info = if let Some(file_info) = file_info {
                 file_info
@@ -136,19 +138,41 @@ pub fn to_alp_impl(
 
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
-            } else if file_options.hive_options.enabled.unwrap() {
+            } else if file_options.hive_options.enabled.unwrap()
+                && file_info.reader_schema.is_some()
+            {
+                #[allow(unused_assignments)]
+                let mut owned = None;
+
                 hive_partitions_from_paths(
                     paths.as_ref(),
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
+                    match file_info.reader_schema.as_ref().unwrap() {
+                        Either::Left(v) => {
+                            owned = Some(Schema::from(v));
+                            owned.as_ref().unwrap()
+                        },
+                        Either::Right(v) => v.as_ref(),
+                    },
                 )?
             } else {
                 None
             };
 
             if let Some(ref hive_parts) = hive_parts {
-                file_info.update_schema_with_hive_schema(hive_parts[0].schema().clone())?;
+                let hive_schema = hive_parts[0].schema();
+                file_info.update_schema_with_hive_schema(hive_schema.clone());
             }
+
+            file_options.with_columns = if file_info.reader_schema.is_some() {
+                maybe_init_projection_excluding_hive(
+                    file_info.reader_schema.as_ref().unwrap(),
+                    hive_parts.as_ref().map(|x| &x[0]),
+                )
+            } else {
+                None
+            };
 
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
@@ -801,4 +825,35 @@ where
             }
         })
         .collect()
+}
+
+pub(crate) fn maybe_init_projection_excluding_hive(
+    reader_schema: &Either<ArrowSchemaRef, SchemaRef>,
+    hive_parts: Option<&HivePartitions>,
+) -> Option<Arc<[String]>> {
+    // Update `with_columns` with a projection so that hive columns aren't loaded from the
+    // file
+    let hive_parts = hive_parts?;
+
+    let hive_schema = hive_parts.schema();
+
+    let (first_hive_name, _) = hive_schema.get_at_index(0)?;
+
+    let names = match reader_schema {
+        Either::Left(ref v) => {
+            let names = v.get_names();
+            names.contains(&first_hive_name.as_str()).then_some(names)
+        },
+        Either::Right(ref v) => v.contains(first_hive_name.as_str()).then(|| v.get_names()),
+    };
+
+    let names = names?;
+
+    Some(
+        names
+            .iter()
+            .filter(|x| !hive_schema.contains(x))
+            .map(ToString::to_string)
+            .collect::<Arc<[_]>>(),
+    )
 }

@@ -51,20 +51,18 @@ impl FileInfo {
     }
 
     /// Merge the [`Schema`] of a [`HivePartitions`] with the schema of this [`FileInfo`].
-    ///
-    /// Returns an `Err` if any of the columns in either schema overlap.
-    pub fn update_schema_with_hive_schema(&mut self, hive_schema: SchemaRef) -> PolarsResult<()> {
-        let expected_len = self.schema.len() + hive_schema.len();
+    pub fn update_schema_with_hive_schema(&mut self, hive_schema: SchemaRef) {
+        let schema = Arc::make_mut(&mut self.schema);
 
-        let file_schema = Arc::make_mut(&mut self.schema);
-        file_schema.merge(Arc::unwrap_or_clone(hive_schema));
-
-        polars_ensure!(
-            file_schema.len() == expected_len,
-            Duplicate: "invalid Hive partition schema\n\n\
-            Extending the schema with the Hive partition schema would create duplicate fields."
-        );
-        Ok(())
+        for field in hive_schema.iter_fields() {
+            if let Ok(existing) = schema.try_get_mut(&field.name) {
+                *existing = field.data_type().clone();
+            } else {
+                schema
+                    .insert_at_index(schema.len(), field.name, field.dtype.clone())
+                    .unwrap();
+            }
+        }
     }
 }
 

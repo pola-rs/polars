@@ -24,7 +24,7 @@ pub fn materialize_empty_df(
             .unwrap();
     }
 
-    materialize_hive_partitions(&mut df, hive_partition_columns, 0);
+    materialize_hive_partitions(&mut df, reader_schema, hive_partition_columns, 0);
 
     df
 }

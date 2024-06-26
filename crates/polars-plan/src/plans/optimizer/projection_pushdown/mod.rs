@@ -35,7 +35,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 
 /// utility function to get names of the columns needed in projection at scan level
 fn get_scan_columns(
-    acc_projections: &mut Vec<ColumnNode>,
+    acc_projections: &Vec<ColumnNode>,
     expr_arena: &Arena<AExpr>,
     row_index: Option<&RowIndex>,
 ) -> Option<Arc<[String]>> {
@@ -378,7 +378,7 @@ impl ProjectionPushDown {
                 mut options,
                 predicate,
             } => {
-                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena, None);
+                options.with_columns = get_scan_columns(&acc_projections, expr_arena, None);
 
                 options.output_schema = if options.with_columns.is_none() {
                     None
@@ -417,7 +417,7 @@ impl ProjectionPushDown {
 
                 if do_optimization {
                     file_options.with_columns = get_scan_columns(
-                        &mut acc_projections,
+                        &acc_projections,
                         expr_arena,
                         file_options.row_index.as_ref(),
                     );
@@ -432,7 +432,9 @@ impl ProjectionPushDown {
 
                         hive_parts = if let Some(hive_parts) = hive_parts {
                             let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(with_columns.as_ref());
+                                .get_projection_schema_and_indices(
+                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
+                                );
 
                             Some(
                                 hive_parts
@@ -448,14 +450,21 @@ impl ProjectionPushDown {
                                     .collect::<Arc<[_]>>(),
                             )
                         } else {
-                            hive_parts
+                            None
                         };
 
                         // Hive partitions are created AFTER the projection, so the output
                         // schema is incorrect. Here we ensure the columns that are projected and hive
                         // parts are added at the proper place in the schema, which is at the end.
-                        if let Some(ref mut hive_parts) = hive_parts {
+                        if let Some(ref hive_parts) = hive_parts {
                             let partition_schema = hive_parts.first().unwrap().schema();
+
+                            file_options.with_columns = file_options.with_columns.map(|x| {
+                                x.iter()
+                                    .filter(|x| !partition_schema.contains(x))
+                                    .cloned()
+                                    .collect::<Arc<[_]>>()
+                            });
 
                             for (name, _) in partition_schema.iter() {
                                 if let Some(dt) = schema.shift_remove(name) {
@@ -465,6 +474,10 @@ impl ProjectionPushDown {
                         }
                         Some(Arc::new(schema))
                     } else {
+                        file_options.with_columns = maybe_init_projection_excluding_hive(
+                            file_info.reader_schema.as_ref().unwrap(),
+                            hive_parts.as_ref().map(|x| &x[0]),
+                        );
                         None
                     };
                 }
