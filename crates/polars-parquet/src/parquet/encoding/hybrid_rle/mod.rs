@@ -42,7 +42,7 @@ pub struct BufferedHybridRleDecoderIter<'a> {
 
 impl<'a> BufferedHybridRleDecoderIter<'a> {
     // @NOTE:
-    // These were not taken with too much though too be honest. It might be better to increase
+    // These were not taken with too much thought to be honest. It might be better to increase
     // these because it allows for more buffering at the cost of utilizing more memory.
     const BASE_CAPACITY: usize = 128;
     const STOP_AT_SIZE: usize = 64;
