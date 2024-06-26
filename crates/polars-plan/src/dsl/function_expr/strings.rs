@@ -16,8 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::*;
 use crate::{map, map_as_slice};
 
-#[cfg(feature = "regex")]
-#[cfg(feature = "timezones")]
+#[cfg(all(feature = "regex", feature = "timezones"))]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
@@ -650,8 +649,7 @@ fn to_datetime(
     let datetime_strings = &s[0].str()?;
     let ambiguous = &s[1].str()?;
     let tz_aware = match &options.format {
-        #[cfg(feature = "regex")]
-        #[cfg(feature = "timezones")]
+        #[cfg(all(feature = "regex", feature = "timezones"))]
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };
