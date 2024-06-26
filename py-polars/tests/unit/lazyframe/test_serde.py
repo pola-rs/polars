@@ -55,8 +55,15 @@ def test_lf_serde_to_from_buffer(lf: pl.LazyFrame, buf: io.IOBase) -> None:
 def test_lf_serde_to_from_file(lf: pl.LazyFrame, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    file_path = tmp_path / "small.json"
+    file_path = tmp_path / "small.bin"
     lf.serialize(file_path)
     result = pl.LazyFrame.deserialize(file_path)
 
     assert_frame_equal(lf, result)
+
+
+def test_lazyframe_serde_json(lf: pl.LazyFrame) -> None:
+    serialized = lf.serialize(format="json")
+    assert isinstance(serialized, bytes)
+    result = pl.LazyFrame.deserialize(io.BytesIO(serialized), format="json")
+    assert_frame_equal(result, lf)
