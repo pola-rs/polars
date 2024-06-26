@@ -73,7 +73,7 @@ _COMPLEX_DTYPES: list[DataTypeClass] = [
 # Supported data type classes that contain other data types
 _NESTED_DTYPES: list[DataTypeClass] = [
     # TODO: Enable nested types by default when various issues are solved.
-    # List,
+    List,
     # Array,
     Struct,
 ]
