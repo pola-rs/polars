@@ -8,6 +8,7 @@ use polars_core::chunked_array::temporal::validate_time_zone;
 use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_smartstring;
+#[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::*;
 use crate::{map, map_as_slice};
 
+#[cfg(feature = "regex")]
 #[cfg(feature = "timezones")]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
@@ -648,6 +650,7 @@ fn to_datetime(
     let datetime_strings = &s[0].str()?;
     let ambiguous = &s[1].str()?;
     let tz_aware = match &options.format {
+        #[cfg(feature = "regex")]
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
