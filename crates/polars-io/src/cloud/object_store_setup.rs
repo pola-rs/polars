@@ -113,7 +113,7 @@ pub async fn build_object_store(
                 {
                     let store = object_store::http::HttpBuilder::new()
                         .with_url(url)
-                        .with_client_options(super::get_client_options())
+                        .with_client_options(super::get_client_options(&options)?)
                         .build()?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
