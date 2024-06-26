@@ -86,9 +86,9 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         ),
         ((Encoding::Rle, false), (Encoding::Rle, true)) => {
             let num_bits = get_bit_width(rep_level_encoding.1);
-            let rep_levels = HybridRleDecoder::try_new(rep_levels, num_bits, length)?;
+            let rep_levels = HybridRleDecoder::new(rep_levels, num_bits, length);
             compose_array(
-                rep_levels,
+                rep_levels.iter(),
                 std::iter::repeat(0).take(length),
                 max_rep_level,
                 max_def_level,
@@ -97,10 +97,10 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         },
         ((Encoding::Rle, true), (Encoding::Rle, false)) => {
             let num_bits = get_bit_width(def_level_encoding.1);
-            let def_levels = HybridRleDecoder::try_new(def_levels, num_bits, length)?;
+            let def_levels = HybridRleDecoder::new(def_levels, num_bits, length);
             compose_array(
                 std::iter::repeat(0).take(length),
-                def_levels,
+                def_levels.iter(),
                 max_rep_level,
                 max_def_level,
                 values,
@@ -108,9 +108,11 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         },
         ((Encoding::Rle, false), (Encoding::Rle, false)) => {
             let rep_levels =
-                HybridRleDecoder::try_new(rep_levels, get_bit_width(rep_level_encoding.1), length)?;
+                HybridRleDecoder::new(rep_levels, get_bit_width(rep_level_encoding.1), length)
+                    .iter();
             let def_levels =
-                HybridRleDecoder::try_new(def_levels, get_bit_width(def_level_encoding.1), length)?;
+                HybridRleDecoder::new(def_levels, get_bit_width(def_level_encoding.1), length)
+                    .iter();
             compose_array(rep_levels, def_levels, max_rep_level, max_def_level, values)
         },
         _ => todo!(),
@@ -182,7 +184,8 @@ fn read_dict_array(
     let (_, consumed) = uleb128::decode(values);
     let values = &values[consumed..];
 
-    let indices = bitpacked::Decoder::<u32>::try_new(values, bit_width as usize, length as usize)?;
+    let indices = bitpacked::Decoder::<u32>::try_new(values, bit_width as usize, length as usize)?
+        .collect_into_iter();
 
     let values = indices.map(|id| dict_values[id as usize]);
 

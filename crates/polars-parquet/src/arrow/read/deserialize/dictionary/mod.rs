@@ -5,6 +5,9 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
+pub use nested::next_dict as nested_next_dict;
+use polars_error::{polars_err, PolarsResult};
+use polars_utils::iter::FallibleIterator;
 
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
@@ -12,7 +15,7 @@ use super::utils::{
 };
 use super::PagesIter;
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::hybrid_rle::BufferedHybridRleDecoderIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
@@ -23,29 +26,32 @@ pub enum State<'a> {
     Optional(Optional<'a>),
     Required(Required<'a>),
     FilteredRequired(FilteredRequired<'a>),
-    FilteredOptional(FilteredOptionalPageValidity<'a>, HybridRleDecoder<'a>),
+    FilteredOptional(
+        FilteredOptionalPageValidity<'a>,
+        BufferedHybridRleDecoderIter<'a>,
+    ),
 }
 
 #[derive(Debug)]
 pub struct Required<'a> {
-    values: HybridRleDecoder<'a>,
+    values: BufferedHybridRleDecoderIter<'a>,
 }
 
 impl<'a> Required<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
+        let values = dict_indices_decoder(page)?.into_iter();
         Ok(Self { values })
     }
 }
 
 #[derive(Debug)]
 pub struct FilteredRequired<'a> {
-    values: SliceFilteredIter<HybridRleDecoder<'a>>,
+    values: SliceFilteredIter<BufferedHybridRleDecoderIter<'a>>,
 }
 
 impl<'a> FilteredRequired<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
+        let values = dict_indices_decoder(page)?.into_iter();
 
         let rows = get_selected_rows(page);
         let values = SliceFilteredIter::new(values, rows);
@@ -56,13 +62,13 @@ impl<'a> FilteredRequired<'a> {
 
 #[derive(Debug)]
 pub struct Optional<'a> {
-    values: HybridRleDecoder<'a>,
+    values: BufferedHybridRleDecoderIter<'a>,
     validity: OptionalPageValidity<'a>,
 }
 
 impl<'a> Optional<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
+        let values = dict_indices_decoder(page)?.into_iter();
 
         Ok(Self {
             values,
@@ -132,7 +138,7 @@ where
             (Encoding::PlainDictionary | Encoding::RleDictionary, true, true) => {
                 Ok(State::FilteredOptional(
                     FilteredOptionalPageValidity::try_new(page)?,
-                    dict_indices_decoder(page)?,
+                    dict_indices_decoder(page)?.into_iter(),
                 ))
             },
             _ => Err(utils::not_implemented(page)),
@@ -316,7 +322,3 @@ pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<
         },
     }
 }
-
-pub use nested::next_dict as nested_next_dict;
-use polars_error::{polars_err, PolarsResult};
-use polars_utils::iter::FallibleIterator;
