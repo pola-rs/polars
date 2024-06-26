@@ -748,3 +748,15 @@ def test_invalid_shapes_err() -> None:
         match=r"cannot do arithmetic operation on series of different lengths: got 2 and 3",
     ):
         pl.Series([1, 2]) + pl.Series([1, 2, 3])
+
+
+def test_date_datetime_sub() -> None:
+    df = pl.DataFrame({"foo": [date(2020, 1, 1)], "bar": [datetime(2020, 1, 5)]})
+
+    assert df.select(
+        pl.col("foo") - pl.col("bar"),
+        pl.col("bar") - pl.col("foo"),
+    ).to_dict(as_series=False) == {
+        "foo": [timedelta(days=-4)],
+        "bar": [timedelta(days=4)],
+    }
