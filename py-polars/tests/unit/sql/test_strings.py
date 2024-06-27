@@ -216,15 +216,15 @@ def test_string_lengths() -> None:
         ("_0%_", "LIKE", [2, 4]),
         ("%0", "LIKE", [2]),
         ("0%", "LIKE", [2]),
-        ("__0%", "LIKE", [2, 3]),
-        ("%*%", "ILIKE", [3]),
-        ("____", "LIKE", [4]),
-        ("a%C", "LIKE", []),
-        ("a%C", "ILIKE", [0, 1, 3]),
-        ("%C?", "ILIKE", [4]),
-        ("a0c?", "LIKE", [4]),
-        ("000", "LIKE", [2]),
-        ("00", "LIKE", []),
+        ("__0%", "~~", [2, 3]),
+        ("%*%", "~~*", [3]),
+        ("____", "~~", [4]),
+        ("a%C", "~~", []),
+        ("a%C", "~~*", [0, 1, 3]),
+        ("%C?", "~~*", [4]),
+        ("a0c?", "~~", [4]),
+        ("000", "~~", [2]),
+        ("00", "~~", []),
     ],
 )
 def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
@@ -235,9 +235,9 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
         }
     )
     with pl.SQLContext(df=df) as ctx:
-        for not_ in ("", "NOT "):
+        for not_ in ("", ("NOT " if like.endswith("LIKE") else "!")):
             out = ctx.execute(
-                f"""SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"""
+                f"SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"
             ).collect()
 
             res = out["idx"].to_list()
