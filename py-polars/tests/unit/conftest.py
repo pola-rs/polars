@@ -212,6 +212,9 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     if not pl.build_info()["compiler"]["debug"]:
         pytest.skip("Memory usage only available in debug/dev builds.")
 
+    if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
+        pytest.skip("Hangs when combined with async glob")
+
     if sys.platform == "win32":
         # abi3 wheels don't have the tracemalloc C APIs, which breaks linking
         # on Windows.

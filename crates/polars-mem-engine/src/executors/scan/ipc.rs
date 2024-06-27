@@ -25,7 +25,9 @@ pub struct IpcExec {
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
         let is_cloud = self.paths.iter().any(is_cloud_url);
-        let mut out = if is_cloud || config::force_async() {
+        let force_async = config::force_async();
+
+        let mut out = if is_cloud || force_async {
             #[cfg(not(feature = "cloud"))]
             {
                 panic!("activate cloud feature")
@@ -33,7 +35,7 @@ impl IpcExec {
 
             #[cfg(feature = "cloud")]
             {
-                if !is_cloud && verbose {
+                if force_async && verbose {
                     eprintln!("ASYNC READING FORCED");
                 }
 

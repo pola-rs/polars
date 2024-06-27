@@ -471,3 +471,21 @@ def test_scan_directory(
 
     out = scan(tmp_path).collect()
     assert_frame_equal(out, df)
+
+
+def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
+    for dir in ["dir1", "dir2", "dir3"]:
+        (tmp_path / dir).mkdir()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df.write_parquet(tmp_path / "dir1/data.bin")
+    df.write_parquet(tmp_path / "dir2/data.parquet")
+    df.write_parquet(tmp_path / "data.parquet")
+
+    assert_frame_equal(pl.scan_parquet(tmp_path / "**/*.bin").collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "**/data*.bin").collect(), df)
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "**/*").collect(), pl.concat(3 * [df])
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
