@@ -609,7 +609,8 @@ def concat_str(
 
         If ``False``, null values will be propagated:
         if the row contains any null values, the output is null.
-        If ``True``, null values will be removed from the input list before concatenation.
+        If ``True``, null values will be removed from the
+        input list before concatenation.
 
     Examples
     --------
