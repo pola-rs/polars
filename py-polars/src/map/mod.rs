@@ -212,7 +212,7 @@ fn iterator_to_object(
                 .trust_my_length(capacity)
                 .collect_trusted()
         } else {
-            it.collect()
+            it.take(capacity).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
