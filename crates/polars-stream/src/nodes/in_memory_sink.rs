@@ -37,7 +37,7 @@ impl ComputeNode for InMemorySink {
 
         if self.done {
             recv[0] = PortState::Done;
-        } else  {
+        } else {
             recv[0] = PortState::Ready;
         }
     }

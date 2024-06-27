@@ -163,7 +163,7 @@ fn run_subgraph(
             finalize_output.insert(node_key, df);
         }
     }
-    
+
     Ok(())
 }
 

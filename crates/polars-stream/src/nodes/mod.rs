@@ -17,16 +17,16 @@ pub trait ComputeNode {
     /// Update the state of this node given the state of our input and output
     /// ports. May be called multiple times until fully resolved for each
     /// execution cycle.
-    /// 
+    ///
     /// For each input pipe `recv` will contain a respective state of the
     /// send port that pipe is connected to when called, and it is expected when
     /// `update_state` returns it contains your computed receive port state.
-    /// 
+    ///
     /// Similarly, for each output pipe `send` will contain the respective
     /// state of the input port that pipe is connected to when called, and you
     /// must update it to contain the desired state of your output port.
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]);
-    
+
     /// If this node (in its current state) is a pipeline blocker, and whether
     /// this is memory intensive or not.
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {

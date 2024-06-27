@@ -31,7 +31,7 @@ impl ComputeNode for InMemorySource {
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
-        
+
         if self.source.is_some() {
             send[0] = PortState::Ready;
         } else {
@@ -80,7 +80,7 @@ impl ComputeNode for InMemorySource {
             Ok(())
         })
     }
-    
+
     fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
         drop(self.source.take());
         Ok(None)

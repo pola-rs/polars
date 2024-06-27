@@ -138,5 +138,5 @@ pub struct LogicalPipe {
 pub enum PortState {
     Blocked,
     Ready,
-    Done
+    Done,
 }
