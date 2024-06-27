@@ -100,7 +100,11 @@ from polars.exceptions import (
 from polars.functions import col, lit
 from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
-from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
+from polars.type_aliases import (
+    DbWriteMode,
+    JaxExportType,
+    TorchExportType,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -159,6 +163,7 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
         SelectorType,
+        SerializationFormat,
         SingleColSelector,
         SingleIndexSelector,
         SizeUnit,
@@ -416,7 +421,9 @@ class DataFrame:
             raise TypeError(msg)
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> DataFrame:
+    def deserialize(
+        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+    ) -> DataFrame:
         """
         Read a serialized DataFrame from a file.
 
@@ -426,6 +433,11 @@ class DataFrame:
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
+        format
+            The format with which the DataFrame was serialized. Options:
+
+            - `"binary"`: Deserialize from binary format (bytes). This is the default.
+            - `"json"`: Deserialize from JSON format (string).
 
         See Also
         --------
@@ -458,7 +470,15 @@ class DataFrame:
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
 
-        return cls._from_pydf(PyDataFrame.deserialize(source))
+        if format == "binary":
+            deserializer = PyDataFrame.deserialize_binary
+        elif format == "json":
+            deserializer = PyDataFrame.deserialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return cls._from_pydf(deserializer(source))
 
     @classmethod
     def _from_pydf(cls, py_df: PyDataFrame) -> DataFrame:
@@ -2354,22 +2374,36 @@ class DataFrame:
         return output.getvalue()
 
     @overload
-    def serialize(self, file: None = ...) -> str: ...
+    def serialize(
+        self, file: None = ..., *, format: Literal["binary"] = ...
+    ) -> bytes: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None: ...
+    def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+    @overload
+    def serialize(
+        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+    ) -> None: ...
 
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
+    def serialize(
+        self,
+        file: IOBase | str | Path | None = None,
+        *,
+        format: SerializationFormat = "binary",
+    ) -> str | None:
         """
         Serialize this DataFrame to a file or string in JSON format.
-
-        .. versionadded:: 0.20.31
 
         Parameters
         ----------
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+        format
+            The format in which to serialize. Options:
+
+            - `"binary"`: Serialize to binary format (bytes). This is the default.
+            - `"json"`: Serialize to JSON format (string).
 
         Notes
         -----
@@ -2387,25 +2421,37 @@ class DataFrame:
         >>> df.serialize()
         '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
         """
+        if format == "binary":
+            serializer = self._df.serialize_binary
+        elif format == "json":
+            serializer = self._df.serialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
 
-        def serialize_to_string() -> str:
+        def serialize_to_bytes() -> bytes:
             with BytesIO() as buf:
-                self._df.serialize(buf)
-                json_bytes = buf.getvalue()
-            return json_bytes.decode("utf8")
+                serializer(buf)
+                serialized = buf.getvalue()
+            return serialized
 
         if file is None:
-            return serialize_to_string()
+            serialized = serialize_to_bytes()
+            return serialized.decode() if format == "json" else serialized
         elif isinstance(file, StringIO):
-            json_str = serialize_to_string()
-            file.write(json_str)
+            serialized_str = serialize_to_bytes().decode()
+            file.write(serialized_str)
+            return None
+        elif isinstance(file, BytesIO):
+            serialized = serialize_to_bytes()
+            file.write(serialized)
             return None
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
-            self._df.serialize(file)
+            serializer(file)
             return None
         else:
-            self._df.serialize(file)
+            serializer(file)
             return None
 
     @overload
