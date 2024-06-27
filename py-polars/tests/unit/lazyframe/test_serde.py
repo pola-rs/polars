@@ -14,6 +14,8 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars.type_aliases import SerializationFormat
+
 
 @given(lf=dataframes(lazy=True))
 @example(lf=pl.LazyFrame({"foo": ["a", "b", "a"]}, schema={"foo": pl.Enum(["b", "a"])}))
@@ -66,7 +68,9 @@ def test_lf_serde_json_stringio(lf: pl.LazyFrame) -> None:
         ("json", io.BytesIO()),
     ],
 )
-def test_lf_serde_to_from_buffer(lf: pl.LazyFrame, format: str, buf: io.IOBase) -> None:
+def test_lf_serde_to_from_buffer(
+    lf: pl.LazyFrame, format: SerializationFormat, buf: io.IOBase
+) -> None:
     lf.serialize(buf, format=format)
     buf.seek(0)
     result = pl.LazyFrame.deserialize(buf, format=format)

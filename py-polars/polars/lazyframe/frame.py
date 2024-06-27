@@ -650,7 +650,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
-
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
     @overload
@@ -663,7 +662,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         file: IOBase | str | Path | None = None,
         *,
         format: SerializationFormat = "binary",
-    ) -> str | bytes | None:
+    ) -> bytes | str | None:
         """
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 

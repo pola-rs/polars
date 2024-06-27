@@ -16,6 +16,8 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars.type_aliases import SerializationFormat
+
 
 @given(df=dataframes())
 def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
@@ -69,7 +71,9 @@ def test_df_serialize_json() -> None:
         ("json", io.BytesIO()),
     ],
 )
-def test_df_serde_to_from_buffer(df: pl.DataFrame, format: str, buf: io.IOBase) -> None:
+def test_df_serde_to_from_buffer(
+    df: pl.DataFrame, format: SerializationFormat, buf: io.IOBase
+) -> None:
     df.serialize(buf, format=format)
     buf.seek(0)
     read_df = pl.DataFrame.deserialize(buf, format=format)

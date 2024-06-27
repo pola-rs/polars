@@ -2377,7 +2377,6 @@ class DataFrame:
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
-
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
     @overload
@@ -2390,7 +2389,7 @@ class DataFrame:
         file: IOBase | str | Path | None = None,
         *,
         format: SerializationFormat = "binary",
-    ) -> str | None:
+    ) -> bytes | str | None:
         """
         Serialize this DataFrame to a file or string in JSON format.
 
