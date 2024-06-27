@@ -901,6 +901,10 @@ def test_map_elements_restricted_capacity() -> None:
     head = a.collect().head(2)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 2
 
+    # as 'with_columns', ensure this does not panic
+    a = pl.DataFrame({"a": [{2}, {2}, {3}]})
+    assert len(a.head(1).with_columns(b=pl.col("a").map_elements(lambda x: x))) == 1
+
 
 def test_shape() -> None:
     s = pl.Series([1, 2, 3])
