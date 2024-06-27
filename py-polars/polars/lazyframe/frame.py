@@ -34,6 +34,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -716,30 +717,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
             raise ValueError(msg)
 
-        def serialize_to_bytes() -> bytes:
-            with BytesIO() as buf:
-                serializer(buf)
-                serialized = buf.getvalue()
-            return serialized
-
-        if file is None:
-            serialized = serialize_to_bytes()
-            return serialized.decode() if format == "json" else serialized
-        elif isinstance(file, StringIO):
-            serialized_str = serialize_to_bytes().decode()
-            file.write(serialized_str)
-            return None
-        elif isinstance(file, BytesIO):
-            serialized = serialize_to_bytes()
-            file.write(serialized)
-            return None
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-            serializer(file)
-            return None
-        else:
-            serializer(file)
-            return None
+        return serialize_polars_object(serializer, file, format)
 
     def pipe(
         self,
