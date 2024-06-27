@@ -2,6 +2,7 @@ mod construction;
 mod export;
 mod general;
 mod io;
+mod serde;
 
 use polars::prelude::*;
 use pyo3::prelude::*;

@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 use either::Either;
 use polars::prelude::*;
 use polars_core::frame::*;
@@ -8,7 +6,7 @@ use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::PyList;
 
 use super::*;
 use crate::conversion::Wrap;
@@ -27,35 +25,6 @@ impl PyDataFrame {
         let columns = columns.to_series();
         let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
-    }
-
-    #[cfg(feature = "ipc_streaming")]
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        // Used in pickle/pickling
-        let mut buf: Vec<u8> = vec![];
-        IpcStreamWriter::new(&mut buf)
-            .with_pl_flavor(true)
-            .finish(&mut self.df.clone())
-            .expect("ipc writer");
-        Ok(PyBytes::new_bound(py, &buf).to_object(py))
-    }
-    #[cfg(feature = "ipc_streaming")]
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                let c = Cursor::new(s.as_bytes());
-                let reader = IpcStreamReader::new(c);
-
-                reader
-                    .finish()
-                    .map(|df| {
-                        self.df = df;
-                    })
-                    .map_err(|e| PyPolarsErr::from(e).into())
-            },
-            Err(e) => Err(e),
-        }
     }
 
     pub fn estimated_size(&self) -> usize {

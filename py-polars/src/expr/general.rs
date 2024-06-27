@@ -1,4 +1,3 @@
-use std::io::Cursor;
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -8,11 +7,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
-use pyo3::types::PyBytes;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
-use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::PyExpr;
 
@@ -78,28 +74,6 @@ impl PyExpr {
     }
     fn lt(&self, other: Self) -> Self {
         self.inner.clone().lt(other.inner).into()
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.inner, &mut writer)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-
-        Ok(PyBytes::new_bound(py, &writer).to_object(py))
-    }
-
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        // Used in pickle/pickling
-        match state.extract::<PyBackedBytes>(py) {
-            Ok(s) => {
-                let cursor = Cursor::new(&*s);
-                self.inner = ciborium::de::from_reader(cursor)
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
-            },
-            Err(e) => Err(e),
-        }
     }
 
     fn alias(&self, name: &str) -> Self {
