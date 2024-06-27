@@ -32,7 +32,7 @@ impl ComputeNode for InMemorySource {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
 
-        if self.source.is_some() {
+        if self.source.is_some() && send[0] != PortState::Done {
             send[0] = PortState::Ready;
         } else {
             send[0] = PortState::Done;

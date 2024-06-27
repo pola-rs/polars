@@ -35,7 +35,7 @@ impl ComputeNode for InMemorySink {
         assert!(send.is_empty());
         assert!(recv.len() == 1);
 
-        if self.done {
+        if self.done || recv[0] == PortState::Done {
             recv[0] = PortState::Done;
         } else {
             recv[0] = PortState::Ready;
