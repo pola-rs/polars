@@ -453,8 +453,8 @@ class DataFrame:
         --------
         >>> import io
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
-        >>> json = df.serialize()
-        >>> pl.DataFrame.deserialize(io.StringIO(json))
+        >>> bytes = df.serialize()
+        >>> pl.DataFrame.deserialize(io.BytesIO(bytes))
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2391,7 +2391,7 @@ class DataFrame:
         *,
         format: SerializationFormat = "binary",
     ) -> bytes | str | None:
-        """
+        r"""
         Serialize this DataFrame to a file or string in JSON format.
 
         Parameters
@@ -2412,14 +2412,32 @@ class DataFrame:
 
         Examples
         --------
+        Serialize the DataFrame into a binary representation.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...     }
         ... )
-        >>> df.serialize()
-        '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
+        >>> bytes = df.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1gcolumns\x82\xa4dnamecfoohdatatypeeInt64lbit_settings\x00fvalues\x83...'
+
+        The bytes can later be deserialized back into a DataFrame.
+
+        >>> import io
+        >>> pl.DataFrame.deserialize(io.BytesIO(bytes))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 6   │
+        │ 2   ┆ 7   │
+        │ 3   ┆ 8   │
+        └─────┴─────┘
         """
         if format == "binary":
             serializer = self._df.serialize_binary

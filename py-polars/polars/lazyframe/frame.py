@@ -385,8 +385,8 @@ class LazyFrame:
         --------
         >>> import io
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
-        >>> json = lf.serialize()
-        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        >>> bytes = lf.serialize()
+        >>> pl.LazyFrame.deserialize(io.BytesIO(bytes)).collect()
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -664,7 +664,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         format: SerializationFormat = "binary",
     ) -> bytes | str | None:
-        """
+        r"""
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
         Parameters
@@ -689,17 +689,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        Serialize the logical plan into a JSON string.
+        Serialize the logical plan into a binary representation.
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
-        >>> json = lf.serialize()
-        >>> json
-        '{"MapFunction":{"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"filter":null}},"function":{"Stats":"Sum"}}}'
+        >>> bytes = lf.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
-        The logical plan can later be deserialized back into a LazyFrame.
+        The bytes can later be deserialized back into a LazyFrame.
 
         >>> import io
-        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        >>> pl.LazyFrame.deserialize(io.BytesIO(bytes)).collect()
         shape: (1, 1)
         ┌─────┐
         │ a   │

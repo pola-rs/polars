@@ -274,7 +274,7 @@ class ExprMetaNameSpace:
         *,
         format: SerializationFormat = "binary",
     ) -> bytes | str | None:
-        """
+        r"""
         Serialize this expression to a file or string in JSON format.
 
         Parameters
@@ -299,17 +299,17 @@ class ExprMetaNameSpace:
 
         Examples
         --------
-        Serialize the expression into a JSON string.
+        Serialize the expression into a binary representation.
 
         >>> expr = pl.col("foo").sum().over("bar")
-        >>> json = expr.meta.serialize()
-        >>> json
-        '{"Window":{"function":{"Agg":{"Sum":{"Column":"foo"}}},"partition_by":[{"Column":"bar"}],"order_by":null,"options":{"Over":"GroupsToRows"}}}'
+        >>> bytes = expr.meta.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1fWindow\xa4hfunction\xa1cAgg\xa1cSum\xa1fColumncfoolpartition_by\x81...'
 
-        The expression can later be deserialized back into an `Expr` object.
+        The bytes can later be deserialized back into an `Expr` object.
 
-        >>> from io import StringIO
-        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        >>> import io
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if format == "binary":

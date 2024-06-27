@@ -364,10 +364,10 @@ class Expr:
 
         Examples
         --------
-        >>> from io import StringIO
+        >>> import io
         >>> expr = pl.col("foo").sum().over("bar")
-        >>> json = expr.meta.serialize()
-        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        >>> bytes = expr.meta.serialize()
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if isinstance(source, StringIO):
