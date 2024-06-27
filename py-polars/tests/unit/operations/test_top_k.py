@@ -68,7 +68,7 @@ def test_top_k() -> None:
     # dataframe
     df = pl.DataFrame(
         {
-            "a": [1,    2, 3, 4, 2, 2, None],
+            "a": [1, 2, 3, 4, 2, 2, None],
             "b": [None, 2, 1, 4, 3, 2, None],
         }
     )
