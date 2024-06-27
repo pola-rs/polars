@@ -204,7 +204,7 @@ STDDEV
 ------
 Returns the standard deviation of all the elements in the grouping.
 
-.. admonition:: Function aliases
+.. admonition:: Aliases
 
    `STDEV`, `STDEV_SAMP`, `STDDEV_SAMP`
 
@@ -265,7 +265,7 @@ VARIANCE
 --------
 Returns the variance of all the elements in the grouping.
 
-.. admonition:: Function aliases
+.. admonition:: Aliases
 
    `VAR`, `VAR_SAMP`
 

@@ -20,9 +20,11 @@ fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    ["%T", "%T%.3f", "%T%.6f", "%T%.9f"]
-        .into_iter()
-        .find(|&fmt| convert(val, fmt).is_ok())
+    patterns::TIME_H_M_S
+        .iter()
+        .chain(patterns::TIME_H_M_S)
+        .find(|fmt| convert(val, fmt).is_ok())
+        .copied()
 }
 
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>

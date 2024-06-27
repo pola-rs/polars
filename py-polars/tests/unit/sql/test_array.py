@@ -166,6 +166,11 @@ def test_array_to_string() -> None:
             }
         ),
     )
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"ARRAY_TO_STRING expects 2-3 arguments \(found 1\)",
+    ):
+        pl.sql_expr("ARRAY_TO_STRING(arr)")
 
 
 @pytest.mark.parametrize(

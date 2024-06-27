@@ -69,7 +69,10 @@ def test_control_flow(foods_ipc_path: Path) -> None:
     }
 
     for null_func in ("IFNULL", "NULLIF"):
-        with pytest.raises(SQLSyntaxError):  # both functions expect TWO arguments
+        with pytest.raises(
+            SQLSyntaxError,
+            match=r"(IFNULL|NULLIF) expects 2 arguments \(found 3\)",
+        ):
             pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
 
 

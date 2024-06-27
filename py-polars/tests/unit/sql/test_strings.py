@@ -76,7 +76,10 @@ def test_string_concat() -> None:
 )
 def test_string_concat_errors(invalid_concat: str) -> None:
     lf = pl.LazyFrame({"x": ["a", "b", "c"]})
-    with pytest.raises(SQLSyntaxError, match="invalid number of arguments"):
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
+    ):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
@@ -320,7 +323,9 @@ def test_string_replace() -> None:
         res = out["words"].to_list()
         assert res == ["English breakfast tea is the best tea", "", None]
 
-        with pytest.raises(SQLSyntaxError, match="invalid number of arguments"):
+        with pytest.raises(
+            SQLSyntaxError, match=r"REPLACE expects 3 arguments \(found 2\)"
+        ):
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
@@ -355,6 +360,12 @@ def test_string_substr() -> None:
             match=r"SUBSTR does not support negative length \(-99\)",
         ):
             ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match=r"SUBSTR expects 2-3 arguments \(found 1\)",
+        ):
+            pl.sql_expr("SUBSTR(s)")
 
     assert res.to_dict(as_series=False) == {
         "s1": ["abcdefg", "abcde", "abc", None],
