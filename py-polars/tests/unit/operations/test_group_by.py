@@ -1130,3 +1130,12 @@ def test_absence_off_null_prop_8224() -> None:
         pl.List(pl.Float64),
         pl.List(pl.Float64),
     ]
+
+
+def test_grouped_slice_literals() -> None:
+    assert pl.DataFrame({"idx": [1, 2, 3]}).group_by(True).agg(
+        x=pl.lit([1, 2]).slice(
+            -1, 1
+        ),  # slices a list of 1 element, so remains the same element
+        x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
+    ).to_dict(as_series=False) == {"literal": [True], "x": [[1, 2]], "x2": [2]}
