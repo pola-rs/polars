@@ -1,5 +1,6 @@
-use std::io::{BufWriter, Cursor};
+use std::io::{BufReader, BufWriter, Cursor};
 
+use polars::lazy::prelude::Expr;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -34,17 +35,37 @@ impl PyExpr {
         }
     }
 
-    #[cfg(feature = "json")]
-    fn serialize(&self, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-        serde_json::to_writer(file, &self.inner)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-        Ok(())
+    /// Serialize into binary data.
+    fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        ciborium::into_writer(&self.inner, writer)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
     }
 
+    /// Serialize into a JSON string.
+    #[cfg(feature = "json")]
+    fn serialize_json(&self, py_f: PyObject) -> PyResult<()> {
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer(writer, &self.inner)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+    }
+
+    /// Deserialize a file-like object containing binary data into an Expr.
+    #[staticmethod]
+    fn deserialize_binary(py_f: PyObject) -> PyResult<PyExpr> {
+        let file = get_file_like(py_f, false)?;
+        let reader = BufReader::new(file);
+        let expr = ciborium::from_reader::<Expr, _>(reader)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+        Ok(expr.into())
+    }
+
+    /// Deserialize a file-like object containing JSON string data into an Expr.
     #[staticmethod]
     #[cfg(feature = "json")]
-    fn deserialize(py_f: PyObject) -> PyResult<PyExpr> {
+    fn deserialize_json(py_f: PyObject) -> PyResult<PyExpr> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
         let mut json = String::new();
@@ -60,10 +81,10 @@ impl PyExpr {
         // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
-        let inner: polars_lazy::prelude::Expr = serde_json::from_str(json).map_err(|_| {
+        let inner: Expr = serde_json::from_str(json).map_err(|_| {
             let msg = "could not deserialize input into an expression";
             PyPolarsErr::from(polars_err!(ComputeError: msg))
         })?;
-        Ok(PyExpr { inner })
+        Ok(inner.into())
     }
 }
