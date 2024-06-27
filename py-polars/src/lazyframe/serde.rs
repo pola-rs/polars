@@ -37,19 +37,19 @@ impl PyLazyFrame {
 
     /// Serialize into binary data.
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-        ciborium::into_writer(&self.ldf.logical_plan, file)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-        Ok(())
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        ciborium::into_writer(&self.ldf.logical_plan, writer)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
     }
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
     fn serialize_json(&self, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-        serde_json::to_writer(file, &self.ldf.logical_plan)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-        Ok(())
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer(writer, &self.ldf.logical_plan)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
     }
 
     /// Deserialize a file-like object containing binary data into a LazyFrame.

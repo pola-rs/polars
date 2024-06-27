@@ -1,7 +1,8 @@
-use std::io::{BufWriter, Cursor};
+use std::io::{BufReader, BufWriter, Cursor};
 use std::ops::Deref;
 
 use polars_io::mmap::ReaderBytes;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -42,17 +43,37 @@ impl PyDataFrame {
         }
     }
 
-    #[cfg(feature = "json")]
-    pub fn serialize(&mut self, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-        serde_json::to_writer(file, &self.df)
-            .map_err(|e| polars_err!(ComputeError: "{e}"))
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
+    /// Serialize into binary data.
+    fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        ciborium::into_writer(&self.df, writer)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
     }
 
+    /// Serialize into a JSON string.
+    #[cfg(feature = "json")]
+    pub fn serialize_json(&mut self, py_f: PyObject) -> PyResult<()> {
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer(writer, &self.df)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+    }
+
+    /// Deserialize a file-like object containing binary data into a DataFrame.
+    #[staticmethod]
+    fn deserialize_binary(py_f: PyObject) -> PyResult<Self> {
+        let file = get_file_like(py_f, false)?;
+        let reader = BufReader::new(file);
+        let df = ciborium::from_reader::<DataFrame, _>(reader)
+            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+        Ok(df.into())
+    }
+
+    /// Deserialize a file-like object containing JSON string data into a DataFrame.
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn deserialize(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
+    pub fn deserialize_json(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
         use crate::file::read_if_bytesio;
         py_f = read_if_bytesio(py_f);
         let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;

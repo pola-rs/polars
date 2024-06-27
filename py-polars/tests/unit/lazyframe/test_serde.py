@@ -7,6 +7,7 @@ import pytest
 from hypothesis import example, given
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
@@ -81,3 +82,9 @@ def test_lf_serde_to_from_file(lf: pl.LazyFrame, tmp_path: Path) -> None:
     result = pl.LazyFrame.deserialize(file_path)
 
     assert_frame_equal(lf, result)
+
+
+def test_lf_deserialize_validation() -> None:
+    f = io.BytesIO(b"hello world!")
+    with pytest.raises(ComputeError, match="expected value at line 1 column 1"):
+        pl.DataFrame.deserialize(f, format="json")
