@@ -4,7 +4,7 @@ import io
 from typing import TYPE_CHECKING
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -14,17 +14,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@given(
-    lf=dataframes(
-        lazy=True,
-        excluded_dtypes=[
-            pl.Enum,  # Bug
-        ],
-    )
-)
+@given(lf=dataframes(lazy=True))
+@example(lf=pl.LazyFrame({"foo": ["a", "b", "a"]}, schema={"foo": pl.Enum(["b", "a"])}))
 def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
     serialized = lf.serialize(format="binary")
-    result = pl.LazyFrame.deserialize(io.BytesIO(serialized, format="binary"))
+    result = pl.LazyFrame.deserialize(io.BytesIO(serialized), format="binary")
     assert_frame_equal(result, lf, categorical_as_str=True)
 
 
@@ -87,11 +81,3 @@ def test_lf_serde_to_from_file(lf: pl.LazyFrame, tmp_path: Path) -> None:
     result = pl.LazyFrame.deserialize(file_path)
 
     assert_frame_equal(lf, result)
-
-
-@pytest.mark.skip(reason="Bug")
-def test_lf_serde_enum_data() -> None:
-    lf = pl.LazyFrame({"a": ["a", "b", "a"]}, schema={"a": pl.Enum(["b", "a"])})
-    serialized = lf.serialize()
-    result = pl.LazyFrame.deserialize(io.BytesIO(serialized))
-    assert_frame_equal(result, lf)

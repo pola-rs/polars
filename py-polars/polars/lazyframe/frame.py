@@ -725,10 +725,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if file is None:
             serialized = serialize_to_bytes()
-            if format == "json":
-                return serialized.decode()
-            else:
-                return serialized
+            return serialized.decode() if format == "json" else serialized
         elif isinstance(file, StringIO):
             serialized_str = serialize_to_bytes().decode()
             file.write(serialized_str)
