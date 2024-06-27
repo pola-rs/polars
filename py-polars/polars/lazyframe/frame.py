@@ -405,7 +405,7 @@ class LazyFrame:
         elif format == "json":
             deserializer = PyLazyFrame.deserialize_json
         else:
-            msg = f"invalid serialization format: {format!r}"
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
             raise ValueError(msg)
 
         return cls._from_pyldf(deserializer(source))
@@ -714,7 +714,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         elif format == "json":
             serializer = self._ldf.serialize_json
         else:
-            msg = f"invalid serialization format: {format!r}"
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
             raise ValueError(msg)
 
         def serialize_to_bytes() -> bytes:
