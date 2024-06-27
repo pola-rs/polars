@@ -865,40 +865,40 @@ def test_map_elements() -> None:
 
 def test_map_elements_restricted_capacity() -> None:
     # ensure that on map_elements we always return the same capacity as head
-    a = pl.LazyFrame({"a": [{2}, {2}, {3}]})
-    head = a.collect().head(1)
+    a = pl.DataFrame({"a": [{2}, {2}, {3}]})
+    head = a.head(1)
     # passing return type as well as inferred
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Object)) == 1
     assert len(head["a"].map_elements(lambda x: x)) == 1
 
-    a = pl.LazyFrame({"a": [2, 2, 3]})
-    head = a.collect().head(1)
+    a = pl.DataFrame({"a": [2, 2, 3]})
+    head = a.head(1)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 1
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int64)) == 1
     assert len(head["a"].map_elements(lambda x: x)) == 1
 
     # test with None as well
-    a = pl.LazyFrame({"a": [{2}, None, {2}, {3}]})
-    head = a.collect().head(2)
+    a = pl.DataFrame({"a": [{2}, None, {2}, {3}]})
+    head = a.head(2)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Object)) == 2
     assert len(head["a"].map_elements(lambda x: x)) == 2
-    a = pl.LazyFrame({"a": [2, None, 2, 3]})
-    head = a.collect().head(2)
+    a = pl.DataFrame({"a": [2, None, 2, 3]})
+    head = a.head(2)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 2
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int64)) == 2
     assert len(head["a"].map_elements(lambda x: x)) == 2
 
-    a = pl.LazyFrame(pl.Series("a", [2, 2, 3]).cast(pl.Datetime))
-    head = a.collect().head(1)
+    a = pl.DataFrame(pl.Series("a", [2, 2, 3]).cast(pl.Datetime))
+    head = a.head(1)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 1
-    a = pl.LazyFrame(pl.Series("a", [2, 2, 3]).cast(pl.Date))
-    head = a.collect().head(1)
+    a = pl.DataFrame(pl.Series("a", [2, 2, 3]).cast(pl.Date))
+    head = a.head(1)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 1
-    a = pl.LazyFrame(pl.Series("a", [2, None, 2, 3]).cast(pl.Datetime))
-    head = a.collect().head(2)
+    a = pl.DataFrame(pl.Series("a", [2, None, 2, 3]).cast(pl.Datetime))
+    head = a.head(2)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 2
-    a = pl.LazyFrame(pl.Series("a", [2, None, 2, 3]).cast(pl.Date))
-    head = a.collect().head(2)
+    a = pl.DataFrame(pl.Series("a", [2, None, 2, 3]).cast(pl.Date))
+    head = a.head(2)
     assert len(head["a"].map_elements(lambda x: x, return_dtype=pl.Int32)) == 2
 
     # as 'with_columns', ensure this does not panic
