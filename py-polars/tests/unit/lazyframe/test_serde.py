@@ -92,3 +92,18 @@ def test_lf_deserialize_validation() -> None:
     f = io.BytesIO(b"hello world!")
     with pytest.raises(ComputeError, match="expected value at line 1 column 1"):
         pl.DataFrame.deserialize(f, format="json")
+
+
+@pytest.mark.write_disk()
+def test_lf_serde_scan(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "dataset.parquet"
+
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(path)
+    lf = pl.scan_parquet(path)
+
+    ser = lf.serialize()
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    assert_frame_equal(result, lf)
+    assert_frame_equal(result.collect(), df)
