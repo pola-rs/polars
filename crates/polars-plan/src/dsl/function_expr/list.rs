@@ -430,9 +430,10 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
 
             let take_by = index
                 .into_iter()
+                .zip(arr.validity().unwrap())
                 .enumerate()
-                .map(|(i, opt_idx)| match opt_idx {
-                    Some(idx) => {
+                .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
+                    (true, Some(idx)) => {
                         let (start, end) =
                             unsafe { (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1)) };
                         let offset = if idx >= 0 { start + idx } else { end + idx };
@@ -446,7 +447,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                             Ok(Some(offset as IdxSize))
                         }
                     },
-                    None => Ok(None),
+                    _ => Ok(None),
                 })
                 .collect::<Result<IdxCa, _>>()?;
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
