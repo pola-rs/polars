@@ -632,7 +632,6 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
         .fill_null("__HIVE_DEFAULT_PARTITION__"),
     ):
         path = root / f"date1={date1}/date2={date2}/data.bin"
-        print(date2, path)
         path.parent.mkdir(exist_ok=True, parents=True)
         part_df.write_parquet(path)
 
