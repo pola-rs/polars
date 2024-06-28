@@ -622,8 +622,8 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
         ),
     )
 
-    # Windows doesn't support colons in path names
-    if sys.platform == "win32":
+    # These don't support colons in filename
+    if sys.platform == "win32" or os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
         return
 
     root = tmp_path / "includes_hive_cols_in_file"
