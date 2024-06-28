@@ -638,3 +638,9 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
     # The schema for the hive columns is included in the file, so it should just work
     lf = pl.scan_parquet(root)
     assert_frame_equal(lf.collect(), df)
+
+    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+    assert_frame_equal(
+        lf.collect(),
+        df.with_columns(pl.col("date1", "date2").cast(pl.String)),
+    )

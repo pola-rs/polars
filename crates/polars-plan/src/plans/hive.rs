@@ -129,6 +129,12 @@ pub fn hive_partitions_from_paths(
         for (name, _) in get_hive_parts_iter!(path_string) {
             // If the column is also in the file we can use the dtype stored there.
             if let Some(dtype) = reader_schema.get(name) {
+                let dtype = if !try_parse_dates && dtype.is_temporal() {
+                    DataType::String
+                } else {
+                    dtype.clone()
+                };
+
                 hive_schema.insert_at_index(hive_schema.len(), name.into(), dtype.clone())?;
                 continue;
             }
