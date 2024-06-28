@@ -580,9 +580,6 @@ def test_hive_partition_columns_contained_in_file(
 
 @pytest.mark.write_disk()
 def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
-    # TODO: Path gets incorrectly un-escaped for async
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
-
     df = pl.DataFrame(
         {
             "date1": [
@@ -636,6 +633,7 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
     ):
         path = root / f"date1={date1}/date2={date2}/data.bin"
         path.parent.mkdir(exist_ok=True, parents=True)
+        print(path)
         part_df.write_parquet(path)
 
     # The schema for the hive columns is included in the file, so it should just work
