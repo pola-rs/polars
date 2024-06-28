@@ -40,3 +40,11 @@ def test_gather_lit_single_16535() -> None:
     assert df.group_by(["x"], maintain_order=True).agg(pl.all().gather([1])).to_dict(
         as_series=False
     ) == {"x": [1, 2], "y": [[4], [3]]}
+
+
+def test_list_get_null_offset_17248() -> None:
+    df = pl.DataFrame({"material": [["PB", "PVC", "CI"], ["CI"], ["CI"]]})
+
+    assert df.select(
+        result=pl.when(pl.col.material.list.len() == 1).then("material").list.get(0),
+    )["result"].to_list() == [None, "CI", "CI"]
