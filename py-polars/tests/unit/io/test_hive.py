@@ -1,6 +1,8 @@
 import os
+import urllib.parse
 import warnings
 from collections import OrderedDict
+from datetime import datetime
 from functools import partial
 from multiprocessing import get_context
 from pathlib import Path
@@ -25,13 +27,10 @@ def impl_test_hive_partitioned_predicate_pushdown(
 
     root = tmp_path / "partitioned_data"
 
-    # Ignore the pyarrow legacy warning until we can write properly with new settings.
-    warnings.filterwarnings("ignore")
     pq.write_to_dataset(
         df.to_arrow(),
         root_path=root,
         partition_cols=["category", "fats_g"],
-        use_legacy_dataset=True,
     )
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=False)
     # checks schema
@@ -577,3 +576,74 @@ def test_hive_partition_columns_contained_in_file(
         rhs,
     )
     assert_with_projections(lf, rhs)
+
+
+@pytest.mark.write_disk()
+def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
+    # TODO: Path gets incorrectly un-escaped for async
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
+    df = pl.DataFrame(
+        {
+            "date1": [
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                None,
+            ],
+            "date2": [
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                None,
+                datetime(2023, 3, 1),
+            ],
+            "x": [1, 2, 3, 4],
+        },
+        schema={"date1": pl.Date, "date2": pl.Datetime, "x": pl.Int32},
+    )
+
+    root = tmp_path / "pyarrow"
+    pq.write_to_dataset(
+        df.to_arrow(),
+        root_path=root,
+        partition_cols=["date1", "date2"],
+    )
+
+    lf = pl.scan_parquet(
+        root, hive_schema=df.clear().select("date1", "date2").collect_schema()
+    )
+    assert_frame_equal(lf.collect(), df.select("x", "date1", "date2"))
+
+    lf = pl.scan_parquet(root)
+    assert_frame_equal(lf.collect(), df.select("x", "date1", "date2"))
+
+    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+    assert_frame_equal(
+        lf.collect(),
+        df.select("x", "date1", "date2").with_columns(
+            pl.col("date1", "date2").cast(pl.String)
+        ),
+    )
+
+    root = tmp_path / "includes_hive_cols_in_file"
+
+    for (date1, date2), part_df in df.group_by(
+        pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+        pl.col("date2")
+        .cast(pl.String)
+        .map_elements(urllib.parse.quote, return_dtype=pl.String)
+        .fill_null("__HIVE_DEFAULT_PARTITION__"),
+    ):
+        path = root / f"date1={date1}/date2={date2}/data.bin"
+        path.parent.mkdir(exist_ok=True, parents=True)
+        part_df.write_parquet(path)
+
+    # The schema for the hive columns is included in the file, so it should just work
+    lf = pl.scan_parquet(root)
+    assert_frame_equal(lf.collect(), df)
+
+    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+    assert_frame_equal(
+        lf.collect(),
+        df.with_columns(pl.col("date1", "date2").cast(pl.String)),
+    )

@@ -146,7 +146,7 @@ where
     }
 }
 
-pub(crate) struct Utf8Field {
+pub struct Utf8Field {
     name: String,
     mutable: MutableBinaryViewArray<str>,
     scratch: Vec<u8>,
@@ -240,12 +240,12 @@ impl ParsedBuffer for Utf8Field {
 }
 
 #[cfg(not(feature = "dtype-categorical"))]
-pub(crate) struct CategoricalField {
+pub struct CategoricalField {
     phantom: std::marker::PhantomData<u8>,
 }
 
 #[cfg(feature = "dtype-categorical")]
-pub(crate) struct CategoricalField {
+pub struct CategoricalField {
     escape_scratch: Vec<u8>,
     quote_char: u8,
     builder: CategoricalChunkedBuilder,
@@ -351,7 +351,7 @@ impl ParsedBuffer for BooleanChunkedBuilder {
 }
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-pub(crate) struct DatetimeField<T: PolarsNumericType> {
+pub struct DatetimeField<T: PolarsNumericType> {
     compiled: Option<DatetimeInfer<T>>,
     builder: PrimitiveChunkedBuilder<T>,
 }
@@ -480,7 +480,7 @@ where
     }
 }
 
-pub(crate) fn init_buffers(
+pub fn init_buffers(
     projection: &[usize],
     capacity: usize,
     schema: &Schema,
@@ -552,7 +552,7 @@ pub(crate) fn init_buffers(
 }
 
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum Buffer {
+pub enum Buffer {
     Boolean(BooleanChunkedBuilder),
     #[cfg(feature = "dtype-i8")]
     Int8(PrimitiveChunkedBuilder<Int8Type>),
@@ -585,7 +585,7 @@ pub(crate) enum Buffer {
 }
 
 impl Buffer {
-    pub(crate) fn into_series(self) -> PolarsResult<Series> {
+    pub fn into_series(self) -> PolarsResult<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-i8")]
@@ -642,7 +642,7 @@ impl Buffer {
         Ok(s)
     }
 
-    pub(crate) fn add_null(&mut self, valid: bool) {
+    pub fn add_null(&mut self, valid: bool) {
         match self {
             Buffer::Boolean(v) => v.append_null(),
             #[cfg(feature = "dtype-i8")]
@@ -686,7 +686,7 @@ impl Buffer {
         };
     }
 
-    pub(crate) fn dtype(&self) -> DataType {
+    pub fn dtype(&self) -> DataType {
         match self {
             Buffer::Boolean(_) => DataType::Boolean,
             #[cfg(feature = "dtype-i8")]
@@ -723,7 +723,7 @@ impl Buffer {
     }
 
     #[inline]
-    pub(crate) fn add(
+    pub fn add(
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,

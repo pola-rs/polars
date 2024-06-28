@@ -232,7 +232,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_index,
-        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, retries, glob)
+        low_memory, cloud_options, use_statistics, hive_partitioning, hive_schema, try_parse_hive_dates, retries, glob)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -247,6 +247,7 @@ impl PyLazyFrame {
         use_statistics: bool,
         hive_partitioning: Option<bool>,
         hive_schema: Option<Wrap<Schema>>,
+        try_parse_hive_dates: bool,
         retries: usize,
         glob: bool,
     ) -> PyResult<Self> {
@@ -282,6 +283,7 @@ impl PyLazyFrame {
             enabled: hive_partitioning,
             hive_start_idx: 0,
             schema: hive_schema,
+            try_parse_dates: try_parse_hive_dates,
         };
 
         let args = ScanArgsParquet {

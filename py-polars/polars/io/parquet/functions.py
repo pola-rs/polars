@@ -44,6 +44,7 @@ def read_parquet(
     hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
     rechunk: bool = False,
     low_memory: bool = False,
     storage_options: dict[str, Any] | None = None,
@@ -94,6 +95,8 @@ def read_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    try_parse_hive_dates
+        Whether to try parsing hive values as date/datetime types.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -182,6 +185,7 @@ def read_parquet(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
         rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
@@ -294,6 +298,7 @@ def scan_parquet(
     hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
     rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
@@ -336,6 +341,8 @@ def scan_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    try_parse_hive_dates
+        Whether to try parsing hive values as date/datetime types.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
@@ -404,6 +411,7 @@ def scan_parquet(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
         glob=glob,
     )
@@ -424,6 +432,7 @@ def _scan_parquet_impl(
     hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
     retries: int = 0,
 ) -> LazyFrame:
     if isinstance(source, list):
@@ -451,6 +460,7 @@ def _scan_parquet_impl(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
         glob=glob,
     )
