@@ -207,7 +207,7 @@ pub fn hive_partitions_from_paths(
         let column_stats = buffers
             .iter()
             .map(|x| {
-                ColumnStats::from_column_literal(unsafe { x.take_slice_unchecked(&[i as u64]) })
+                ColumnStats::from_column_literal(unsafe { x.take_slice_unchecked(&[i as IdxSize]) })
             })
             .collect::<Vec<_>>();
 
