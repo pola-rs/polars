@@ -644,8 +644,11 @@ def test_strptime_complete_formats(string: str, fmt: str, expected: datetime) ->
 )
 def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
     s = pl.Series([data])
-    result = s.str.to_time(format).item()
-    assert result == expected
+    for res in (
+        s.str.to_time().item(),
+        s.str.to_time(format).item(),
+    ):
+        assert res == expected
 
 
 def test_to_time_format_warning() -> None:

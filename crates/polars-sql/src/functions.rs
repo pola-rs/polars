@@ -1,5 +1,5 @@
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
-use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, TimeUnit};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
@@ -31,105 +31,105 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'abs' function
     /// Returns the absolute value of the input column.
     /// ```sql
-    /// SELECT ABS(column_1) from df;
+    /// SELECT ABS(column_1) FROM df;
     /// ```
     Abs,
     /// SQL 'ceil' function
     /// Returns the nearest integer closest from zero.
     /// ```sql
-    /// SELECT CEIL(column_1) from df;
+    /// SELECT CEIL(column_1) FROM df;
     /// ```
     Ceil,
     /// SQL 'div' function
     /// Returns the integer quotient of the division.
     /// ```sql
-    /// SELECT DIV(column_1, 2) from df;
+    /// SELECT DIV(column_1, 2) FROM df;
     /// ```
     Div,
     /// SQL 'exp' function
     /// Computes the exponential of the given value.
     /// ```sql
-    /// SELECT EXP(column_1) from df;
+    /// SELECT EXP(column_1) FROM df;
     /// ```
     Exp,
     /// SQL 'floor' function
     /// Returns the nearest integer away from zero.
     ///   0.5 will be rounded
     /// ```sql
-    /// SELECT FLOOR(column_1) from df;
+    /// SELECT FLOOR(column_1) FROM df;
     /// ```
     Floor,
     /// SQL 'pi' function
     /// Returns a (very good) approximation of 𝜋.
     /// ```sql
-    /// SELECT PI() from df;
+    /// SELECT PI() FROM df;
     /// ```
     Pi,
     /// SQL 'ln' function
     /// Computes the natural logarithm of the given value.
     /// ```sql
-    /// SELECT LN(column_1) from df;
+    /// SELECT LN(column_1) FROM df;
     /// ```
     Ln,
     /// SQL 'log2' function
     /// Computes the logarithm of the given value in base 2.
     /// ```sql
-    /// SELECT LOG2(column_1) from df;
+    /// SELECT LOG2(column_1) FROM df;
     /// ```
     Log2,
     /// SQL 'log10' function
     /// Computes the logarithm of the given value in base 10.
     /// ```sql
-    /// SELECT LOG10(column_1) from df;
+    /// SELECT LOG10(column_1) FROM df;
     /// ```
     Log10,
     /// SQL 'log' function
     /// Computes the `base` logarithm of the given value.
     /// ```sql
-    /// SELECT LOG(column_1, 10) from df;
+    /// SELECT LOG(column_1, 10) FROM df;
     /// ```
     Log,
     /// SQL 'log1p' function
     /// Computes the natural logarithm of "given value plus one".
     /// ```sql
-    /// SELECT LOG1P(column_1) from df;
+    /// SELECT LOG1P(column_1) FROM df;
     /// ```
     Log1p,
     /// SQL 'pow' function
     /// Returns the value to the power of the given exponent.
     /// ```sql
-    /// SELECT POW(column_1, 2) from df;
+    /// SELECT POW(column_1, 2) FROM df;
     /// ```
     Pow,
     /// SQL 'mod' function
     /// Returns the remainder of a numeric expression divided by another numeric expression.
     /// ```sql
-    /// SELECT MOD(column_1, 2) from df;
+    /// SELECT MOD(column_1, 2) FROM df;
     /// ```
     Mod,
     /// SQL 'sqrt' function
     /// Returns the square root (√) of a number.
     /// ```sql
-    /// SELECT SQRT(column_1) from df;
+    /// SELECT SQRT(column_1) FROM df;
     /// ```
     Sqrt,
     /// SQL 'cbrt' function
     /// Returns the cube root (∛) of a number.
     /// ```sql
-    /// SELECT CBRT(column_1) from df;
+    /// SELECT CBRT(column_1) FROM df;
     /// ```
     Cbrt,
     /// SQL 'round' function
     /// Round a number to `x` decimals (default: 0) away from zero.
     ///   .5 is rounded away from zero.
     /// ```sql
-    /// SELECT ROUND(column_1, 3) from df;
+    /// SELECT ROUND(column_1, 3) FROM df;
     /// ```
     Round,
     /// SQL 'sign' function
     /// Returns the sign of the argument as -1, 0, or +1.
     /// ```sql
-    /// SELECT SIGN(column_1) from df;
+    /// SELECT SIGN(column_1) FROM df;
     /// ```
     Sign,
 
@@ -139,103 +139,103 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'cos' function
     /// Compute the cosine sine of the input column (in radians).
     /// ```sql
-    /// SELECT COS(column_1) from df;
+    /// SELECT COS(column_1) FROM df;
     /// ```
     Cos,
     /// SQL 'cot' function
     /// Compute the cotangent of the input column (in radians).
     /// ```sql
-    /// SELECT COT(column_1) from df;
+    /// SELECT COT(column_1) FROM df;
     /// ```
     Cot,
     /// SQL 'sin' function
     /// Compute the sine of the input column (in radians).
     /// ```sql
-    /// SELECT SIN(column_1) from df;
+    /// SELECT SIN(column_1) FROM df;
     /// ```
     Sin,
     /// SQL 'tan' function
     /// Compute the tangent of the input column (in radians).
     /// ```sql
-    /// SELECT TAN(column_1) from df;
+    /// SELECT TAN(column_1) FROM df;
     /// ```
     Tan,
     /// SQL 'cosd' function
     /// Compute the cosine sine of the input column (in degrees).
     /// ```sql
-    /// SELECT COSD(column_1) from df;
+    /// SELECT COSD(column_1) FROM df;
     /// ```
     CosD,
     /// SQL 'cotd' function
     /// Compute cotangent of the input column (in degrees).
     /// ```sql
-    /// SELECT COTD(column_1) from df;
+    /// SELECT COTD(column_1) FROM df;
     /// ```
     CotD,
     /// SQL 'sind' function
     /// Compute the sine of the input column (in degrees).
     /// ```sql
-    /// SELECT SIND(column_1) from df;
+    /// SELECT SIND(column_1) FROM df;
     /// ```
     SinD,
     /// SQL 'tand' function
     /// Compute the tangent of the input column (in degrees).
     /// ```sql
-    /// SELECT TAND(column_1) from df;
+    /// SELECT TAND(column_1) FROM df;
     /// ```
     TanD,
     /// SQL 'acos' function
     /// Compute inverse cosinus of the input column (in radians).
     /// ```sql
-    /// SELECT ACOS(column_1) from df;
+    /// SELECT ACOS(column_1) FROM df;
     /// ```
     Acos,
     /// SQL 'asin' function
     /// Compute inverse sine of the input column (in radians).
     /// ```sql
-    /// SELECT ASIN(column_1) from df;
+    /// SELECT ASIN(column_1) FROM df;
     /// ```
     Asin,
     /// SQL 'atan' function
     /// Compute inverse tangent of the input column (in radians).
     /// ```sql
-    /// SELECT ATAN(column_1) from df;
+    /// SELECT ATAN(column_1) FROM df;
     /// ```
     Atan,
     /// SQL 'atan2' function
     /// Compute the inverse tangent of column_2/column_1 (in radians).
     /// ```sql
-    /// SELECT ATAN2(column_1, column_2) from df;
+    /// SELECT ATAN2(column_1, column_2) FROM df;
     /// ```
     Atan2,
     /// SQL 'acosd' function
     /// Compute inverse cosinus of the input column (in degrees).
     /// ```sql
-    /// SELECT ACOSD(column_1) from df;
+    /// SELECT ACOSD(column_1) FROM df;
     /// ```
     AcosD,
     /// SQL 'asind' function
     /// Compute inverse sine of the input column (in degrees).
     /// ```sql
-    /// SELECT ASIND(column_1) from df;
+    /// SELECT ASIND(column_1) FROM df;
     /// ```
     AsinD,
     /// SQL 'atand' function
     /// Compute inverse tangent of the input column (in degrees).
     /// ```sql
-    /// SELECT ATAND(column_1) from df;
+    /// SELECT ATAND(column_1) FROM df;
     /// ```
     AtanD,
     /// SQL 'atan2d' function
     /// Compute the inverse tangent of column_2/column_1 (in degrees).
     /// ```sql
-    /// SELECT ATAN2D(column_1) from df;
+    /// SELECT ATAN2D(column_1) FROM df;
     /// ```
     Atan2D,
     /// SQL 'degrees' function
     /// Convert between radians and degrees.
     /// ```sql
-    /// SELECT DEGREES(column_1) from df;
+    /// SELECT DEGREES(column_1) FROM df;
     /// ```
     ///
     ///
@@ -243,148 +243,178 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'RADIANS' function
     /// Convert between degrees and radians.
     /// ```sql
-    /// SELECT radians(column_1) from df;
+    /// SELECT RADIANS(column_1) FROM df;
     /// ```
     Radians,
 
     // ----
-    // Date Functions
+    // Temporal functions
     // ----
-    /// SQL 'date' function.
-    /// Converts a formatted string date to an actual Date type; ISO-8601 format is assumed
-    /// unless a strftime-compatible formatting string is provided as the second parameter.
-    /// ```sql
-    /// SELECT DATE('2021-03-15') from df;
-    /// SELECT DATE('2021-15-03', '%Y-d%-%m') from df;
-    /// SELECT DATE('2021-03', '%Y-%m') from df;
-    /// ```
-    Date,
     /// SQL 'date_part' function.
     /// Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     /// ```sql
-    /// SELECT DATE_PART('year', column_1) from df;
-    /// SELECT DATE_PART('day', column_1) from df;
+    /// SELECT DATE_PART('year', column_1) FROM df;
+    /// SELECT DATE_PART('day', column_1) FROM df;
     DatePart,
+    /// SQL 'strftime' function.
+    /// Converts a datetime to a string using a format string.
+    /// ```sql
+    /// SELECT STRFTIME(column_1, '%d-%m-%Y %H:%M') FROM df;
+    /// ```
+    Strftime,
 
     // ----
     // String functions
     // ----
     /// SQL 'bit_length' function (bytes).
     /// ```sql
-    /// SELECT BIT_LENGTH(column_1) from df;
+    /// SELECT BIT_LENGTH(column_1) FROM df;
     /// ```
     BitLength,
     /// SQL 'concat' function
     /// Returns all input expressions concatenated together as a string.
     /// ```sql
-    /// SELECT CONCAT(column_1, column_2) from df;
+    /// SELECT CONCAT(column_1, column_2) FROM df;
     /// ```
     Concat,
     /// SQL 'concat_ws' function
     /// Returns all input expressions concatenated together
     /// (and interleaved with a separator) as a string.
     /// ```sql
-    /// SELECT CONCAT_WS(':', column_1, column_2, column_3) from df;
+    /// SELECT CONCAT_WS(':', column_1, column_2, column_3) FROM df;
     /// ```
     ConcatWS,
+    /// SQL 'date' function.
+    /// Converts a formatted string date to an actual Date type; ISO-8601 format is assumed
+    /// unless a strftime-compatible formatting string is provided as the second parameter.
+    /// ```sql
+    /// SELECT DATE('2021-03-15') FROM df;
+    /// SELECT DATE('2021-15-03', '%Y-d%-%m') FROM df;
+    /// SELECT DATE('2021-03', '%Y-%m') FROM df;
+    /// ```
+    Date,
+    /// SQL 'timestamp' function.
+    /// Converts a formatted string datetime to an actual Datetime type; ISO-8601 format is
+    /// assumed unless a strftime-compatible formatting string is provided as the second
+    /// parameter.
+    /// ```sql
+    /// SELECT TIMESTAMP('2021-03-15 10:30:45') FROM df;
+    /// SELECT TIMESTAMP('2021-15-03T00:01:02.333', '%Y-d%-%m %H:%M:%S') FROM df;
+    /// ```
+    Timestamp,
     /// SQL 'ends_with' function
     /// Returns True if the value ends with the second argument.
     /// ```sql
-    /// SELECT ENDS_WITH(column_1, 'a') from df;
+    /// SELECT ENDS_WITH(column_1, 'a') FROM df;
     /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
     /// ```
     EndsWith,
     /// SQL 'initcap' function
     /// Returns the value with the first letter capitalized.
     /// ```sql
-    /// SELECT INITCAP(column_1) from df;
+    /// SELECT INITCAP(column_1) FROM df;
     /// ```
     #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function
     /// Returns the first (leftmost) `n` characters.
     /// ```sql
-    /// SELECT LEFT(column_1, 3) from df;
+    /// SELECT LEFT(column_1, 3) FROM df;
     /// ```
     Left,
     /// SQL 'length' function (characters)
     /// Returns the character length of the string.
     /// ```sql
-    /// SELECT LENGTH(column_1) from df;
+    /// SELECT LENGTH(column_1) FROM df;
     /// ```
     Length,
     /// SQL 'lower' function
     /// Returns an lowercased column.
     /// ```sql
-    /// SELECT LOWER(column_1) from df;
+    /// SELECT LOWER(column_1) FROM df;
     /// ```
     Lower,
     /// SQL 'ltrim' function
     /// Strip whitespaces from the left.
     /// ```sql
-    /// SELECT LTRIM(column_1) from df;
+    /// SELECT LTRIM(column_1) FROM df;
     /// ```
     LTrim,
     /// SQL 'octet_length' function
     /// Returns the length of a given string in bytes.
     /// ```sql
-    /// SELECT OCTET_LENGTH(column_1) from df;
+    /// SELECT OCTET_LENGTH(column_1) FROM df;
     /// ```
     OctetLength,
     /// SQL 'regexp_like' function
     /// True if `pattern` matches the value (optional: `flags`).
     /// ```sql
-    /// SELECT REGEXP_LIKE(column_1, 'xyz', 'i') from df;
+    /// SELECT REGEXP_LIKE(column_1, 'xyz', 'i') FROM df;
     /// ```
     RegexpLike,
     /// SQL 'replace' function
     /// Replace a given substring with another string.
     /// ```sql
-    /// SELECT REPLACE(column_1,'old','new') from df;
+    /// SELECT REPLACE(column_1,'old','new') FROM df;
     /// ```
     Replace,
     /// SQL 'reverse' function
     /// Return the reversed string.
     /// ```sql
-    /// SELECT REVERSE(column_1) from df;
+    /// SELECT REVERSE(column_1) FROM df;
     /// ```
     Reverse,
     /// SQL 'right' function
     /// Returns the last (rightmost) `n` characters.
     /// ```sql
-    /// SELECT RIGHT(column_1, 3) from df;
+    /// SELECT RIGHT(column_1, 3) FROM df;
     /// ```
     Right,
     /// SQL 'rtrim' function
     /// Strip whitespaces from the right.
     /// ```sql
-    /// SELECT RTRIM(column_1) from df;
+    /// SELECT RTRIM(column_1) FROM df;
     /// ```
     RTrim,
     /// SQL 'starts_with' function
     /// Returns True if the value starts with the second argument.
     /// ```sql
-    /// SELECT STARTS_WITH(column_1, 'a') from df;
+    /// SELECT STARTS_WITH(column_1, 'a') FROM df;
     /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
     /// ```
     StartsWith,
     /// SQL 'strpos' function
     /// Returns the index of the given substring in the target string.
     /// ```sql
-    /// SELECT STRPOS(column_1,'xyz') from df;
+    /// SELECT STRPOS(column_1,'xyz') FROM df;
     /// ```
     StrPos,
     /// SQL 'substr' function
     /// Returns a portion of the data (first character = 0) in the range.
     ///   \[start, start + length]
     /// ```sql
-    /// SELECT SUBSTR(column_1, 3, 5) from df;
+    /// SELECT SUBSTR(column_1, 3, 5) FROM df;
     /// ```
     Substring,
+    /// SQL 'strptime' function
+    /// Converts a string to a datetime using a format string.
+    /// ```sql
+    /// SELECT STRPTIME(column_1, '%d-%m-%Y %H:%M') FROM df;
+    /// ```
+    Strptime,
+    /// SQL 'time' function.
+    /// Converts a formatted string time to an actual Time type; ISO-8601 format is
+    /// assumed unless a strftime-compatible formatting string is provided as the second
+    /// parameter.
+    /// ```sql
+    /// SELECT TIME('10:30:45') FROM df;
+    /// SELECT TIME('20.30', '%H.%M') FROM df;
+    /// ```
+    Time,
     /// SQL 'upper' function
     /// Returns an uppercased column.
     /// ```sql
-    /// SELECT UPPER(column_1) from df;
+    /// SELECT UPPER(column_1) FROM df;
     /// ```
     Upper,
 
@@ -394,38 +424,38 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'coalesce' function
     /// Returns the first non-null value in the provided values/columns.
     /// ```sql
-    /// SELECT COALESCE(column_1, ...) from df;
+    /// SELECT COALESCE(column_1, ...) FROM df;
     /// ```
     Coalesce,
     /// SQL 'greatest' function
     /// Returns the greatest value in the list of expressions.
     /// ```sql
-    /// SELECT GREATEST(column_1, column_2, ...) from df;
+    /// SELECT GREATEST(column_1, column_2, ...) FROM df;
     /// ```
     Greatest,
     /// SQL 'if' function
     /// Returns expr1 if the boolean condition provided as the first
     /// parameter evaluates to true, and expr2 otherwise.
     /// ```sql
-    /// SELECT IF(column < 0, expr1, expr2) from df;
+    /// SELECT IF(column < 0, expr1, expr2) FROM df;
     /// ```
     If,
     /// SQL 'ifnull' function
     /// If an expression value is NULL, return an alternative value.
     /// ```sql
-    /// SELECT IFNULL(string_col, 'n/a') from df;
+    /// SELECT IFNULL(string_col, 'n/a') FROM df;
     /// ```
     IfNull,
     /// SQL 'least' function
     /// Returns the smallest value in the list of expressions.
     /// ```sql
-    /// SELECT LEAST(column_1, column_2, ...) from df;
+    /// SELECT LEAST(column_1, column_2, ...) FROM df;
     /// ```
     Least,
     /// SQL 'nullif' function
     /// Returns NULL if two expressions are equal, otherwise returns the first.
     /// ```sql
-    /// SELECT NULLIF(column_1, column_2) from df;
+    /// SELECT NULLIF(column_1, column_2) FROM df;
     /// ```
     NullIf,
 
@@ -435,64 +465,64 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'avg' function
     /// Returns the average (mean) of all the elements in the grouping.
     /// ```sql
-    /// SELECT AVG(column_1) from df;
+    /// SELECT AVG(column_1) FROM df;
     /// ```
     Avg,
     /// SQL 'count' function
     /// Returns the amount of elements in the grouping.
     /// ```sql
-    /// SELECT COUNT(column_1) from df;
-    /// SELECT COUNT(*) from df;
-    /// SELECT COUNT(DISTINCT column_1) from df;
-    /// SELECT COUNT(DISTINCT *) from df;
+    /// SELECT COUNT(column_1) FROM df;
+    /// SELECT COUNT(*) FROM df;
+    /// SELECT COUNT(DISTINCT column_1) FROM df;
+    /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
     /// SQL 'first' function
     /// Returns the first element of the grouping.
     /// ```sql
-    /// SELECT FIRST(column_1) from df;
+    /// SELECT FIRST(column_1) FROM df;
     /// ```
     First,
     /// SQL 'last' function
     /// Returns the last element of the grouping.
     /// ```sql
-    /// SELECT LAST(column_1) from df;
+    /// SELECT LAST(column_1) FROM df;
     /// ```
     Last,
     /// SQL 'max' function
     /// Returns the greatest (maximum) of all the elements in the grouping.
     /// ```sql
-    /// SELECT MAX(column_1) from df;
+    /// SELECT MAX(column_1) FROM df;
     /// ```
     Max,
     /// SQL 'median' function
     /// Returns the median element from the grouping.
     /// ```sql
-    /// SELECT MEDIAN(column_1) from df;
+    /// SELECT MEDIAN(column_1) FROM df;
     /// ```
     Median,
     /// SQL 'min' function
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
-    /// SELECT MIN(column_1) from df;
+    /// SELECT MIN(column_1) FROM df;
     /// ```
     Min,
     /// SQL 'stddev' function
     /// Returns the standard deviation of all the elements in the grouping.
     /// ```sql
-    /// SELECT STDDEV(column_1) from df;
+    /// SELECT STDDEV(column_1) FROM df;
     /// ```
     StdDev,
     /// SQL 'sum' function
     /// Returns the sum of all the elements in the grouping.
     /// ```sql
-    /// SELECT SUM(column_1) from df;
+    /// SELECT SUM(column_1) FROM df;
     /// ```
     Sum,
     /// SQL 'variance' function
     /// Returns the variance of all the elements in the grouping.
     /// ```sql
-    /// SELECT VARIANCE(column_1) from df;
+    /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
 
@@ -502,74 +532,74 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'array_length' function
     /// Returns the length of the array.
     /// ```sql
-    /// SELECT ARRAY_LENGTH(column_1) from df;
+    /// SELECT ARRAY_LENGTH(column_1) FROM df;
     /// ```
     ArrayLength,
     /// SQL 'array_lower' function
     /// Returns the minimum value in an array; equivalent to `array_min`.
     /// ```sql
-    /// SELECT ARRAY_LOWER(column_1) from df;
+    /// SELECT ARRAY_LOWER(column_1) FROM df;
     /// ```
     ArrayMin,
     /// SQL 'array_upper' function
     /// Returns the maximum value in an array; equivalent to `array_max`.
     /// ```sql
-    /// SELECT ARRAY_UPPER(column_1) from df;
+    /// SELECT ARRAY_UPPER(column_1) FROM df;
     /// ```
     ArrayMax,
     /// SQL 'array_sum' function
     /// Returns the sum of all values in an array.
     /// ```sql
-    /// SELECT ARRAY_SUM(column_1) from df;
+    /// SELECT ARRAY_SUM(column_1) FROM df;
     /// ```
     ArraySum,
     /// SQL 'array_mean' function
     /// Returns the mean of all values in an array.
     /// ```sql
-    /// SELECT ARRAY_MEAN(column_1) from df;
+    /// SELECT ARRAY_MEAN(column_1) FROM df;
     /// ```
     ArrayMean,
     /// SQL 'array_reverse' function
     /// Returns the array with the elements in reverse order.
     /// ```sql
-    /// SELECT ARRAY_REVERSE(column_1) from df;
+    /// SELECT ARRAY_REVERSE(column_1) FROM df;
     /// ```
     ArrayReverse,
     /// SQL 'array_unique' function
     /// Returns the array with the unique elements.
     /// ```sql
-    /// SELECT ARRAY_UNIQUE(column_1) from df;
+    /// SELECT ARRAY_UNIQUE(column_1) FROM df;
     /// ```
     ArrayUnique,
     /// SQL 'unnest' function
     /// Unnest/explodes an array column into multiple rows.
     /// ```sql
-    /// SELECT unnest(column_1) from df;
+    /// SELECT unnest(column_1) FROM df;
     /// ```
     Explode,
     /// SQL 'array_agg' function
     /// Concatenates the input expressions, including nulls, into an array.
     /// ```sql
-    /// SELECT ARRAY_AGG(column_1, column_2, ...) from df;
+    /// SELECT ARRAY_AGG(column_1, column_2, ...) FROM df;
     /// ```
     ArrayAgg,
     /// SQL 'array_to_string' function
     /// Takes all elements of the array and joins them into one string.
     /// ```sql
-    /// SELECT ARRAY_TO_STRING(column_1, ',') from df;
-    /// SELECT ARRAY_TO_STRING(column_1, ',', 'n/a') from df;
+    /// SELECT ARRAY_TO_STRING(column_1, ',') FROM df;
+    /// SELECT ARRAY_TO_STRING(column_1, ',', 'n/a') FROM df;
     /// ```
     ArrayToString,
     /// SQL 'array_get' function
     /// Returns the value at the given index in the array.
     /// ```sql
-    /// SELECT ARRAY_GET(column_1, 1) from df;
+    /// SELECT ARRAY_GET(column_1, 1) FROM df;
     /// ```
     ArrayGet,
     /// SQL 'array_contains' function
     /// Returns true if the array contains the value.
     /// ```sql
-    /// SELECT ARRAY_CONTAINS(column_1, 'foo') from df;
+    /// SELECT ARRAY_CONTAINS(column_1, 'foo') FROM df;
     /// ```
     ArrayContains,
     Udf(String),
@@ -733,8 +763,8 @@ impl PolarsSQLFunctions {
             // ----
             // Date functions
             // ----
-            "date" => Self::Date,
             "date_part" => Self::DatePart,
+            "strftime" => Self::Strftime,
 
             // ----
             // String functions
@@ -742,6 +772,8 @@ impl PolarsSQLFunctions {
             "bit_length" => Self::BitLength,
             "concat" => Self::Concat,
             "concat_ws" => Self::ConcatWS,
+            "date" => Self::Date,
+            "timestamp" | "datetime" => Self::Timestamp,
             "ends_with" => Self::EndsWith,
             #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
@@ -757,7 +789,9 @@ impl PolarsSQLFunctions {
             "right" => Self::Right,
             "rtrim" => Self::RTrim,
             "starts_with" => Self::StartsWith,
+            "strptime" => Self::Strptime,
             "substr" => Self::Substring,
+            "time" => Self::Time,
             "upper" => Self::Upper,
 
             // ----
@@ -850,7 +884,7 @@ impl SQLFunctionVisitor<'_> {
                             _ => polars_bail!(SQLSyntax: "invalid value for ROUND decimals ({})", args[1]),
                         }))
                     }),
-                    _ => polars_bail!(SQLSyntax: "invalid number of arguments for ROUND (expected 1-2, found {})", args.len()),
+                    _ => polars_bail!(SQLSyntax: "ROUND expects 1-2 arguments (found {})", args.len()),
                 }
             },
             Sign => self.visit_unary(Expr::sign),
@@ -890,7 +924,7 @@ impl SQLFunctionVisitor<'_> {
                         Ok(when(cond).then(expr1).otherwise(expr2))
                     }),
                     _ => {
-                        polars_bail!(SQLSyntax: "invalid number of arguments for IF ({})", args.len()
+                        polars_bail!(SQLSyntax: "IF expects 3 arguments (found {})", args.len()
                         )
                     },
                 }
@@ -900,7 +934,7 @@ impl SQLFunctionVisitor<'_> {
                 match args.len() {
                     2 => self.visit_variadic(coalesce),
                     _ => {
-                        polars_bail!(SQLSyntax:"Invalid number of arguments for IFNULL ({})", args.len())
+                        polars_bail!(SQLSyntax: "IFNULL expects 2 arguments (found {})", args.len())
                     },
                 }
             },
@@ -914,7 +948,7 @@ impl SQLFunctionVisitor<'_> {
                             .otherwise(l)
                     }),
                     _ => {
-                        polars_bail!(SQLSyntax:"Invalid number of arguments for NULLIF ({})", args.len())
+                        polars_bail!(SQLSyntax: "NULLIF expects 2 arguments (found {})", args.len())
                     },
                 }
             },
@@ -922,16 +956,6 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Date functions
             // ----
-            Date => {
-                let args = extract_args(function)?;
-                match args.len() {
-                    1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
-                    2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
-                    _ => {
-                        polars_bail!(SQLSyntax: "invalid number of arguments for DATE ({})", args.len())
-                    },
-                }
-            },
             DatePart => self.try_visit_binary(|part, e| {
                 match part {
                     Expr::Literal(LiteralValue::String(p)) => {
@@ -950,6 +974,15 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             }),
+            Strftime => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.visit_binary(|e, fmt: String| e.dt().strftime(fmt.as_str())),
+                    _ => {
+                        polars_bail!(SQLSyntax: "STRFTIME expects 2 arguments (found {})", args.len())
+                    },
+                }
+            },
 
             // ----
             // String functions
@@ -958,7 +991,7 @@ impl SQLFunctionVisitor<'_> {
             Concat => {
                 let args = extract_args(function)?;
                 if args.is_empty() {
-                    polars_bail!(SQLSyntax: "invalid number of arguments for CONCAT (0)");
+                    polars_bail!(SQLSyntax: "CONCAT expects at least 1 argument (found 0)");
                 } else {
                     self.visit_variadic(|exprs: &[Expr]| concat_str(exprs, "", true))
                 }
@@ -966,7 +999,7 @@ impl SQLFunctionVisitor<'_> {
             ConcatWS => {
                 let args = extract_args(function)?;
                 if args.len() < 2 {
-                    polars_bail!(SQLSyntax: "invalid number of arguments for CONCAT_WS ({})", args.len());
+                    polars_bail!(SQLSyntax: "CONCAT_WS expects at least 2 arguments (found {})", args.len());
                 } else {
                     self.try_visit_variadic(|exprs: &[Expr]| {
                         match &exprs[0] {
@@ -974,6 +1007,16 @@ impl SQLFunctionVisitor<'_> {
                             _ => polars_bail!(SQLSyntax: "CONCAT_WS 'separator' must be a literal string (found {:?})", exprs[0]),
                         }
                     })
+                }
+            },
+            Date => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
+                    2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+                    _ => {
+                        polars_bail!(SQLSyntax: "DATE expects 1-2 arguments (found {})", args.len())
+                    },
                 }
             },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
@@ -1010,7 +1053,7 @@ impl SQLFunctionVisitor<'_> {
                     1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
                     2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                     _ => {
-                        polars_bail!(SQLSyntax: "invalid number of arguments for LTRIM ({})", args.len())
+                        polars_bail!(SQLSyntax: "LTRIM expects 1-2 arguments (found {})", args.len())
                     },
                 }
             },
@@ -1040,7 +1083,7 @@ impl SQLFunctionVisitor<'_> {
                             },
                             true))
                     }),
-                    _ => polars_bail!(SQLSyntax: "invalid number of arguments for REGEXP_LIKE ({})",args.len()),
+                    _ => polars_bail!(SQLSyntax: "REGEXP_LIKE expects 2-3 arguments (found {})",args.len()),
                 }
             },
             Replace => {
@@ -1049,7 +1092,7 @@ impl SQLFunctionVisitor<'_> {
                     3 => self
                         .try_visit_ternary(|e, old, new| Ok(e.str().replace_all(old, new, true))),
                     _ => {
-                        polars_bail!(SQLSyntax: "invalid number of arguments for REPLACE ({})", args.len())
+                        polars_bail!(SQLSyntax: "REPLACE expects 3 arguments (found {})", args.len())
                     },
                 }
             },
@@ -1084,11 +1127,53 @@ impl SQLFunctionVisitor<'_> {
                     1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
                     2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
                     _ => {
-                        polars_bail!(SQLSyntax: "invalid number of arguments for RTRIM ({})", args.len())
+                        polars_bail!(SQLSyntax: "RTRIM expects 1-2 arguments (found {})", args.len())
                     },
                 }
             },
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
+            Strptime => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.visit_binary(|e, fmt| {
+                        e.str().strptime(
+                            DataType::Datetime(TimeUnit::Microseconds, None),
+                            StrptimeOptions {
+                                format: Some(fmt),
+                                ..Default::default()
+                            },
+                            lit("latest"),
+                        )
+                    }),
+                    _ => {
+                        polars_bail!(SQLSyntax: "STRPTIME expects 2 arguments (found {})", args.len())
+                    },
+                }
+            },
+            Time => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.str().to_time(StrptimeOptions::default())),
+                    2 => self.visit_binary(|e, fmt| e.str().to_time(fmt)),
+                    _ => {
+                        polars_bail!(SQLSyntax: "TIME expects 1-2 arguments (found {})", args.len())
+                    },
+                }
+            },
+            Timestamp => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| {
+                        e.str()
+                            .to_datetime(None, None, StrptimeOptions::default(), lit("latest"))
+                    }),
+                    2 => self
+                        .visit_binary(|e, fmt| e.str().to_datetime(None, None, fmt, lit("latest"))),
+                    _ => {
+                        polars_bail!(SQLSyntax: "DATETIME expects 1-2 arguments (found {})", args.len())
+                    },
+                }
+            },
             Substring => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1124,7 +1209,7 @@ impl SQLFunctionVisitor<'_> {
                             }
                         })
                     }),
-                    _ => polars_bail!(SQLSyntax: "invalid number of arguments for SUBSTR ({})", args.len()),
+                    _ => polars_bail!(SQLSyntax: "SUBSTR expects 2-3 arguments (found {})", args.len()),
                 }
             },
             Upper => self.visit_unary(|e| e.str().to_uppercase()),
@@ -1392,7 +1477,7 @@ impl SQLFunctionVisitor<'_> {
                 },
             }),
             _ => {
-                polars_bail!(SQLSyntax: "invalid number of arguments for ARRAY_TO_STRING ({})", args.len())
+                polars_bail!(SQLSyntax: "ARRAY_TO_STRING expects 2-3 arguments (found {})", args.len())
             },
         }
     }

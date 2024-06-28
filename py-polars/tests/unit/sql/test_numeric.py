@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 
 
 def test_div() -> None:
-    res = pl.sql("""
+    res = pl.sql(
+        """
         SELECT label, DIV(a, b) AS a_div_b, DIV(tbl.b, tbl.a) AS b_div_a
         FROM (
           VALUES
@@ -24,7 +25,8 @@ def test_div() -> None:
             ('d', 5.0, NULL),
             ('e', 2.5, 5)
         ) AS tbl(label, a, b)
-    """).collect()
+        """
+    ).collect()
 
     assert res.to_dict(as_series=False) == {
         "label": ["a", "b", "c", "d", "e"],
@@ -127,10 +129,16 @@ def test_round_ndigits_errors() -> None:
             SQLSyntaxError, match=r"invalid value for ROUND decimals \('!!'\)"
         ):
             ctx.execute("SELECT ROUND(n,'!!') AS n FROM df")
+
         with pytest.raises(
             SQLInterfaceError, match=r"ROUND .* negative decimals value \(-1\)"
         ):
             ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError, match=r"ROUND expects 1-2 arguments \(found 4\)"
+        ):
+            ctx.execute("SELECT ROUND(1.2345,6,7,8) AS n FROM df")
 
 
 def test_stddev_variance() -> None:

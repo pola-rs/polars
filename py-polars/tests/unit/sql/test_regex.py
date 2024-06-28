@@ -139,6 +139,6 @@ def test_regexp_like_errors() -> None:
 
         with pytest.raises(
             SQLSyntaxError,
-            match="invalid number of arguments for REGEXP_LIKE",
+            match=r"REGEXP_LIKE expects 2-3 arguments \(found 1\)",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")

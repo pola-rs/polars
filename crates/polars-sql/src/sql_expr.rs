@@ -26,8 +26,38 @@ use sqlparser::parser::{Parser, ParserOptions};
 use crate::functions::SQLFunctionVisitor;
 use crate::SQLContext;
 
+static DATETIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static DATE_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static TIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+fn is_iso_datetime(value: &str) -> bool {
+    let dtm_regex = DATETIME_LITERAL_RE.get_or_init(|| {
+        RegexBuilder::new(
+            r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$",
+        )
+        .build()
+        .unwrap()
+    });
+    dtm_regex.is_match(value)
+}
+
+fn is_iso_date(value: &str) -> bool {
+    let dt_regex = DATE_LITERAL_RE.get_or_init(|| {
+        RegexBuilder::new(r"^\d{4}-[01]\d-[0-3]\d$")
+            .build()
+            .unwrap()
+    });
+    dt_regex.is_match(value)
+}
+
+fn is_iso_time(value: &str) -> bool {
+    let tm_regex = TIME_LITERAL_RE.get_or_init(|| {
+        RegexBuilder::new(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$")
+            .build()
+            .unwrap()
+    });
+    tm_regex.is_match(value)
+}
 
 #[inline]
 #[cold]
@@ -136,7 +166,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         SQLDataType::Timestamp(prec, tz) => match tz {
             TimezoneInfo::None => DataType::Datetime(timeunit_from_precision(prec)?, None),
             _ => {
-                polars_bail!(SQLInterface: "`timestamp` with timezone is not (yet) supported; found tz={}", tz)
+                polars_bail!(SQLInterface: "`timestamp` with timezone is not (yet) supported")
             },
         },
 
@@ -324,6 +354,48 @@ impl SQLExprVisitor<'_> {
                 trim_what,
                 trim_characters,
             } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
+            SQLExpr::TypedString { data_type, value } => match data_type {
+                SQLDataType::Date => {
+                    if is_iso_date(value) {
+                        Ok(lit(value.as_str()).cast(DataType::Date))
+                    } else {
+                        polars_bail!(SQLSyntax: "invalid DATE literal '{}'", value)
+                    }
+                },
+                SQLDataType::Time(None, TimezoneInfo::None) => {
+                    if is_iso_time(value) {
+                        Ok(lit(value.as_str()).str().to_time(StrptimeOptions {
+                            strict: true,
+                            ..Default::default()
+                        }))
+                    } else {
+                        polars_bail!(SQLSyntax: "invalid TIME literal '{}'", value)
+                    }
+                },
+                SQLDataType::Timestamp(None, TimezoneInfo::None) | SQLDataType::Datetime(None) => {
+                    if is_iso_datetime(value) {
+                        Ok(lit(value.as_str()).str().to_datetime(
+                            None,
+                            None,
+                            StrptimeOptions {
+                                strict: true,
+                                ..Default::default()
+                            },
+                            lit("latest"),
+                        ))
+                    } else {
+                        let fn_name = match data_type {
+                            SQLDataType::Timestamp(_, _) => "TIMESTAMP",
+                            SQLDataType::Datetime(_) => "DATETIME",
+                            _ => unreachable!(),
+                        };
+                        polars_bail!(SQLSyntax: "invalid {} literal '{}'", fn_name, value)
+                    }
+                },
+                _ => {
+                    polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
+                },
+            },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(value) => self.visit_literal(value),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
@@ -487,22 +559,14 @@ impl SQLExprVisitor<'_> {
                 let left_dtype = expr_dtype
                     .unwrap_or_else(|| self.active_schema.as_ref().unwrap().get(&name).unwrap());
 
-                let dt_regex = DATE_LITERAL_RE
-                    .get_or_init(|| RegexBuilder::new(r"^\d{4}-[01]\d-[0-3]\d").build().unwrap());
-                let tm_regex = TIME_LITERAL_RE.get_or_init(|| {
-                    RegexBuilder::new(r"^[012]\d:[0-5]\d:[0-5]\d")
-                        .build()
-                        .unwrap()
-                });
-
                 match left_dtype {
-                    DataType::Time if tm_regex.is_match(s) => {
+                    DataType::Time if is_iso_time(s) => {
                         right.clone().strict_cast(left_dtype.clone())
                     },
-                    DataType::Date if dt_regex.is_match(s) => {
+                    DataType::Date if is_iso_date(s) => {
                         right.clone().strict_cast(left_dtype.clone())
                     },
-                    DataType::Datetime(_, _) if dt_regex.is_match(s) => {
+                    DataType::Datetime(_, _) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
                             lit(format!("{}T00:00:00", s)).strict_cast(left_dtype.clone())
