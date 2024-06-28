@@ -34,6 +34,10 @@ def columns(
     .. deprecated:: 0.20.26
         Use :class:`column` instead in conjunction with a list comprehension.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Generate a fixed sequence of `column` objects suitable for passing to the
     @dataframes strategy, or using standalone (note that this function is not itself
     a strategy).
