@@ -626,10 +626,13 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
 
     for (date1, date2), part_df in df.group_by(
         pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
-        pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+        pl.col("date2")
+        .cast(pl.String)
+        .map_elements(urllib.parse.quote, return_dtype=pl.String)
+        .fill_null("__HIVE_DEFAULT_PARTITION__"),
     ):
-        date2 = urllib.parse.quote(date2)
         path = root / f"date1={date1}/date2={date2}/data.bin"
+        print(date2, path)
         path.parent.mkdir(exist_ok=True, parents=True)
         part_df.write_parquet(path)
 

@@ -240,7 +240,7 @@ impl ParsedBuffer for Utf8Field {
 }
 
 #[cfg(not(feature = "dtype-categorical"))]
-pub(crate) struct CategoricalField {
+pub struct CategoricalField {
     phantom: std::marker::PhantomData<u8>,
 }
 
