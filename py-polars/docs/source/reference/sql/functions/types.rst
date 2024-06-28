@@ -78,7 +78,7 @@ Convert a value to a different datatype, returning `NULL` if the conversion fail
     # │ u16   ┆ date       │
     # ╞═══════╪════════════╡
     # │ 65432 ┆ 1999-12-31 │
-    # │ 10101 ┆ null       │
+    # │ null  ┆ null       │
     # │ null  ┆ 2024-01-01 │
     # └───────┴────────────┘
 
