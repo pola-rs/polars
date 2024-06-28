@@ -49,6 +49,10 @@ def series(  # noqa: D417
     """
     Hypothesis strategy for producing Polars Series.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     name : {str, strategy}, optional
@@ -284,6 +288,10 @@ def dataframes(  # noqa: D417
     """
     Hypothesis strategy for producing Polars DataFrames or LazyFrames.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     cols : {int, columns}, optional
@@ -492,6 +500,10 @@ def dataframes(  # noqa: D417
 class column:
     """
     Define a column for use with the `dataframes` strategy.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
 
     Parameters
     ----------

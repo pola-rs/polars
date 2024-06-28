@@ -95,6 +95,10 @@ def dtypes(
     """
     Create a strategy for generating Polars :class:`DataType` objects.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     allowed_dtypes

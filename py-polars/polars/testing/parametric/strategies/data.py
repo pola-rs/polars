@@ -256,6 +256,10 @@ def lists(
     """
     Create a strategy for generating lists of the given data type.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     inner_dtype
