@@ -1210,3 +1210,23 @@ def test_read_byte_stream_split_arrays(
     read = pl.read_parquet(f)
 
     assert_frame_equal(read, df)
+
+
+@pytest.mark.write_disk()
+def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) -> None:
+    filename = tmp_path / "a.parquet"
+
+    # @NOTE:
+    # The minimum that I could get it to crash which was ~132000, but let's
+    # just do 150000 to be sure.
+    n = 150000
+    x = pl.DataFrame(
+        {"x": np.linspace((1, 2), (2 * n, 2 * n * 1), n, dtype=np.float32)},
+        schema={"x": pl.Array(pl.Float32, 2)},
+    )
+
+    x.write_parquet(filename)
+    b = pl.read_parquet(filename, use_pyarrow=True)
+
+    assert b["x"].shape[0] == n
+    assert_frame_equal(b, x)

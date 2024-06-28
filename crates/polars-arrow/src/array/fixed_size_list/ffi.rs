@@ -35,6 +35,8 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for FixedSizeListArray {
         let child = unsafe { array.child(0)? };
         let values = ffi::try_from(child)?;
 
-        Self::try_new(data_type, values, validity)
+        let mut fsl = Self::try_new(data_type, values, validity)?;
+        fsl.slice(array.offset(), array.length());
+        Ok(fsl)
     }
 }
