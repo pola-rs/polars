@@ -34,6 +34,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -112,6 +113,7 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SchemaDefinition,
         SchemaDict,
+        SerializationFormat,
         StartBy,
         UniqueKeepStrategy,
     )
@@ -346,7 +348,9 @@ class LazyFrame:
         return self
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> LazyFrame:
+    def deserialize(
+        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+    ) -> LazyFrame:
         """
         Read a logical plan from a file to construct a LazyFrame.
 
@@ -356,10 +360,15 @@ class LazyFrame:
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
+        format
+            The format with which the LazyFrame was serialized. Options:
+
+            - `"binary"`: Deserialize from binary format (bytes). This is the default.
+            - `"json"`: Deserialize from JSON format (string).
 
         Warnings
         --------
-        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        This function uses :mod:`pickle` if the logical plan contains Python UDFs,
         and as such inherits the security implications. Deserializing can execute
         arbitrary code, so it should only be attempted on trusted data.
 
@@ -367,12 +376,17 @@ class LazyFrame:
         --------
         LazyFrame.serialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
         >>> import io
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
-        >>> json = lf.serialize()
-        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        >>> bytes = lf.serialize()
+        >>> pl.LazyFrame.deserialize(io.BytesIO(bytes)).collect()
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -387,7 +401,15 @@ class LazyFrame:
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
 
-        return cls._from_pyldf(PyLazyFrame.deserialize(source))
+        if format == "binary":
+            deserializer = PyLazyFrame.deserialize_binary
+        elif format == "json":
+            deserializer = PyLazyFrame.deserialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return cls._from_pyldf(deserializer(source))
 
     @property
     def columns(self) -> list[str]:
@@ -626,13 +648,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def serialize(self, file: None = ...) -> str: ...
-
+    def serialize(
+        self, file: None = ..., *, format: Literal["binary"] = ...
+    ) -> bytes: ...
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None: ...
+    def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+    @overload
+    def serialize(
+        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+    ) -> None: ...
 
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
+    def serialize(
+        self,
+        file: IOBase | str | Path | None = None,
+        *,
+        format: SerializationFormat = "binary",
+    ) -> bytes | str | None:
+        r"""
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
         Parameters
@@ -640,24 +672,34 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         file
             File path to which the result should be written. If set to `None`
             (default), the output is returned as a string instead.
+        format
+            The format in which to serialize. Options:
+
+            - `"binary"`: Serialize to binary format (bytes). This is the default.
+            - `"json"`: Serialize to JSON format (string).
 
         See Also
         --------
         LazyFrame.deserialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
-        Serialize the logical plan into a JSON string.
+        Serialize the logical plan into a binary representation.
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
-        >>> json = lf.serialize()
-        >>> json
-        '{"MapFunction":{"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"filter":null}},"function":{"Stats":"Sum"}}}'
+        >>> bytes = lf.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
-        The logical plan can later be deserialized back into a LazyFrame.
+        The bytes can later be deserialized back into a LazyFrame.
 
         >>> import io
-        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        >>> pl.LazyFrame.deserialize(io.BytesIO(bytes)).collect()
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -667,26 +709,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6   │
         └─────┘
         """
-
-        def serialize_to_string() -> str:
-            with BytesIO() as buf:
-                self._ldf.serialize(buf)
-                json_bytes = buf.getvalue()
-            return json_bytes.decode("utf8")
-
-        if file is None:
-            return serialize_to_string()
-        elif isinstance(file, StringIO):
-            json_str = serialize_to_string()
-            file.write(json_str)
-            return None
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-            self._ldf.serialize(file)
-            return None
+        if format == "binary":
+            serializer = self._ldf.serialize_binary
+        elif format == "json":
+            serializer = self._ldf.serialize_json
         else:
-            self._ldf.serialize(file)
-            return None
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return serialize_polars_object(serializer, file, format)
 
     def pipe(
         self,

@@ -88,6 +88,7 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        SerializationFormat,
         TemporalLiteral,
         WindowMappingStrategy,
     )
@@ -328,7 +329,9 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> Expr:
+    def deserialize(
+        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+    ) -> Expr:
         """
         Read a serialized expression from a file.
 
@@ -338,10 +341,15 @@ class Expr:
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
+        format
+            The format with which the Expr was serialized. Options:
+
+            - `"binary"`: Deserialize from binary format (bytes). This is the default.
+            - `"json"`: Deserialize from JSON format (string).
 
         Warnings
         --------
-        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        This function uses :mod:`pickle` if the logical plan contains Python UDFs,
         and as such inherits the security implications. Deserializing can execute
         arbitrary code, so it should only be attempted on trusted data.
 
@@ -349,12 +357,17 @@ class Expr:
         --------
         Expr.meta.serialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
-        >>> from io import StringIO
+        >>> import io
         >>> expr = pl.col("foo").sum().over("bar")
-        >>> json = expr.meta.serialize()
-        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        >>> bytes = expr.meta.serialize()
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if isinstance(source, StringIO):
@@ -362,9 +375,15 @@ class Expr:
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
 
-        expr = cls.__new__(cls)
-        expr._pyexpr = PyExpr.deserialize(source)
-        return expr
+        if format == "binary":
+            deserializer = PyExpr.deserialize_binary
+        elif format == "json":
+            deserializer = PyExpr.deserialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return cls._from_pyexpr(deserializer(source))
 
     def to_physical(self) -> Expr:
         """
@@ -10479,7 +10498,7 @@ class Expr:
             " Enclose your input in `io.StringIO` to keep the same behavior.",
             version="0.20.11",
         )
-        return cls.deserialize(StringIO(value))
+        return cls.deserialize(StringIO(value), format="json")
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

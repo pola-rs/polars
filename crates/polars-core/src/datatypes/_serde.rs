@@ -62,7 +62,7 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
             {
                 let mut utf8array = MutablePlString::with_capacity(seq.size_hint().unwrap_or(10));
                 while let Some(key) = seq.next_element()? {
-                    let key: Option<&str> = key;
+                    let key: Option<String> = key;
                     utf8array.push(key)
                 }
                 Ok(Wrap(utf8array.into()))

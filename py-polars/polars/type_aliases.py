@@ -106,6 +106,7 @@ PivotAgg: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
+SerializationFormat: TypeAlias = Literal["binary", "json"]
 SizeUnit: TypeAlias = Literal[
     "b",
     "kb",
