@@ -61,7 +61,7 @@ Convert a value to a different datatype, returning `NULL` if the conversion fail
 
     df = pl.DataFrame(
       {
-        "foo": [65432, 101010, -33333],
+        "foo": [65432, 10101, -33333],
         "bar": ["1999-12-31", "N/A", "2024-01-01"],
       }
     )
