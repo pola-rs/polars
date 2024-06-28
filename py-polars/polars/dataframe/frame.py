@@ -2378,8 +2378,10 @@ class DataFrame:
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
+
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+
     @overload
     def serialize(
         self, file: IOBase | str | Path, *, format: SerializationFormat = ...
@@ -8451,8 +8453,6 @@ class DataFrame:
         Operations on a `LazyFrame` are not executed until this is requested by either
         calling:
 
-        * :meth:`.fetch() <polars.LazyFrame.fetch>`
-            (run on a small number of rows)
         * :meth:`.collect() <polars.LazyFrame.collect>`
             (run on all data)
         * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>`
@@ -8461,9 +8461,11 @@ class DataFrame:
             (print optimized query plan)
         * :meth:`.show_graph() <polars.LazyFrame.show_graph>`
             (show (un)optimized query plan as graphviz graph)
+        * :meth:`.collect_schema() <polars.LazyFrame.collect_schema>`
+            (return the final frame schema)
 
-        Lazy operations are advised because they allow for query optimization and more
-        parallelization.
+        Lazy operations are recommended because they allow for query optimization and
+        additional parallelism.
 
         Returns
         -------

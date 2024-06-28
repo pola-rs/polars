@@ -355,7 +355,7 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 
 
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().select("*").fetch(2)
+    res = fruits_cars.lazy().select("*")._fetch(2)
     assert_frame_equal(res, res[:2])
 
 
