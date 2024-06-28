@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use polars_core::config;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
@@ -51,48 +52,117 @@ fn expand_paths(
         }
     };
 
-    if is_cloud {
+    if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "async")]
         {
-            use polars_io::cloud::{CloudLocation, PolarsObjectStore};
+            let format_path = |scheme: &str, bucket: &str, location: &str| {
+                if is_cloud {
+                    format!("{}://{}/{}", scheme, bucket, location)
+                } else {
+                    format!("/{}", location)
+                }
+            };
 
-            fn is_file_cloud(
-                path: &str,
-                cloud_options: Option<&CloudOptions>,
-            ) -> PolarsResult<bool> {
+            let expand_path_cloud = |path: &str,
+                                     cloud_options: Option<&CloudOptions>|
+             -> PolarsResult<(usize, Vec<PathBuf>)> {
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
-                    let (CloudLocation { prefix, .. }, store) =
+                    let (cloud_location, store) =
                         polars_io::cloud::build_object_store(path, cloud_options).await?;
-                    let store = PolarsObjectStore::new(store);
-                    PolarsResult::Ok(store.head(&prefix.into()).await.is_ok())
+
+                    let prefix = cloud_location.prefix.clone().into();
+
+                    let out = if !path.ends_with("/")
+                        && cloud_location.expansion.is_none()
+                        && store.head(&prefix).await.is_ok()
+                    {
+                        (
+                            0,
+                            vec![PathBuf::from(format_path(
+                                &cloud_location.scheme,
+                                &cloud_location.bucket,
+                                &cloud_location.prefix,
+                            ))],
+                        )
+                    } else {
+                        use futures::{StreamExt, TryStreamExt};
+
+                        if !is_cloud {
+                            // FORCE_ASYNC in the test suite wants us to raise a proper error message
+                            // for non-existent file paths. Note we can't do this for cloud paths as
+                            // there is no concept of a "directory" - a non-existent path is
+                            // indistinguishable from an empty directory.
+                            let path = PathBuf::from(path);
+                            if !path.is_dir() {
+                                path.metadata().map_err(|err| {
+                                    let msg =
+                                        Some(format!("{}: {}", err, path.to_str().unwrap()).into());
+                                    PolarsError::IO {
+                                        error: err.into(),
+                                        msg,
+                                    }
+                                })?;
+                            }
+                        }
+
+                        let mut paths = store
+                            .list(Some(&prefix))
+                            .map(|x| {
+                                x.map(|x| {
+                                    PathBuf::from({
+                                        format_path(
+                                            &cloud_location.scheme,
+                                            &cloud_location.bucket,
+                                            x.location.as_ref(),
+                                        )
+                                    })
+                                })
+                            })
+                            .try_collect::<Vec<_>>()
+                            .await
+                            .map_err(to_compute_err)?;
+
+                        paths.sort_unstable();
+                        (
+                            format_path(
+                                &cloud_location.scheme,
+                                &cloud_location.bucket,
+                                &cloud_location.prefix,
+                            )
+                            .len(),
+                            paths,
+                        )
+                    };
+
+                    PolarsResult::Ok(out)
                 })
-            }
+            };
 
             for (path_idx, path) in paths.iter().enumerate() {
                 let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
 
                 let path = if glob_start_idx.is_some() {
                     path.clone()
-                } else if !path.ends_with("/")
-                    && is_file_cloud(path.to_str().unwrap(), cloud_options)?
-                {
-                    update_expand_start_idx(0, path_idx)?;
-                    out_paths.push(path.clone());
-                    continue;
-                } else if !glob {
-                    polars_bail!(ComputeError: "not implemented: did not find cloud file at path = {} and `glob` was set to false", path.to_str().unwrap());
                 } else {
-                    // FIXME: This will fail! See https://github.com/pola-rs/polars/issues/17105
-                    path.join("**/*")
+                    let (expand_start_idx, paths) =
+                        expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
+                    out_paths.extend_from_slice(&paths);
+                    update_expand_start_idx(expand_start_idx, path_idx)?;
+                    continue;
                 };
 
                 update_expand_start_idx(0, path_idx)?;
 
-                out_paths.extend(
-                    polars_io::async_glob(path.to_str().unwrap(), cloud_options)?
-                        .into_iter()
-                        .map(PathBuf::from),
-                );
+                let iter = polars_io::pl_async::get_runtime().block_on_potential_spawn(
+                    polars_io::async_glob(path.to_str().unwrap(), cloud_options),
+                )?;
+
+                if is_cloud {
+                    out_paths.extend(iter.into_iter().map(PathBuf::from));
+                } else {
+                    // FORCE_ASYNC, remove leading file:// as not all readers support it.
+                    out_paths.extend(iter.iter().map(|x| &x[7..]).map(PathBuf::from))
+                }
             }
         }
         #[cfg(not(feature = "async"))]
@@ -141,7 +211,10 @@ fn expand_paths(
                 };
 
                 for path in paths {
-                    out_paths.push(path.map_err(to_compute_err)?);
+                    let path = path.map_err(to_compute_err)?;
+                    if !path.is_dir() {
+                        out_paths.push(path);
+                    }
                 }
             } else {
                 update_expand_start_idx(0, path_idx)?;

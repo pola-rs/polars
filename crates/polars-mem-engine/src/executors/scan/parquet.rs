@@ -338,7 +338,7 @@ impl ParquetExec {
 
             #[cfg(feature = "cloud")]
             {
-                if !is_cloud && config::verbose() {
+                if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");
                 }
 
