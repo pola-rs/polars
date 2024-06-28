@@ -70,6 +70,7 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
                     // make sure that empty and null lists don't get accessed and return null.
                     // SAFETY, we are within bounds
                     if len == 0 || !unsafe { validity.get_bit_unchecked(i) } {
+                        cum_offset += len as IdxSize;
                         return None;
                     }
 
