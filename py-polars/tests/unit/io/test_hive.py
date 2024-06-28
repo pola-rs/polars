@@ -579,7 +579,10 @@ def test_hive_partition_columns_contained_in_file(
 
 
 @pytest.mark.write_disk()
-def test_hive_partition_dates(tmp_path: Path) -> None:
+def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
+    # FIXME: Path gets un-escaped incorrectly for async
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
     df = pl.DataFrame(
         {
             "date1": [
@@ -621,10 +624,6 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             pl.col("date1", "date2").cast(pl.String)
         ),
     )
-
-    # FIXME: Path gets un-escaped incorrectly for async
-    if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
-        return
 
     root = tmp_path / "includes_hive_cols_in_file"
 
