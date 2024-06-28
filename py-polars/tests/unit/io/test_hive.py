@@ -633,7 +633,6 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
     ):
         path = root / f"date1={date1}/date2={date2}/data.bin"
         path.parent.mkdir(exist_ok=True, parents=True)
-        print(path)
         part_df.write_parquet(path)
 
     # The schema for the hive columns is included in the file, so it should just work
