@@ -290,7 +290,7 @@ impl FunctionNode {
 
                 #[cfg(not(feature = "dtype-categorical"))]
                 {
-                    Arc::get_mut(function).unwrap().call_udf(df)
+                    function.lock().unwrap().call_udf(df)
                 }
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
