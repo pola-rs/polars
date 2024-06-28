@@ -3393,6 +3393,7 @@ dependencies = [
  "polars-error",
  "polars-expr",
  "polars-io",
+ "polars-mem-engine",
  "polars-plan",
  "polars-utils",
  "rand",

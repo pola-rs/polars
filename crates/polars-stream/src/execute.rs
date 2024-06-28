@@ -111,6 +111,9 @@ fn run_subgraph(
         let mut phys_recv = Vec::new();
         let mut phys_send = Vec::new();
         for (node_key, node) in graph.nodes.iter_mut() {
+            // We can't directly loop over nodes because we need iter_mut to get
+            // multiple mutable references without the compiler complaining about
+            // borrowing graph.nodes while it was borrowed previous iteration.
             if !nodes.contains(&node_key) {
                 continue;
             }
@@ -159,8 +162,8 @@ fn run_subgraph(
     })?;
 
     // Finalize computation and get any in-memory results.
-    for (node_key, node) in graph.nodes.iter_mut() {
-        if let Some(df) = node.compute.finalize()? {
+    for node_key in nodes.iter().copied() {
+        if let Some(df) = graph.nodes[node_key].compute.finalize()? {
             finalize_output.insert(node_key, df);
         }
     }
@@ -173,8 +176,12 @@ pub fn execute_graph(
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     let mut out = SparseSecondaryMap::new();
     loop {
+        // println!("updating state");
         graph.update_all_states();
         let (nodes, pipes) = find_runnable_subgraph(graph);
+        // for node in &nodes {
+        //     println!("running {}", graph.nodes[*node].compute.name());
+        // }
         if nodes.is_empty() {
             break;
         }

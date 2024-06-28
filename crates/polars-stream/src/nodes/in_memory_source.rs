@@ -11,15 +11,15 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{get_ideal_morsel_size, Morsel, MorselSeq};
 
-pub struct InMemorySource {
+pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
     morsel_size: usize,
     seq: AtomicU64,
 }
 
-impl InMemorySource {
+impl InMemorySourceNode {
     pub fn new(source: Arc<DataFrame>) -> Self {
-        InMemorySource {
+        InMemorySourceNode {
             source: Some(source),
             morsel_size: 0,
             seq: AtomicU64::new(0),
@@ -27,7 +27,11 @@ impl InMemorySource {
     }
 }
 
-impl ComputeNode for InMemorySource {
+impl ComputeNode for InMemorySourceNode {
+    fn name(&self) -> &'static str {
+        "in_memory_source"
+    }
+
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
         assert!(recv.is_empty());
         assert!(send.len() == 1);

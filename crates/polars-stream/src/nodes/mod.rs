@@ -7,13 +7,17 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 
+pub mod in_memory_map;
 pub mod filter;
 pub mod in_memory_sink;
 pub mod in_memory_source;
+pub mod map;
 pub mod select;
 pub mod simple_projection;
 
-pub trait ComputeNode {
+pub trait ComputeNode: Send + Sync {
+    fn name(&self) -> &'static str;
+
     /// Update the state of this node given the state of our input and output
     /// ports. May be called multiple times until fully resolved for each
     /// execution cycle.

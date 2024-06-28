@@ -82,7 +82,9 @@ impl Graph {
             send_state.extend(node.outputs.iter().map(|o| self.pipes[*o].recv_state));
 
             // Compute the new state of this node given its environment.
+            // println!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
             node.compute.update_state(&mut recv_state, &mut send_state);
+            // println!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
 
             // Propagate information.
             for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
@@ -134,7 +136,7 @@ pub struct LogicalPipe {
     pub recv_state: PortState,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum PortState {
     Blocked,
     Ready,

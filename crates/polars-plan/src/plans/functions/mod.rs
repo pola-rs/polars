@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub use dsl::*;
 use polars_core::prelude::*;
@@ -60,7 +60,7 @@ pub enum FunctionNode {
     #[cfg_attr(feature = "serde", serde(skip))]
     /// Streaming engine pipeline
     Pipeline {
-        function: Arc<dyn DataFrameUdfMut>,
+        function: Arc<Mutex<dyn DataFrameUdfMut>>,
         schema: SchemaRef,
         original: Option<Arc<IRPlan>>,
     },
@@ -250,7 +250,7 @@ impl FunctionNode {
         }
     }
 
-    pub fn evaluate(&mut self, mut df: DataFrame) -> PolarsResult<DataFrame> {
+    pub fn evaluate(&self, mut df: DataFrame) -> PolarsResult<DataFrame> {
         use FunctionNode::*;
         match self {
             Opaque { function, .. } => function.call_udf(df),
@@ -285,7 +285,7 @@ impl FunctionNode {
                 #[cfg(feature = "dtype-categorical")]
                 {
                     let _sc = StringCacheHolder::hold();
-                    Arc::get_mut(function).unwrap().call_udf(df)
+                    function.lock().unwrap().call_udf(df)
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]

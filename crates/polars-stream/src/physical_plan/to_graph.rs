@@ -1,6 +1,11 @@
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 use polars_error::PolarsResult;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
-use polars_plan::plans::{AExpr, Context};
+use polars_expr::state::ExecutionState;
+use polars_mem_engine::create_physical_plan;
+use polars_plan::plans::{AExpr, Context, IR};
 use polars_utils::arena::Arena;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
@@ -8,6 +13,8 @@ use slotmap::{SecondaryMap, SlotMap};
 use super::{PhysNode, PhysNodeKey};
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
+use crate::nodes::in_memory_map::InMemoryMapNode;
+use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 struct GraphConversionContext<'a> {
     phys_sm: &'a SlotMap<PhysNodeKey, PhysNode>,
@@ -49,9 +56,10 @@ fn to_graph_rec<'a>(
 
     use PhysNode::*;
     let graph_key = match &ctx.phys_sm[phys_node_key] {
-        InMemorySource { df } => ctx
-            .graph
-            .add_node(nodes::in_memory_source::InMemorySource::new(df.clone()), []),
+        InMemorySource { df } => ctx.graph.add_node(
+            nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
+            [],
+        ),
 
         Filter { predicate, input } => {
             let phys_predicate_expr = create_physical_expr(
@@ -71,7 +79,7 @@ fn to_graph_rec<'a>(
         Select {
             selectors,
             input,
-            schema,
+            output_schema,
             extend_original,
         } => {
             let phys_selectors = selectors
@@ -88,7 +96,11 @@ fn to_graph_rec<'a>(
                 .collect::<PolarsResult<_>>()?;
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::select::SelectNode::new(phys_selectors, schema.clone(), *extend_original),
+                nodes::select::SelectNode::new(
+                    phys_selectors,
+                    output_schema.clone(),
+                    *extend_original,
+                ),
                 [input_key],
             )
         },
@@ -104,14 +116,64 @@ fn to_graph_rec<'a>(
         InMemorySink { input, schema } => {
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
-                nodes::in_memory_sink::InMemorySink::new(schema.clone()),
+                nodes::in_memory_sink::InMemorySinkNode::new(schema.clone()),
                 [input_key],
             )
         },
 
-        // Fallback to the in-memory engine.
-        Fallback(_node) => {
-            todo!()
+        InMemoryMap {
+            input,
+            input_schema,
+            map,
+        } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::in_memory_map::InMemoryMapNode::new(input_schema.clone(), map.clone()),
+                [input_key],
+            )
+        },
+
+        Map { input, map } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph
+                .add_node(nodes::map::MapNode::new(map.clone()), [input_key])
+        },
+
+        Sort {
+            input,
+            input_schema,
+            by_column,
+            slice,
+            sort_options,
+        } => {
+            let input_schema = input_schema.clone();
+            let by_column = by_column.clone();
+            let slice = slice.clone();
+            let sort_options = sort_options.clone();
+
+            let lmdf = Arc::new(LateMaterializedDataFrame::default());
+            let mut lp_arena = Arena::default();
+            let df_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
+            let sort_node = lp_arena.add(IR::Sort {
+                input: df_node,
+                by_column: by_column.clone(),
+                slice: slice.clone(),
+                sort_options: sort_options.clone(),
+            });
+            let executor = Mutex::new(create_physical_plan(sort_node, &mut lp_arena, ctx.expr_arena)?);
+
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::in_memory_map::InMemoryMapNode::new(
+                    input_schema.clone(),
+                    Arc::new(move |df| {
+                        lmdf.set_materialized_dataframe(df);
+                        let mut state = ExecutionState::new();
+                        executor.lock().execute(&mut state)
+                    }),
+                ),
+                [input_key],
+            )
         },
     };
 

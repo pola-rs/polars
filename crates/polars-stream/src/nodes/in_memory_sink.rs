@@ -14,13 +14,13 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
 use crate::utils::in_memory_linearize::linearize;
 
-pub struct InMemorySink {
+pub struct InMemorySinkNode {
     morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
     schema: Arc<Schema>,
     done: bool,
 }
 
-impl InMemorySink {
+impl InMemorySinkNode {
     pub fn new(schema: Arc<Schema>) -> Self {
         Self {
             morsels_per_pipe: Mutex::default(),
@@ -30,15 +30,19 @@ impl InMemorySink {
     }
 }
 
-impl ComputeNode for InMemorySink {
+impl ComputeNode for InMemorySinkNode {
+    fn name(&self) -> &'static str {
+        "in_memory_sink"
+    }
+
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
         assert!(send.is_empty());
         assert!(recv.len() == 1);
 
-        if self.done || recv[0] == PortState::Done {
+        // If a sink is done, it's done, otherwise it will just reflect its
+        // input state.
+        if self.done {
             recv[0] = PortState::Done;
-        } else {
-            recv[0] = PortState::Ready;
         }
     }
 
