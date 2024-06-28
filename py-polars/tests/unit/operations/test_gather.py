@@ -48,3 +48,18 @@ def test_list_get_null_offset_17248() -> None:
     assert df.select(
         result=pl.when(pl.col.material.list.len() == 1).then("material").list.get(0),
     )["result"].to_list() == [None, "CI", "CI"]
+
+
+def test_list_get_null_oob_17252() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["BOB-3", "BOB", None],
+        }
+    )
+
+    split = df.with_columns(pl.col("name").str.split("-"))
+    assert split.with_columns(pl.col("name").list.get(0))["name"].to_list() == [
+        "BOB",
+        "BOB",
+        None,
+    ]
