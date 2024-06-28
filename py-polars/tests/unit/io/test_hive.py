@@ -622,9 +622,8 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
         ),
     )
 
-    root = tmp_path / "includes_hive_cols_in_file"
-
-    for perc_escape in [True]:
+    for perc_escape in [True, False]:
+        root = tmp_path / f"includes_hive_cols_in_file_{perc_escape}"
         for (date1, date2), part_df in df.group_by(
             pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
             pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),

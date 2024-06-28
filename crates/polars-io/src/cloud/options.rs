@@ -136,11 +136,8 @@ pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::Parse
         } else {
             // Some paths may contain '%', we need to double-encode as it doesn't seem
             // possible to construct `Url` without having it decode the path.
-            const ASCII_SET: percent_encoding::AsciiSet = percent_encoding::CONTROLS.add(b'%');
-            std::borrow::Cow::<str>::from(percent_encoding::percent_encode(
-                input.as_bytes(),
-                &ASCII_SET,
-            ))
+            const PERC: percent_encoding::AsciiSet = percent_encoding::CONTROLS.add(b'%');
+            std::borrow::Cow::<str>::from(percent_encoding::percent_encode(input.as_bytes(), &PERC))
         };
         let input = input.as_ref();
         url::Url::parse(input)?
