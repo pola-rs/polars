@@ -70,38 +70,70 @@ def test_list_get_null_oob_17252() -> None:
 
 
 def test_list_get_null_on_oob_false_success() -> None:
-    # test Series (single offset)
-    s = pl.Series("a", [[1, 2], None, [1, 2, 3]])
-    out = s.list.get(1, null_on_oob=False)
+    # test Series (single offset) with nulls
     expected = pl.Series("a", [2, None, 2], dtype=pl.Int64)
+    s_nulls = pl.Series("a", [[1, 2], None, [1, 2, 3]])
+    out = s_nulls.list.get(1, null_on_oob=False)
     assert_series_equal(out, expected)
 
-    # test Expr (multiple offsets)
-    df = s.to_frame().with_columns(pl.lit(1).alias("idx"))
+    # test Expr (multiple offsets) with nulls
+    df = s_nulls.to_frame().with_columns(pl.lit(1).alias("idx"))
+    out = df.select(pl.col("a").list.get("idx", null_on_oob=True)).to_series()
+    assert_series_equal(out, expected)
+
+    # test Series (single offset) with no nulls
+    expected = pl.Series("a", [2, 2, 2], dtype=pl.Int64)
+    s_no_nulls = pl.Series("a", [[1, 2], [1, 2], [1, 2, 3]])
+    out = s_no_nulls.list.get(1, null_on_oob=False)
+    assert_series_equal(out, expected)
+
+    # test Expr (multiple offsets) with no nulls
+    df = s_no_nulls.to_frame().with_columns(pl.lit(1).alias("idx"))
     out = df.select(pl.col("a").list.get("idx", null_on_oob=True)).to_series()
     assert_series_equal(out, expected)
 
 
 def test_list_get_null_on_oob_false_failure() -> None:
-    # test Series (single offset)
-    s = pl.Series("a", [[1, 2], None, [1, 2, 3]])
+    # test Series (single offset) with nulls
+    s_nulls = pl.Series("a", [[1, 2], None, [1, 2, 3]])
     with pytest.raises(ComputeError, match="get index is out of bounds"):
-        s.list.get(2, null_on_oob=False)
+        s_nulls.list.get(2, null_on_oob=False)
 
-    # test Expr (multiple offsets)
-    df = s.to_frame().with_columns(pl.lit(2).alias("idx"))
+    # test Expr (multiple offsets) with nulls
+    df = s_nulls.to_frame().with_columns(pl.lit(2).alias("idx"))
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        df.select(pl.col("a").list.get("idx", null_on_oob=False))
+
+    # test Series (single offset) with no nulls
+    s_no_nulls = pl.Series("a", [[1, 2], [1], [1, 2, 3]])
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        s_no_nulls.list.get(2, null_on_oob=False)
+
+    # test Expr (multiple offsets) with no nulls
+    df = s_no_nulls.to_frame().with_columns(pl.lit(2).alias("idx"))
     with pytest.raises(ComputeError, match="get index is out of bounds"):
         df.select(pl.col("a").list.get("idx", null_on_oob=False))
 
 
 def test_list_get_null_on_oob_true() -> None:
-    # test Series (single offset)
-    s = pl.Series("a", [[1, 2], None, [1, 2, 3]])
-    out = s.list.get(2, null_on_oob=True)
+    # test Series (single offset) with nulls
+    s_nulls = pl.Series("a", [[1, 2], None, [1, 2, 3]])
+    out = s_nulls.list.get(2, null_on_oob=True)
     expected = pl.Series("a", [None, None, 3], dtype=pl.Int64)
     assert_series_equal(out, expected)
 
-    # test Expr (multiple offsets)
-    df = s.to_frame().with_columns(pl.lit(2).alias("idx"))
+    # test Expr (multiple offsets) with nulls
+    df = s_nulls.to_frame().with_columns(pl.lit(2).alias("idx"))
+    out = df.select(pl.col("a").list.get("idx", null_on_oob=True)).to_series()
+    assert_series_equal(out, expected)
+
+    # test Series (single offset) with no nulls
+    s_no_nulls = pl.Series("a", [[1, 2], [1], [1, 2, 3]])
+    out = s_no_nulls.list.get(2, null_on_oob=True)
+    expected = pl.Series("a", [None, None, 3], dtype=pl.Int64)
+    assert_series_equal(out, expected)
+
+    # test Expr (multiple offsets) with no nulls
+    df = s_no_nulls.to_frame().with_columns(pl.lit(2).alias("idx"))
     out = df.select(pl.col("a").list.get("idx", null_on_oob=True)).to_series()
     assert_series_equal(out, expected)
