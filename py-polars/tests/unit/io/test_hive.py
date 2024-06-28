@@ -624,23 +624,24 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
 
     root = tmp_path / "includes_hive_cols_in_file"
 
-    for (date1, date2), part_df in df.group_by(
-        pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
-        pl.col("date2")
-        .cast(pl.String)
-        .map_elements(urllib.parse.quote, return_dtype=pl.String)
-        .fill_null("__HIVE_DEFAULT_PARTITION__"),
-    ):
-        path = root / f"date1={date1}/date2={date2}/data.bin"
-        path.parent.mkdir(exist_ok=True, parents=True)
-        part_df.write_parquet(path)
+    for perc_escape in [True]:
+        for (date1, date2), part_df in df.group_by(
+            pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+            pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+        ):
+            if perc_escape:
+                date2 = urllib.parse.quote(date2)
 
-    # The schema for the hive columns is included in the file, so it should just work
-    lf = pl.scan_parquet(root)
-    assert_frame_equal(lf.collect(), df)
+            path = root / f"date1={date1}/date2={date2}/data.bin"
+            path.parent.mkdir(exist_ok=True, parents=True)
+            part_df.write_parquet(path)
 
-    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
-    assert_frame_equal(
-        lf.collect(),
-        df.with_columns(pl.col("date1", "date2").cast(pl.String)),
-    )
+        # The schema for the hive columns is included in the file, so it should just work
+        lf = pl.scan_parquet(root)
+        assert_frame_equal(lf.collect(), df)
+
+        lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+        assert_frame_equal(
+            lf.collect(),
+            df.with_columns(pl.col("date1", "date2").cast(pl.String)),
+        )
