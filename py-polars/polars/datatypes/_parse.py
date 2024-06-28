@@ -25,7 +25,7 @@ from polars.datatypes.classes import (
 from polars.datatypes.convert import is_polars_dtype
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
+    from polars._typing import PolarsDataType, PythonDataType, SchemaDict
 
 
 UnionTypeOld = type(Union[int, str])

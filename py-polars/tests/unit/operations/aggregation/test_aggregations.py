@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_quantile_expr_input() -> None:

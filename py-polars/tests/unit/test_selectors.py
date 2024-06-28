@@ -7,11 +7,11 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._typing import SelectorType
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
-from polars.type_aliases import SelectorType
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
 
 if sys.version_info >= (3, 9):

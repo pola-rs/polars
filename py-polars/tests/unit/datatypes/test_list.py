@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_dtype() -> None:

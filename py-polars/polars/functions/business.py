@@ -12,7 +12,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import IntoExprColumn
+    from polars._typing import IntoExprColumn
 
 
 def business_day_count(

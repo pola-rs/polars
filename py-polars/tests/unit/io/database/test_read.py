@@ -21,7 +21,7 @@ from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import (
+    from polars._typing import (
         ConnectionOrCursor,
         DbReadEngine,
         SchemaDefinition,

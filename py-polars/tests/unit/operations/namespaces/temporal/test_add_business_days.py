@@ -16,7 +16,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import Roll, TimeUnit
+    from polars._typing import Roll, TimeUnit
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo

@@ -26,7 +26,7 @@ from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         PolarsTemporalType,
         TimeUnit,

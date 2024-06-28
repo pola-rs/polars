@@ -25,7 +25,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
     from tests.unit.conftest import MemoryUsage
 
 

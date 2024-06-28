@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame
-    from polars.type_aliases import SchemaDefinition
+    from polars._typing import SchemaDefinition
 
 
 def read_json(

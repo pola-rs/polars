@@ -35,7 +35,7 @@ from polars.datatypes.group import (
 )
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def _infer_dtype_from_database_typename(

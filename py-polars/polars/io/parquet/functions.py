@@ -27,7 +27,7 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
-    from polars.type_aliases import ParallelStrategy, SchemaDict
+    from polars._typing import ParallelStrategy, SchemaDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")

@@ -66,8 +66,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
+    from polars._typing import PolarsDataType
     from polars.dependencies import pandas as pd
-    from polars.type_aliases import PolarsDataType
 
 
 def sequence_to_pyseries(

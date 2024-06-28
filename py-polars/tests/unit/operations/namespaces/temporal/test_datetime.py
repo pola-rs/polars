@@ -15,7 +15,7 @@ from polars.testing.parametric import series
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import TemporalLiteral, TimeUnit
+    from polars._typing import TemporalLiteral, TimeUnit
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars import LazyFrame
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 _ROW_LIMIT = 5  # max generated frame/series length

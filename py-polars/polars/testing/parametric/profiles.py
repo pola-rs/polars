@@ -5,7 +5,7 @@ import re
 
 from hypothesis import settings
 
-from polars.type_aliases import ParametricProfileNames
+from polars._typing import ParametricProfileNames
 
 
 def load_profile(

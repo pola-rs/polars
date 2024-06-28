@@ -10,7 +10,7 @@ from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(

@@ -64,8 +64,8 @@ if TYPE_CHECKING:
 
     from hypothesis.strategies import SearchStrategy
 
+    from polars._typing import PolarsDataType, SchemaDict, TimeUnit
     from polars.datatypes import DataType, DataTypeClass
-    from polars.type_aliases import PolarsDataType, SchemaDict, TimeUnit
 
 _DEFAULT_LIST_LEN_LIMIT = 3
 _DEFAULT_N_CATEGORIES = 10

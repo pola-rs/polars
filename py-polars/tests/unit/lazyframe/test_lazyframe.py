@@ -24,7 +24,7 @@ from tests.unit.conftest import FLOAT_DTYPES
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_init_signature_match() -> None:

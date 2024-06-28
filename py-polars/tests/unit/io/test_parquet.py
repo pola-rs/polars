@@ -24,7 +24,7 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import ParquetCompression
+    from polars._typing import ParquetCompression
     from tests.unit.conftest import MemoryUsage
 
 

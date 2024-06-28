@@ -8,8 +8,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Expr, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,
@@ -18,6 +17,7 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
+    from polars.polars import PySeries
 
 
 @expr_dispatch

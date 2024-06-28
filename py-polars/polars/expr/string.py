@@ -18,7 +18,7 @@ from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,

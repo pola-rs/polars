@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Reversible
 
     from polars import DataFrame
-    from polars.type_aliases import PolarsDataType, SizeUnit
+    from polars._typing import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 13):
         from typing import TypeIs

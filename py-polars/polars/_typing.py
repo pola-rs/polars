@@ -229,17 +229,17 @@ class SeriesBuffers(TypedDict):
 
 # minimal protocol definitions that can reasonably represent
 # an executable connection, cursor, or equivalent object
-class BasicConnection(Protocol):  # noqa: D101
+class BasicConnection(Protocol):
     def cursor(self, *args: Any, **kwargs: Any) -> Any:
         """Return a cursor object."""
 
 
-class BasicCursor(Protocol):  # noqa: D101
+class BasicCursor(Protocol):
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         """Execute a query."""
 
 
-class Cursor(BasicCursor):  # noqa: D101
+class Cursor(BasicCursor):
     def fetchall(self, *args: Any, **kwargs: Any) -> Any:
         """Fetch all results."""
 

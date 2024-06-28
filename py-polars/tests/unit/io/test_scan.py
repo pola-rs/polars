@@ -13,7 +13,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import SchemaDict
+    from polars._typing import SchemaDict
 
 
 @dataclass

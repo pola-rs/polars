@@ -21,7 +21,7 @@ from tests.unit.conftest import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 

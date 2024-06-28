@@ -24,7 +24,7 @@ from polars.exceptions import (
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ConcatMethod
+    from polars._typing import ConcatMethod
 
 
 def test_error_on_empty_group_by() -> None:

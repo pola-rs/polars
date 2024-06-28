@@ -37,7 +37,7 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
     from polars import DataFrame
-    from polars.type_aliases import ConnectionOrCursor, Cursor, SchemaDict
+    from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
 
     try:
         from sqlalchemy.sql.expression import Selectable

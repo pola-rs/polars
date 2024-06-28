@@ -11,8 +11,7 @@ if TYPE_CHECKING:
     import datetime as dt
 
     from polars import Expr, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
         IntoExpr,
@@ -22,6 +21,7 @@ if TYPE_CHECKING:
         TemporalLiteral,
         TimeUnit,
     )
+    from polars.polars import PySeries
 
 
 @expr_dispatch

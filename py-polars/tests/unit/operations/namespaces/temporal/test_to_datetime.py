@@ -23,7 +23,7 @@ elif _ZONEINFO_AVAILABLE:
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
 
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
 
 
 DATE_FORMATS = ["%Y{}%m{}%d", "%d{}%m{}%Y"]

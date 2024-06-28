@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars import Expr
-    from polars.type_aliases import SerializationFormat
+    from polars._typing import SerializationFormat
 
 
 class ExprMetaNameSpace:

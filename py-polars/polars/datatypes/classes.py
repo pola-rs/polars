@@ -15,7 +15,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars.type_aliases import (
+    from polars._typing import (
         CategoricalOrdering,
         PolarsDataType,
         PythonDataType,
