@@ -103,9 +103,23 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
 
 /// Check if an index is out of bounds for at least one sublist.
 pub fn index_is_oob(arr: &ListArray<i64>, index: i64) -> bool {
-    arr.offsets()
-        .lengths()
-        .any(|len| index.negative_to_usize(len).is_none())
+    if arr.null_count() == 0 {
+        arr.offsets()
+            .lengths()
+            .any(|len| index.negative_to_usize(len).is_none())
+    } else {
+        arr.offsets()
+            .lengths()
+            .zip(arr.validity().unwrap())
+            .any(|(len, valid)| {
+                if valid {
+                    index.negative_to_usize(len).is_none()
+                } else {
+                    // skip nulls
+                    false
+                }
+            })
+    }
 }
 
 /// Convert a list `[1, 2, 3]` to a list type of `[[1], [2], [3]]`
