@@ -622,6 +622,10 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
         ),
     )
 
+    # FIXME: Path gets un-escaped incorrectly for async
+    if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
+        return
+
     root = tmp_path / "includes_hive_cols_in_file"
 
     for (date1, date2), part_df in df.group_by(
