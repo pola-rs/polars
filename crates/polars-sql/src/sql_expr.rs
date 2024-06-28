@@ -591,54 +591,86 @@ impl SQLExprVisitor<'_> {
         op: &BinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        let left = self.visit_expr(left)?;
-        let mut right = self.visit_expr(right)?;
-        right = self.convert_temporal_strings(&left, &right);
+        let lhs = self.visit_expr(left)?;
+        let mut rhs = self.visit_expr(right)?;
+        rhs = self.convert_temporal_strings(&lhs, &rhs);
 
         Ok(match op {
-            SQLBinaryOperator::And => left.and(right),
-            SQLBinaryOperator::Divide => left / right,
-            SQLBinaryOperator::DuckIntegerDivide => left.floor_div(right).cast(DataType::Int64),
-            SQLBinaryOperator::Eq => left.eq(right),
-            SQLBinaryOperator::Gt => left.gt(right),
-            SQLBinaryOperator::GtEq => left.gt_eq(right),
-            SQLBinaryOperator::Lt => left.lt(right),
-            SQLBinaryOperator::LtEq => left.lt_eq(right),
-            SQLBinaryOperator::Minus => left - right,
-            SQLBinaryOperator::Modulo => left % right,
-            SQLBinaryOperator::Multiply => left * right,
-            SQLBinaryOperator::NotEq => left.eq(right).not(),
-            SQLBinaryOperator::Or => left.or(right),
-            SQLBinaryOperator::Plus => left + right,
-            SQLBinaryOperator::Spaceship => left.eq_missing(right),
+            SQLBinaryOperator::And => lhs.and(rhs),
+            SQLBinaryOperator::Divide => lhs / rhs,
+            SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),
+            SQLBinaryOperator::Eq => lhs.eq(rhs),
+            SQLBinaryOperator::Gt => lhs.gt(rhs),
+            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),
+            SQLBinaryOperator::Lt => lhs.lt(rhs),
+            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),
+            SQLBinaryOperator::Minus => lhs - rhs,
+            SQLBinaryOperator::Modulo => lhs % rhs,
+            SQLBinaryOperator::Multiply => lhs * rhs,
+            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
+            SQLBinaryOperator::Or => lhs.or(rhs),
+            SQLBinaryOperator::Plus => lhs + rhs,
+            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),
             SQLBinaryOperator::StringConcat => {
-                left.cast(DataType::String) + right.cast(DataType::String)
+                lhs.cast(DataType::String) + rhs.cast(DataType::String)
             },
-            SQLBinaryOperator::Xor => left.xor(right),
+            SQLBinaryOperator::Xor => lhs.xor(rhs),
+            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),
             // ----
             // Regular expression operators
             // ----
-            SQLBinaryOperator::PGRegexMatch => match right {
-                Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true),
-                _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", right),
+            // "a ~ b"
+            SQLBinaryOperator::PGRegexMatch => match rhs {
+                Expr::Literal(LiteralValue::String(_)) => lhs.str().contains(rhs, true),
+                _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexNotMatch => match right {
-                Expr::Literal(LiteralValue::String(_)) => left.str().contains(right, true).not(),
-                _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", right),
+            // "a !~ b"
+            SQLBinaryOperator::PGRegexNotMatch => match rhs {
+                Expr::Literal(LiteralValue::String(_)) => lhs.str().contains(rhs, true).not(),
+                _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexIMatch => match right {
+            // "a ~* b"
+            SQLBinaryOperator::PGRegexIMatch => match rhs {
                 Expr::Literal(LiteralValue::String(pat)) => {
-                    left.str().contains(lit(format!("(?i){}", pat)), true)
+                    lhs.str().contains(lit(format!("(?i){}", pat)), true)
                 },
-                _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", right),
+                _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexNotIMatch => match right {
+            // "a !~* b"
+            SQLBinaryOperator::PGRegexNotIMatch => match rhs {
                 Expr::Literal(LiteralValue::String(pat)) => {
-                    left.str().contains(lit(format!("(?i){}", pat)), true).not()
+                    lhs.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
                 _ => {
-                    polars_bail!(SQLSyntax: "invalid pattern for '!~*' operator: {:?}", right)
+                    polars_bail!(SQLSyntax: "invalid pattern for '!~*' operator: {:?}", rhs)
                 },
+            },
+            // ----
+            // LIKE/ILIKE operators
+            // ----
+            SQLBinaryOperator::PGLikeMatch
+            | SQLBinaryOperator::PGNotLikeMatch
+            | SQLBinaryOperator::PGILikeMatch
+            | SQLBinaryOperator::PGNotILikeMatch => {
+                let expr = if matches!(
+                    op,
+                    SQLBinaryOperator::PGLikeMatch | SQLBinaryOperator::PGNotLikeMatch
+                ) {
+                    SQLExpr::Like {
+                        negated: matches!(op, SQLBinaryOperator::PGNotLikeMatch),
+                        expr: Box::new(left.clone()),
+                        pattern: Box::new(right.clone()),
+                        escape_char: None,
+                    }
+                } else {
+                    SQLExpr::ILike {
+                        negated: matches!(op, SQLBinaryOperator::PGNotILikeMatch),
+                        expr: Box::new(left.clone()),
+                        pattern: Box::new(right.clone()),
+                        escape_char: None,
+                    }
+                };
+                self.visit_expr(&expr)?
             },
             other => {
                 polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)
