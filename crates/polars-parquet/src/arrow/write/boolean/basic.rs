@@ -85,7 +85,7 @@ pub(super) fn build_statistics(
     options: &StatisticsOptions,
 ) -> ParquetStatistics {
     use polars_compute::min_max::MinMaxKernel;
-    use polars_compute::unique::UniqueKernel;
+    use polars_compute::unique::GenericUniqueKernel;
 
     BooleanStatistics {
         null_count: options.null_count.then(|| array.null_count() as i64),

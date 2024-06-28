@@ -1,113 +1,128 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::MutableBitmap;
+use arrow::datatypes::ArrowDataType;
 
-use super::UniqueKernel;
+use super::{GenericUniqueKernel, RangedUniqueKernel};
 
-fn bool_unique_fold<'a>(
-    fst: &'a BooleanArray,
-    arrs: impl Iterator<Item = &'a BooleanArray>,
-) -> BooleanArray {
-    // can be None, Some(true), Some(false)
-    //
-    // We assign values to each value
-    // None        = 1
-    // Some(false) = 2
-    // Some(true)  = 3
-    //
-    // And keep track of 2 things
-    // - `found_set`: which values have already appeared
-    // - `order`:     in which order did the values appear
-
-    #[inline(always)]
-    fn append_arr(arr: &BooleanArray, found_set: &mut u32, order: &mut u32) {
-        for v in arr {
-            let value = v.map_or(1, |v| 2 + u32::from(v));
-            let nulled_value = if *found_set & (1 << value) != 0 {
-                0
-            } else {
-                value
-            };
-
-            *order |= nulled_value << (found_set.count_ones() * 2);
-            *found_set |= 1 << value;
-
-            if *found_set == 0b1110 {
-                break;
-            }
-        }
-    }
-
-    let mut found_set = 0u32;
-    let mut order = 0u32;
-
-    append_arr(fst, &mut found_set, &mut order);
-    for arr in arrs {
-        append_arr(arr, &mut found_set, &mut order);
-    }
-
-    let mut values = MutableBitmap::with_capacity(3);
-    let validity = if found_set & 0b10 != 0 {
-        let mut validity = MutableBitmap::with_capacity(3);
-        while order != 0 {
-            values.push(order & 0b11 > 2);
-            validity.push(order & 0b11 > 1);
-            order >>= 2;
-        }
-        Some(validity.freeze())
-    } else {
-        while order != 0 {
-            values.push(order & 0b11 > 2);
-            order >>= 2;
-        }
-        None
-    };
-
-    let values = values.freeze();
-
-    BooleanArray::new(fst.data_type().clone(), values, validity)
+pub struct BooleanUniqueKernelState {
+    seen: u32,
+    has_null: bool,
+    data_type: ArrowDataType,
 }
 
-impl UniqueKernel for BooleanArray {
-    fn unique_fold<'a>(fst: &'a Self, others: impl Iterator<Item = &'a Self>) -> Self {
-        bool_unique_fold(fst, others)
+const fn to_value(scalar: Option<bool>) -> u8 {
+    match scalar {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    }
+}
+
+impl BooleanUniqueKernelState {
+    pub fn new(has_null: bool, data_type: ArrowDataType) -> Self {
+        Self {
+            seen: 0,
+            has_null,
+            data_type,
+        }
     }
 
+    fn has_seen_null(&self) -> bool {
+        self.has_null && self.seen & (1 << to_value(None)) != 0
+    }
+}
+
+impl RangedUniqueKernel for BooleanUniqueKernelState {
+    type Array = BooleanArray;
+
+    fn has_seen_all(&self) -> bool {
+        self.seen == 0b111
+    }
+
+    fn append(&mut self, array: &Self::Array) {
+        if array.len() == 0 {
+            return;
+        }
+
+        let null_count = array.null_count();
+        let values = array.values();
+
+        if !self.has_null || null_count == 0 {
+            let set_bits = values.set_bits();
+            self.seen |= u32::from(set_bits != 0) << to_value(Some(true));
+            self.seen |= u32::from(set_bits != values.len()) << to_value(Some(false));
+
+            return;
+        }
+
+        self.seen |= u32::from(null_count > 0) << to_value(None);
+
+        if array.len() != null_count {
+            let validity = array.validity().unwrap();
+
+            let set_bits = values.num_intersections_with(validity);
+            self.seen |= u32::from(set_bits != 0) << to_value(Some(true));
+            self.seen |= u32::from(set_bits != values.len() - null_count) << to_value(Some(false));
+        }
+    }
+
+    fn finalize_unique(self) -> Self::Array {
+        let mut values = MutableBitmap::with_capacity(3);
+        let validity = if self.has_seen_null() {
+            let mut validity = MutableBitmap::with_capacity(3);
+
+            for i in 0..3 {
+                if self.seen & (1 << i) != 0 {
+                    values.push(i > 1);
+                    validity.push(i > 0);
+                }
+            }
+
+            Some(validity.freeze())
+        } else {
+            for i in 1..3 {
+                if self.seen & (1 << i) != 0 {
+                    values.push(i > 1);
+                }
+            }
+
+            None
+        };
+
+        let values = values.freeze();
+
+        BooleanArray::new(self.data_type, values, validity)
+    }
+
+    fn finalize_n_unique(self) -> usize {
+        self.seen.count_ones() as usize
+    }
+
+    fn finalize_n_unique_non_null(self) -> usize {
+        (self.seen & !1).count_ones() as usize
+    }
+}
+
+impl GenericUniqueKernel for BooleanArray {
     fn unique(&self) -> Self {
-        Self::unique_fold(self, [].iter())
-    }
-
-    fn unique_sorted(&self) -> Self {
-        Self::unique_fold(self, [].iter())
+        let mut state =
+            BooleanUniqueKernelState::new(self.null_count() > 0, self.data_type().clone());
+        state.append(self);
+        state.finalize_unique()
     }
 
     fn n_unique(&self) -> usize {
-        if self.len() == 0 {
-            return 0;
-        }
-
-        let null_count = self.null_count();
-
-        if self.len() == null_count {
-            return 1;
-        }
-
-        let values = self.values();
-
-        if null_count == 0 {
-            let unset_bits = values.unset_bits();
-            let is_uniform = unset_bits == 0 || unset_bits == values.len();
-            return 2 - usize::from(is_uniform);
-        }
-
-        let validity = self.validity().unwrap();
-        let set_bits = values.num_intersections_with(validity);
-        let is_uniform = set_bits == 0 || set_bits == validity.set_bits();
-        2 + usize::from(!is_uniform)
+        let mut state =
+            BooleanUniqueKernelState::new(self.null_count() > 0, self.data_type().clone());
+        state.append(self);
+        state.finalize_n_unique()
     }
 
-    #[inline]
     fn n_unique_non_null(&self) -> usize {
-        self.n_unique() - usize::from(self.null_count() > 0)
+        let mut state =
+            BooleanUniqueKernelState::new(self.null_count() > 0, self.data_type().clone());
+        state.append(self);
+        state.finalize_n_unique_non_null()
     }
 }
 

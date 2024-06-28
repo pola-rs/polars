@@ -1,8 +1,11 @@
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
+use polars_compute::unique::{BooleanUniqueKernelState, PrimitiveRangedUniqueState};
+use polars_utils::float::IsFloat;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
+use crate::chunked_array::metadata::MetadataEnv;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -120,6 +123,33 @@ where
                 }
             },
             IsSorted::Not => {
+                if !T::Native::is_float() && MetadataEnv::experimental_enabled() {
+                    let md = self.metadata();
+                    if let (Some(min), Some(max)) = (md.get_min_value(), md.get_max_value()) {
+                        let data_type = self.field.as_ref().data_type().to_arrow(false);
+                        if let Some(mut state) = PrimitiveRangedUniqueState::new(
+                            *min,
+                            *max,
+                            self.null_count() > 0,
+                            data_type,
+                        ) {
+                            use polars_compute::unique::RangedUniqueKernel;
+
+                            for chunk in self.downcast_iter() {
+                                state.append(chunk);
+
+                                if state.has_seen_all() {
+                                    break;
+                                }
+                            }
+
+                            let unique = state.finalize_unique();
+
+                            return Ok(Self::with_chunk(self.name(), unique));
+                        }
+                    }
+                }
+
                 let sorted = self.sort(false);
                 sorted.unique()
             },
@@ -236,15 +266,21 @@ impl ChunkUnique for BinaryChunked {
 
 impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
-        let mut iter = self.downcast_iter();
-        let Some(arr) = iter.next() else {
-            return Ok(Self::with_chunk(
-                self.name(),
-                BooleanArray::new_empty(self.field.as_ref().data_type().to_arrow(false)),
-            ));
-        };
+        use polars_compute::unique::RangedUniqueKernel;
 
-        let unique = polars_compute::unique::UniqueKernel::unique_fold(arr, iter);
+        let data_type = self.field.as_ref().data_type().to_arrow(false);
+        let has_null = self.null_count() > 0;
+        let mut state = BooleanUniqueKernelState::new(has_null, data_type);
+
+        for arr in self.downcast_iter() {
+            state.append(arr);
+
+            if state.has_seen_all() {
+                break;
+            }
+        }
+
+        let unique = state.finalize_unique();
 
         Ok(Self::with_chunk(self.name(), unique))
     }
@@ -272,7 +308,7 @@ mod test {
         let ca = BooleanChunked::from_slice("a", &[true, false, true]);
         assert_eq!(
             ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
-            vec![Some(true), Some(false)]
+            vec![Some(false), Some(true)]
         );
 
         let ca = StringChunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
