@@ -703,16 +703,16 @@ impl SQLExprVisitor<'_> {
             // ----
             // JSON/Struct field access operators
             // ----
-            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match right {
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
                 Expr::Literal(LiteralValue::String(path)) => {
-                    let mut expr = self.struct_field_access_expr(&left, &path, false)?;
+                    let mut expr = self.struct_field_access_expr(&lhs, &path, false)?;
                     if let SQLBinaryOperator::LongArrow = op {
                         expr = expr.cast(DataType::String);
                     }
                     expr
                 },
                 Expr::Literal(LiteralValue::Int(idx)) => {
-                    let mut expr = self.struct_field_access_expr(&left, &idx.to_string(), true)?;
+                    let mut expr = self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
                     if let SQLBinaryOperator::LongArrow = op {
                         expr = expr.cast(DataType::String);
                     }
@@ -723,14 +723,14 @@ impl SQLExprVisitor<'_> {
                 },
             },
             SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
-                if let Expr::Literal(LiteralValue::String(path)) = right {
-                    let mut expr = self.struct_field_access_expr(&left, &path, true)?;
+                if let Expr::Literal(LiteralValue::String(path)) = rhs {
+                    let mut expr = self.struct_field_access_expr(&lhs, &path, true)?;
                     if let SQLBinaryOperator::HashLongArrow = op {
                         expr = expr.cast(DataType::String);
                     }
                     expr
                 } else {
-                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
+                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", rhs)
                 }
             },
             other => {
