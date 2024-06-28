@@ -155,6 +155,7 @@ pub fn to_alp_impl(
                         },
                         Either::Right(v) => v.as_ref(),
                     },
+                    file_options.hive_options.try_parse_dates,
                 )?
             } else {
                 None
