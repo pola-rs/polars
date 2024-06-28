@@ -636,7 +636,8 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
             path.parent.mkdir(exist_ok=True, parents=True)
             part_df.write_parquet(path)
 
-        # The schema for the hive columns is included in the file, so it should just work
+        # The schema for the hive columns is included in the file, so it should
+        # just work
         lf = pl.scan_parquet(root)
         assert_frame_equal(lf.collect(), df)
 
