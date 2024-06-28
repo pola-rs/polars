@@ -19,9 +19,7 @@ pub struct MapNode {
 }
 
 impl MapNode {
-    pub fn new(
-        map: Arc<dyn DataFrameUdf>,
-    ) -> Self {
+    pub fn new(map: Arc<dyn DataFrameUdf>) -> Self {
         Self { map }
     }
 }

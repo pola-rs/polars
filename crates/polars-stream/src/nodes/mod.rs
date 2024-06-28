@@ -7,8 +7,8 @@ use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::graph::PortState;
 use crate::morsel::Morsel;
 
-pub mod in_memory_map;
 pub mod filter;
+pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod map;

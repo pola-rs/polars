@@ -109,7 +109,7 @@ pub fn lower_ir(
 
             todo!()
         },
-        
+
         IR::MapFunction { input, function } => {
             let input_schema = ir_arena.get(*input).schema(ir_arena).into_owned();
             let function = function.clone();
@@ -120,25 +120,33 @@ pub fn lower_ir(
                 PhysNode::Map { input, map }
             } else {
                 let map = Arc::new(move |df| function.evaluate(df));
-                PhysNode::InMemoryMap { input, input_schema, map }
+                PhysNode::InMemoryMap {
+                    input,
+                    input_schema,
+                    map,
+                }
             };
-            
+
             Ok(phys_sm.insert(phys_node))
         },
-        
-        IR::Sort { input, by_column, slice, sort_options } => {
+
+        IR::Sort {
+            input,
+            by_column,
+            slice,
+            sort_options,
+        } => {
             let input_schema = ir_arena.get(*input).schema(ir_arena).into_owned();
             let phys_node = PhysNode::Sort {
                 input_schema,
                 by_column: by_column.clone(),
-                slice: slice.clone(),
+                slice: *slice,
                 sort_options: sort_options.clone(),
                 input: lower_ir(*input, ir_arena, expr_arena, phys_sm)?,
             };
             Ok(phys_sm.insert(phys_node))
-        }
-        
-        _ => todo!()
-        
+        },
+
+        _ => todo!(),
     }
 }

@@ -146,21 +146,20 @@ fn to_graph_rec<'a>(
             slice,
             sort_options,
         } => {
-            let input_schema = input_schema.clone();
-            let by_column = by_column.clone();
-            let slice = slice.clone();
-            let sort_options = sort_options.clone();
-
             let lmdf = Arc::new(LateMaterializedDataFrame::default());
             let mut lp_arena = Arena::default();
             let df_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
             let sort_node = lp_arena.add(IR::Sort {
                 input: df_node,
                 by_column: by_column.clone(),
-                slice: slice.clone(),
+                slice: *slice,
                 sort_options: sort_options.clone(),
             });
-            let executor = Mutex::new(create_physical_plan(sort_node, &mut lp_arena, ctx.expr_arena)?);
+            let executor = Mutex::new(create_physical_plan(
+                sort_node,
+                &mut lp_arena,
+                ctx.expr_arena,
+            )?);
 
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
