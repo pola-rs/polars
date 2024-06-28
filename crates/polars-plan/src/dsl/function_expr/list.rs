@@ -427,29 +427,54 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
             let ca = ca.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
             let offsets = arr.offsets().as_slice();
-
-            let take_by = index
-                .into_iter()
-                .zip(arr.validity().unwrap())
-                .enumerate()
-                .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
-                    (true, Some(idx)) => {
-                        let (start, end) =
-                            unsafe { (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1)) };
-                        let offset = if idx >= 0 { start + idx } else { end + idx };
-                        if offset >= end || offset < start || start == end {
-                            if null_on_oob {
-                                Ok(None)
+            let take_by = if ca.null_count() == 0 {
+                index
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, opt_idx)| match opt_idx {
+                        Some(idx) => {
+                            let (start, end) = unsafe {
+                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                            };
+                            let offset = if idx >= 0 { start + idx } else { end + idx };
+                            if offset >= end || offset < start || start == end {
+                                if null_on_oob {
+                                    Ok(None)
+                                } else {
+                                    polars_bail!(ComputeError: "get index is out of bounds");
+                                }
                             } else {
-                                polars_bail!(ComputeError: "get index is out of bounds");
+                                Ok(Some(offset as IdxSize))
                             }
-                        } else {
-                            Ok(Some(offset as IdxSize))
-                        }
-                    },
-                    _ => Ok(None),
-                })
-                .collect::<Result<IdxCa, _>>()?;
+                        },
+                        None => Ok(None),
+                    })
+                    .collect::<Result<IdxCa, _>>()?
+            } else {
+                index
+                    .into_iter()
+                    .zip(arr.validity().unwrap())
+                    .enumerate()
+                    .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
+                        (true, Some(idx)) => {
+                            let (start, end) = unsafe {
+                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                            };
+                            let offset = if idx >= 0 { start + idx } else { end + idx };
+                            if offset >= end || offset < start || start == end {
+                                if null_on_oob {
+                                    Ok(None)
+                                } else {
+                                    polars_bail!(ComputeError: "get index is out of bounds");
+                                }
+                            } else {
+                                Ok(Some(offset as IdxSize))
+                            }
+                        },
+                        _ => Ok(None),
+                    })
+                    .collect::<Result<IdxCa, _>>()?
+            };
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }
                 .cast(ca.inner_dtype())
