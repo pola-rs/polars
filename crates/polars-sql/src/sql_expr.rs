@@ -582,6 +582,34 @@ impl SQLExprVisitor<'_> {
         }
     }
 
+    fn struct_field_access_expr(
+        &mut self,
+        expr: &Expr,
+        path: &str,
+        infer_index: bool,
+    ) -> PolarsResult<Expr> {
+        let path_elems = if path.starts_with('{') && path.ends_with('}') {
+            path.trim_matches(|c| c == '{' || c == '}')
+        } else {
+            path
+        }
+        .split(',');
+
+        let mut expr = expr.clone();
+        for p in path_elems {
+            let p = p.trim();
+            expr = if infer_index {
+                match p.parse::<i64>() {
+                    Ok(idx) => expr.list().get(lit(idx), true),
+                    Err(_) => expr.struct_().field_by_name(p),
+                }
+            } else {
+                expr.struct_().field_by_name(p)
+            }
+        }
+        Ok(expr)
+    }
+
     /// Visit a SQL binary operator.
     ///
     /// e.g. "column + 1", "column1 <= column2"
@@ -671,6 +699,39 @@ impl SQLExprVisitor<'_> {
                     }
                 };
                 self.visit_expr(&expr)?
+            },
+            // ----
+            // JSON/Struct field access operators
+            // ----
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
+                Expr::Literal(LiteralValue::String(path)) => {
+                    let mut expr = self.struct_field_access_expr(&lhs, &path, false)?;
+                    if let SQLBinaryOperator::LongArrow = op {
+                        expr = expr.cast(DataType::String);
+                    }
+                    expr
+                },
+                Expr::Literal(LiteralValue::Int(idx)) => {
+                    let mut expr = self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
+                    if let SQLBinaryOperator::LongArrow = op {
+                        expr = expr.cast(DataType::String);
+                    }
+                    expr
+                },
+                _ => {
+                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
+                },
+            },
+            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
+                if let Expr::Literal(LiteralValue::String(path)) = rhs {
+                    let mut expr = self.struct_field_access_expr(&lhs, &path, true)?;
+                    if let SQLBinaryOperator::HashLongArrow = op {
+                        expr = expr.cast(DataType::String);
+                    }
+                    expr
+                } else {
+                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", rhs)
+                }
             },
             other => {
                 polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)

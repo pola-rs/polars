@@ -86,6 +86,30 @@ def test_struct_field_group_by_errors(df_struct: pl.DataFrame) -> None:
 
 
 @pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        ("nested #> '{c,1}'", 2),
+        ("nested #> '{c,-1}'", 1),
+        ("nested #>> '{c,0}'", "3"),
+        ("nested -> '0' -> 0", "baz"),
+        ("nested -> 'c' -> -1", 1),
+        ("nested -> 'c' ->> 2", "1"),
+    ],
+)
+def test_struct_field_operator_access(expr: str, expected: int | str) -> None:
+    df = pl.DataFrame(
+        {
+            "nested": {
+                "0": ["baz"],
+                "b": ["foo", "bar"],
+                "c": [3, 2, 1],
+            },
+        },
+    )
+    assert df.sql(f"SELECT {expr} FROM self").item() == expected
+
+
+@pytest.mark.parametrize(
     ("fields", "excluding", "rename"),
     [
         ("json_msg.*", "age", {}),
@@ -127,15 +151,24 @@ def test_struct_field_selection_wildcards(
 
 
 @pytest.mark.parametrize(
-    "invalid_column",
+    ("invalid_column", "error_type"),
     [
-        "json_msg.invalid_column",
-        "json_msg.other.invalid_column",
-        "self.json_msg.other.invalid_column",
+        ("json_msg.invalid_column", StructFieldNotFoundError),
+        ("json_msg.other.invalid_column", StructFieldNotFoundError),
+        ("self.json_msg.other.invalid_column", StructFieldNotFoundError),
+        ("json_msg.other -> invalid_column", SQLSyntaxError),
+        ("json_msg -> DATE '2020-09-11'", SQLSyntaxError),
     ],
 )
 def test_struct_field_selection_errors(
-    invalid_column: str, df_struct: pl.DataFrame
+    invalid_column: str,
+    error_type: type[Exception],
+    df_struct: pl.DataFrame,
 ) -> None:
-    with pytest.raises(StructFieldNotFoundError, match="invalid_column"):
+    error_msg = (
+        "invalid json/struct path-extract"
+        if ("->" in invalid_column)
+        else "invalid_column"
+    )
+    with pytest.raises(error_type, match=error_msg):
         df_struct.sql(f"SELECT {invalid_column} FROM self")

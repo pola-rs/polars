@@ -733,7 +733,7 @@ fn test_struct_field_selection() {
     let sql = r#"
       SELECT
         json_msg.str AS id,
-        SUM(json_msg.num) AS sum_n
+        SUM(json_msg -> 'num') AS sum_n
       FROM df
       GROUP BY json_msg.str
       ORDER BY 1
