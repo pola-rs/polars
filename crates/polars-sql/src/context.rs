@@ -1032,33 +1032,42 @@ impl SQLContext {
         order_by: &[OrderByExpr],
         selected: Option<&[Expr]>,
     ) -> PolarsResult<LazyFrame> {
-        let mut by = Vec::with_capacity(order_by.len());
+        let schema = lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?;
+        let columns_iter = schema.iter_names().map(|e| col(e));
+
         let mut descending = Vec::with_capacity(order_by.len());
         let mut nulls_last = Vec::with_capacity(order_by.len());
+        let mut by: Vec<Expr> = Vec::with_capacity(order_by.len());
 
-        let schema = Some(lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)?);
-        let columns = schema
-            .clone()
-            .unwrap()
-            .iter_names()
-            .map(|e| col(e))
-            .collect::<Vec<_>>();
+        if order_by.len() == 1  // support `ORDER BY ALL` (iff there is no column named 'ALL' in the schema)
+            && matches!(&order_by[0].expr, SQLExpr::Identifier(ident) if ident.value.to_uppercase() == "ALL" && !schema.iter_names().any(|name| name.to_uppercase() == "ALL"))
+        {
+            if let Some(selected) = selected {
+                by.extend(selected.iter().cloned());
+            } else {
+                by.extend(columns_iter);
+            };
+            let desc_order = !order_by[0].asc.unwrap_or(true);
+            nulls_last.resize(by.len(), !order_by[0].nulls_first.unwrap_or(desc_order));
+            descending.resize(by.len(), desc_order);
+        } else {
+            let columns = &columns_iter.collect::<Vec<_>>();
+            for ob in order_by {
+                // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
+                // https://www.postgresql.org/docs/current/queries-order.html
+                let desc_order = !ob.asc.unwrap_or(true);
+                nulls_last.push(!ob.nulls_first.unwrap_or(desc_order));
+                descending.push(desc_order);
 
-        for ob in order_by {
-            // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
-            // https://www.postgresql.org/docs/current/queries-order.html
-            let desc_order = !ob.asc.unwrap_or(true);
-            nulls_last.push(!ob.nulls_first.unwrap_or(desc_order));
-            descending.push(desc_order);
-
-            // translate order expression, allowing ordinal values
-            by.push(self.expr_or_ordinal(
-                &ob.expr,
-                &columns,
-                selected,
-                schema.as_deref(),
-                "ORDER BY",
-            )?)
+                // translate order expression, allowing ordinal values
+                by.push(self.expr_or_ordinal(
+                    &ob.expr,
+                    columns,
+                    selected,
+                    Some(&schema),
+                    "ORDER BY",
+                )?)
+            }
         }
         Ok(lf.sort_by_exprs(
             &by,

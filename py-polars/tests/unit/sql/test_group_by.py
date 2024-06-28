@@ -86,7 +86,7 @@ def test_group_by_all() -> None:
             COUNT(*) AS n
         FROM self
         GROUP BY ALL
-        ORDER BY a
+        ORDER BY ALL
         """
     )
     expected = pl.DataFrame(

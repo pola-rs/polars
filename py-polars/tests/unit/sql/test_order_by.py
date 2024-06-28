@@ -116,6 +116,14 @@ def test_order_by_misc_selection() -> None:
     res = df.sql("SELECT (x % y) AS xmy FROM self ORDER BY x % y NULLS FIRST")
     assert res.to_dict(as_series=False) == {"xmy": [None, None, 1, 3]}
 
+    # confirm that 'order by all' syntax prioritises cols
+    df = pl.DataFrame({"SOME": [0, 1], "ALL": [1, 0]})
+    res = df.sql("SELECT * FROM self ORDER BY ALL")
+    assert res.to_dict(as_series=False) == {"SOME": [1, 0], "ALL": [0, 1]}
+
+    res = df.sql("SELECT * FROM self ORDER BY ALL DESC")
+    assert res.to_dict(as_series=False) == {"SOME": [0, 1], "ALL": [1, 0]}
+
 
 def test_order_by_misc_16579() -> None:
     res = pl.DataFrame(
@@ -151,11 +159,13 @@ def test_order_by_multi_nulls_first_last() -> None:
     # │ 3    ┆ 1    │
     # └──────┴──────┘
 
-    res = df.sql("SELECT * FROM self ORDER BY x, y")
-    assert res.to_dict(as_series=False) == {
-        "x": [1, 3, None, None],
-        "y": [2, 1, 3, None],
-    }
+    res1 = df.sql("SELECT * FROM self ORDER BY x, y")
+    res2 = df.sql("SELECT * FROM self ORDER BY ALL")
+    for res in (res1, res2):
+        assert res.to_dict(as_series=False) == {
+            "x": [1, 3, None, None],
+            "y": [2, 1, 3, None],
+        }
 
     res = df.sql("SELECT * FROM self ORDER BY x NULLS FIRST, y")
     assert res.to_dict(as_series=False) == {
@@ -169,17 +179,21 @@ def test_order_by_multi_nulls_first_last() -> None:
         "y": [2, 1, None, 3],
     }
 
-    res = df.sql("SELECT * FROM self ORDER BY x NULLS FIRST, y NULLS FIRST")
-    assert res.to_dict(as_series=False) == {
-        "x": [None, None, 1, 3],
-        "y": [None, 3, 2, 1],
-    }
+    res1 = df.sql("SELECT * FROM self ORDER BY x NULLS FIRST, y NULLS FIRST")
+    res2 = df.sql("SELECT * FROM self ORDER BY All NULLS FIRST")
+    for res in (res1, res2):
+        assert res.to_dict(as_series=False) == {
+            "x": [None, None, 1, 3],
+            "y": [None, 3, 2, 1],
+        }
 
-    res = df.sql("SELECT * FROM self ORDER BY x DESC NULLS FIRST, y DESC NULLS FIRST")
-    assert res.to_dict(as_series=False) == {
-        "x": [None, None, 3, 1],
-        "y": [None, 3, 1, 2],
-    }
+    res1 = df.sql("SELECT * FROM self ORDER BY x DESC NULLS FIRST, y DESC NULLS FIRST")
+    res2 = df.sql("SELECT * FROM self ORDER BY all DESC NULLS FIRST")
+    for res in (res1, res2):
+        assert res.to_dict(as_series=False) == {
+            "x": [None, None, 3, 1],
+            "y": [None, 3, 1, 2],
+        }
 
     res = df.sql("SELECT * FROM self ORDER BY x DESC NULLS FIRST, y DESC NULLS LAST")
     assert res.to_dict(as_series=False) == {
