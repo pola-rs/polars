@@ -86,10 +86,8 @@ def path_ods_mixed(io_files_path: Path) -> Path:
     [
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
-        (pl.read_excel, "path_xls", {"engine": None}),  # << autodetect
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": None}),  # << autodetect
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
@@ -392,6 +390,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
+        engine="xlsx2csv",
         read_options={"schema_overrides": {"cardinality": pl.UInt16}},
     ).drop_nulls()
 
@@ -402,6 +401,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df3 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
+        engine="xlsx2csv",
         schema_overrides={"cardinality": pl.UInt16},
         read_options={
             "schema_overrides": {
@@ -444,6 +444,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         pl.read_excel(
             path_xlsx,
             sheet_name="test4",
+            engine="xlsx2csv",
             schema_overrides={"cardinality": pl.UInt16},
             read_options={"schema_overrides": {"cardinality": pl.Int32}},
         )
@@ -834,9 +835,9 @@ def test_excel_empty_sheet(
     with pytest.raises(NoDataError, match="empty Excel sheet"):
         read_spreadsheet(empty_spreadsheet_path)
 
-    engine_params = [{}] if ods else [{"engine": None}, {"engine": "calamine"}]
+    engine_params = [{}] if ods else [{"engine": "calamine"}]
     for params in engine_params:
-        df = read_spreadsheet(  # type: ignore[arg-type]
+        df = read_spreadsheet(
             empty_spreadsheet_path,
             sheet_name="no_data",
             raise_if_empty=False,
@@ -845,7 +846,7 @@ def test_excel_empty_sheet(
         expected = pl.DataFrame()
         assert_frame_equal(df, expected)
 
-        df = read_spreadsheet(  # type: ignore[arg-type]
+        df = read_spreadsheet(
             empty_spreadsheet_path,
             sheet_name="no_rows",
             raise_if_empty=False,
