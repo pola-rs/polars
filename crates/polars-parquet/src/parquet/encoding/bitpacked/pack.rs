@@ -23,7 +23,7 @@ macro_rules! pack_impl {
 
             // Using microbenchmark (79d1fff), unrolling this loop is over 10x
             // faster than not (>20x faster than old algorithm)
-            seq_macro::seq!(i in 1..$bits_minus_one {
+            seq_macro!(i in 1..$bits_minus_one {
                 let bits_filled: usize = i * NUM_BITS;
                 let inner_cursor: usize = bits_filled % $bits;
                 let remaining: usize = $bits - inner_cursor;
@@ -69,7 +69,7 @@ macro_rules! pack {
         /// Pack unpacked `input` into `output` with a bit width of `num_bits`
         pub fn $name(input: &[$t; $bits], output: &mut [u8], num_bits: usize) {
             // This will get optimised into a jump table
-            seq_macro::seq!(i in 0..=$bits {
+            seq_macro!(i in 0..=$bits {
                 if i == num_bits {
                     unsafe {
                         return $name::pack::<i>(input, output);
@@ -81,8 +81,6 @@ macro_rules! pack {
     };
 }
 
-pack!(pack8, u8, 1, 8, 7);
-pack!(pack16, u16, 2, 16, 15);
 pack!(pack32, u32, 4, 32, 31);
 pack!(pack64, u64, 8, 64, 63);
 
@@ -92,18 +90,6 @@ mod tests {
 
     use super::super::unpack::*;
     use super::*;
-
-    #[test]
-    fn test_basic() {
-        let input = [0u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-        for num_bits in 4..16 {
-            let mut output = [0u8; 16 * 2];
-            pack16(&input, &mut output, num_bits);
-            let mut other = [0u16; 16];
-            unpack16(&output, &mut other, num_bits);
-            assert_eq!(other, input);
-        }
-    }
 
     #[test]
     fn test_u32() {
@@ -117,40 +103,6 @@ mod tests {
             let mut other = [0u32; 32];
             unpack32(&output, &mut other, num_bits);
             assert_eq!(other, input);
-        }
-    }
-
-    #[test]
-    fn test_u8_random() {
-        let mut rng = rand::thread_rng();
-        let mut random_array = [0u8; 8];
-        let between = Uniform::from(0..6);
-        for num_bits in 3..=8 {
-            for i in &mut random_array {
-                *i = between.sample(&mut rng);
-            }
-            let mut output = [0u8; 8];
-            pack8(&random_array, &mut output, num_bits);
-            let mut other = [0u8; 8];
-            unpack8(&output, &mut other, num_bits);
-            assert_eq!(other, random_array);
-        }
-    }
-
-    #[test]
-    fn test_u16_random() {
-        let mut rng = rand::thread_rng();
-        let mut random_array = [0u16; 16];
-        let between = Uniform::from(0..128);
-        for num_bits in 7..=16 {
-            for i in &mut random_array {
-                *i = between.sample(&mut rng);
-            }
-            let mut output = [0u8; 16 * 2];
-            pack16(&random_array, &mut output, num_bits);
-            let mut other = [0u16; 16];
-            unpack16(&output, &mut other, num_bits);
-            assert_eq!(other, random_array);
         }
     }
 

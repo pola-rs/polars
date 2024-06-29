@@ -3282,7 +3282,6 @@ dependencies = [
  "polars-error",
  "polars-utils",
  "rand",
- "seq-macro",
  "serde",
  "simdutf8",
  "snap",
@@ -4265,12 +4264,6 @@ checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
 dependencies = [
  "serde",
 ]
-
-[[package]]
-name = "seq-macro"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
 
 [[package]]
 name = "serde"
