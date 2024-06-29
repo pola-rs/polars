@@ -1113,15 +1113,15 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
 pub(crate) fn parse_fill_nulls_strategy(
     strategy: &str,
     limit: FillNullLimit,
-) -> PyResult<FillNullStrategy> {
+) -> PyResult<FillStrategy> {
     let parsed = match strategy {
-        "forward" => FillNullStrategy::Forward(limit),
-        "backward" => FillNullStrategy::Backward(limit),
-        "min" => FillNullStrategy::Min,
-        "max" => FillNullStrategy::Max,
-        "mean" => FillNullStrategy::Mean,
-        "zero" => FillNullStrategy::Zero,
-        "one" => FillNullStrategy::One,
+        "forward" => FillStrategy::Forward(limit),
+        "backward" => FillStrategy::Backward(limit),
+        "min" => FillStrategy::Min,
+        "max" => FillStrategy::Max,
+        "mean" => FillStrategy::Mean,
+        "zero" => FillStrategy::Zero,
+        "one" => FillStrategy::One,
         e => {
             return Err(PyValueError::new_err(format!(
                 "`strategy` must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {e}",

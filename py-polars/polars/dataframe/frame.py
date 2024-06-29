@@ -141,7 +141,7 @@ if TYPE_CHECKING:
         ConnectionOrCursor,
         CsvQuoteStyle,
         DbWriteEngine,
-        FillNullStrategy,
+        FillStrategy,
         FrameInitTypes,
         IndexOrder,
         IntoExpr,
@@ -7477,7 +7477,7 @@ class DataFrame:
     def fill_nulls(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
         *,
         matches_supertype: bool = True,
@@ -10833,7 +10833,7 @@ class DataFrame:
     def fill_null(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
         *,
         matches_supertype: bool = True,

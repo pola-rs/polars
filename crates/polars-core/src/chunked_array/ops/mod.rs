@@ -380,7 +380,7 @@ pub type FillNullLimit = Option<IdxSize>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-pub enum FillNullStrategy {
+pub enum FillStrategy {
     /// previous value in array
     Backward(FillNullLimit),
     /// next value in array

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars._typing import FillNullStrategy, PolarsIntegerType
+    from polars._typing import FillStrategy, PolarsIntegerType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -169,7 +169,7 @@ def test_upsample_time_zones(
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
 def test_upsample_index(
     every: str,
-    fill: FillNullStrategy | None,
+    fill: FillStrategy | None,
     expected_index: list[int],
     expected_groups: list[str],
     dtype: PolarsIntegerType,

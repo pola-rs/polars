@@ -75,7 +75,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
         ClosedInterval,
-        FillNullStrategy,
+        FillStrategy,
         InterpolationMethod,
         IntoExpr,
         IntoExprColumn,
@@ -2657,7 +2657,7 @@ class Expr:
     def fill_nulls(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Expr:
         """
@@ -10505,7 +10505,7 @@ class Expr:
     def fill_null(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Expr:
         """

@@ -1030,7 +1030,7 @@ impl Expr {
         self.fill_nulls_impl(fill_value.into())
     }
 
-    pub fn fill_nulls_with_strategy(self, strategy: FillNullStrategy) -> Self {
+    pub fn fill_nulls_with_strategy(self, strategy: FillStrategy) -> Self {
         self.apply_private(FunctionExpr::FillNullsWithStrategy(strategy))
     }
 

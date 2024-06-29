@@ -124,7 +124,7 @@ if TYPE_CHECKING:
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
-        FillNullStrategy,
+        FillStrategy,
         InterpolationMethod,
         IntoExpr,
         IntoExprColumn,
@@ -4739,7 +4739,7 @@ class Series:
     def fill_nulls(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Series:
         """
@@ -7271,7 +7271,7 @@ class Series:
     def fill_null(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
     ) -> Series:
         """

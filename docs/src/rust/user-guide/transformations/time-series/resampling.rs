@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out1 = df
         .clone()
         .upsample::<[String; 0]>([], "time", Duration::parse("15m"))?
-        .fill_nulls(FillNullStrategy::Forward(None))?;
+        .fill_nulls(FillStrategy::Forward(None))?;
     println!("{}", &out1);
     // --8<-- [end:upsample]
 
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("values").interpolate(InterpolationMethod::Linear)])
         .collect()?
-        .fill_nulls(FillNullStrategy::Forward(None))?;
+        .fill_nulls(FillStrategy::Forward(None))?;
     println!("{}", &out2);
     // --8<-- [end:upsample2]
     Ok(())

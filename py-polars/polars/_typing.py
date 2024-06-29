@@ -87,7 +87,7 @@ AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-FillNullStrategy: TypeAlias = Literal[
+FillStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]

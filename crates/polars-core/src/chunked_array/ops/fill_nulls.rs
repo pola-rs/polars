@@ -33,38 +33,38 @@ impl Series {
     /// fn example() -> PolarsResult<()> {
     ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::Forward(None))?;
+    ///     let filled = s.fill_nulls(FillStrategy::Forward(None))?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::Backward(None))?;
+    ///     let filled = s.fill_nulls(FillStrategy::Backward(None))?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::Min)?;
+    ///     let filled = s.fill_nulls(FillStrategy::Min)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::Max)?;
+    ///     let filled = s.fill_nulls(FillStrategy::Max)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::Mean)?;
+    ///     let filled = s.fill_nulls(FillStrategy::Mean)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::Zero)?;
+    ///     let filled = s.fill_nulls(FillStrategy::Zero)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(0), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::One)?;
+    ///     let filled = s.fill_nulls(FillStrategy::One)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::MinBound)?;
+    ///     let filled = s.fill_nulls(FillStrategy::MinBound)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(-2147483648), Some(2)]);
     ///
-    ///     let filled = s.fill_nulls(FillNullStrategy::MaxBound)?;
+    ///     let filled = s.fill_nulls(FillStrategy::MaxBound)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2147483647), Some(2)]);
     ///
     ///     Ok(())
     /// }
     /// example();
     /// ```
-    pub fn fill_nulls(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
+    pub fn fill_nulls(&self, strategy: FillStrategy) -> PolarsResult<Series> {
         let logical_type = self.dtype();
         let s = self.to_physical_repr();
 
@@ -348,7 +348,7 @@ where
 
 fn fill_nulls_numeric<T>(
     ca: &ChunkedArray<T>,
-    strategy: FillNullStrategy,
+    strategy: FillStrategy,
 ) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -359,37 +359,37 @@ where
         return Ok(ca.clone());
     }
     let mut out = match strategy {
-        FillNullStrategy::Forward(None) => fill_forward_numeric(ca),
-        FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
-        FillNullStrategy::Backward(None) => fill_backward_numeric(ca),
-        FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
-        FillNullStrategy::Min => {
+        FillStrategy::Forward(None) => fill_forward_numeric(ca),
+        FillStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
+        FillStrategy::Backward(None) => fill_backward_numeric(ca),
+        FillStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
+        FillStrategy::Min => {
             ca.fill_nulls_with_values(ChunkAgg::min(ca).ok_or_else(err_fill_nulls)?)?
         },
-        FillNullStrategy::Max => {
+        FillStrategy::Max => {
             ca.fill_nulls_with_values(ChunkAgg::max(ca).ok_or_else(err_fill_nulls)?)?
         },
-        FillNullStrategy::Mean => ca.fill_nulls_with_values(
+        FillStrategy::Mean => ca.fill_nulls_with_values(
             ca.mean()
                 .map(|v| NumCast::from(v).unwrap())
                 .ok_or_else(err_fill_nulls)?,
         )?,
-        FillNullStrategy::One => return ca.fill_nulls_with_values(One::one()),
-        FillNullStrategy::Zero => return ca.fill_nulls_with_values(Zero::zero()),
-        FillNullStrategy::MinBound => return ca.fill_nulls_with_values(Bounded::min_value()),
-        FillNullStrategy::MaxBound => return ca.fill_nulls_with_values(Bounded::max_value()),
+        FillStrategy::One => return ca.fill_nulls_with_values(One::one()),
+        FillStrategy::Zero => return ca.fill_nulls_with_values(Zero::zero()),
+        FillStrategy::MinBound => return ca.fill_nulls_with_values(Bounded::min_value()),
+        FillStrategy::MaxBound => return ca.fill_nulls_with_values(Bounded::max_value()),
     };
     out.rename(ca.name());
     Ok(out)
 }
 
-fn fill_nulls_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResult<Series> {
+fn fill_nulls_bool(ca: &BooleanChunked, strategy: FillStrategy) -> PolarsResult<Series> {
     // Nothing to fill.
     if ca.null_count() == 0 {
         return Ok(ca.clone().into_series());
     }
     match strategy {
-        FillNullStrategy::Forward(limit) => {
+        FillStrategy::Forward(limit) => {
             let mut out: BooleanChunked = match limit {
                 Some(limit) => fill_forward_limit(ca, limit),
                 None => fill_forward(ca),
@@ -397,7 +397,7 @@ fn fill_nulls_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsRes
             out.rename(ca.name());
             Ok(out.into_series())
         },
-        FillNullStrategy::Backward(limit) => {
+        FillStrategy::Backward(limit) => {
             let mut out: BooleanChunked = match limit {
                 None => fill_backward(ca),
                 Some(limit) => fill_backward_limit(ca, limit),
@@ -405,32 +405,29 @@ fn fill_nulls_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsRes
             out.rename(ca.name());
             Ok(out.into_series())
         },
-        FillNullStrategy::Min => ca
+        FillStrategy::Min => ca
             .fill_nulls_with_values(ca.min().ok_or_else(err_fill_nulls)?)
             .map(|ca| ca.into_series()),
-        FillNullStrategy::Max => ca
+        FillStrategy::Max => ca
             .fill_nulls_with_values(ca.max().ok_or_else(err_fill_nulls)?)
             .map(|ca| ca.into_series()),
-        FillNullStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
-        FillNullStrategy::One | FillNullStrategy::MaxBound => {
+        FillStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
+        FillStrategy::One | FillStrategy::MaxBound => {
             ca.fill_nulls_with_values(true).map(|ca| ca.into_series())
         },
-        FillNullStrategy::Zero | FillNullStrategy::MinBound => {
+        FillStrategy::Zero | FillStrategy::MinBound => {
             ca.fill_nulls_with_values(false).map(|ca| ca.into_series())
         },
     }
 }
 
-fn fill_nulls_binary(
-    ca: &BinaryChunked,
-    strategy: FillNullStrategy,
-) -> PolarsResult<BinaryChunked> {
+fn fill_nulls_binary(ca: &BinaryChunked, strategy: FillStrategy) -> PolarsResult<BinaryChunked> {
     // Nothing to fill.
     if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     match strategy {
-        FillNullStrategy::Forward(limit) => {
+        FillStrategy::Forward(limit) => {
             let mut out: BinaryChunked = match limit {
                 Some(limit) => fill_forward_limit(ca, limit),
                 None => fill_forward(ca),
@@ -438,7 +435,7 @@ fn fill_nulls_binary(
             out.rename(ca.name());
             Ok(out)
         },
-        FillNullStrategy::Backward(limit) => {
+        FillStrategy::Backward(limit) => {
             let mut out = match limit {
                 None => impl_fill_backward!(ca, BinaryChunked),
                 Some(limit) => fill_backward_limit_binary(ca, limit),
@@ -446,24 +443,20 @@ fn fill_nulls_binary(
             out.rename(ca.name());
             Ok(out)
         },
-        FillNullStrategy::Min => {
-            ca.fill_nulls_with_values(ca.min_binary().ok_or_else(err_fill_nulls)?)
-        },
-        FillNullStrategy::Max => {
-            ca.fill_nulls_with_values(ca.max_binary().ok_or_else(err_fill_nulls)?)
-        },
-        FillNullStrategy::Zero => ca.fill_nulls_with_values(&[]),
+        FillStrategy::Min => ca.fill_nulls_with_values(ca.min_binary().ok_or_else(err_fill_nulls)?),
+        FillStrategy::Max => ca.fill_nulls_with_values(ca.max_binary().ok_or_else(err_fill_nulls)?),
+        FillStrategy::Zero => ca.fill_nulls_with_values(&[]),
         strat => polars_bail!(InvalidOperation: "fill-null strategy {:?} is not supported", strat),
     }
 }
 
-fn fill_nulls_list(ca: &ListChunked, strategy: FillNullStrategy) -> PolarsResult<ListChunked> {
+fn fill_nulls_list(ca: &ListChunked, strategy: FillStrategy) -> PolarsResult<ListChunked> {
     // Nothing to fill.
     if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     match strategy {
-        FillNullStrategy::Forward(limit) => {
+        FillStrategy::Forward(limit) => {
             let mut out: ListChunked = match limit {
                 Some(limit) => fill_forward_limit(ca, limit),
                 None => fill_forward(ca),
@@ -471,7 +464,7 @@ fn fill_nulls_list(ca: &ListChunked, strategy: FillNullStrategy) -> PolarsResult
             out.rename(ca.name());
             Ok(out)
         },
-        FillNullStrategy::Backward(limit) => {
+        FillStrategy::Backward(limit) => {
             let mut out: ListChunked = match limit {
                 None => impl_fill_backward!(ca, ListChunked),
                 Some(limit) => impl_fill_backward_limit!(ca, ListChunked, limit),

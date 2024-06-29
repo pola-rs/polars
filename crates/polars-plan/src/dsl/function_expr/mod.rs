@@ -155,7 +155,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "sign")]
     Sign,
     FillNulls,
-    FillNullsWithStrategy(FillNullStrategy),
+    FillNullsWithStrategy(FillStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
     #[cfg(feature = "rolling_window_by")]

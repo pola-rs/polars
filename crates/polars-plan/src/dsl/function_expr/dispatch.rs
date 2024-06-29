@@ -87,11 +87,11 @@ pub(super) fn repeat_by(s: &[Series]) -> PolarsResult<Series> {
 }
 
 pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
-    s.fill_nulls(FillNullStrategy::Backward(limit))
+    s.fill_nulls(FillStrategy::Backward(limit))
 }
 
 pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
-    s.fill_nulls(FillNullStrategy::Forward(limit))
+    s.fill_nulls(FillStrategy::Forward(limit))
 }
 
 pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
@@ -172,7 +172,7 @@ pub(super) fn replace_strict(s: &[Series], return_dtype: Option<DataType>) -> Po
 
 pub(super) fn fill_nulls_with_strategy(
     s: &Series,
-    strategy: FillNullStrategy,
+    strategy: FillStrategy,
 ) -> PolarsResult<Series> {
     s.fill_nulls(strategy)
 }

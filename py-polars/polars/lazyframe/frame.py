@@ -101,7 +101,7 @@ if TYPE_CHECKING:
         ColumnNameOrSelector,
         CsvQuoteStyle,
         ExplainFormat,
-        FillNullStrategy,
+        FillStrategy,
         FrameInitTypes,
         IntoExpr,
         IntoExprColumn,
@@ -5099,7 +5099,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def fill_nulls(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
         *,
         matches_supertype: bool = True,
@@ -6422,7 +6422,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def fill_null(
         self,
         value: Any | Expr | None = None,
-        strategy: FillNullStrategy | None = None,
+        strategy: FillStrategy | None = None,
         limit: int | None = None,
         *,
         matches_supertype: bool = True,
