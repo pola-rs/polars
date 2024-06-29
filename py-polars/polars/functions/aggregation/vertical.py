@@ -34,7 +34,7 @@ def all(*names: str | Expr, ignore_nulls: bool = True) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
     ignore_nulls
         Ignore null values (default).
 
@@ -99,7 +99,7 @@ def any(*names: str | Expr, ignore_nulls: bool = True) -> Expr | bool | None:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
     ignore_nulls
         Ignore null values (default).
 
@@ -139,7 +139,7 @@ def max(*names: str | Expr) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -199,7 +199,7 @@ def min(*names: str | Expr) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -259,7 +259,7 @@ def sum(*names: str | Expr) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
@@ -319,7 +319,7 @@ def cum_sum(*names: str | Expr) -> Expr:
     Parameters
     ----------
     *names
-        Name(s) of the columns to use in the aggregation.
+        Name(s) of the columns to use in the aggregation. Accepts expression input.
 
     See Also
     --------
