@@ -27,6 +27,7 @@ from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -6415,4 +6416,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             variable_name=variable_name,
             value_name=value_name,
             streamable=streamable,
+        )
+
+    @deprecate_renamed_function("fill_nulls", version="1.0.0")
+    def fill_null(
+        self,
+        value: Any | Expr | None = None,
+        strategy: FillNullStrategy | None = None,
+        limit: int | None = None,
+        *,
+        matches_supertype: bool = True,
+    ) -> LazyFrame:
+        """
+        Fill null values using the specified value or strategy.
+
+        .. deprecated:: 1.0.0
+            This method was renamed to :meth:`fill_nulls`.
+
+        Parameters
+        ----------
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
+        limit
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
+        matches_supertype
+            Fill all matching supertypes of the fill `value` literal.
+        """
+        return self.fill_nulls(
+            value, strategy, limit, matches_supertype=matches_supertype
         )

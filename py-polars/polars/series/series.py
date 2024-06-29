@@ -41,6 +41,7 @@ from polars._utils.convert import (
 )
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -7265,6 +7266,31 @@ class Series:
             [1, 2, 3]
         ]
         """
+
+    @deprecate_renamed_function("fill_nulls", version="1.0.0")
+    def fill_null(
+        self,
+        value: Any | Expr | None = None,
+        strategy: FillNullStrategy | None = None,
+        limit: int | None = None,
+    ) -> Series:
+        """
+        Fill null values using the specified value or strategy.
+
+        .. deprecated:: 1.0.0
+            This method was renamed to :meth:`fill_nulls`.
+
+        Parameters
+        ----------
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
+        limit
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
+        """
+        return self.fill_nulls(value, strategy, limit)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

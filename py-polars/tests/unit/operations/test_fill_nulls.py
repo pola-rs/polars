@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_series_equal
 
@@ -35,3 +37,14 @@ def test_fill_nulls_f32_with_lit() -> None:
     # ensure the literal integer does not upcast the f32 to an f64
     df = pl.DataFrame({"a": [1.1, 1.2]}, schema=[("a", pl.Float32)])
     assert df.fill_nulls(value=0).dtypes == [pl.Float32]
+
+
+def test_fill_null_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.Series([1, 2, None]).fill_null(0)
+    with pytest.deprecated_call():
+        pl.col("a").fill_null(0)
+    with pytest.deprecated_call():
+        pl.DataFrame({"a": [1, 2, None]}).fill_null(0)
+    with pytest.deprecated_call():
+        pl.LazyFrame({"a": [1, 2, None]}).fill_null(0)

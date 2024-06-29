@@ -49,6 +49,7 @@ from polars._utils.construction import (
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -10826,6 +10827,42 @@ class DataFrame:
             on=value_vars,
             variable_name=variable_name,
             value_name=value_name,
+        )
+
+    @deprecate_renamed_function("fill_nulls", version="1.0.0")
+    def fill_null(
+        self,
+        value: Any | Expr | None = None,
+        strategy: FillNullStrategy | None = None,
+        limit: int | None = None,
+        *,
+        matches_supertype: bool = True,
+    ) -> DataFrame:
+        """
+        Fill null values using the specified value or strategy.
+
+        .. deprecated:: 1.0.0
+            This method was renamed to :meth:`fill_nulls`.
+
+        Parameters
+        ----------
+        value
+            Value used to fill null values.
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+            Strategy used to fill null values.
+        limit
+            Number of consecutive null values to fill when using the 'forward' or
+            'backward' strategy.
+        matches_supertype
+            Fill all matching supertype of the fill `value`.
+
+        Returns
+        -------
+        DataFrame
+            DataFrame with None values replaced by the filling strategy.
+        """
+        return self.fill_nulls(
+            value, strategy, limit, matches_supertype=matches_supertype
         )
 
 
