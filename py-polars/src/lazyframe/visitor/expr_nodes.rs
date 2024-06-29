@@ -1243,7 +1243,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 FunctionExpr::Negate => return Err(PyNotImplementedError::new_err("negate")),
                 FunctionExpr::FillNullsWithStrategy(_) => {
-                    return Err(PyNotImplementedError::new_err("fill null with strategy"))
+                    return Err(PyNotImplementedError::new_err("fill nulls with strategy"))
                 },
                 FunctionExpr::GatherEvery { n, offset } => {
                     ("gather_every", offset, n).to_object(py)
