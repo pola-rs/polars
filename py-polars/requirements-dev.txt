@@ -61,14 +61,14 @@ matplotlib
 # TOOLING
 # -------
 
-hypothesis==6.103.0
-pytest==8.2.0
+hypothesis==6.104.2
+pytest==8.2.2
 pytest-codspeed==2.2.1
 pytest-cov==5.0.0
 pytest-xdist==3.6.1
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
-moto[s3]==5.0.0
+moto[s3]==5.0.9
 flask
 flask-cors
 
