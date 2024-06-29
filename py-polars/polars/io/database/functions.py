@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
 
+from polars._dependencies import import_optional
 from polars.datatypes import N_INFER_DEFAULT
-from polars.dependencies import import_optional
 from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 

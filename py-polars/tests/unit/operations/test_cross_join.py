@@ -1,7 +1,7 @@
 import sys
 from datetime import datetime
 
-from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars._dependencies import _ZONEINFO_AVAILABLE
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo

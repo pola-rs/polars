@@ -6,7 +6,7 @@ import os
 from textwrap import dedent
 from typing import TYPE_CHECKING, Iterable
 
-from polars.dependencies import html
+from polars._dependencies import html
 
 if TYPE_CHECKING:
     from types import TracebackType

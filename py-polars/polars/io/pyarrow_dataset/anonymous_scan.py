@@ -4,7 +4,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
-from polars.dependencies import pyarrow as pa
+from polars._dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame

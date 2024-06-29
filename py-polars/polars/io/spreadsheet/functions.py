@@ -8,6 +8,7 @@ from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, Sequence, overloa
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import import_optional
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -24,7 +25,6 @@ from polars.datatypes import (
     String,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
-from polars.dependencies import import_optional
 from polars.exceptions import (
     ModuleUpgradeRequiredError,
     NoDataError,

@@ -26,10 +26,10 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
+    from polars._dependencies import numpy as np
+    from polars._dependencies import pandas as pd
+    from polars._dependencies import pyarrow as pa
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
-    from polars.dependencies import numpy as np
-    from polars.dependencies import pandas as pd
-    from polars.dependencies import pyarrow as pa
     from polars.selectors import _selector_proxy_
 
     if sys.version_info >= (3, 10):

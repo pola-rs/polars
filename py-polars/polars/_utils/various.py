@@ -22,6 +22,8 @@ from typing import (
 
 import polars as pl
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars.datatypes import (
     Boolean,
     Date,
@@ -33,8 +35,6 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Reversible

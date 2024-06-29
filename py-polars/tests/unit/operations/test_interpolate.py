@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars._dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:

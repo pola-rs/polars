@@ -7,8 +7,8 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, Any, ContextManager, Iterator, Sequence, overload
 
+from polars._dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars._utils.various import is_int_sequence, is_str_sequence, normalize_filepath
-from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
 
 

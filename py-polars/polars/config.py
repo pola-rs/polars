@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
+from polars._dependencies import json
 from polars._utils.various import normalize_filepath
-from polars.dependencies import json
 
 if TYPE_CHECKING:
     import sys

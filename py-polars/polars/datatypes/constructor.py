@@ -5,7 +5,7 @@ from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import datatypes as dt
-from polars.dependencies import numpy as np
+from polars._dependencies import numpy as np
 
 # Module not available when building docs
 try:

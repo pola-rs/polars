@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
 import polars.functions as F
+from polars._dependencies import import_optional
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
@@ -14,7 +15,6 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.convert import from_arrow
-from polars.dependencies import import_optional
 from polars.io._utils import (
     parse_columns_arg,
     parse_row_index_args,

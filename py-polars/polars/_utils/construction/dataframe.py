@@ -19,6 +19,16 @@ from typing import (
 import polars._reexport as pl
 import polars._utils.construction as plc
 from polars import functions as F
+from polars._dependencies import (
+    _NUMPY_AVAILABLE,
+    _PYARROW_AVAILABLE,
+    _check_for_numpy,
+    _check_for_pandas,
+    dataclasses,
+)
+from polars._dependencies import numpy as np
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction.utils import (
     contains_nested,
     is_namedtuple,
@@ -45,16 +55,6 @@ from polars.datatypes import (
     parse_into_dtype,
     try_parse_into_dtype,
 )
-from polars.dependencies import (
-    _NUMPY_AVAILABLE,
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    _check_for_pandas,
-    dataclasses,
-)
-from polars.dependencies import numpy as np
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 

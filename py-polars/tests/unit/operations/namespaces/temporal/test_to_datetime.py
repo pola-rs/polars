@@ -9,7 +9,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars._dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 

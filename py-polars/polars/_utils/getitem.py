@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Any, Iterable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
 import polars.functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.constants import U32_MAX
 from polars._utils.slice import PolarsSlice
 from polars._utils.various import range_to_slice
@@ -17,8 +19,6 @@ from polars.datatypes.classes import (
     UInt32,
     UInt64,
 )
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 from polars.meta.index_type import get_index_type
 
 if TYPE_CHECKING:

@@ -427,10 +427,10 @@ def test_from_pandas_series() -> None:
 
 
 def test_from_optional_not_available() -> None:
-    from polars.dependencies import _LazyModule
+    from polars._dependencies import _LazyModule
 
     # proxy module is created dynamically if the required module is not available
-    # (see the polars.dependencies source code for additional detail/comments)
+    # (see the polars._dependencies source code for additional detail/comments)
 
     np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):

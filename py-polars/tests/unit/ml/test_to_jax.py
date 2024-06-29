@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.dependencies import _lazy_import
+from polars._dependencies import _lazy_import
 
 # don't import jax until an actual test is triggered (the decorator already
 # ensures the tests aren't run locally; this avoids premature local import)

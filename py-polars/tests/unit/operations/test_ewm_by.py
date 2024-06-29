@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars._dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 

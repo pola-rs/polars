@@ -6,6 +6,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.convert import (
     date_to_int,
     datetime_to_int,
@@ -14,8 +16,6 @@ from polars._utils.convert import (
 )
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration, Enum, Time
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

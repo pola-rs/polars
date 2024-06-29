@@ -13,6 +13,7 @@ from typing import (
     overload,
 )
 
+from polars._dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 from polars._utils.constants import (
     EPOCH,
     EPOCH_DATE,
@@ -23,7 +24,6 @@ from polars._utils.constants import (
     SECONDS_PER_HOUR,
     US_PER_SECOND,
 )
-from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
     from datetime import date, tzinfo

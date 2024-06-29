@@ -180,7 +180,7 @@ def test_init_structured_objects() -> None:
     # validate init from dataclass, namedtuple, and pydantic model objects
     from typing import NamedTuple
 
-    from polars.dependencies import dataclasses, pydantic
+    from polars._dependencies import dataclasses, pydantic
 
     @dataclasses.dataclass
     class TeaShipmentDC:

@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.convert import from_arrow
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
-from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:

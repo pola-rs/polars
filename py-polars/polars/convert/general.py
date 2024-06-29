@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import pandas as pd
+from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -19,13 +21,11 @@ from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.various import _cast_repr_strings_with_schema
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
-from polars.dependencies import pandas as pd
-from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
-    from polars.dependencies import numpy as np
+    from polars._dependencies import numpy as np
     from polars.interchange.protocol import SupportsInterchange
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 

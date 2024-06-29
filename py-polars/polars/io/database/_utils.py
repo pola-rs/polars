@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from polars._dependencies import import_optional
 from polars.convert import from_arrow
-from polars.dependencies import import_optional
 
 if TYPE_CHECKING:
     import sys
@@ -28,8 +28,8 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
 
+    from polars._dependencies import import_optional
     from polars._utils.unstable import issue_unstable_warning
-    from polars.dependencies import import_optional
 
     issue_unstable_warning(
         "Use of asynchronous connections is currently considered unstable "

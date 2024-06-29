@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
 
 from polars import functions as F
+from polars._dependencies import json
 from polars.datatypes import (
     Date,
     Datetime,
@@ -15,7 +16,6 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import json
 from polars.exceptions import DuplicateError
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 

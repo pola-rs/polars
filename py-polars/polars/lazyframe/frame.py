@@ -23,6 +23,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import import_optional, subprocess
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
@@ -76,7 +77,6 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.dependencies import import_optional, subprocess
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
@@ -94,7 +94,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, DataType, Expr
-    from polars.dependencies import numpy as np
+    from polars._dependencies import numpy as np
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,

@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars._dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
