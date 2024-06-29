@@ -1,3 +1,12 @@
+import warnings
+
+# Filter warning issued through great-tables dependency
+warnings.filterwarnings(
+    "ignore",
+    message="`Expr.fill_null` is deprecated.*",
+    category=DeprecationWarning,
+)
+
 # --8<-- [start:dataframe]
 import polars as pl
 import polars.selectors as cs
