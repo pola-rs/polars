@@ -1,4 +1,5 @@
 import os
+import sys
 import urllib.parse
 import warnings
 from collections import OrderedDict
@@ -580,9 +581,6 @@ def test_hive_partition_columns_contained_in_file(
 
 @pytest.mark.write_disk()
 def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
-    # TODO: Path gets incorrectly un-escaped for async
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
-
     df = pl.DataFrame(
         {
             "date1": [
@@ -625,25 +623,26 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
         ),
     )
 
-    root = tmp_path / "includes_hive_cols_in_file"
+    for perc_escape in [True, False] if sys.platform != "win32" else [True]:
+        root = tmp_path / f"includes_hive_cols_in_file_{perc_escape}"
+        for (date1, date2), part_df in df.group_by(
+            pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+            pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+        ):
+            if perc_escape:
+                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
 
-    for (date1, date2), part_df in df.group_by(
-        pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
-        pl.col("date2")
-        .cast(pl.String)
-        .map_elements(urllib.parse.quote, return_dtype=pl.String)
-        .fill_null("__HIVE_DEFAULT_PARTITION__"),
-    ):
-        path = root / f"date1={date1}/date2={date2}/data.bin"
-        path.parent.mkdir(exist_ok=True, parents=True)
-        part_df.write_parquet(path)
+            path = root / f"date1={date1}/date2={date2}/data.bin"
+            path.parent.mkdir(exist_ok=True, parents=True)
+            part_df.write_parquet(path)
 
-    # The schema for the hive columns is included in the file, so it should just work
-    lf = pl.scan_parquet(root)
-    assert_frame_equal(lf.collect(), df)
+        # The schema for the hive columns is included in the file, so it should
+        # just work
+        lf = pl.scan_parquet(root)
+        assert_frame_equal(lf.collect(), df)
 
-    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
-    assert_frame_equal(
-        lf.collect(),
-        df.with_columns(pl.col("date1", "date2").cast(pl.String)),
-    )
+        lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+        assert_frame_equal(
+            lf.collect(),
+            df.with_columns(pl.col("date1", "date2").cast(pl.String)),
+        )
