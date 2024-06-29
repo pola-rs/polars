@@ -429,7 +429,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
             let offsets = arr.offsets().as_slice();
             let take_by = if ca.null_count() == 0 {
                 index
-                    .into_iter()
+                    .iter()
                     .enumerate()
                     .map(|(i, opt_idx)| match opt_idx {
                         Some(idx) => {
@@ -452,7 +452,7 @@ pub(super) fn get(s: &mut [Series], null_on_oob: bool) -> PolarsResult<Option<Se
                     .collect::<Result<IdxCa, _>>()?
             } else {
                 index
-                    .into_iter()
+                    .iter()
                     .zip(arr.validity().unwrap())
                     .enumerate()
                     .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
