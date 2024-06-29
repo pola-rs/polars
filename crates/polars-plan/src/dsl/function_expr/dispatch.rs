@@ -86,11 +86,11 @@ pub(super) fn repeat_by(s: &[Series]) -> PolarsResult<Series> {
     polars_ops::chunked_array::repeat_by(s, by.idx()?).map(|ok| ok.into_series())
 }
 
-pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
+pub(super) fn backward_fill(s: &Series, limit: FillLimit) -> PolarsResult<Series> {
     s.fill_nulls(FillStrategy::Backward(limit))
 }
 
-pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
+pub(super) fn forward_fill(s: &Series, limit: FillLimit) -> PolarsResult<Series> {
     s.fill_nulls(FillStrategy::Forward(limit))
 }
 
@@ -170,10 +170,7 @@ pub(super) fn replace_strict(s: &[Series], return_dtype: Option<DataType>) -> Po
     }
 }
 
-pub(super) fn fill_nulls_with_strategy(
-    s: &Series,
-    strategy: FillStrategy,
-) -> PolarsResult<Series> {
+pub(super) fn fill_nulls_with_strategy(s: &Series, strategy: FillStrategy) -> PolarsResult<Series> {
     s.fill_nulls(strategy)
 }
 

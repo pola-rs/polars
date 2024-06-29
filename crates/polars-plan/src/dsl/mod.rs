@@ -824,12 +824,12 @@ impl Expr {
     }
 
     /// Fill missing value with next non-null.
-    pub fn backward_fill(self, limit: FillNullLimit) -> Self {
+    pub fn backward_fill(self, limit: FillLimit) -> Self {
         self.apply_private(FunctionExpr::BackwardFill { limit })
     }
 
     /// Fill missing value with previous non-null.
-    pub fn forward_fill(self, limit: FillNullLimit) -> Self {
+    pub fn forward_fill(self, limit: FillLimit) -> Self {
         self.apply_private(FunctionExpr::ForwardFill { limit })
     }
 

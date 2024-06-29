@@ -314,10 +314,10 @@ pub enum FunctionExpr {
         kwargs: Arc<[u8]>,
     },
     BackwardFill {
-        limit: FillNullLimit,
+        limit: FillLimit,
     },
     ForwardFill {
-        limit: FillNullLimit,
+        limit: FillLimit,
     },
     MaxHorizontal,
     MinHorizontal,

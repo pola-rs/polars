@@ -1112,7 +1112,7 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
 
 pub(crate) fn parse_fill_nulls_strategy(
     strategy: &str,
-    limit: FillNullLimit,
+    limit: FillLimit,
 ) -> PyResult<FillStrategy> {
     let parsed = match strategy {
         "forward" => FillStrategy::Forward(limit),

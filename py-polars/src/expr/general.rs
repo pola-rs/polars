@@ -353,11 +353,11 @@ impl PyExpr {
             .into()
     }
 
-    fn backward_fill(&self, limit: FillNullLimit) -> Self {
+    fn backward_fill(&self, limit: FillLimit) -> Self {
         self.inner.clone().backward_fill(limit).into()
     }
 
-    fn forward_fill(&self, limit: FillNullLimit) -> Self {
+    fn forward_fill(&self, limit: FillLimit) -> Self {
         self.inner.clone().forward_fill(limit).into()
     }
 
@@ -374,7 +374,7 @@ impl PyExpr {
         self.inner.clone().fill_nulls(expr.inner).into()
     }
 
-    fn fill_nulls_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
+    fn fill_nulls_with_strategy(&self, strategy: &str, limit: FillLimit) -> PyResult<Self> {
         let strategy = parse_fill_nulls_strategy(strategy, limit)?;
         Ok(self.inner.clone().fill_nulls_with_strategy(strategy).into())
     }
