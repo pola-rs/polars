@@ -265,7 +265,7 @@ def test_align_frames() -> None:
     assert_frame_equal(lf2.collect(), pf2)
 
     # misc
-    assert [] == pl.align_frames(on="date")
+    assert pl.align_frames(on="date") == []
 
     # expected error condition
     with pytest.raises(TypeError):

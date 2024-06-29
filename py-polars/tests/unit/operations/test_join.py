@@ -514,17 +514,14 @@ def test_update() -> None:
     assert_frame_equal(a, c)
 
     # check behaviour of 'how' param
-    assert [1, 2, 3] == list(
-        a.update(b, left_on="a", right_on="c").collect().to_series()
-    )
-    assert [1, 3] == list(
-        a.update(b, how="inner", left_on="a", right_on="c").collect().to_series()
-    )
-    print(a, b)
-    print(a.update(b.rename({"b": "a"}), how="full", on="a").collect())
-    assert [1, 2, 3, 4, 5] == sorted(
-        a.update(b.rename({"b": "a"}), how="full", on="a").collect().to_series()
-    )
+    result = a.update(b, left_on="a", right_on="c")
+    assert result.collect().to_series().to_list() == [1, 2, 3]
+
+    result = a.update(b, how="inner", left_on="a", right_on="c")
+    assert result.collect().to_series().to_list() == [1, 3]
+
+    result = a.update(b.rename({"b": "a"}), how="full", on="a")
+    assert result.collect().to_series().sort().to_list() == [1, 2, 3, 4, 5]
 
     # check behavior of include_nulls=True
     df = pl.DataFrame(
@@ -551,7 +548,7 @@ def test_update() -> None:
     # edge-case #11684
     x = pl.DataFrame({"a": [0, 1]})
     y = pl.DataFrame({"a": [2, 3]})
-    assert [0, 1, 2, 3] == sorted(x.update(y, on="a", how="full")["a"].to_list())
+    assert sorted(x.update(y, on="a", how="full")["a"].to_list()) == [0, 1, 2, 3]
 
     # disallowed join strategies
     for join_strategy in ("cross", "anti", "semi"):

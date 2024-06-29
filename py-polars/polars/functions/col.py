@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype
 
-plr: Any = None
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr  # type: ignore[no-redef]
+    import polars.polars as plr
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -305,7 +304,7 @@ class Col:
         │ 6   │
         └─────┘
         """
-        # For autocomplete to work with iPython
+        # For autocomplete to work with IPython
         if name.startswith("__wrapped__"):
             return getattr(type(self), name)
 
