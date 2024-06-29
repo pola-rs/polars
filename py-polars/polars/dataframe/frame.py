@@ -10865,6 +10865,26 @@ class DataFrame:
             value, strategy, limit, matches_supertype=matches_supertype
         )
 
+    @deprecate_renamed_function("fill_nans", version="1.0.0")
+    def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
+        """
+        Fill floating point NaN values by an Expression evaluation.
+
+        .. deprecated:: 1.0.0
+            This method was renamed to :meth:`fill_nans`.
+
+        Parameters
+        ----------
+        value
+            Value with which to replace NaN values.
+
+        Returns
+        -------
+        DataFrame
+            DataFrame with NaN values replaced by the given value.
+        """
+        return self.fill_nans(value)
+
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast

@@ -6448,3 +6448,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self.fill_nulls(
             value, strategy, limit, matches_supertype=matches_supertype
         )
+
+    @deprecate_renamed_function("fill_nans", version="1.0.0")
+    def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
+        """
+        Fill floating point NaN values.
+
+        .. deprecated:: 1.0.0
+            This method was renamed to :meth:`fill_nans`.
+
+        Parameters
+        ----------
+        value
+            Value to fill the NaN values with.
+        """
+        return self.fill_nans(value)

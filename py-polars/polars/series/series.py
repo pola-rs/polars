@@ -7292,6 +7292,21 @@ class Series:
         """
         return self.fill_nulls(value, strategy, limit)
 
+    @deprecate_renamed_function("fill_nans", version="1.0.0")
+    def fill_nan(self, value: int | float | Expr | None) -> Series:
+        """
+        Fill floating point NaN value with a fill value.
+
+        .. deprecated:: 1.0.0
+            This method was renamed to :meth:`fill_nans`.
+
+        Parameters
+        ----------
+        value
+            Value used to fill NaN values.
+        """
+        return self.fill_nans(value)
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 
