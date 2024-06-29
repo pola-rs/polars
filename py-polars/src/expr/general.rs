@@ -379,7 +379,7 @@ impl PyExpr {
         Ok(self.inner.clone().fill_null_with_strategy(strategy).into())
     }
 
-    fn fill_nan(&self, expr: Self) -> Self {
+    fn fill_nans(&self, expr: Self) -> Self {
         self.inner.clone().fill_nan(expr.inner).into()
     }
 

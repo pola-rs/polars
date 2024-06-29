@@ -163,7 +163,7 @@ def test_interpolate_vs_numpy(data: st.DataObject) -> None:
             )
         )
         .sort("ts")
-        .fill_nan(None)
+        .fill_nans(None)
         .unique("ts")
     )
     assume(not dataframe["value"].is_null().all())

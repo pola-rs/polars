@@ -165,7 +165,7 @@ def test_read_of_pushed_column_16436() -> None:
         .with_columns(
             pl.when(pl.col("z").is_infinite()).then(0).otherwise(pl.col("z")).alias("z")
         )
-        .fill_nan(0)
+        .fill_nans(0)
         .collect()
     )
 

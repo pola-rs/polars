@@ -835,8 +835,8 @@ def test_str_series_min_max_10674() -> None:
 def test_fill_nan() -> None:
     nan = float("nan")
     a = pl.Series("a", [1.0, nan, 2.0, nan, 3.0])
-    assert_series_equal(a.fill_nan(None), pl.Series("a", [1.0, None, 2.0, None, 3.0]))
-    assert_series_equal(a.fill_nan(0), pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]))
+    assert_series_equal(a.fill_nans(None), pl.Series("a", [1.0, None, 2.0, None, 3.0]))
+    assert_series_equal(a.fill_nans(0), pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]))
 
 
 def test_map_elements() -> None:
@@ -1489,7 +1489,7 @@ def test_is_nan_is_not_nan(float_type: PolarsDataType) -> None:
 
     assert_series_equal(s.is_nan(), pl.Series([False, True, None]))
     assert_series_equal(s.is_not_nan(), pl.Series([True, False, None]))
-    assert_series_equal(s.fill_nan(2.0), pl.Series([1.0, 2.0, None], dtype=float_type))
+    assert_series_equal(s.fill_nans(2.0), pl.Series([1.0, 2.0, None], dtype=float_type))
     assert_series_equal(s.drop_nans(), pl.Series([1.0, None], dtype=float_type))
 
 

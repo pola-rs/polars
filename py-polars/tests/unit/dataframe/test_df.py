@@ -1803,21 +1803,21 @@ def test_fill_null() -> None:
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
     assert_frame_equal(
-        df.fill_nan(4),
+        df.fill_nans(4),
         pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}),
     )
     assert_frame_equal(
-        df.fill_nan(None),
+        df.fill_nans(None),
         pl.DataFrame({"a": [1, 2], "b": [3.0, None]}),
     )
-    assert df["b"].fill_nan(5.0).to_list() == [3.0, 5.0]
+    assert df["b"].fill_nans(5.0).to_list() == [3.0, 5.0]
     df = pl.DataFrame(
         {
             "a": [1.0, np.nan, 3.0],
             "b": [datetime(1, 2, 2), datetime(2, 2, 2), datetime(3, 2, 2)],
         }
     )
-    assert df.fill_nan(2.0).dtypes == [pl.Float64, pl.Datetime]
+    assert df.fill_nans(2.0).dtypes == [pl.Float64, pl.Datetime]
 
 
 def test_forward_fill() -> None:

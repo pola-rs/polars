@@ -2761,7 +2761,7 @@ class Expr:
                 self._pyexpr.fill_nulls_with_strategy(strategy, limit)
             )
 
-    def fill_nan(self, value: int | float | Expr | None) -> Expr:
+    def fill_nans(self, value: int | float | Expr | None) -> Expr:
         """
         Fill floating point NaN value with a fill value.
 
@@ -2787,7 +2787,7 @@ class Expr:
         ...         "b": [4.0, float("nan"), 6],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("b").fill_nan(0))
+        >>> df.with_columns(pl.col("b").fill_nans(0))
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -2800,7 +2800,7 @@ class Expr:
         └──────┴─────┘
         """
         fill_value = parse_into_expression(value, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
+        return self._from_pyexpr(self._pyexpr.fill_nans(fill_value))
 
     def forward_fill(self, limit: int | None = None) -> Expr:
         """

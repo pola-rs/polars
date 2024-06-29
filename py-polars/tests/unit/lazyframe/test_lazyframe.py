@@ -644,15 +644,15 @@ def test_interpolate() -> None:
 
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
-    assert_series_equal(df.fill_nan(2.0)["a"], pl.Series("a", [1.0, 2.0, 3.0]))
+    assert_series_equal(df.fill_nans(2.0)["a"], pl.Series("a", [1.0, 2.0, 3.0]))
     assert_series_equal(
-        df.lazy().fill_nan(2.0).collect()["a"], pl.Series("a", [1.0, 2.0, 3.0])
+        df.lazy().fill_nans(2.0).collect()["a"], pl.Series("a", [1.0, 2.0, 3.0])
     )
     assert_series_equal(
-        df.lazy().fill_nan(None).collect()["a"], pl.Series("a", [1.0, None, 3.0])
+        df.lazy().fill_nans(None).collect()["a"], pl.Series("a", [1.0, None, 3.0])
     )
     assert_series_equal(
-        df.select(pl.col("a").fill_nan(2))["a"], pl.Series("a", [1.0, 2.0, 3.0])
+        df.select(pl.col("a").fill_nans(2))["a"], pl.Series("a", [1.0, 2.0, 3.0])
     )
     # nearest
     assert pl.Series([None, 1, None, None, None, -8, None, None, 10]).interpolate(

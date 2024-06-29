@@ -240,7 +240,7 @@ def test_filter_not_of_type_bool() -> None:
 
 def test_is_nan_on_non_boolean() -> None:
     with pytest.raises(InvalidOperationError):
-        pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
+        pl.Series(["1", "2", "3"]).fill_nans("2")  # type: ignore[arg-type]
 
 
 def test_window_expression_different_group_length() -> None:

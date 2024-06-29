@@ -78,7 +78,7 @@ print(nan_df)
 
 # --8<-- [start:nanfill]
 mean_nan_df = nan_df.with_columns(
-    pl.col("value").fill_nan(None).alias("value"),
+    pl.col("value").fill_nans(None).alias("value"),
 ).mean()
 print(mean_nan_df)
 # --8<-- [end:nanfill]

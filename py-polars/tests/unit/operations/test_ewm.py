@@ -285,7 +285,7 @@ def test_ewm_methods(
                 pd_params["ignore_na"] = pd_params.pop("ignore_nulls")
 
             # mean:
-            ewm_mean_pl = s.ewm_mean(**pl_params).fill_nan(None)
+            ewm_mean_pl = s.ewm_mean(**pl_params).fill_nans(None)
             ewm_mean_pd = pl.Series(p.ewm(**pd_params).mean())
             if alpha == 1:
                 # apply fill-forward to nulls to match pandas
@@ -295,11 +295,11 @@ def test_ewm_methods(
             assert_series_equal(ewm_mean_pl, ewm_mean_pd, atol=1e-07)
 
             # std:
-            ewm_std_pl = s.ewm_std(bias=bias, **pl_params).fill_nan(None)
+            ewm_std_pl = s.ewm_std(bias=bias, **pl_params).fill_nans(None)
             ewm_std_pd = pl.Series(p.ewm(**pd_params).std(bias=bias))
             assert_series_equal(ewm_std_pl, ewm_std_pd, atol=1e-07)
 
             # var:
-            ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
+            ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nans(None)
             ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
             assert_series_equal(ewm_var_pl, ewm_var_pd, atol=1e-07)

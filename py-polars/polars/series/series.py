@@ -4703,7 +4703,7 @@ class Series:
         """
         return self._from_pyseries(self._s.clone())
 
-    def fill_nan(self, value: int | float | Expr | None) -> Series:
+    def fill_nans(self, value: int | float | Expr | None) -> Series:
         """
         Fill floating point NaN value with a fill value.
 
@@ -4724,7 +4724,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, float("nan")])
-        >>> s.fill_nan(0)
+        >>> s.fill_nans(0)
         shape: (4,)
         Series: 'a' [f64]
         [

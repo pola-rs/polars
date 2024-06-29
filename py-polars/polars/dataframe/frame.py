@@ -7570,7 +7570,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
-    def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
+    def fill_nans(self, value: Expr | int | float | None) -> DataFrame:
         """
         Fill floating point NaN values by an Expression evaluation.
 
@@ -7601,7 +7601,7 @@ class DataFrame:
         ...         "b": [0.5, 4, float("nan"), 13],
         ...     }
         ... )
-        >>> df.fill_nan(99)
+        >>> df.fill_nans(99)
         shape: (4, 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
@@ -7614,7 +7614,7 @@ class DataFrame:
         │ 4.0  ┆ 13.0 │
         └──────┴──────┘
         """
-        return self.lazy().fill_nan(value).collect(_eager=True)
+        return self.lazy().fill_nans(value).collect(_eager=True)
 
     def explode(
         self,
