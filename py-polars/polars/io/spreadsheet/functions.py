@@ -176,6 +176,8 @@ def read_excel(
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
         than one is given then a `{sheetname:frame,}` dict is returned.
     engine : {'calamine', 'xlsx2csv', 'openpyxl'}
+        Library used to parse the spreadsheet file; defaults to "calamine".
+
         * "calamine": this engine can be used for reading all major types of Excel
           Workbook (`.xlsx`, `.xlsb`, `.xls`) and is *dramatically* faster than the
           other options, using the `fastexcel` module to bind the Calamine parser.
