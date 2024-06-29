@@ -35,7 +35,7 @@ In this example we upsample from the original 30 minutes to 15 minutes and then 
 
 In this example we instead fill the nulls by linear interpolation:
 
-{{code_block('user-guide/transformations/time-series/resampling','upsample2',['upsample','interpolate','fill_null'])}}
+{{code_block('user-guide/transformations/time-series/resampling','upsample2',['upsample','interpolate','fill_nulls'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/resampling"
 --8<-- "python/user-guide/transformations/time-series/resampling.py:upsample2"

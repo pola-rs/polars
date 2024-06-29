@@ -390,7 +390,7 @@ def test_overflow_diff() -> None:
     }
 
 
-def test_fill_null_unknown_output_type() -> None:
+def test_fill_nulls_unknown_output_type() -> None:
     df = pl.DataFrame(
         {
             "a": [

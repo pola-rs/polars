@@ -16,7 +16,9 @@ Manipulation/selection
     DataFrame.explode
     DataFrame.extend
     DataFrame.fill_nan
+    DataFrame.fill_nans
     DataFrame.fill_null
+    DataFrame.fill_nulls
     DataFrame.filter
     DataFrame.gather_every
     DataFrame.get_column

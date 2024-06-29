@@ -660,7 +660,7 @@ def test_fill_nan() -> None:
     ).to_list() == [None, 1, 1, -8, -8, -8, -8, 10, 10]
 
 
-def test_fill_null() -> None:
+def test_fill_nulls() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
 
     assert df.select([pl.col("a").fill_nulls(strategy="min")])["a"][1] == 1.0

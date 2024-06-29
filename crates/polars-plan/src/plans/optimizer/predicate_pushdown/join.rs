@@ -20,7 +20,7 @@ fn should_block_join_specific(
             function:
                 FunctionExpr::Boolean(BooleanFunction::IsNotNull)
                 | FunctionExpr::Boolean(BooleanFunction::IsNull)
-                | FunctionExpr::FillNull { .. },
+                | FunctionExpr::FillNulls { .. },
             ..
         } => join_produces_null(how),
         #[cfg(feature = "is_in")]

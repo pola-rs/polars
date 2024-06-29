@@ -217,9 +217,9 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn fill_null(self, fill_value: Expr) -> Self {
+    pub fn fill_nulls(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().fill_null(fill_value)],
+            vec![all().fill_nulls(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()

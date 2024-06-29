@@ -8,7 +8,7 @@ use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
-use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use crate::conversion::{parse_fill_nulls_strategy, vec_extract_wrapped, Wrap};
 use crate::map::lazy::map_single;
 use crate::PyExpr;
 
@@ -371,12 +371,12 @@ impl PyExpr {
     }
 
     fn fill_nulls(&self, expr: Self) -> Self {
-        self.inner.clone().fill_null(expr.inner).into()
+        self.inner.clone().fill_nulls(expr.inner).into()
     }
 
     fn fill_nulls_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
-        let strategy = parse_fill_null_strategy(strategy, limit)?;
-        Ok(self.inner.clone().fill_null_with_strategy(strategy).into())
+        let strategy = parse_fill_nulls_strategy(strategy, limit)?;
+        Ok(self.inner.clone().fill_nulls_with_strategy(strategy).into())
     }
 
     fn fill_nans(&self, expr: Self) -> Self {

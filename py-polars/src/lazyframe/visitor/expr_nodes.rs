@@ -1059,7 +1059,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 .to_object(py),
                 FunctionExpr::Atan2 => ("atan2",).to_object(py),
                 FunctionExpr::Sign => ("sign",).to_object(py),
-                FunctionExpr::FillNull => ("fill_null",).to_object(py),
+                FunctionExpr::FillNulls => ("fill_nulls",).to_object(py),
                 FunctionExpr::RollingExpr(rolling) => match rolling {
                     RollingFunction::Min(_) => {
                         return Err(PyNotImplementedError::new_err("rolling min"))
@@ -1242,7 +1242,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     return Err(PyNotImplementedError::new_err("replace_strict"))
                 },
                 FunctionExpr::Negate => return Err(PyNotImplementedError::new_err("negate")),
-                FunctionExpr::FillNullWithStrategy(_) => {
+                FunctionExpr::FillNullsWithStrategy(_) => {
                     return Err(PyNotImplementedError::new_err("fill null with strategy"))
                 },
                 FunctionExpr::GatherEvery { n, offset } => {

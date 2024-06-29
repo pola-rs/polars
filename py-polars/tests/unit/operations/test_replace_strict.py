@@ -207,7 +207,7 @@ def test_replace_strict_int_to_int_df() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_replace_strict_str_to_int_fill_null() -> None:
+def test_replace_strict_str_to_int_fill_nulls() -> None:
     lf = pl.LazyFrame({"a": ["one", "two"]})
     mapping = {"one": 1}
 

@@ -140,7 +140,7 @@ def test_predicate_pushdown_cumsum_9566() -> None:
     assert q.collect()["A"].to_list() == [8, 9, 0, 1]
 
 
-def test_predicate_pushdown_join_fill_null_10058() -> None:
+def test_predicate_pushdown_join_fill_nulls_10058() -> None:
     ids = pl.LazyFrame({"id": [0, 1, 2]})
     filters = pl.LazyFrame({"id": [0, 1], "filter": [True, False]})
 

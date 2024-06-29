@@ -137,7 +137,7 @@ def test_list_empty_group_by_result_3521() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-def test_list_fill_null() -> None:
+def test_list_fill_nulls() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
         pl.when(pl.col("C").list.len() == 0)
@@ -468,7 +468,7 @@ def test_list_min_max_13978() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_fill_null_empty_list() -> None:
+def test_fill_nulls_empty_list() -> None:
     assert pl.Series([["a"], None]).fill_nulls([]).to_list() == [["a"], []]
 
 

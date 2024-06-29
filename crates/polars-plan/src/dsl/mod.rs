@@ -1011,12 +1011,12 @@ impl Expr {
         }
     }
 
-    fn fill_null_impl(self, fill_value: Expr) -> Self {
+    fn fill_nulls_impl(self, fill_value: Expr) -> Self {
         let input = vec![self, fill_value];
 
         Expr::Function {
             input,
-            function: FunctionExpr::FillNull,
+            function: FunctionExpr::FillNulls,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 cast_to_supertypes: Some(Default::default()),
@@ -1026,12 +1026,12 @@ impl Expr {
     }
 
     /// Replace the null values by a value.
-    pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> Self {
-        self.fill_null_impl(fill_value.into())
+    pub fn fill_nulls<E: Into<Expr>>(self, fill_value: E) -> Self {
+        self.fill_nulls_impl(fill_value.into())
     }
 
-    pub fn fill_null_with_strategy(self, strategy: FillNullStrategy) -> Self {
-        self.apply_private(FunctionExpr::FillNullWithStrategy(strategy))
+    pub fn fill_nulls_with_strategy(self, strategy: FillNullStrategy) -> Self {
+        self.apply_private(FunctionExpr::FillNullsWithStrategy(strategy))
     }
 
     /// Replace the floating point `NaN` values by a value.

@@ -393,7 +393,7 @@ fn test_window_map_empty_df_3542() -> PolarsResult<()> {
     let out = df
         .lazy()
         .filter(col("y").lt(0))
-        .select([col("y").fill_null(0).last().over([col("y")])])
+        .select([col("y").fill_nulls(0).last().over([col("y")])])
         .collect()?;
     assert_eq!(out.height(), 0);
     Ok(())

@@ -1110,7 +1110,7 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
     }
 }
 
-pub(crate) fn parse_fill_null_strategy(
+pub(crate) fn parse_fill_nulls_strategy(
     strategy: &str,
     limit: FillNullLimit,
 ) -> PyResult<FillNullStrategy> {

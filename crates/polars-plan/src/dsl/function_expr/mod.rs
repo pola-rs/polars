@@ -27,7 +27,7 @@ mod dispatch;
 mod ewm;
 #[cfg(feature = "ewma_by")]
 mod ewm_by;
-mod fill_null;
+mod fill_nulls;
 #[cfg(feature = "fused")]
 mod fused;
 mod list;
@@ -154,8 +154,8 @@ pub enum FunctionExpr {
     Atan2,
     #[cfg(feature = "sign")]
     Sign,
-    FillNull,
-    FillNullWithStrategy(FillNullStrategy),
+    FillNulls,
+    FillNullsWithStrategy(FillNullStrategy),
     #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
     #[cfg(feature = "rolling_window_by")]
@@ -424,7 +424,7 @@ impl Hash for FunctionExpr {
             Sign => {},
             #[cfg(feature = "row_hash")]
             Hash(a, b, c, d) => (a, b, c, d).hash(state),
-            FillNull => {},
+            FillNulls => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr(f) => {
                 f.hash(state);
@@ -572,7 +572,7 @@ impl Hash for FunctionExpr {
             Replace => {},
             #[cfg(feature = "replace")]
             ReplaceStrict { return_dtype } => return_dtype.hash(state),
-            FillNullWithStrategy(strategy) => strategy.hash(state),
+            FillNullsWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => signed.hash(state),
@@ -624,7 +624,7 @@ impl Display for FunctionExpr {
             Atan2 => return write!(f, "arctan2"),
             #[cfg(feature = "sign")]
             Sign => "sign",
-            FillNull { .. } => "fill_null",
+            FillNulls { .. } => "fill_nulls",
             #[cfg(feature = "rolling_window")]
             RollingExpr(func, ..) => return write!(f, "{func}"),
             #[cfg(feature = "rolling_window_by")]
@@ -759,7 +759,7 @@ impl Display for FunctionExpr {
             Replace => "replace",
             #[cfg(feature = "replace")]
             ReplaceStrict { .. } => "replace_strict",
-            FillNullWithStrategy(_) => "fill_null_with_strategy",
+            FillNullsWithStrategy(_) => "fill_nulls_with_strategy",
             GatherEvery { .. } => "gather_every",
             #[cfg(feature = "reinterpret")]
             Reinterpret(_) => "reinterpret",
@@ -916,8 +916,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Sign => {
                 map!(sign::sign)
             },
-            FillNull => {
-                map_as_slice!(fill_null::fill_null)
+            FillNulls => {
+                map_as_slice!(fill_nulls::fill_nulls)
             },
             #[cfg(feature = "rolling_window")]
             RollingExpr(f) => {
@@ -1019,7 +1019,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Reverse => map!(dispatch::reverse),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => map!(dispatch::approx_n_unique),
-            Coalesce => map_as_slice!(fill_null::coalesce),
+            Coalesce => map_as_slice!(fill_nulls::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
@@ -1152,7 +1152,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::replace_strict, return_dtype.clone())
             },
 
-            FillNullWithStrategy(strategy) => map!(dispatch::fill_null_with_strategy, strategy),
+            FillNullsWithStrategy(strategy) => map!(dispatch::fill_nulls_with_strategy, strategy),
             GatherEvery { n, offset } => map!(dispatch::gather_every, n, offset),
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),

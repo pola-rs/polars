@@ -331,7 +331,7 @@ impl SQLExprVisitor<'_> {
                     .str()
                     .find(self.visit_expr(expr)?, true)
                     + typed_lit(1u32))
-                .fill_null(typed_lit(0u32)),
+                .fill_nulls(typed_lit(0u32)),
             ),
             SQLExpr::RLike {
                 // note: parses both RLIKE and REGEXP

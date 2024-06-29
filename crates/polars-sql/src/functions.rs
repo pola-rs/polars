@@ -1061,7 +1061,7 @@ impl SQLFunctionVisitor<'_> {
             StrPos => {
                 // // note: SQL is 1-indexed; returns zero if no match found
                 self.visit_binary(|expr, substring| {
-                    (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32))
+                    (expr.str().find(substring, true) + typed_lit(1u32)).fill_nulls(typed_lit(0u32))
                 })
             },
             RegexpLike => {
@@ -1468,7 +1468,7 @@ impl SQLFunctionVisitor<'_> {
                 } else {
                     e.cast(DataType::List(Box::from(DataType::String)))
                         .list()
-                        .eval(col("").fill_null(lit(v)), false)
+                        .eval(col("").fill_nulls(lit(v)), false)
                         .list()
                         .join(sep, false)
                 }),

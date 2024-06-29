@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn fill_null(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn fill_nulls(s: &[Series]) -> PolarsResult<Series> {
     let series = s[0].clone();
     let fill_value = s[1].clone();
 

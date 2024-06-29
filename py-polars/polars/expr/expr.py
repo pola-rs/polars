@@ -2773,11 +2773,11 @@ class Expr:
         Warnings
         --------
         Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
+        To replace missing values, use :func:`fill_nulls`.
 
         See Also
         --------
-        fill_null
+        fill_nulls
 
         Examples
         --------

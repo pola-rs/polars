@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fill_literal_df = df
         .clone()
         .lazy()
-        .with_columns([col("col2").fill_null(lit(2))])
+        .with_columns([col("col2").fill_nulls(lit(2))])
         .collect()?;
     println!("{}", &fill_literal_df);
     // --8<-- [end:fill]
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fill_median_df = df
         .clone()
         .lazy()
-        .with_columns([col("col2").fill_null(median("col2"))])
+        .with_columns([col("col2").fill_nulls(median("col2"))])
         .collect()?;
     println!("{}", &fill_median_df);
     // --8<-- [end:fillexpr]

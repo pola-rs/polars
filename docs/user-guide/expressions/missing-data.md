@@ -50,7 +50,7 @@ The `is_null` method is a cheap operation that does not require scanning the ful
 
 ## Filling missing data
 
-Missing data in a `Series` can be filled with the `fill_null` method. You have to specify how you want the `fill_null` method to fill the missing data. The main ways to do this are filling with:
+Missing data in a `Series` can be filled with the `fill_nulls` method. You have to specify how you want the `fill_nulls` method to fill the missing data. The main ways to do this are filling with:
 
 - a literal such as 0 or "0"
 - a strategy such as filling forwards
@@ -69,7 +69,7 @@ We illustrate each way to fill nulls by defining a simple `DataFrame` with a mis
 
 We can fill the missing data with a specified literal value with `pl.lit`:
 
-{{code_block('user-guide/expressions/missing-data','fill',['fill_null'])}}
+{{code_block('user-guide/expressions/missing-data','fill',['fill_nulls'])}}
 
 ```python exec="on" result="text" session="user-guide/missing-data"
 --8<-- "python/user-guide/expressions/missing-data.py:fill"
@@ -79,7 +79,7 @@ We can fill the missing data with a specified literal value with `pl.lit`:
 
 We can fill the missing data with a strategy such as filling forward:
 
-{{code_block('user-guide/expressions/missing-data','fillstrategy',['fill_null'])}}
+{{code_block('user-guide/expressions/missing-data','fillstrategy',['fill_nulls'])}}
 
 ```python exec="on" result="text" session="user-guide/missing-data"
 --8<-- "python/user-guide/expressions/missing-data.py:fillstrategy"
@@ -92,7 +92,7 @@ You can find other fill strategies in the API docs.
 For more flexibility we can fill the missing data with an expression. For example,
 to fill nulls with the median value from that column:
 
-{{code_block('user-guide/expressions/missing-data','fillexpr',['fill_null'])}}
+{{code_block('user-guide/expressions/missing-data','fillexpr',['fill_nulls'])}}
 
 ```python exec="on" result="text" session="user-guide/missing-data"
 --8<-- "python/user-guide/expressions/missing-data.py:fillexpr"
@@ -102,7 +102,7 @@ In this case the column is cast from integer to float because the median is a fl
 
 ### Fill with interpolation
 
-In addition, we can fill nulls with interpolation (without using the `fill_null` function):
+In addition, we can fill nulls with interpolation (without using the `fill_nulls` function):
 
 {{code_block('user-guide/expressions/missing-data','fillinterpolate',['interpolate'])}}
 
@@ -127,9 +127,9 @@ Missing data in a `Series` has a `null` value. However, you can use `NotaNumber`
 `NaN` values are considered to be a type of floating point data and are **not considered to be missing data** in Polars. This means:
 
 - `NaN` values are **not** counted with the `null_count` method
-- `NaN` values are filled when you use `fill_nan` method but are **not** filled with the `fill_null` method
+- `NaN` values are filled when you use `fill_nan` method but are **not** filled with the `fill_nulls` method
 
-Polars has `is_nan` and `fill_nan` methods which work in a similar way to the `is_null` and `fill_null` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
+Polars has `is_nan` and `fill_nan` methods which work in a similar way to the `is_null` and `fill_nulls` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
 
 One further difference between `null` and `NaN` values is that taking the `mean` of a column with `null` values excludes the `null` values from the calculation but with `NaN` values taking the mean results in a `NaN`. This behaviour can be avoided by replacing the `NaN` values with `null` values;
 

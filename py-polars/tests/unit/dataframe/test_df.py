@@ -1747,7 +1747,7 @@ def test_empty_projection() -> None:
     assert empty_df.shape == (0, 0)
 
 
-def test_fill_null() -> None:
+def test_fill_nulls() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_nulls(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     assert_frame_equal(
@@ -2088,7 +2088,7 @@ def test_concat_to_empty() -> None:
     ) == {"a": [1]}
 
 
-def test_fill_null_limits() -> None:
+def test_fill_nulls_limits() -> None:
     assert pl.DataFrame(
         {
             "a": [1, None, None, None, 5, 6, None, None, None, 10],

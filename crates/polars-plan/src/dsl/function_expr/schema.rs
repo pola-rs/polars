@@ -57,7 +57,7 @@ impl FunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
-            FillNull { .. } => mapper.map_to_supertype(),
+            FillNulls { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
@@ -317,7 +317,7 @@ impl FunctionExpr {
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
             ReplaceStrict { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
-            FillNullWithStrategy(_) => mapper.with_same_dtype(),
+            FillNullsWithStrategy(_) => mapper.with_same_dtype(),
             GatherEvery { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => {

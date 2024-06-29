@@ -127,7 +127,7 @@ fn test_projection_5086() -> PolarsResult<()> {
             col("a"),
             col("b")
                 .xor(col("b").shift(lit(1)).over([col("a")]))
-                .fill_null(lit(true))
+                .fill_nulls(lit(true))
                 .alias("keep"),
         ])
         .collect()?;

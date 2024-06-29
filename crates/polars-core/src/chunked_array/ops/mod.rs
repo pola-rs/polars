@@ -17,7 +17,7 @@ pub(crate) mod downcast;
 pub(crate) mod explode;
 mod explode_and_offsets;
 mod extend;
-pub mod fill_null;
+pub mod fill_nulls;
 mod filter;
 pub mod float_sorted_arg_max;
 mod for_each;
@@ -403,7 +403,7 @@ pub enum FillNullStrategy {
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
-    fn fill_null_with_values(&self, value: T) -> PolarsResult<Self>
+    fn fill_nulls_with_values(&self, value: T) -> PolarsResult<Self>
     where
         Self: Sized;
 }

@@ -602,7 +602,7 @@ def test_struct_categorical_nesting() -> None:
     assert len(s.to_arrow()) == 1
 
 
-def test_categorical_fill_null_existing_category() -> None:
+def test_categorical_fill_nulls_existing_category() -> None:
     # ensure physical types align
     df = pl.DataFrame({"col": ["a", None, "a"]}, schema={"col": pl.Categorical})
     result = df.fill_nulls("a").with_columns(pl.col("col").to_physical().alias("code"))
@@ -611,7 +611,7 @@ def test_categorical_fill_null_existing_category() -> None:
 
 
 @StringCache()
-def test_categorical_fill_null_stringcache() -> None:
+def test_categorical_fill_nulls_stringcache() -> None:
     df = pl.LazyFrame(
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
         schema={"index": pl.Int64(), "cat": pl.Categorical()},

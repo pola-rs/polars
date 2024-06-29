@@ -505,9 +505,12 @@ impl LazyFrame {
     }
 
     /// Fill None values in the DataFrame with an expression.
-    pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
+    pub fn fill_nulls<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().fill_null(fill_value.into()).build();
+        let lp = self
+            .get_plan_builder()
+            .fill_nulls(fill_value.into())
+            .build();
         Self::from_logical_plan(lp, opt_state)
     }
 

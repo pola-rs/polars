@@ -22,7 +22,9 @@ Manipulation/selection
     Series.extend
     Series.extend_constant
     Series.fill_nan
+    Series.fill_nans
     Series.fill_null
+    Series.fill_nulls
     Series.filter
     Series.floor
     Series.gather

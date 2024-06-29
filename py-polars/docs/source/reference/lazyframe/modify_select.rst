@@ -15,7 +15,9 @@ Manipulation/selection
     LazyFrame.drop_nulls
     LazyFrame.explode
     LazyFrame.fill_nan
+    LazyFrame.fill_nans
     LazyFrame.fill_null
+    LazyFrame.fill_nulls
     LazyFrame.filter
     LazyFrame.first
     LazyFrame.gather_every

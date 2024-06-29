@@ -125,7 +125,7 @@ fn replace_by_single(
 ) -> PolarsResult<Series> {
     let mut mask = get_replacement_mask(s, old)?;
     if old.null_count() > 0 {
-        mask = mask.fill_null_with_values(true)?;
+        mask = mask.fill_nulls_with_values(true)?;
     }
     new.zip_with(&mask, default)
 }
@@ -147,7 +147,7 @@ fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsRes
 /// Null values are propagated to the mask.
 fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked> {
     if old.null_count() == old.len() {
-        // Fast path for when users are using `replace(None, ...)` instead of `fill_null`.
+        // Fast path for when users are using `replace(None, ...)` instead of `fill_nulls`.
         Ok(s.is_null())
     } else {
         is_in(s, old)

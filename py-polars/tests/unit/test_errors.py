@@ -648,7 +648,7 @@ def test_invalid_product_type() -> None:
         pl.Series([[1, 2, 3]]).product()
 
 
-def test_fill_null_invalid_supertype() -> None:
+def test_fill_nulls_invalid_supertype() -> None:
     df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
     with pytest.raises(InvalidOperationError, match="could not determine supertype of"):
         df.select(pl.col("date").fill_nulls(1.0))

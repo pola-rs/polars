@@ -35,7 +35,7 @@ else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
-def test_fill_null() -> None:
+def test_fill_nulls() -> None:
     dtm = datetime.strptime("2021-01-01", "%Y-%m-%d")
     s = pl.Series("A", [dtm, None])
 
@@ -62,7 +62,7 @@ def test_fill_null() -> None:
         assert out.dt[-1] == dt_2
 
 
-def test_fill_null_temporal() -> None:
+def test_fill_nulls_temporal() -> None:
     # test filling nulls with temporal literals across cols that use various timeunits
     dtm = datetime.now()
     dtm_ms = dtm.replace(microsecond=(dtm.microsecond // 1000) * 1000)
@@ -98,7 +98,7 @@ def test_fill_null_temporal() -> None:
     dt_fill = date(2023, 12, 31)
     tm_fill = time(23, 59, 59)
 
-    # apply literals via fill_null
+    # apply literals via fill_nulls
     ldf = df.lazy()
     for temporal_literal in (dtm_ns_fill, td_us_fill, dt_fill, tm_fill):
         ldf = ldf.fill_nulls(temporal_literal)

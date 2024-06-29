@@ -185,7 +185,7 @@ fn test_unknown_supertype_ignore() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_columns([(col("col1").fill_null(0f64) + col("col2"))])
+        .with_columns([(col("col1").fill_nulls(0f64) + col("col2"))])
         .collect()?;
     assert_eq!(out.shape(), (4, 2));
     Ok(())

@@ -743,7 +743,7 @@ def test_init_nested_tuple() -> None:
     assert s3.dtype == pl.List(pl.Int32)
 
 
-def test_fill_null() -> None:
+def test_fill_nulls() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_nulls(strategy="forward"), pl.Series("a", [1, 2, 2]))
     assert_series_equal(s.fill_nulls(14), pl.Series("a", [1, 2, 14], dtype=Int64))

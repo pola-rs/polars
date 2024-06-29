@@ -522,7 +522,7 @@ fn test_lazy_shift_and_fill_all() {
     let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
     let out = df
         .lazy()
-        .with_column(col("data").shift(lit(1)).fill_null(lit(0)).alias("output"))
+        .with_column(col("data").shift(lit(1)).fill_nulls(lit(0)).alias("output"))
         .collect()
         .unwrap();
     assert_eq!(
@@ -595,13 +595,13 @@ fn test_lazy_reverse() {
 }
 
 #[test]
-fn test_lazy_fill_null() {
+fn test_lazy_fill_nulls() {
     let df = df! {
         "a" => &[None, Some(2.0)],
         "b" => &[Some(1.0), None]
     }
     .unwrap();
-    let out = df.lazy().fill_null(lit(10.0)).collect().unwrap();
+    let out = df.lazy().fill_nulls(lit(10.0)).collect().unwrap();
     let correct = df! {
         "a" => &[Some(10.0), Some(2.0)],
         "b" => &[Some(1.0), Some(10.0)]
@@ -1692,7 +1692,7 @@ fn empty_df() -> PolarsResult<()> {
             col("A").shift(lit(1)).alias("1"),
             col("A").shift_and_fill(lit(1), lit(1)).alias("2"),
             col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
-            col("A").fill_null(lit(1)).alias("4"),
+            col("A").fill_nulls(lit(1)).alias("4"),
             col("A").cum_count(false).alias("5"),
             col("A").diff(1, NullBehavior::Ignore).alias("6"),
             col("A").cum_max(false).alias("7"),
