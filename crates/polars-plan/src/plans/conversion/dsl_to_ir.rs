@@ -496,19 +496,19 @@ pub fn to_alp_impl(
             let input_schema = lp_arena.get(input).schema(lp_arena);
 
             match function {
-                DslFunction::FillNan(fill_value) => {
+                DslFunction::FillNans(fill_value) => {
                     let exprs = input_schema
                         .iter()
                         .filter_map(|(name, dtype)| match dtype {
                             DataType::Float32 | DataType::Float64 => {
-                                Some(col(name).fill_nan(fill_value.clone()).alias(name))
+                                Some(col(name).fill_nans(fill_value.clone()).alias(name))
                             },
                             _ => None,
                         })
                         .collect::<Vec<_>>();
 
                     let (exprs, schema) = resolve_with_columns(exprs, input, lp_arena, expr_arena)
-                        .map_err(|e| e.context(failed_here!(fill_nan)))?;
+                        .map_err(|e| e.context(failed_here!(fill_nans)))?;
 
                     convert.fill_scratch(&exprs, expr_arena);
 
@@ -521,7 +521,7 @@ pub fn to_alp_impl(
                             ..Default::default()
                         },
                     };
-                    return run_conversion(lp, lp_arena, expr_arena, convert, "fill_nan");
+                    return run_conversion(lp, lp_arena, expr_arena, convert, "fill_nans");
                 },
                 DslFunction::Drop(DropFunction { to_drop, strict }) => {
                     if strict {

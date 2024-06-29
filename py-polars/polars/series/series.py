@@ -4756,7 +4756,7 @@ class Series:
 
         See Also
         --------
-        fill_nan
+        fill_nans
 
         Examples
         --------

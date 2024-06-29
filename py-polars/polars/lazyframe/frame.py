@@ -5120,7 +5120,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        fill_nan
+        fill_nans
 
         Examples
         --------

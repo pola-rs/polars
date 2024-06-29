@@ -832,7 +832,7 @@ def test_str_series_min_max_10674() -> None:
     assert str_series.sort(descending=True).max() == "e"
 
 
-def test_fill_nan() -> None:
+def test_fill_nans() -> None:
     nan = float("nan")
     a = pl.Series("a", [1.0, nan, 2.0, nan, 3.0])
     assert_series_equal(a.fill_nans(None), pl.Series("a", [1.0, None, 2.0, None, 3.0]))

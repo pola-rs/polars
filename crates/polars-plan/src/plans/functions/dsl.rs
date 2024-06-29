@@ -22,7 +22,7 @@ pub enum DslFunction {
     },
     Stats(StatsFunction),
     /// FillValue
-    FillNan(Expr),
+    FillNans(Expr),
     Drop(DropFunction),
 }
 
@@ -104,7 +104,7 @@ impl DslFunction {
                     schema: Default::default(),
                 }
             },
-            DslFunction::Stats(_) | DslFunction::FillNan(_) | DslFunction::Drop(_) => {
+            DslFunction::Stats(_) | DslFunction::FillNans(_) | DslFunction::Drop(_) => {
                 // We should not reach this.
                 panic!("impl error")
             },
@@ -128,7 +128,7 @@ impl Display for DslFunction {
             Unpivot { .. } => write!(f, "UNPIVOT"),
             RowIndex { .. } => write!(f, "WITH ROW INDEX"),
             Stats(_) => write!(f, "STATS"),
-            FillNan(_) => write!(f, "FILL NAN"),
+            FillNans(_) => write!(f, "FILL NAN"),
             Drop(_) => write!(f, "DROP"),
             Rename { .. } => write!(f, "RENAME"),
         }

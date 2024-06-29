@@ -50,7 +50,7 @@ python:
   is_null: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_null.html
   fill_nulls: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.fill_nulls.html
   interpolate: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.interpolate.html
-  fill_nan: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.fill_nan.html
+  fill_nans: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.fill_nans.html
   operators: https://docs.pola.rs/api/python/stable/reference/expressions/operators.html
   over: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.over.html
   implode: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.implode.html
@@ -281,7 +281,7 @@ rust:
   approx_n_unique: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.approx_n_unique
   cast: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.cast
   exclude: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.exclude
-  fill_nan: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_nan
+  fill_nans: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_nans
   fill_nulls: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_nulls
   n_unique: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.n_unique
   null_count: https://docs.pola.rs/api/rust/dev/polars_lazy/dsl/enum.Expr.html#method.null_count

@@ -2677,7 +2677,7 @@ class Expr:
 
         See Also
         --------
-        fill_nan
+        fill_nans
 
         Examples
         --------

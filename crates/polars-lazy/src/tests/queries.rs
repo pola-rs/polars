@@ -1536,12 +1536,12 @@ fn test_round_after_agg() -> PolarsResult<()> {
 
 #[test]
 #[cfg(feature = "dtype-date")]
-fn test_fill_nan() -> PolarsResult<()> {
+fn test_fill_nans() -> PolarsResult<()> {
     let s0 = Series::new("date", &[1, 2, 3]).cast(&DataType::Date)?;
     let s1 = Series::new("float", &[Some(1.0), Some(f32::NAN), Some(3.0)]);
 
     let df = DataFrame::new(vec![s0, s1])?;
-    let out = df.lazy().fill_nan(Null {}.lit()).collect()?;
+    let out = df.lazy().fill_nans(Null {}.lit()).collect()?;
     let out = out.column("float")?;
     assert_eq!(Vec::from(out.f32()?), &[Some(1.0), None, Some(3.0)]);
 

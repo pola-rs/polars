@@ -658,7 +658,7 @@
 //! use polars::df;
 //!
 //! /// Replaces NaN with missing values.
-//! fn fill_nan_with_nulls() -> PolarsResult<DataFrame> {
+//! fn fill_nans_with_nulls() -> PolarsResult<DataFrame> {
 //!     let nan = f64::NAN;
 //!
 //!     let mut df = df! {

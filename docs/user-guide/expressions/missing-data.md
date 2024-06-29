@@ -127,13 +127,13 @@ Missing data in a `Series` has a `null` value. However, you can use `NotaNumber`
 `NaN` values are considered to be a type of floating point data and are **not considered to be missing data** in Polars. This means:
 
 - `NaN` values are **not** counted with the `null_count` method
-- `NaN` values are filled when you use `fill_nan` method but are **not** filled with the `fill_nulls` method
+- `NaN` values are filled when you use `fill_nans` method but are **not** filled with the `fill_nulls` method
 
-Polars has `is_nan` and `fill_nan` methods which work in a similar way to the `is_null` and `fill_nulls` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
+Polars has `is_nan` and `fill_nans` methods which work in a similar way to the `is_null` and `fill_nulls` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
 
 One further difference between `null` and `NaN` values is that taking the `mean` of a column with `null` values excludes the `null` values from the calculation but with `NaN` values taking the mean results in a `NaN`. This behaviour can be avoided by replacing the `NaN` values with `null` values;
 
-{{code_block('user-guide/expressions/missing-data','nanfill',['fill_nan'])}}
+{{code_block('user-guide/expressions/missing-data','nanfill',['fill_nans'])}}
 
 ```python exec="on" result="text" session="user-guide/missing-data"
 --8<-- "python/user-guide/expressions/missing-data.py:nanfill"

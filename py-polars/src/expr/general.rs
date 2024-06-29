@@ -380,7 +380,7 @@ impl PyExpr {
     }
 
     fn fill_nans(&self, expr: Self) -> Self {
-        self.inner.clone().fill_nan(expr.inner).into()
+        self.inner.clone().fill_nans(expr.inner).into()
     }
 
     fn drop_nulls(&self) -> Self {

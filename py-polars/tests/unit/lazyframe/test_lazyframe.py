@@ -642,7 +642,7 @@ def test_interpolate() -> None:
     assert df.lazy().interpolate().collect()["a"].to_list() == [1, 2, 3]
 
 
-def test_fill_nan() -> None:
+def test_fill_nans() -> None:
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
     assert_series_equal(df.fill_nans(2.0)["a"], pl.Series("a", [1.0, 2.0, 3.0]))
     assert_series_equal(

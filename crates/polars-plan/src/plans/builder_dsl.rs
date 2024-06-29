@@ -243,8 +243,8 @@ impl DslBuilder {
         }
     }
 
-    pub fn fill_nan(self, fill_value: Expr) -> Self {
-        self.map_private(DslFunction::FillNan(fill_value))
+    pub fn fill_nans(self, fill_value: Expr) -> Self {
+        self.map_private(DslFunction::FillNans(fill_value))
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {

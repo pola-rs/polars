@@ -515,9 +515,9 @@ impl LazyFrame {
     }
 
     /// Fill NaN values in the DataFrame with an expression.
-    pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
+    pub fn fill_nans<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().fill_nan(fill_value.into()).build();
+        let lp = self.get_plan_builder().fill_nans(fill_value.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

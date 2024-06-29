@@ -1800,7 +1800,7 @@ def test_fill_nulls() -> None:
     assert s.to_list() == ["a", "a"]
 
 
-def test_fill_nan() -> None:
+def test_fill_nans() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
     assert_frame_equal(
         df.fill_nans(4),
