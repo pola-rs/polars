@@ -1,20 +1,27 @@
 from __future__ import annotations
 
-from builtins import any as standard_any
-from typing import cast
+from builtins import all as standard_all
+from typing import TYPE_CHECKING, cast
 
 import polars.functions as F
-from polars.expr import Expr
+from polars._utils.parse import parse_into_expression
+from polars._utils.wrap import wrap_expr
+
+if TYPE_CHECKING:
+    from polars.expr import Expr
 
 
-def into_expr(*names: str | Expr) -> Expr:
+def vertical_parse_into_expr(*names: str | Expr) -> Expr:
     """Process column name inputs into expressions."""
-    contains_expr = standard_any(isinstance(name, Expr) for name in names)
-    if len(names) > 1 and contains_expr:
-        msg = "`names` input must be either a set of strings or a single expression"
-        raise TypeError(msg)
+    if len(names) == 1:
+        return wrap_expr(parse_into_expression(*names))
 
-    return cast(Expr, names[0]) if contains_expr else F.col(cast(tuple[str], names))
+    if standard_all(isinstance(name, str) for name in names):
+        names = cast(tuple[str], names)
+        return F.col(*names)
+    
+    msg = "`names` input must be either a set of strings or a single expression"
+    raise TypeError(msg)
 
 
 def all(*names: str | Expr, ignore_nulls: bool = True) -> Expr:
@@ -76,7 +83,7 @@ def all(*names: str | Expr, ignore_nulls: bool = True) -> Expr:
     if not names:
         return F.col("*")
 
-    return into_expr(*names).all(ignore_nulls=ignore_nulls)
+    return vertical_parse_into_expr(*names).all(ignore_nulls=ignore_nulls)
 
 
 def any(*names: str | Expr, ignore_nulls: bool = True) -> Expr | bool | None:
@@ -120,7 +127,7 @@ def any(*names: str | Expr, ignore_nulls: bool = True) -> Expr | bool | None:
     │ true │
     └──────┘
     """
-    return into_expr(*names).any(ignore_nulls=ignore_nulls)
+    return vertical_parse_into_expr(*names).any(ignore_nulls=ignore_nulls)
 
 
 def max(*names: str | Expr) -> Expr:
@@ -180,7 +187,7 @@ def max(*names: str | Expr) -> Expr:
     │ 8   ┆ 5   │
     └─────┴─────┘
     """
-    return into_expr(*names).max()
+    return vertical_parse_into_expr(*names).max()
 
 
 def min(*names: str | Expr) -> Expr:
@@ -240,7 +247,7 @@ def min(*names: str | Expr) -> Expr:
     │ 1   ┆ 2   │
     └─────┴─────┘
     """
-    return into_expr(*names).min()
+    return vertical_parse_into_expr(*names).min()
 
 
 def sum(*names: str | Expr) -> Expr:
@@ -300,7 +307,7 @@ def sum(*names: str | Expr) -> Expr:
     │ 7   ┆ 11  │
     └─────┴─────┘
     """
-    return into_expr(*names).sum()
+    return vertical_parse_into_expr(*names).sum()
 
 
 def cum_sum(*names: str | Expr) -> Expr:
@@ -338,4 +345,4 @@ def cum_sum(*names: str | Expr) -> Expr:
     │ 6   │
     └─────┘
     """
-    return into_expr(*names).cum_sum()
+    return vertical_parse_into_expr(*names).cum_sum()
