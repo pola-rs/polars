@@ -48,6 +48,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
+    columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
@@ -63,6 +64,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
+    columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
@@ -78,6 +80,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
+    columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
@@ -95,6 +98,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
+    columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
@@ -110,6 +114,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
+    columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
@@ -125,6 +130,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = ...,
     engine_options: dict[str, Any] | None = ...,
     read_options: dict[str, Any] | None = ...,
+    columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
@@ -141,6 +147,7 @@ def read_excel(
     engine: ExcelSpreadsheetEngine = "calamine",
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
+    columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     raise_if_empty: bool = True,
@@ -194,6 +201,9 @@ def read_excel(
         * "calamine": `ExcelReader.load_sheet_by_name`
         * "xlsx2csv": `pl.read_csv`
         * "openpyxl": n/a (can only provide `engine_options`)
+    columns
+        Columns to read from the sheet; if not specified, all columns are read. Can
+        be given as a sequence of column names or indices.
     schema_overrides
         Support type specification or override of one or more columns.
     infer_schema_length
@@ -269,6 +279,7 @@ def read_excel(
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
         raise_if_empty=raise_if_empty,
+        columns=columns,
     )
 
 
@@ -278,7 +289,8 @@ def read_ods(
     *,
     sheet_id: None = ...,
     sheet_name: str,
-    schema_overrides: SchemaDict | None = None,
+    columns: Sequence[int] | Sequence[str] | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
@@ -290,7 +302,8 @@ def read_ods(
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
-    schema_overrides: SchemaDict | None = None,
+    columns: Sequence[int] | Sequence[str] | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
@@ -302,7 +315,8 @@ def read_ods(
     *,
     sheet_id: int,
     sheet_name: str,
-    schema_overrides: SchemaDict | None = None,
+    columns: Sequence[int] | Sequence[str] | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn: ...
@@ -314,7 +328,8 @@ def read_ods(
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
-    schema_overrides: SchemaDict | None = None,
+    columns: Sequence[int] | Sequence[str] | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
@@ -326,7 +341,8 @@ def read_ods(
     *,
     sheet_id: int,
     sheet_name: None = ...,
-    schema_overrides: SchemaDict | None = None,
+    columns: Sequence[int] | Sequence[str] | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
@@ -338,7 +354,8 @@ def read_ods(
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
-    schema_overrides: SchemaDict | None = None,
+    columns: Sequence[int] | Sequence[str] | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
@@ -349,6 +366,7 @@ def read_ods(
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
+    columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     raise_if_empty: bool = True,
@@ -370,6 +388,9 @@ def read_ods(
     sheet_name
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If
         more than one is given then a `{sheetname:frame,}` dict is returned.
+    columns
+        Columns to read from the sheet; if not specified, all columns are read. Can
+        be given as a sequence of column names or indices.
     schema_overrides
         Support type specification or override of one or more columns.
     infer_schema_length
@@ -417,6 +438,7 @@ def read_ods(
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
         raise_if_empty=raise_if_empty,
+        columns=columns,
     )
 
 
@@ -471,6 +493,7 @@ def _read_spreadsheet(
     read_options: dict[str, Any] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    columns: Sequence[int] | Sequence[str] | None = None,
     *,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
@@ -484,19 +507,27 @@ def _read_spreadsheet(
 
     # normalise some top-level parameters to 'read_options' entries
     if engine == "calamine":
-        if ("schema_sample_rows" in read_options) and (
+        if ("use_columns" in read_options) and columns:
+            msg = 'cannot specify both `columns` and `read_options["use_columns"]`'
+            raise ParameterCollisionError(msg)
+        elif ("schema_sample_rows" in read_options) and (
             infer_schema_length != N_INFER_DEFAULT
         ):
             msg = 'cannot specify both `infer_schema_length` and `read_options["schema_sample_rows"]`'
             raise ParameterCollisionError(msg)
+
         read_options["schema_sample_rows"] = infer_schema_length
 
     elif engine == "xlsx2csv":
-        if ("infer_schema_length" in read_options) and (
+        if ("columns" in read_options) and columns:
+            msg = 'cannot specify both `columns` and `read_options["columns"]`'
+            raise ParameterCollisionError(msg)
+        elif ("infer_schema_length" in read_options) and (
             infer_schema_length != N_INFER_DEFAULT
         ):
             msg = 'cannot specify both `infer_schema_length` and `read_options["infer_schema_length"]`'
             raise ParameterCollisionError(msg)
+
         read_options["infer_schema_length"] = infer_schema_length
     else:
         read_options["infer_schema_length"] = infer_schema_length
@@ -515,6 +546,7 @@ def _read_spreadsheet(
                 schema_overrides=schema_overrides,
                 read_options=read_options,
                 raise_if_empty=raise_if_empty,
+                columns=columns,
             )
             for name in sheet_names
         }
@@ -645,10 +677,10 @@ def _initialise_spreadsheet_parser(
 
 def _csv_buffer_to_frame(
     csv: StringIO,
+    *,
     separator: str,
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
-    *,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Translate StringIO buffer containing delimited data as a DataFrame."""
@@ -725,12 +757,24 @@ def _drop_null_data(df: pl.DataFrame, *, raise_if_empty: bool) -> pl.DataFrame:
     return df.filter(~F.all_horizontal(F.all().is_null()))
 
 
+def _reorder_columns(
+    df: pl.DataFrame, columns: Sequence[int] | Sequence[str] | None
+) -> pl.DataFrame:
+    if columns:
+        from polars.selectors import by_index, by_name
+
+        cols = by_index(*columns) if isinstance(columns[0], int) else by_name(*columns)
+        df = df.select(cols)
+    return df
+
+
 def _read_spreadsheet_openpyxl(
     parser: Any,
+    *,
     sheet_name: str | None,
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
-    *,
+    columns: Sequence[int] | Sequence[str] | None,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'openpyxl' library to read data from the given worksheet."""
@@ -775,24 +819,35 @@ def _read_spreadsheet_openpyxl(
         infer_schema_length=infer_schema_length,
         strict=False,
     )
-    return _drop_null_data(df, raise_if_empty=raise_if_empty)
+
+    df = _drop_null_data(df, raise_if_empty=raise_if_empty)
+    df = _reorder_columns(df, columns)
+    return df
 
 
 def _read_spreadsheet_calamine(
     parser: Any,
+    *,
     sheet_name: str | None,
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
-    *,
+    columns: Sequence[int] | Sequence[str] | None,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     # if we have 'schema_overrides' and a more recent version of `fastexcel`
     # we can pass translated dtypes to the engine to refine the initial parse
     fastexcel = import_optional("fastexcel")
-    fastexcel_version = parse_version(fastexcel.__version__)
+    fastexcel_version = parse_version(original_version := fastexcel.__version__)
+
     if fastexcel_version < (0, 9) and "schema_sample_rows" in read_options:
-        msg = f"a more recent version of `fastexcel` is required (>= 0.9; found {fastexcel.__version__})"
+        msg = f"a more recent version of `fastexcel` is required (>= 0.9; found {original_version})"
         raise ModuleUpgradeRequiredError(msg)
+    if fastexcel_version < (0, 10, 2) and "use_columns" in read_options:
+        msg = f"a more recent version of `fastexcel` is required (>= 0.10.2; found {original_version})"
+        raise ModuleUpgradeRequiredError(msg)
+
+    if columns:
+        read_options["use_columns"] = columns
 
     schema_overrides = schema_overrides or {}
     if read_options.get("schema_sample_rows") == 0:
@@ -864,10 +919,11 @@ def _read_spreadsheet_calamine(
 
 def _read_spreadsheet_xlsx2csv(
     parser: Any,
+    *,
     sheet_name: str | None,
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
-    *,
+    columns: Sequence[int] | Sequence[str] | None,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'xlsx2csv' library to read data from the given worksheet."""
@@ -875,11 +931,14 @@ def _read_spreadsheet_xlsx2csv(
 
     parser.convert(outfile=csv_buffer, sheetname=sheet_name)
     read_options.setdefault("truncate_ragged_lines", True)
+    if columns:
+        read_options["columns"] = columns
 
-    return _csv_buffer_to_frame(
+    df = _csv_buffer_to_frame(
         csv_buffer,
         separator=",",
         read_options=read_options,
         schema_overrides=schema_overrides,
         raise_if_empty=raise_if_empty,
     )
+    return _reorder_columns(df, columns)
