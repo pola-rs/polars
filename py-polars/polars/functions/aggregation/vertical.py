@@ -19,7 +19,7 @@ def vertical_parse_into_expr(*names: str | Expr) -> Expr:
     if standard_all(isinstance(name, str) for name in names):
         names = cast(tuple[str], names)
         return F.col(*names)
-    
+
     msg = "`names` input must be either a set of strings or a single expression"
     raise TypeError(msg)
 
