@@ -1,27 +1,32 @@
 use std::sync::Arc;
 
-use polars_error::{polars_err, PolarsResult};
+use polars_core::frame::DataFrame;
+use polars_core::schema::Schema;
+use polars_core::series::Series;
+use polars_error::PolarsResult;
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
+use polars_plan::plans::DataFrameUdf;
 
 use super::{ComputeNode, PortState};
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
 
-pub struct FilterNode {
-    predicate: Arc<dyn PhysicalExpr>,
+/// A simple mapping node. Assumes the given udf is elementwise.
+pub struct MapNode {
+    map: Arc<dyn DataFrameUdf>,
 }
 
-impl FilterNode {
-    pub fn new(predicate: Arc<dyn PhysicalExpr>) -> Self {
-        Self { predicate }
+impl MapNode {
+    pub fn new(map: Arc<dyn DataFrameUdf>) -> Self {
+        Self { map }
     }
 }
 
-impl ComputeNode for FilterNode {
+impl ComputeNode for MapNode {
     fn name(&self) -> &'static str {
-        "filter"
+        "map"
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
@@ -43,22 +48,7 @@ impl ComputeNode for FilterNode {
 
         scope.spawn_task(true, async move {
             while let Ok(morsel) = recv.recv().await {
-                let morsel = morsel.try_map(|df| {
-                    let mask = self.predicate.evaluate(&df, state)?;
-                    let mask = mask.bool().map_err(|_| {
-                        polars_err!(
-                            ComputeError: "filter predicate must be of type `Boolean`, got `{}`", mask.dtype()
-                        )
-                    })?;
-
-                    // We already parallelize, call the sequential filter.
-                    df._filter_seq(mask)
-                })?;
-
-                if morsel.df().is_empty() {
-                    continue;
-                }
-
+                let morsel = morsel.try_map(|df| self.map.call_udf(df))?;
                 if send.send(morsel).await.is_err() {
                     break;
                 }

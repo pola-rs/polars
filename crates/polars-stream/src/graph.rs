@@ -1,4 +1,4 @@
-use slotmap::SlotMap;
+use slotmap::{SecondaryMap, SlotMap};
 
 use crate::nodes::ComputeNode;
 
@@ -46,8 +46,10 @@ impl Graph {
             let pipe = LogicalPipe {
                 sender,
                 send_port,
+                send_state: PortState::Blocked,
                 receiver: node_key,
                 recv_port,
+                recv_state: PortState::Blocked,
             };
 
             // Add the pipe.
@@ -59,6 +61,52 @@ impl Graph {
         }
 
         node_key
+    }
+
+    /// Updates all the nodes' states until a fixed point is reached.
+    pub fn update_all_states(&mut self) {
+        let mut to_update: Vec<_> = self.nodes.keys().collect();
+        let mut scheduled_for_update: SecondaryMap<GraphNodeKey, ()> =
+            self.nodes.keys().map(|k| (k, ())).collect();
+
+        let mut recv_state = Vec::new();
+        let mut send_state = Vec::new();
+        while let Some(node_key) = to_update.pop() {
+            scheduled_for_update.remove(node_key);
+            let node = &mut self.nodes[node_key];
+
+            // Get the states of nodes this node is connected to.
+            recv_state.clear();
+            send_state.clear();
+            recv_state.extend(node.inputs.iter().map(|i| self.pipes[*i].send_state));
+            send_state.extend(node.outputs.iter().map(|o| self.pipes[*o].recv_state));
+
+            // Compute the new state of this node given its environment.
+            // println!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
+            node.compute.update_state(&mut recv_state, &mut send_state);
+            // println!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
+
+            // Propagate information.
+            for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
+                let pipe = &mut self.pipes[*input];
+                if pipe.recv_state != *state {
+                    pipe.recv_state = *state;
+                    if scheduled_for_update.insert(pipe.sender, ()).is_none() {
+                        to_update.push(pipe.sender);
+                    }
+                }
+            }
+
+            for (output, state) in node.outputs.iter().zip(send_state.iter()) {
+                let pipe = &mut self.pipes[*output];
+                if pipe.send_state != *state {
+                    pipe.send_state = *state;
+                    if scheduled_for_update.insert(pipe.receiver, ()).is_none() {
+                        to_update.push(pipe.receiver);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -74,14 +122,23 @@ pub struct GraphNode {
 #[allow(unused)] // TODO: remove.
 pub struct LogicalPipe {
     // Node that we send data to.
-    sender: GraphNodeKey,
+    pub sender: GraphNodeKey,
     // Output location:
     // graph[x].output[i].send_port == i
     send_port: usize,
+    pub send_state: PortState,
 
     // Node that we receive data from.
-    receiver: GraphNodeKey,
+    pub receiver: GraphNodeKey,
     // Input location:
     // graph[x].inputs[i].recv_port == i
     recv_port: usize,
+    pub recv_state: PortState,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum PortState {
+    Blocked,
+    Ready,
+    Done,
 }

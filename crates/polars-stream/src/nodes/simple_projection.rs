@@ -5,6 +5,7 @@ use polars_expr::state::ExecutionState;
 use super::ComputeNode;
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
+use crate::graph::PortState;
 use crate::morsel::Morsel;
 
 pub struct SimpleProjectionNode {
@@ -18,16 +19,26 @@ impl SimpleProjectionNode {
 }
 
 impl ComputeNode for SimpleProjectionNode {
+    fn name(&self) -> &'static str {
+        "simple_projection"
+    }
+
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+        assert!(recv.len() == 1 && send.len() == 1);
+        recv.swap_with_slice(send);
+    }
+
     fn spawn<'env, 's>(
         &'env self,
         scope: &'s TaskScope<'s, 'env>,
         _pipeline: usize,
-        recv: Vec<Receiver<Morsel>>,
-        send: Vec<Sender<Morsel>>,
+        recv: &mut [Option<Receiver<Morsel>>],
+        send: &mut [Option<Sender<Morsel>>],
         _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
-        let [mut recv] = <[_; 1]>::try_from(recv).ok().unwrap();
-        let [mut send] = <[_; 1]>::try_from(send).ok().unwrap();
+        assert!(recv.len() == 1 && send.len() == 1);
+        let mut recv = recv[0].take().unwrap();
+        let mut send = send[0].take().unwrap();
 
         scope.spawn_task(true, async move {
             while let Ok(morsel) = recv.recv().await {

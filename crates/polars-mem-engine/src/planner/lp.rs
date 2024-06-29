@@ -141,7 +141,7 @@ impl ConversionState {
 pub fn create_physical_plan(
     root: Node,
     lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Box<dyn Executor>> {
     let state = ConversionState::new()?;
     create_physical_plan_impl(root, lp_arena, expr_arena, &state)
@@ -150,7 +150,7 @@ pub fn create_physical_plan(
 fn create_physical_plan_impl(
     root: Node,
     lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     state: &ConversionState,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_error::PolarsResult;
 use polars_plan::plans::{AExpr, Context, IR};
 use polars_plan::prelude::SinkType;
@@ -33,12 +35,12 @@ pub fn lower_ir(
             ..
         } if expr.iter().all(|e| is_streamable(e.node(), expr_arena)) => {
             let selectors = expr.clone();
-            let schema = schema.clone();
+            let output_schema = schema.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
             Ok(phys_sm.insert(PhysNode::Select {
                 input,
                 selectors,
-                schema,
+                output_schema,
                 extend_original: false,
             }))
         },
@@ -51,12 +53,12 @@ pub fn lower_ir(
             ..
         } if exprs.iter().all(|e| is_streamable(e.node(), expr_arena)) => {
             let selectors = exprs.clone();
-            let schema = schema.clone();
+            let output_schema = schema.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
             Ok(phys_sm.insert(PhysNode::Select {
                 input,
                 selectors,
-                schema,
+                output_schema,
                 extend_original: true,
             }))
         },
@@ -75,7 +77,7 @@ pub fn lower_ir(
         } => {
             if let Some(filter) = filter {
                 if !is_streamable(filter.node(), expr_arena) {
-                    return Ok(phys_sm.insert(PhysNode::Fallback(node)));
+                    todo!()
                 }
             }
 
@@ -108,6 +110,43 @@ pub fn lower_ir(
             todo!()
         },
 
-        _ => Ok(phys_sm.insert(PhysNode::Fallback(node))),
+        IR::MapFunction { input, function } => {
+            let input_schema = ir_arena.get(*input).schema(ir_arena).into_owned();
+            let function = function.clone();
+            let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
+
+            let phys_node = if function.is_streamable() {
+                let map = Arc::new(move |df| function.evaluate(df));
+                PhysNode::Map { input, map }
+            } else {
+                let map = Arc::new(move |df| function.evaluate(df));
+                PhysNode::InMemoryMap {
+                    input,
+                    input_schema,
+                    map,
+                }
+            };
+
+            Ok(phys_sm.insert(phys_node))
+        },
+
+        IR::Sort {
+            input,
+            by_column,
+            slice,
+            sort_options,
+        } => {
+            let input_schema = ir_arena.get(*input).schema(ir_arena).into_owned();
+            let phys_node = PhysNode::Sort {
+                input_schema,
+                by_column: by_column.clone(),
+                slice: *slice,
+                sort_options: sort_options.clone(),
+                input: lower_ir(*input, ir_arena, expr_arena, phys_sm)?,
+            };
+            Ok(phys_sm.insert(phys_node))
+        },
+
+        _ => todo!(),
     }
 }

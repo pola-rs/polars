@@ -24,6 +24,7 @@ slotmap = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
+polars-mem-engine = { workspace = true }
 polars-plan = { workspace = true }
 
 [build-dependencies]

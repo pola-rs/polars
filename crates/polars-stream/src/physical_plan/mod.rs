@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::Schema;
+use polars_error::PolarsResult;
+use polars_plan::plans::DataFrameUdf;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::arena::Node;
 
@@ -25,24 +28,45 @@ pub enum PhysNode {
     InMemorySource {
         df: Arc<DataFrame>,
     },
+
     Select {
         input: PhysNodeKey,
         selectors: Vec<ExprIR>,
         extend_original: bool,
-        schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
     },
+
     Filter {
         input: PhysNodeKey,
         predicate: ExprIR,
     },
+
     SimpleProjection {
         input: PhysNodeKey,
         schema: Arc<Schema>,
     },
+
     InMemorySink {
         input: PhysNodeKey,
         schema: Arc<Schema>,
     },
-    // Fallback to the in-memory engine.
-    Fallback(Node),
+
+    InMemoryMap {
+        input: PhysNodeKey,
+        input_schema: Arc<Schema>,
+        map: Arc<dyn DataFrameUdf>,
+    },
+
+    Map {
+        input: PhysNodeKey,
+        map: Arc<dyn DataFrameUdf>,
+    },
+
+    Sort {
+        input: PhysNodeKey,
+        input_schema: Arc<Schema>, // TODO: remove when not using fallback impl.
+        by_column: Vec<ExprIR>,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
+    },
 }
