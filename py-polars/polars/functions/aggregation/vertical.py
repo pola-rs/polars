@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from builtins import all as standard_all
-from typing import TYPE_CHECKING, cast, Iterable
+from typing import TYPE_CHECKING, Tuple, cast
 
 import polars.functions as F
 from polars._utils.parse import parse_into_expression
@@ -17,7 +17,7 @@ def vertical_parse_into_expr(*names: str | Expr) -> Expr:
         return wrap_expr(parse_into_expression(*names))
 
     if standard_all(isinstance(name, str) for name in names):
-        names = cast(Iterable[str], names)
+        names = cast(Tuple[str], names)
         return F.col(*names)
 
     msg = "`names` input must be either a set of strings or a single expression"
