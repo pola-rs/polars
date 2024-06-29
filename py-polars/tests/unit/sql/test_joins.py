@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -425,6 +425,13 @@ def test_natural_joins_01() -> None:
                 "Drone": None,
             },
         ]
+
+    # misc errors
+    with pytest.raises(SQLSyntaxError, match=r"did you mean COLUMNS\(\*\)\?"):
+        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5")
+
+    with pytest.raises(SQLSyntaxError, match=r"COLUMNS expects a regex"):
+        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2")
 
 
 @pytest.mark.parametrize(
