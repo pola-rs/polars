@@ -148,6 +148,8 @@ def read_excel(
     """
     Read Excel spreadsheet data into a DataFrame.
 
+    .. versionchanged:: 1.0
+        Default engine is now "calamine" (was "xlsx2csv").
     .. versionadded:: 0.20.6
         Added "calamine" fastexcel engine for Excel Workbooks (.xlsx, .xlsb, .xls).
     .. versionadded:: 0.19.3
@@ -167,12 +169,9 @@ def read_excel(
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
         than one is given then a `{sheetname:frame,}` dict is returned.
     engine : {'calamine', 'xlsx2csv', 'openpyxl'}
-        Library used to parse the spreadsheet file; defaults to "xlsx2csv"
-        if not explicitly set.
-
         * "calamine": this engine can be used for reading all major types of Excel
           Workbook (`.xlsx`, `.xlsb`, `.xls`) and is *dramatically* faster than the
-          other options, using the `fastexcel` module to bind the calamine reader.
+          other options, using the `fastexcel` module to bind the Calamine parser.
         * "xlsx2csv": converts the data to an in-memory CSV before using the native
           polars `read_csv` method to parse the result. You can pass `engine_options`
           and `read_options` to refine the conversion.
