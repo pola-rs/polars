@@ -2584,7 +2584,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @deprecate_function(
-        "This will shortly become a private function; use is strongly discouraged",
+        "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
+        "instead, in conjunction with a call to `head`.",
         version="1.0",
     )
     def fetch(
@@ -2604,6 +2605,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
+
+        .. deprecated:: 1.0
+            Use :meth:`collect` instead, in conjunction with a call to :meth:`head`.`
 
         Notes
         -----
