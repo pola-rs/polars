@@ -56,12 +56,13 @@ great-tables>=0.8.0; python_version >= '3.9'
 gevent
 # Graph
 matplotlib
+# Testing
+hypothesis
 
 # -------
 # TOOLING
 # -------
 
-hypothesis==6.104.2
 pytest==8.2.2
 pytest-codspeed==2.2.1
 pytest-cov==5.0.0
