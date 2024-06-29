@@ -72,10 +72,7 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
-    from polars._utils.various import (
-        NoDefault,
-    )
-    from polars.type_aliases import (
+    from polars._typing import (
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
@@ -91,6 +88,9 @@ if TYPE_CHECKING:
         SerializationFormat,
         TemporalLiteral,
         WindowMappingStrategy,
+    )
+    from polars._utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):

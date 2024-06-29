@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars import DataFrame
-    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
 
 
 class BatchedCsvReader:

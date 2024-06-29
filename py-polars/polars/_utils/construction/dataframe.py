@@ -63,13 +63,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         Orientation,
         PolarsDataType,
         SchemaDefinition,
         SchemaDict,
     )
+    from polars.polars import PySeries
 
 _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 

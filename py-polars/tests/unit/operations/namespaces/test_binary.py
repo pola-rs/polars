@@ -1,8 +1,8 @@
 import pytest
 
 import polars as pl
+from polars._typing import TransferEncoding
 from polars.testing import assert_frame_equal
-from polars.type_aliases import TransferEncoding
 
 
 def test_binary_conversions() -> None:

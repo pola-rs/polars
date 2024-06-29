@@ -34,7 +34,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, UniqueKeepStrategy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 

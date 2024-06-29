@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, LazyFrame
-    from polars.type_aliases import PolarsDataType, SelectorType, TimeUnit
+    from polars._typing import PolarsDataType, SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self

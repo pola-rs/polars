@@ -94,8 +94,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, DataType, Expr
-    from polars.dependencies import numpy as np
-    from polars.type_aliases import (
+    from polars._typing import (
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
@@ -117,6 +116,7 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
+    from polars.dependencies import numpy as np
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec

@@ -10,8 +10,8 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Series
+    from polars._typing import IntoExpr, IntoExprColumn
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExpr, IntoExprColumn
 
 
 @expr_dispatch

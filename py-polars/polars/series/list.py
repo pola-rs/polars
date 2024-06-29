@@ -10,13 +10,13 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         IntoExpr,
         IntoExprColumn,
         NullBehavior,
         ToStructStrategy,
     )
+    from polars.polars import PySeries
 
 
 @expr_dispatch

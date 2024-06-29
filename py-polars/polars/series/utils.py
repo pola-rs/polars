@@ -12,8 +12,8 @@ from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
     from polars import Series
+    from polars._typing import PolarsDataType
     from polars.polars import PySeries
-    from polars.type_aliases import PolarsDataType
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec

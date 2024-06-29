@@ -26,9 +26,9 @@ from polars.datatypes import (
 from polars.interchange.protocol import DtypeKind, Endianness
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from polars.datatypes import DataTypeClass
     from polars.interchange.protocol import Dtype
-    from polars.type_aliases import PolarsDataType
 
 NE = Endianness.NATIVE
 

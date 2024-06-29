@@ -14,7 +14,7 @@ from polars.testing.parametric.strategies.dtype import _instantiate_dtype, dtype
 if TYPE_CHECKING:
     from hypothesis.strategies import SearchStrategy
 
-    from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
+    from polars._typing import OneOrMoreDataTypes, PolarsDataType
 
 
 @deprecate_function(

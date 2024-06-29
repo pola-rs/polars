@@ -14,7 +14,7 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import SerializationFormat
+    from polars._typing import SerializationFormat
 
 
 @given(lf=dataframes(lazy=True))

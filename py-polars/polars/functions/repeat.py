@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, PolarsDataType
+    from polars._typing import IntoExpr, PolarsDataType
 
 
 # create a lookup of dtypes that have a reasonable one/zero mapping; for

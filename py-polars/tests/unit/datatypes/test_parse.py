@@ -25,7 +25,7 @@ from polars.datatypes._parse import (
 )
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def assert_dtype_equal(left: PolarsDataType, right: PolarsDataType) -> None:

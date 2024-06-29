@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import DbWriteEngine
+    from polars._typing import DbWriteEngine
 
 
 @pytest.mark.write_disk()

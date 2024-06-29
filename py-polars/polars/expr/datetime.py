@@ -14,7 +14,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
         IntoExpr,

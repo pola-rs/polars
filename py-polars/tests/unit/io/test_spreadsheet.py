@@ -17,7 +17,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
 pytestmark = pytest.mark.slow()
 

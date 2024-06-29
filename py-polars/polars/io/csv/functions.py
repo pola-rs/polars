@@ -28,7 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
-    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")

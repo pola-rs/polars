@@ -31,6 +31,11 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._typing import (
+    DbWriteMode,
+    JaxExportType,
+    TorchExportType,
+)
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -101,11 +106,6 @@ from polars.exceptions import (
 from polars.functions import col, lit
 from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
-from polars.type_aliases import (
-    DbWriteMode,
-    JaxExportType,
-    TorchExportType,
-)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -127,10 +127,7 @@ if TYPE_CHECKING:
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
-    from polars._utils.various import NoDefault
-    from polars.interchange.dataframe import PolarsDataFrame
-    from polars.ml.torch import PolarsDataset
-    from polars.type_aliases import (
+    from polars._typing import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -172,6 +169,9 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
+    from polars._utils.various import NoDefault
+    from polars.interchange.dataframe import PolarsDataFrame
+    from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec

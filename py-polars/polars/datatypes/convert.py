@@ -54,7 +54,7 @@ else:
     UnionType = type(Union[int, float])
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType, PythonDataType, TimeUnit
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import TypeGuard

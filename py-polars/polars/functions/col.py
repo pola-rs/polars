@@ -10,8 +10,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from polars.expr.expr import Expr
-    from polars.type_aliases import PolarsDataType
 
 __all__ = ["col"]
 

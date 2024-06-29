@@ -36,7 +36,7 @@ from polars.io.csv.functions import read_csv
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict
+    from polars._typing import ExcelSpreadsheetEngine, SchemaDict
 
 
 @overload

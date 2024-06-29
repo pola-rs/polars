@@ -20,8 +20,8 @@ from polars.datatypes.group import DataTypeGroup
 from tests.unit.conftest import DATETIME_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from polars.datatypes.classes import DataTypeClass
-    from polars.type_aliases import PolarsDataType
 
 SIMPLE_DTYPES: list[DataTypeClass] = [
     *[dt.base_type() for dt in NUMERIC_DTYPES],

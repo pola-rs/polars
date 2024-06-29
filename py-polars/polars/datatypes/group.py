@@ -26,7 +26,7 @@ from polars.datatypes.classes import (
 )
 
 if TYPE_CHECKING:
-    from polars.type_aliases import (
+    from polars._typing import (
         PolarsDataType,
         PolarsIntegerType,
         PolarsTemporalType,

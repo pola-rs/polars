@@ -11,7 +11,7 @@ from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType, PolarsTemporalType
+    from polars._typing import PolarsDataType, PolarsTemporalType
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo

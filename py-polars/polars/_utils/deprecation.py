@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
-    from polars.type_aliases import Ambiguous
+    from polars._typing import Ambiguous
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec

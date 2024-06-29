@@ -11,7 +11,7 @@ from polars._utils.various import normalize_filepath
 if TYPE_CHECKING:
     from io import IOBase
 
-    from polars.type_aliases import SerializationFormat
+    from polars._typing import SerializationFormat
 
 
 @overload

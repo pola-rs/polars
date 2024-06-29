@@ -119,10 +119,7 @@ if TYPE_CHECKING:
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
-    from polars._utils.various import (
-        NoDefault,
-    )
-    from polars.type_aliases import (
+    from polars._typing import (
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -143,6 +140,9 @@ if TYPE_CHECKING:
         SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
+    )
+    from polars._utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):

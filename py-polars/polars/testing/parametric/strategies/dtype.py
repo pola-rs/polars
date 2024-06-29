@@ -37,8 +37,8 @@ from polars.datatypes import (
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
+    from polars._typing import CategoricalOrdering, PolarsDataType, TimeUnit
     from polars.datatypes import DataTypeClass
-    from polars.type_aliases import CategoricalOrdering, PolarsDataType, TimeUnit
 
 
 # Supported data type classes which do not take any arguments

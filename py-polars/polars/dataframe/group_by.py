@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import DataFrame
-    from polars.type_aliases import (
+    from polars._typing import (
         ClosedInterval,
         IntoExpr,
         Label,
