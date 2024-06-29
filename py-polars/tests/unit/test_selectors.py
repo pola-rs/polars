@@ -53,7 +53,7 @@ def df() -> pl.DataFrame:
 
 def test_selector_all(df: pl.DataFrame) -> None:
     assert df.schema == df.select(cs.all()).schema
-    assert {} == df.select(~cs.all()).schema
+    assert df.select(~cs.all()).schema == {}
     assert df.schema == df.select(~(~cs.all())).schema
     assert df.select(cs.all() & pl.col("abc")).schema == {"abc": pl.UInt16}
 
