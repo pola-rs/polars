@@ -246,7 +246,7 @@ def test_align_frames() -> None:
     )
     pl_dot = (
         (pf1[["a", "b"]] * pf2[["a", "b"]])
-        .fill_null(0)
+        .fill_nulls(0)
         .select(pl.sum_horizontal("*").alias("dot"))
         .insert_column(0, pf1["date"])
     )
@@ -403,7 +403,7 @@ def test_fill_null_unknown_output_type() -> None:
         }
     )
     assert df.with_columns(
-        np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
+        np.exp(pl.col("a")).fill_nulls(pl.lit(1, pl.Float64))
     ).to_dict(as_series=False) == {
         "a": [
             1.0,

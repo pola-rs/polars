@@ -22,7 +22,7 @@ print(df)
 # --8<-- [end:df]
 
 # --8<-- [start:upsample]
-out1 = df.upsample(time_column="time", every="15m").fill_null(strategy="forward")
+out1 = df.upsample(time_column="time", every="15m").fill_nulls(strategy="forward")
 print(out1)
 # --8<-- [end:upsample]
 
@@ -30,7 +30,7 @@ print(out1)
 out2 = (
     df.upsample(time_column="time", every="15m")
     .interpolate()
-    .fill_null(strategy="forward")
+    .fill_nulls(strategy="forward")
 )
 print(out2)
 # --8<-- [end:upsample2]

@@ -4421,7 +4421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> test_lf.with_context(  # doctest: +SKIP
         ...     train_lf.select(pl.all().name.suffix("_train"))
         ... ).select(
-        ...     pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
+        ...     pl.col("feature_0").fill_nulls(pl.col("feature_0_train").median())
         ... ).collect()
         shape: (3, 1)
         ┌───────────┐
@@ -5095,7 +5095,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.col("*").gather_every(n, offset))
 
-    def fill_null(
+    def fill_nulls(
         self,
         value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
@@ -5130,7 +5130,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [0.5, 4, None, 13],
         ...     }
         ... )
-        >>> lf.fill_null(99).collect()
+        >>> lf.fill_nulls(99).collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -5142,7 +5142,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 99  ┆ 99.0 │
         │ 4   ┆ 13.0 │
         └─────┴──────┘
-        >>> lf.fill_null(strategy="forward").collect()
+        >>> lf.fill_nulls(strategy="forward").collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -5155,7 +5155,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        >>> lf.fill_null(strategy="max").collect()
+        >>> lf.fill_nulls(strategy="max").collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -5168,7 +5168,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        >>> lf.fill_null(strategy="zero").collect()
+        >>> lf.fill_nulls(strategy="zero").collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -5223,9 +5223,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 # fallback; anything not explicitly handled above
                 dtypes = [infer_dtype(F.lit(value))]
 
-            return self.with_columns(F.col(dtypes).fill_null(value, strategy, limit))
+            return self.with_columns(F.col(dtypes).fill_nulls(value, strategy, limit))
 
-        return self.select(F.all().fill_null(value, strategy, limit))
+        return self.select(F.all().fill_nulls(value, strategy, limit))
 
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
         """

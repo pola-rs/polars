@@ -7473,7 +7473,7 @@ class DataFrame:
                 raise
             return default
 
-    def fill_null(
+    def fill_nulls(
         self,
         value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
@@ -7513,7 +7513,7 @@ class DataFrame:
         ...         "b": [0.5, 4, None, 13],
         ...     }
         ... )
-        >>> df.fill_null(99)
+        >>> df.fill_nulls(99)
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -7525,7 +7525,7 @@ class DataFrame:
         │ 99  ┆ 99.0 │
         │ 4   ┆ 13.0 │
         └─────┴──────┘
-        >>> df.fill_null(strategy="forward")
+        >>> df.fill_nulls(strategy="forward")
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -7538,7 +7538,7 @@ class DataFrame:
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        >>> df.fill_null(strategy="max")
+        >>> df.fill_nulls(strategy="max")
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -7551,7 +7551,7 @@ class DataFrame:
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        >>> df.fill_null(strategy="zero")
+        >>> df.fill_nulls(strategy="zero")
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -7566,7 +7566,7 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
+            .fill_nulls(value, strategy, limit, matches_supertype=matches_supertype)
             .collect(_eager=True)
         )
 

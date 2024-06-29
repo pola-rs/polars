@@ -2653,7 +2653,7 @@ class Expr:
         n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.shift(n, fill_value))
 
-    def fill_null(
+    def fill_nulls(
         self,
         value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
@@ -2687,7 +2687,7 @@ class Expr:
         ...         "b": [4, None, 6],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("b").fill_null(strategy="zero"))
+        >>> df.with_columns(pl.col("b").fill_nulls(strategy="zero"))
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -2698,7 +2698,7 @@ class Expr:
         │ 2    ┆ 0   │
         │ null ┆ 6   │
         └──────┴─────┘
-        >>> df.with_columns(pl.col("b").fill_null(99))
+        >>> df.with_columns(pl.col("b").fill_nulls(99))
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -2709,7 +2709,7 @@ class Expr:
         │ 2    ┆ 99  │
         │ null ┆ 6   │
         └──────┴─────┘
-        >>> df.with_columns(pl.col("b").fill_null(strategy="forward"))
+        >>> df.with_columns(pl.col("b").fill_nulls(strategy="forward"))
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -2720,7 +2720,7 @@ class Expr:
         │ 2    ┆ 4   │
         │ null ┆ 6   │
         └──────┴─────┘
-        >>> df.with_columns(pl.col("b").fill_null(pl.col("b").median()))
+        >>> df.with_columns(pl.col("b").fill_nulls(pl.col("b").median()))
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
@@ -2731,7 +2731,7 @@ class Expr:
         │ 2    ┆ 5.0 │
         │ null ┆ 6.0 │
         └──────┴─────┘
-        >>> df.with_columns(pl.all().fill_null(pl.all().median()))
+        >>> df.with_columns(pl.all().fill_nulls(pl.all().median()))
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2755,10 +2755,10 @@ class Expr:
 
         if value is not None:
             value = parse_into_expression(value, str_as_lit=True)
-            return self._from_pyexpr(self._pyexpr.fill_null(value))
+            return self._from_pyexpr(self._pyexpr.fill_nulls(value))
         else:
             return self._from_pyexpr(
-                self._pyexpr.fill_null_with_strategy(strategy, limit)
+                self._pyexpr.fill_nulls_with_strategy(strategy, limit)
             )
 
     def fill_nan(self, value: int | float | Expr | None) -> Expr:

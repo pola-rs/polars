@@ -424,7 +424,7 @@ def test_arr_contains_categorical() -> None:
 
 
 def test_list_eval_type_coercion() -> None:
-    last_non_null_value = pl.element().fill_null(3).last()
+    last_non_null_value = pl.element().fill_nulls(3).last()
     df = pl.DataFrame({"array_cols": [[1, None]]})
 
     assert df.select(

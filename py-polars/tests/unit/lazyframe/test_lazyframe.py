@@ -663,15 +663,15 @@ def test_fill_nan() -> None:
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
 
-    assert df.select([pl.col("a").fill_null(strategy="min")])["a"][1] == 1.0
-    assert df.lazy().fill_null(2).collect()["a"].to_list() == [1.0, 2.0, 3.0]
+    assert df.select([pl.col("a").fill_nulls(strategy="min")])["a"][1] == 1.0
+    assert df.lazy().fill_nulls(2).collect()["a"].to_list() == [1.0, 2.0, 3.0]
 
     with pytest.raises(ValueError, match="must specify either"):
-        df.fill_null()
+        df.fill_nulls()
     with pytest.raises(ValueError, match="cannot specify both"):
-        df.fill_null(value=3.0, strategy="max")
+        df.fill_nulls(value=3.0, strategy="max")
     with pytest.raises(ValueError, match="can only specify `limit`"):
-        df.fill_null(strategy="max", limit=2)
+        df.fill_nulls(strategy="max", limit=2)
 
 
 def test_backward_fill() -> None:
@@ -1095,7 +1095,7 @@ def test_update_schema_after_projection_pd_t4157() -> None:
 def test_type_coercion_unknown_4190() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).with_columns(
-            pl.col("a") & pl.col("a").fill_null(True)
+            pl.col("a") & pl.col("a").fill_nulls(True)
         )
     ).collect()
     assert df.shape == (3, 2)

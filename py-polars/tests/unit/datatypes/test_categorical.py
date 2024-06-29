@@ -605,7 +605,7 @@ def test_struct_categorical_nesting() -> None:
 def test_categorical_fill_null_existing_category() -> None:
     # ensure physical types align
     df = pl.DataFrame({"col": ["a", None, "a"]}, schema={"col": pl.Categorical})
-    result = df.fill_null("a").with_columns(pl.col("col").to_physical().alias("code"))
+    result = df.fill_nulls("a").with_columns(pl.col("col").to_physical().alias("code"))
     expected = {"col": ["a", "a", "a"], "code": [0, 0, 0]}
     assert result.to_dict(as_series=False) == expected
 
@@ -616,7 +616,7 @@ def test_categorical_fill_null_stringcache() -> None:
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
         schema={"index": pl.Int64(), "cat": pl.Categorical()},
     )
-    a = df.select(pl.col("cat").fill_null("hi")).collect()
+    a = df.select(pl.col("cat").fill_nulls("hi")).collect()
 
     assert a.to_dict(as_series=False) == {"cat": ["a", "b", "hi"]}
     assert a.dtypes == [pl.Categorical]

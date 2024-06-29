@@ -290,7 +290,7 @@ def test_ewm_methods(
             if alpha == 1:
                 # apply fill-forward to nulls to match pandas
                 # https://github.com/pola-rs/polars/pull/5011#issuecomment-1262318124
-                ewm_mean_pl = ewm_mean_pl.fill_null(strategy="forward")
+                ewm_mean_pl = ewm_mean_pl.fill_nulls(strategy="forward")
 
             assert_series_equal(ewm_mean_pl, ewm_mean_pd, atol=1e-07)
 

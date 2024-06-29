@@ -18,7 +18,7 @@ def test_concat_str_wildcard_expansion() -> None:
 def test_concat_str_with_non_utf8_col() -> None:
     out = (
         pl.LazyFrame({"a": [0], "b": ["x"]})
-        .select(pl.concat_str(["a", "b"], separator="-").fill_null(pl.col("a")))
+        .select(pl.concat_str(["a", "b"], separator="-").fill_nulls(pl.col("a")))
         .collect()
     )
     expected = pl.Series("a", ["0-x"], dtype=pl.String)

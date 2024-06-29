@@ -626,8 +626,8 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
     for perc_escape in [True, False] if sys.platform != "win32" else [True]:
         root = tmp_path / f"includes_hive_cols_in_file_{perc_escape}"
         for (date1, date2), part_df in df.group_by(
-            pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
-            pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+            pl.col("date1").cast(pl.String).fill_nulls("__HIVE_DEFAULT_PARTITION__"),
+            pl.col("date2").cast(pl.String).fill_nulls("__HIVE_DEFAULT_PARTITION__"),
         ):
             if perc_escape:
                 date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]

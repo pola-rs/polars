@@ -214,7 +214,7 @@ def test_replace_strict_str_to_int_fill_null() -> None:
     result = lf.select(
         pl.col("a")
         .replace_strict(mapping, default=None, return_dtype=pl.UInt32)
-        .fill_null(999)
+        .fill_nulls(999)
     )
 
     expected = pl.LazyFrame({"a": pl.Series([1, 999], dtype=pl.UInt32)})
@@ -372,7 +372,7 @@ def test_replace_strict_cat_str(
 
             s = pl.Series("s", ["a", "b"], dtype=dtype)
             s_replaced = s.replace_strict(old, new, default="OTHER")  # type: ignore[arg-type]
-            assert_series_equal(s_replaced, expected.fill_null("OTHER"))
+            assert_series_equal(s_replaced, expected.fill_nulls("OTHER"))
 
 
 @pytest.mark.parametrize(
@@ -397,4 +397,4 @@ def test_replace_strict_cat_cat(
 
             s = pl.Series("s", ["a", "b"], dtype=dt)
             s_replaced = s.replace_strict(old, new, default=pl.lit("OTHER", dtype=dt))  # type: ignore[arg-type]
-            assert_series_equal(s_replaced, expected.fill_null("OTHER"))
+            assert_series_equal(s_replaced, expected.fill_nulls("OTHER"))

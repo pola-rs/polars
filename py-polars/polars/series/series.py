@@ -4735,7 +4735,7 @@ class Series:
         ]
         """
 
-    def fill_null(
+    def fill_nulls(
         self,
         value: Any | Expr | None = None,
         strategy: FillNullStrategy | None = None,
@@ -4761,7 +4761,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null(strategy="forward")
+        >>> s.fill_nulls(strategy="forward")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -4770,7 +4770,7 @@ class Series:
             3
             3
         ]
-        >>> s.fill_null(strategy="min")
+        >>> s.fill_nulls(strategy="min")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -4780,7 +4780,7 @@ class Series:
             1
         ]
         >>> s = pl.Series("b", ["x", None, "z"])
-        >>> s.fill_null(pl.lit(""))
+        >>> s.fill_nulls(pl.lit(""))
         shape: (3,)
         Series: 'b' [str]
         [

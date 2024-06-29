@@ -665,7 +665,7 @@ def test_group_by_multiple_column_reference() -> None:
         }
     )
     result = df.group_by("gr").agg(
-        pl.col("val") + pl.col("val").shift().fill_null(0),
+        pl.col("val") + pl.col("val").shift().fill_nulls(0),
     )
 
     assert result.sort("gr").to_dict(as_series=False) == {

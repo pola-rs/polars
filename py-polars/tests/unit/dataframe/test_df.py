@@ -1749,9 +1749,9 @@ def test_empty_projection() -> None:
 
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
-    assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    assert_frame_equal(df.fill_nulls(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     assert_frame_equal(
-        df.fill_null(strategy="max"), pl.DataFrame({"a": [1, 2], "b": [3, 3]})
+        df.fill_nulls(strategy="max"), pl.DataFrame({"a": [1, 2], "b": [3, 3]})
     )
 
     # string and list data
@@ -1795,7 +1795,7 @@ def test_fill_null() -> None:
     }
     # categoricals
     df = pl.DataFrame(pl.Series("cat", ["a", None], dtype=pl.Categorical))
-    s = df.select(pl.col("cat").fill_null(strategy="forward"))["cat"]
+    s = df.select(pl.col("cat").fill_nulls(strategy="forward"))["cat"]
     assert s.dtype == pl.Categorical
     assert s.to_list() == ["a", "a"]
 
@@ -2096,8 +2096,8 @@ def test_fill_null_limits() -> None:
             "c": [True, None, None, None, False, True, None, None, None, False],
         }
     ).select(
-        pl.all().fill_null(strategy="forward", limit=2),
-        pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
+        pl.all().fill_nulls(strategy="forward", limit=2),
+        pl.all().fill_nulls(strategy="backward", limit=2).name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],

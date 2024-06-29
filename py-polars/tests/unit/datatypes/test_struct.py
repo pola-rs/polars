@@ -888,7 +888,7 @@ def test_struct_field() -> None:
 
     assert df.select(
         pl.col("item").struct.with_fields(
-            pl.field("name").str.to_uppercase(), pl.field("car").fill_null("Mazda")
+            pl.field("name").str.to_uppercase(), pl.field("car").fill_nulls("Mazda")
         )
     ).to_dict(as_series=False) == {
         "item": [
@@ -924,7 +924,7 @@ def test_struct_filter_chunked_16498() -> None:
 
 
 def test_struct_field_dynint_nullable_16243() -> None:
-    pl.select(pl.lit(None).fill_null(pl.struct(42)))
+    pl.select(pl.lit(None).fill_nulls(pl.struct(42)))
 
 
 def test_struct_split_16536() -> None:

@@ -370,11 +370,11 @@ impl PyExpr {
         out.into()
     }
 
-    fn fill_null(&self, expr: Self) -> Self {
+    fn fill_nulls(&self, expr: Self) -> Self {
         self.inner.clone().fill_null(expr.inner).into()
     }
 
-    fn fill_null_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
+    fn fill_nulls_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
         let strategy = parse_fill_null_strategy(strategy, limit)?;
         Ok(self.inner.clone().fill_null_with_strategy(strategy).into())
     }

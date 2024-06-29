@@ -118,7 +118,7 @@ def test_to_numpy_structured() -> None:
         assert_equal(
             list(exported_array[name]),
             (
-                df[name].fill_null(float("nan"))
+                df[name].fill_nulls(float("nan"))
                 if df.schema[name].is_float()
                 else df[name]
             ).to_list(),

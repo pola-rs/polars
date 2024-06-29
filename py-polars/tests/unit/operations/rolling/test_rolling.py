@@ -53,7 +53,7 @@ def test_rolling_kernels_and_rolling(
         # where the sum aggregation of an empty set is 0
         pl.col("values")
         .rolling_sum_by("dt", period, closed=closed)
-        .fill_null(0)
+        .fill_nulls(0)
         .alias("sum"),
         pl.col("values").rolling_var_by("dt", period, closed=closed).alias("var"),
         pl.col("values").rolling_mean_by("dt", period, closed=closed).alias("mean"),

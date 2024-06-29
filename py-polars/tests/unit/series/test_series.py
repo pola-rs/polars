@@ -745,33 +745,33 @@ def test_init_nested_tuple() -> None:
 
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
-    assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))
-    assert_series_equal(s.fill_null(14), pl.Series("a", [1, 2, 14], dtype=Int64))
+    assert_series_equal(s.fill_nulls(strategy="forward"), pl.Series("a", [1, 2, 2]))
+    assert_series_equal(s.fill_nulls(14), pl.Series("a", [1, 2, 14], dtype=Int64))
 
     a = pl.Series("a", [0.0, 1.0, None, 2.0, None, 3.0])
 
-    assert a.fill_null(0).to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
-    assert a.fill_null(strategy="zero").to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
-    assert a.fill_null(strategy="max").to_list() == [0.0, 1.0, 3.0, 2.0, 3.0, 3.0]
-    assert a.fill_null(strategy="min").to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
-    assert a.fill_null(strategy="one").to_list() == [0.0, 1.0, 1.0, 2.0, 1.0, 3.0]
-    assert a.fill_null(strategy="forward").to_list() == [0.0, 1.0, 1.0, 2.0, 2.0, 3.0]
-    assert a.fill_null(strategy="backward").to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
-    assert a.fill_null(strategy="mean").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
+    assert a.fill_nulls(0).to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
+    assert a.fill_nulls(strategy="zero").to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
+    assert a.fill_nulls(strategy="max").to_list() == [0.0, 1.0, 3.0, 2.0, 3.0, 3.0]
+    assert a.fill_nulls(strategy="min").to_list() == [0.0, 1.0, 0.0, 2.0, 0.0, 3.0]
+    assert a.fill_nulls(strategy="one").to_list() == [0.0, 1.0, 1.0, 2.0, 1.0, 3.0]
+    assert a.fill_nulls(strategy="forward").to_list() == [0.0, 1.0, 1.0, 2.0, 2.0, 3.0]
+    assert a.fill_nulls(strategy="backward").to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
+    assert a.fill_nulls(strategy="mean").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
 
     b = pl.Series("b", ["a", None, "c", None, "e"])
-    assert b.fill_null(strategy="min").to_list() == ["a", "a", "c", "a", "e"]
-    assert b.fill_null(strategy="max").to_list() == ["a", "e", "c", "e", "e"]
-    assert b.fill_null(strategy="zero").to_list() == ["a", "", "c", "", "e"]
-    assert b.fill_null(strategy="forward").to_list() == ["a", "a", "c", "c", "e"]
-    assert b.fill_null(strategy="backward").to_list() == ["a", "c", "c", "e", "e"]
+    assert b.fill_nulls(strategy="min").to_list() == ["a", "a", "c", "a", "e"]
+    assert b.fill_nulls(strategy="max").to_list() == ["a", "e", "c", "e", "e"]
+    assert b.fill_nulls(strategy="zero").to_list() == ["a", "", "c", "", "e"]
+    assert b.fill_nulls(strategy="forward").to_list() == ["a", "a", "c", "c", "e"]
+    assert b.fill_nulls(strategy="backward").to_list() == ["a", "c", "c", "e", "e"]
 
     c = pl.Series("c", [b"a", None, b"c", None, b"e"])
-    assert c.fill_null(strategy="min").to_list() == [b"a", b"a", b"c", b"a", b"e"]
-    assert c.fill_null(strategy="max").to_list() == [b"a", b"e", b"c", b"e", b"e"]
-    assert c.fill_null(strategy="zero").to_list() == [b"a", b"", b"c", b"", b"e"]
-    assert c.fill_null(strategy="forward").to_list() == [b"a", b"a", b"c", b"c", b"e"]
-    assert c.fill_null(strategy="backward").to_list() == [b"a", b"c", b"c", b"e", b"e"]
+    assert c.fill_nulls(strategy="min").to_list() == [b"a", b"a", b"c", b"a", b"e"]
+    assert c.fill_nulls(strategy="max").to_list() == [b"a", b"e", b"c", b"e", b"e"]
+    assert c.fill_nulls(strategy="zero").to_list() == [b"a", b"", b"c", b"", b"e"]
+    assert c.fill_nulls(strategy="forward").to_list() == [b"a", b"a", b"c", b"c", b"e"]
+    assert c.fill_nulls(strategy="backward").to_list() == [b"a", b"c", b"c", b"e", b"e"]
 
     df = pl.DataFrame(
         [
@@ -784,7 +784,7 @@ def test_fill_null() -> None:
         ]
     )
 
-    assert df.fill_null(0, matches_supertype=False).fill_null("bar").fill_null(
+    assert df.fill_nulls(0, matches_supertype=False).fill_nulls("bar").fill_nulls(
         False
     ).to_dict(as_series=False) == {
         "i32": [1, 2, None],
@@ -795,7 +795,7 @@ def test_fill_null() -> None:
         "bool": [True, True, False],
     }
 
-    assert df.fill_null(0, matches_supertype=True).fill_null("bar").fill_null(
+    assert df.fill_nulls(0, matches_supertype=True).fill_nulls("bar").fill_nulls(
         False
     ).to_dict(as_series=False) == {
         "i32": [1, 2, 0],
@@ -812,7 +812,7 @@ def test_fill_null() -> None:
         pl.col("a").cast(pl.UInt16).alias("u16"),
         pl.col("a").cast(pl.UInt32).alias("u32"),
         pl.col("a").cast(pl.UInt64).alias("u64"),
-    ).fill_null(3)
+    ).fill_nulls(3)
 
     assert out.to_dict(as_series=False) == {
         "a": [1, 3, 2, 3],

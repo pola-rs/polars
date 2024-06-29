@@ -146,7 +146,7 @@ def test_predicate_pushdown_join_fill_null_10058() -> None:
 
     assert (
         ids.join(filters, how="left", on="id")
-        .filter(pl.col("filter").fill_null(True))
+        .filter(pl.col("filter").fill_nulls(True))
         .collect()
         .to_dict(as_series=False)["id"]
     ) == [0, 2]

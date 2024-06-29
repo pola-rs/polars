@@ -469,7 +469,7 @@ def test_list_min_max_13978() -> None:
 
 
 def test_fill_null_empty_list() -> None:
-    assert pl.Series([["a"], None]).fill_null([]).to_list() == [["a"], []]
+    assert pl.Series([["a"], None]).fill_nulls([]).to_list() == [["a"], []]
 
 
 def test_nested_logical() -> None:

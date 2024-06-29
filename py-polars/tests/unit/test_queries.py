@@ -272,7 +272,7 @@ def test_query_4438() -> None:
     q = (
         df.lazy()
         .with_columns(pl.col("x").rolling_max(window_size=3).alias("rolling_max"))
-        .fill_null(strategy="backward")
+        .fill_nulls(strategy="backward")
         .with_columns(
             pl.col("rolling_max").rolling_max(window_size=3).alias("rolling_max_2")
         )

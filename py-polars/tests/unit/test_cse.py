@@ -331,7 +331,7 @@ def test_cse_mixed_window_functions() -> None:
 def test_cse_10401() -> None:
     df = pl.LazyFrame({"clicks": [1.0, float("nan"), None]})
 
-    q = df.with_columns(pl.all().fill_null(0).fill_nan(0))
+    q = df.with_columns(pl.all().fill_nulls(0).fill_nan(0))
 
     assert r"""col("clicks").fill_null([0.0]).alias("__POLARS_CSER""" in q.explain()
 

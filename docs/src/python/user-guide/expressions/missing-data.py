@@ -41,21 +41,21 @@ print(df)
 
 # --8<-- [start:fill]
 fill_literal_df = df.with_columns(
-    pl.col("col2").fill_null(pl.lit(2)),
+    pl.col("col2").fill_nulls(pl.lit(2)),
 )
 print(fill_literal_df)
 # --8<-- [end:fill]
 
 # --8<-- [start:fillstrategy]
 fill_forward_df = df.with_columns(
-    pl.col("col2").fill_null(strategy="forward"),
+    pl.col("col2").fill_nulls(strategy="forward"),
 )
 print(fill_forward_df)
 # --8<-- [end:fillstrategy]
 
 # --8<-- [start:fillexpr]
 fill_median_df = df.with_columns(
-    pl.col("col2").fill_null(pl.median("col2")),
+    pl.col("col2").fill_nulls(pl.median("col2")),
 )
 print(fill_median_df)
 # --8<-- [end:fillexpr]

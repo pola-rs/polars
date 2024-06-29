@@ -40,7 +40,7 @@ def test_fill_null() -> None:
     s = pl.Series("A", [dtm, None])
 
     for fill_val in (dtm, pl.lit(dtm)):
-        out = s.fill_null(fill_val)
+        out = s.fill_nulls(fill_val)
 
         assert out.null_count() == 0
         assert out.dt[0] == dtm
@@ -54,7 +54,7 @@ def test_fill_null() -> None:
     dt_2 = date(2001, 1, 4)
 
     for fill_val in (dt_2, pl.lit(dt_2)):
-        out = s.fill_null(fill_val)
+        out = s.fill_nulls(fill_val)
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1
@@ -101,7 +101,7 @@ def test_fill_null_temporal() -> None:
     # apply literals via fill_null
     ldf = df.lazy()
     for temporal_literal in (dtm_ns_fill, td_us_fill, dt_fill, tm_fill):
-        ldf = ldf.fill_null(temporal_literal)
+        ldf = ldf.fill_nulls(temporal_literal)
 
     # validate
     assert ldf.collect().rows() == [

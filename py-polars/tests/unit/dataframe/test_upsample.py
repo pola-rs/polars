@@ -145,7 +145,7 @@ def test_upsample_time_zones(
     )
     df = df.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
     expected = expected.with_columns(pl.col("time").dt.replace_time_zone(time_zone))
-    result = df.upsample(time_column="time", every="60m").fill_null(strategy="forward")
+    result = df.upsample(time_column="time", every="60m").fill_nulls(strategy="forward")
     assert_frame_equal(result, expected)
 
 
@@ -192,7 +192,7 @@ def test_upsample_index(
     ).with_columns(pl.col("index").cast(dtype))
     result = (
         df.upsample(time_column="index", group_by="groups", every=every)
-        .fill_null(strategy=fill)
+        .fill_nulls(strategy=fill)
         .sort(["groups", "index"])
     )
     assert_frame_equal(result, expected)
