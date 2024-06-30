@@ -195,8 +195,10 @@ def test_sink_csv_batch_size_zero() -> None:
 
 
 def test_sink_csv_nested_data() -> None:
-    lf = pl.LazyFrame({'list': [[1, 2, 3, 4, 5]]})
-    with pytest.raises(pl.exceptions.ComputeError, match="CSV format does not support nested data"):
+    lf = pl.LazyFrame({"list": [[1, 2, 3, 4, 5]]})
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="CSV format does not support nested data"
+    ):
         lf.sink_csv("path")
 
 
