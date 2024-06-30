@@ -651,8 +651,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
+
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+
     @overload
     def serialize(
         self, file: IOBase | str | Path, *, format: SerializationFormat = ...
@@ -2581,6 +2583,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
         )
 
+    @deprecate_function(
+        "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
+        "instead, in conjunction with a call to `head`.",
+        version="1.0",
+    )
     def fetch(
         self,
         n_rows: int = 500,
@@ -2598,6 +2605,58 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
+
+        .. deprecated:: 1.0
+            Use :meth:`collect` instead, in conjunction with a call to :meth:`head`.`
+
+        Notes
+        -----
+        This is similar to a :func:`collect` operation, but it overwrites the number of
+        rows read by *every* scan operation. Be aware that `fetch` does not guarantee
+        the final number of rows in the DataFrame. Filters, join operations and fewer
+        rows being available in the scanned data will all influence the final number
+        of rows (joins are especially susceptible to this, and may return no data
+        at all if `n_rows` is too small as the join keys may not be present).
+
+        Warnings
+        --------
+        This is strictly a utility function that can help to debug queries using a
+        smaller number of rows, and should *not* be used in production code.
+        """
+        return self._fetch(
+            n_rows=n_rows,
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            no_optimization=no_optimization,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            streaming=streaming,
+        )
+
+    def _fetch(
+        self,
+        n_rows: int = 500,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
+        streaming: bool = False,
+    ) -> DataFrame:
+        """
+        Collect a small number of rows for debugging purposes.
+
+        Do not confuse with `collect`; this function will frequently return
+        incorrect data (see the warning for additional details).
 
         Parameters
         ----------
@@ -2655,7 +2714,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum())._fetch(2)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │

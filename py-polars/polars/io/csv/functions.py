@@ -1073,7 +1073,7 @@ def scan_csv(
     ...     .filter(
     ...         pl.col("a") > 10
     ...     )  # the filter is pushed down the scan, so less data is read into memory
-    ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
+    ...     .head(100)  # constrain number of returned results to 100
     ... )  # doctest: +SKIP
 
     We can use `with_column_names` to modify the header before scanning:

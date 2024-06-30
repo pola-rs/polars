@@ -437,8 +437,8 @@ def test_fetch_union(tmp_path: Path) -> None:
     df1.write_parquet(file_path_1)
     df2.write_parquet(file_path_2)
 
-    result_one = pl.scan_parquet(file_path_1).fetch(1)
-    result_glob = pl.scan_parquet(file_path_glob).fetch(1)
+    result_one = pl.scan_parquet(file_path_1)._fetch(1)
+    result_glob = pl.scan_parquet(file_path_glob)._fetch(1)
 
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
