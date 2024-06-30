@@ -317,4 +317,18 @@ impl PyExpr {
             .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
             .into()
     }
+
+    #[cfg(feature = "find_many")]
+    fn str_extract_many(
+        &self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .extract_many(patterns.inner, ascii_case_insensitive, overlapping)
+            .into()
+    }
 }

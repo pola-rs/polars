@@ -42,3 +42,33 @@ pub fn replace_all(
 
     Ok(ca.apply_generic(|opt_val| opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))))
 }
+
+pub fn extract_many(
+    ca: &StringChunked,
+    patterns: &StringChunked,
+    ascii_case_insensitive: bool,
+    overlapping: bool,
+) -> PolarsResult<ListChunked> {
+    let ac = build_ac(patterns, ascii_case_insensitive)?;
+
+    let mut builder = ListStringChunkedBuilder::new(ca.name(), ca.len(), ca.len() * 2);
+
+    for arr in ca.downcast_iter() {
+        for opt_val in arr.into_iter() {
+            if let Some(val) = opt_val {
+                if overlapping {
+                    let iter = ac.find_overlapping_iter(val);
+                    let iter = iter.map(|m| &val[m.start()..m.end()]);
+                    builder.append_values_iter(iter);
+                } else {
+                    let iter = ac.find_iter(val);
+                    let iter = iter.map(|m| &val[m.start()..m.end()]);
+                    builder.append_values_iter(iter);
+                }
+            } else {
+                builder.append_null();
+            }
+        }
+    }
+    Ok(builder.finish())
+}

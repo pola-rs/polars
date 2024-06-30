@@ -895,6 +895,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ascii_case_insensitive,
                     )
                         .to_object(py),
+                    StringFunction::ExtractMany { .. } => {
+                        return Err(PyNotImplementedError::new_err("extract_many"))
+                    },
                 },
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
