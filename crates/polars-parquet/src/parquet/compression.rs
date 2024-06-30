@@ -168,9 +168,9 @@ pub fn decompress(
 
             let len = decompress_len(input_buf)?;
             if len > output_buf.len() {
-                return Err(ParquetError::OutOfSpec(String::from(
+                return Err(ParquetError::oos(
                     "snappy header out of spec",
-                )));
+                ));
             }
             Decoder::new()
                 .decompress(input_buf, output_buf)

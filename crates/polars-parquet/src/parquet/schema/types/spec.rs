@@ -62,8 +62,7 @@ fn check_decimal_invariants(
         PhysicalType::ByteArray => {},
         _ => {
             return Err(ParquetError::oos(
-                "DECIMAL can only annotate INT32, INT64, BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY"
-                    .to_string(),
+                "DECIMAL can only annotate INT32, INT64, BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY",
             ))
         },
     };
@@ -111,14 +110,14 @@ pub fn check_converted_invariants(
         Interval => {
             if physical_type != &PhysicalType::FixedLenByteArray(12) {
                 return Err(ParquetError::oos(
-                    "INTERVAL can only annotate FIXED_LEN_BYTE_ARRAY(12)".to_string(),
+                    "INTERVAL can only annotate FIXED_LEN_BYTE_ARRAY(12)",
                 ));
             }
         },
         Enum => {
             if physical_type != &PhysicalType::ByteArray {
                 return Err(ParquetError::oos(
-                    "ENUM can only annotate BYTE_ARRAY fields".to_string(),
+                    "ENUM can only annotate BYTE_ARRAY fields",
                 ));
             }
         },
@@ -153,7 +152,7 @@ pub fn check_logical_invariants(
         (Time { unit, .. }, PhysicalType::Int64) => {
             if unit == TimeUnit::Milliseconds {
                 return Err(ParquetError::oos(
-                    "Cannot use millisecond unit on INT64 type".to_string(),
+                    "Cannot use millisecond unit on INT64 type",
                 ));
             }
         },
