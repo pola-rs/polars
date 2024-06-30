@@ -1506,3 +1506,18 @@ def test_extract_many() -> None:
         "matches": [["disco"]],
         "matches_overlapping": [["disco", "onte", "discontent"]],
     }
+
+    # many patterns
+    df = pl.DataFrame(
+        {
+            "values": ["discontent", "rhapsody"],
+            "patterns": [
+                ["winter", "disco", "onte", "discontent"],
+                ["rhap", "ody", "coalesce"],
+            ],
+        }
+    )
+
+    assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
+        as_series=False
+    ) == {"values": [["disco"], ["rhap", "ody"]]}

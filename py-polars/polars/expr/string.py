@@ -2559,6 +2559,25 @@ class ExprStringNameSpace:
         ╞════════════╪═══════════╪═════════════════════════════════╡
         │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
         └────────────┴───────────┴─────────────────────────────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": ["discontent", "rhapsody"],
+        ...         "patterns": [
+        ...             ["winter", "disco", "onte", "discontent"],
+        ...             ["rhap", "ody", "coalesce"],
+        ...         ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("values").str.extract_many("patterns"))
+        shape: (2, 1)
+        ┌─────────────────┐
+        │ values          │
+        │ ---             │
+        │ list[str]       │
+        ╞═════════════════╡
+        │ ["disco"]       │
+        │ ["rhap", "ody"] │
+        └─────────────────┘
 
         """
         patterns = parse_into_expression(
