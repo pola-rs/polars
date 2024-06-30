@@ -31,7 +31,7 @@
 // 1. Each individual function unrolled to a point where all constants are known to
 // the compiler. In microbenchmarks, this increases the performance by around 4.5
 // to 5 times.
-// 2. All functions are compiled seperately and dispatch is done using a
+// 2. All functions are compiled separately and dispatch is done using a
 // jumptable. In microbenchmarks, this increases the performance by around 2 to 2.5
 // times.
 
