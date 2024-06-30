@@ -1,6 +1,8 @@
 import sys
 from datetime import datetime
 
+import pytest
+
 from polars.dependencies import _ZONEINFO_AVAILABLE
 
 if sys.version_info >= (3, 9):
@@ -44,3 +46,10 @@ def test_cross_join_predicate_pushdown_block_16956() -> None:
             datetime(2024, 6, 19, 16, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
         ],
     }
+
+
+def test_cross_join_raise_on_keys() -> None:
+    df = pl.DataFrame({"a": [0, 1], "b": ["x", "y"]})
+
+    with pytest.raises(ValueError):
+        df.join(df, how="cross", left_on="a", right_on="b")

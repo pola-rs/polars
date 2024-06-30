@@ -399,33 +399,37 @@ pub fn to_alp_impl(
             right_on,
             mut options,
         } => {
-            let mut turn_off_coalesce = false;
-            for e in left_on.iter().chain(right_on.iter()) {
-                if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
-                    polars_bail!(
-                        ComputeError:
-                        "'alias' is not allowed in a join key, use 'with_columns' first",
-                    )
+            if matches!(options.args.how, JoinType::Cross) {
+                polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
+            } else {
+                let mut turn_off_coalesce = false;
+                for e in left_on.iter().chain(right_on.iter()) {
+                    if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
+                        polars_bail!(
+                            ComputeError:
+                            "'alias' is not allowed in a join key, use 'with_columns' first",
+                        )
+                    }
+                    // Any expression that is not a simple column expression will turn of coalescing.
+                    turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
                 }
-                // Any expression that is not a simple column expression will turn of coalescing.
-                turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
-            }
-            if turn_off_coalesce {
-                let options = Arc::make_mut(&mut options);
-                options.args.coalesce = JoinCoalesce::KeepColumns;
-            }
+                if turn_off_coalesce {
+                    let options = Arc::make_mut(&mut options);
+                    options.args.coalesce = JoinCoalesce::KeepColumns;
+                }
 
-            options.args.validation.is_valid_join(&options.args.how)?;
+                options.args.validation.is_valid_join(&options.args.how)?;
 
-            polars_ensure!(
-                left_on.len() == right_on.len(),
-                ComputeError:
-                    format!(
-                        "the number of columns given as join key (left: {}, right:{}) should be equal",
-                        left_on.len(),
-                        right_on.len()
-                    )
-            );
+                polars_ensure!(
+                    left_on.len() == right_on.len(),
+                    ComputeError:
+                        format!(
+                            "the number of columns given as join key (left: {}, right:{}) should be equal",
+                            left_on.len(),
+                            right_on.len()
+                        )
+                );
+            }
 
             let input_left = to_alp_impl(owned(input_left), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(join left)))?;

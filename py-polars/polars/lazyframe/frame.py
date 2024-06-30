@@ -4201,6 +4201,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
 
         elif how == "cross":
+            if left_on is not None or right_on is not None:
+                msg = "cross join should not pass join keys"
+                raise ValueError(msg)
             return self._from_pyldf(
                 self._ldf.join(
                     other._ldf,
