@@ -283,6 +283,7 @@ impl Display for StringFunction {
             ContainsMany { .. } => "contains_many",
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => "replace_many",
+            #[cfg(feature = "find_many")]
             ExtractMany { .. } => "extract_many",
         };
         write!(f, "str.{s}")
@@ -432,7 +433,7 @@ fn extract_many(
     overlapping: bool,
 ) -> PolarsResult<Series> {
     let ca = s[0].str()?;
-    let patterns = s[1].str()?;
+    let patterns = &s[1];
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
