@@ -1,10 +1,9 @@
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::{hash::{Hash, Hasher}, path::PathBuf};
 
-use crossbeam_channel::{bounded, Receiver, Sender};
-
+use crossbeam_channel::{bounded, Sender};
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "csv")]
@@ -237,8 +236,8 @@ pub struct BatchSender {
 
 impl Default for BatchSender {
     fn default() -> Self {
-        let (sender, receiver) = bounded(1);
-        Self{ id: 0, sender: sender}
+        let (sender, _receiver) = bounded(1);
+        Self { id: 0, sender }
     }
 }
 
@@ -248,14 +247,13 @@ impl PartialEq for BatchSender {
     }
 }
 
-impl Eq for BatchSender{}
+impl Eq for BatchSender {}
 
 impl Hash for BatchSender {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state)
     }
 }
-
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

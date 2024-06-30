@@ -23,9 +23,9 @@ polars-stream = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
-crossbeam-channel = { workspace = true }
 ahash = { workspace = true }
 bitflags = { workspace = true }
+crossbeam-channel = { workspace = true }
 glob = { version = "0.3" }
 memchr = { workspace = true }
 once_cell = { workspace = true }

@@ -1,7 +1,7 @@
 use std::any::Any;
 
-use polars_core::prelude::*;
 use crossbeam_channel::Sender;
+use polars_core::prelude::*;
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
@@ -9,7 +9,7 @@ use crate::operators::{
 
 #[derive(Clone)]
 pub struct BatchSink {
-    sender: Sender<DataFrame>
+    sender: Sender<DataFrame>,
 }
 
 impl BatchSink {
@@ -24,7 +24,7 @@ impl Sink for BatchSink {
         let result = self.sender.send(df);
         match result {
             Ok(..) => Ok(SinkResult::CanHaveMoreInput),
-            Err(..) => Ok(SinkResult::Finished)
+            Err(..) => Ok(SinkResult::Finished),
         }
     }
 

@@ -467,7 +467,7 @@ async fn prune_row_groups(
 
             let mut df = unsafe { DataFrame::new_no_checks(columns) };
 
-            materialize_hive_partitions(&mut df, hive_partition_columns, md.num_rows());
+            materialize_hive_partitions(&mut df, &schema, hive_partition_columns, md.num_rows());
             apply_predicate(&mut df, predicate.as_deref(), false).unwrap();
 
             let row_count = df.height();

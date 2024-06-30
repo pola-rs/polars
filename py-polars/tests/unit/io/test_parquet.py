@@ -1230,6 +1230,8 @@ def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) ->
 
     assert b["x"].shape[0] == n
     assert_frame_equal(b, x)
+
+
 def test_skip_full_load_of_rgs_using_predicate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: Any
 ) -> None:

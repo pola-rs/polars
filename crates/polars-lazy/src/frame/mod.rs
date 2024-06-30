@@ -32,8 +32,8 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_core::POOL;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::JoinCoalesce;

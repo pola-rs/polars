@@ -15,6 +15,7 @@ mod json;
 #[cfg(feature = "parquet")]
 mod parquet;
 
+pub use batch_sink::*;
 #[cfg(feature = "csv")]
 pub use csv::*;
 #[cfg(feature = "ipc")]
@@ -23,5 +24,3 @@ pub use ipc::*;
 pub use json::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-
-pub use batch_sink::*;
