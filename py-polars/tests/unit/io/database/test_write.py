@@ -106,7 +106,7 @@ class TestWriteDatabase:
         assert (
             df.write_database(
                 table_name=table_name,
-                connection=test_db_uri,
+                connection=conn,
                 engine=engine,
             )
             == 3
@@ -114,7 +114,7 @@ class TestWriteDatabase:
         with pytest.raises(Exception):  # noqa: B017
             df.write_database(
                 table_name=table_name,
-                connection=test_db_uri,
+                connection=conn,
                 if_table_exists="fail",
                 engine=engine,
             )
@@ -122,7 +122,7 @@ class TestWriteDatabase:
         assert (
             df.write_database(
                 table_name=table_name,
-                connection=test_db_uri,
+                connection=conn,
                 if_table_exists="replace",
                 engine=engine,
             )
@@ -137,7 +137,7 @@ class TestWriteDatabase:
         assert (
             df[:2].write_database(
                 table_name=table_name,
-                connection=test_db_uri,
+                connection=conn,
                 if_table_exists="append",
                 engine=engine,
             )
@@ -148,6 +148,9 @@ class TestWriteDatabase:
             connection=create_engine(test_db_uri),
         )
         assert_frame_equal(result, pl.concat([df, df[:2]]))
+
+        if engine == "adbc" and not uri_connection:
+            assert conn._closed is False
 
         if hasattr(conn, "close"):
             conn.close()
@@ -173,7 +176,7 @@ class TestWriteDatabase:
         assert (
             df.write_database(
                 table_name=qualified_table_name,
-                connection=test_db_uri,
+                connection=conn,
                 engine=engine,
             )
             == 3
@@ -181,7 +184,7 @@ class TestWriteDatabase:
         assert (
             df.write_database(
                 table_name=qualified_table_name,
-                connection=test_db_uri,
+                connection=conn,
                 if_table_exists="replace",
                 engine=engine,
             )
@@ -192,6 +195,9 @@ class TestWriteDatabase:
             connection=create_engine(test_db_uri),
         )
         assert_frame_equal(result, df)
+
+        if engine == "adbc" and not uri_connection:
+            assert conn._closed is False
 
         if hasattr(conn, "close"):
             conn.close()

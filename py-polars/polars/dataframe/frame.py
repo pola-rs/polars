@@ -2378,8 +2378,10 @@ class DataFrame:
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
+
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+
     @overload
     def serialize(
         self, file: IOBase | str | Path, *, format: SerializationFormat = ...
@@ -3742,12 +3744,14 @@ class DataFrame:
                 )
                 raise ValueError(msg)
 
-            conn = (
-                _open_adbc_connection(connection)
+            conn, can_close_conn = (
+                (_open_adbc_connection(connection), True)
                 if isinstance(connection, str)
-                else connection
+                else (connection, False)
             )
-            with conn, conn.cursor() as cursor:
+            with (
+                conn if can_close_conn else contextlib.nullcontext()
+            ), conn.cursor() as cursor:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
