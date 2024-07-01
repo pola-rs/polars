@@ -760,3 +760,8 @@ def test_date_datetime_sub() -> None:
         "foo": [timedelta(days=-4)],
         "bar": [timedelta(days=4)],
     }
+
+
+def test_raise_invalid_shape() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame([[1, 2], [3, 4]]) * pl.DataFrame([1, 2, 3])
