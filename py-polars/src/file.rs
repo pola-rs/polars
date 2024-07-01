@@ -1,6 +1,9 @@
-use std::fs::File;
+use std::borrow::Cow;
+use std::fs::{self, File};
 use std::io;
 use std::io::{BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
+#[cfg(target_family = "unix")]
+use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
@@ -179,27 +182,88 @@ pub enum EitherRustPythonFile {
     Rust(BufReader<File>),
 }
 
-///
-/// # Arguments
-/// * `truncate` - open or create a new file.
-pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPythonFile> {
+fn get_either_file_and_path(
+    py_f: PyObject,
+    truncate: bool,
+) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
     Python::with_gil(|py| {
-        if let Ok(pstring) = py_f.downcast_bound::<PyString>(py) {
-            let s = pstring.to_cow()?;
+        let py_f = py_f.bind(py);
+        if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = std::path::Path::new(&*s);
             let file_path = resolve_homedir(file_path);
             let f = if truncate {
-                File::create(file_path)?
+                File::create(&file_path)?
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
             let reader = BufReader::new(f);
-            Ok(EitherRustPythonFile::Rust(reader))
+            Ok((EitherRustPythonFile::Rust(reader), Some(file_path)))
         } else {
-            let f = PyFileLikeObject::with_requirements(py_f, !truncate, truncate, !truncate)?;
-            Ok(EitherRustPythonFile::Py(f))
+            let io = py.import_bound("io").unwrap();
+            #[cfg(target_family = "unix")]
+            if let Some(fd) = ((py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
+                || py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
+                || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
+                || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
+                || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
+                || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
+                    && py_f
+                        .getattr("encoding")
+                        .ok()
+                        .filter(|encoding| match encoding.extract::<Cow<str>>() {
+                            Ok(encoding) => {
+                                encoding.eq_ignore_ascii_case("utf-8")
+                                    || encoding.eq_ignore_ascii_case("utf8")
+                            },
+                            Err(_) => false,
+                        })
+                        .is_some()))
+                && (!truncate
+                    || py_f
+                        .getattr("flush")
+                        .and_then(|flush| flush.call0())
+                        .is_ok()))
+            .then(|| {
+                py_f.getattr("fileno")
+                    .and_then(|fileno| fileno.call0())
+                    .and_then(|fileno| fileno.extract::<libc::c_int>())
+                    .ok()
+            })
+            .flatten()
+            .map(|fileno| unsafe { libc::dup(fileno) })
+            .filter(|fileno| *fileno != -1)
+            .map(|fileno| fileno as RawFd)
+            {
+                return Ok((
+                    EitherRustPythonFile::Rust(BufReader::new(unsafe { File::from_raw_fd(fd) })),
+                    // This works on Linux and BSD with procfs mounted,
+                    // otherwise it fails silently.
+                    fs::canonicalize(format!("/proc/self/fd/{fd}")).ok(),
+                ));
+            }
+
+            // BytesIO is relatively fast, and some code relies on it.
+            if !py_f.is_exact_instance(&io.getattr("BytesIO").unwrap()) {
+                polars_warn!("Polars found a filename. \
+                Ensure you pass a path to the file instead of a python file object when possible for best \
+                performance.");
+            }
+            let f = PyFileLikeObject::with_requirements(
+                py_f.to_object(py),
+                !truncate,
+                truncate,
+                !truncate,
+            )?;
+            Ok((EitherRustPythonFile::Py(f), None))
         }
     })
+}
+
+///
+/// # Arguments
+/// * `truncate` - open or create a new file.
+pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPythonFile> {
+    Ok(get_either_file_and_path(py_f, truncate)?.0)
 }
 
 pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
@@ -239,25 +303,10 @@ pub fn get_mmap_bytes_reader_and_path<'a>(
         Ok((Box::new(Cursor::new(bytes.as_bytes())), None))
     }
     // string so read file
-    else if let Ok(pstring) = py_f.downcast::<PyString>() {
-        let s = pstring.to_cow()?;
-        let p = std::path::Path::new(&*s);
-        let p_resolved = resolve_homedir(p);
-        let f = polars_utils::open_file(p_resolved).map_err(PyPolarsErr::from)?;
-        Ok((Box::new(f), Some(p.to_path_buf())))
-    }
-    // hopefully a normal python file: with open(...) as f:.
     else {
-        // we can still get a file name, inform the user of possibly wrong API usage.
-        if py_f.getattr("read").is_ok() && py_f.getattr("name").is_ok() {
-            polars_warn!("Polars found a filename. \
-            Ensure you pass a path to the file instead of a python file object when possible for best \
-            performance.")
+        match get_either_file_and_path(py_f.to_object(py_f.py()), false)? {
+            (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f.into_inner()), path)),
+            (EitherRustPythonFile::Py(f), path) => Ok((Box::new(f), path)),
         }
-        // don't really know what we got here, just read.
-        let f = Python::with_gil(|py| {
-            PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)
-        })?;
-        Ok((Box::new(f), None))
     }
 }
