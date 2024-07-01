@@ -173,7 +173,7 @@ impl Source for CsvSource {
             };
 
             if first_read_from_file {
-                if self.first_schema.len() == 0 {
+                if self.first_schema.is_empty() {
                     self.first_schema = batches[0].schema();
                 }
                 ensure_matching_schema(&self.first_schema, &batches[0].schema())?;
