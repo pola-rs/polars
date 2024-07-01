@@ -26,6 +26,30 @@ df_vertical_concat = pl.concat(
 print(df_vertical_concat)
 # --8<-- [end:vertical]
 
+# --8<-- [start:vertical_relaxed]
+df_v1 = pl.DataFrame(
+    {
+        "a": [1.0],
+        "b": [3],
+    },
+)
+df_v2 = pl.DataFrame(
+    {
+        "a": [2],
+        "b": [4],
+    },
+)
+df_vertical_relaxed_concat = pl.concat(
+    [
+        df_v1,
+        df_v2,
+    ],
+    how="vertical_relaxed",
+)
+print(df_vertical_relaxed_concat)
+# --8<-- [end:vertical_relaxed]
+
+
 # --8<-- [start:horizontal]
 df_h1 = pl.DataFrame(
     {
@@ -72,6 +96,21 @@ df_horizontal_concat = pl.concat(
 )
 print(df_horizontal_concat)
 # --8<-- [end:horizontal_different_lengths]
+
+# --8<-- [start:horizontal_align]
+df_h1 = pl.DataFrame({"a": ["a", "b", "d", "e", "e"], "b": [1, 2, 4, 5, 6]})
+df_h2 = pl.DataFrame({"a": ["a", "b", "c", "d", "e"], "d": ["w", "x", "y", "z", None]})
+df_align = pl.concat(
+    [
+        df_h1,
+        df_h2,
+    ],
+    how="align",
+)
+print(df_align)
+
+# --8<-- [end:horizontal_align]
+
 
 # --8<-- [start:cross]
 df_d1 = pl.DataFrame(
