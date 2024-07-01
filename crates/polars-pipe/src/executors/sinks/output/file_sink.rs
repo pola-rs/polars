@@ -22,8 +22,8 @@ pub(super) fn init_writer_thread(
     // all chunks per push should be collected to determine in which order they should
     // be written
     morsels_per_sink: usize,
-) -> JoinHandle<()> {
-    std::thread::spawn(move || {
+) -> JoinHandle<PolarsResult<()>> {
+    std::thread::spawn(move || -> PolarsResult<()> {
         // keep chunks around until all chunks per sink are written
         // then we write them all at once.
         let mut chunks = Vec::with_capacity(morsels_per_sink);
@@ -51,7 +51,7 @@ pub(super) fn init_writer_thread(
                         if df.n_chunks() > 1 {
                             df.as_single_chunk();
                         }
-                        writer._write_batch(&df).unwrap();
+                        writer._write_batch(&df)?;
                     }
                 }
                 // all chunks are written remove them
@@ -62,13 +62,14 @@ pub(super) fn init_writer_thread(
                         if df.n_chunks() > 1 {
                             df.as_single_chunk();
                         }
-                        writer._write_batch(&df).unwrap();
+                        writer._write_batch(&df)?;
                     }
-                    writer._finish().unwrap();
-                    return;
+                    writer._finish()?;
+                    return Ok(());
                 }
             }
         }
+        Ok(())
     })
 }
 
@@ -76,7 +77,7 @@ pub(super) fn init_writer_thread(
 #[derive(Clone)]
 pub struct FilesSink {
     pub(crate) sender: Sender<Option<DataChunk>>,
-    pub(crate) io_thread_handle: Arc<Option<JoinHandle<()>>>,
+    pub(crate) io_thread_handle: Arc<Option<JoinHandle<PolarsResult<()>>>>,
 }
 
 impl Sink for FilesSink {
@@ -106,7 +107,7 @@ impl Sink for FilesSink {
             .take()
             .unwrap()
             .join()
-            .unwrap();
+            .unwrap()?;
 
         // return a dummy dataframe;
         Ok(FinalizedSink::Finished(Default::default()))

@@ -194,6 +194,14 @@ def test_sink_csv_batch_size_zero() -> None:
         lf.sink_csv("test.csv", batch_size=0)
 
 
+def test_sink_csv_nested_data() -> None:
+    lf = pl.LazyFrame({"list": [[1, 2, 3, 4, 5]]})
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="CSV format does not support nested data"
+    ):
+        lf.sink_csv("path")
+
+
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
     df = pl.scan_csv(foods_file_path).collect(streaming=True)
