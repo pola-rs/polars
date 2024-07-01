@@ -503,3 +503,11 @@ def test_window_chunked_std_17102() -> None:
     df = pl.concat([c1, c2], rechunk=False)
     out = df.select(pl.col("B").std().over("A").alias("std"))
     assert out.unique().item() == 0.7071067811865476
+
+
+def test_window_17308() -> None:
+    df = pl.DataFrame({"A": [1, 2], "B": [3, 4], "grp": ["A", "B"]})
+
+    assert df.select(pl.col("A").sum(), pl.col("B").sum().over("grp")).to_dict(
+        as_series=False
+    ) == {"A": [3, 3], "B": [3, 4]}

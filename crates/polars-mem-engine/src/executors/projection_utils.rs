@@ -117,36 +117,41 @@ fn execute_projection_cached_window_fns(
     // first we partition the window function by the values they group over.
     // the group_by values should be cached
     exprs.iter().enumerate_u32().for_each(|(index, phys)| {
-        let e = phys.as_expression().unwrap();
-
         let mut is_window = false;
-        for e in e.into_iter() {
-            if let Expr::Window {
-                partition_by,
-                options,
-                order_by,
-                ..
-            } = e
-            {
-                let entry = match options {
-                    WindowType::Over(_) => {
-                        let mut key = format!("{:?}", partition_by.as_slice());
-                        if let Some((e, k)) = order_by {
-                            polars_expr::prelude::window_function_format_order_by(
-                                &mut key,
-                                e.as_ref(),
-                                k,
-                            )
-                        }
-                        windows.entry(key).or_insert_with(Vec::new)
-                    },
-                    #[cfg(feature = "dynamic_group_by")]
-                    WindowType::Rolling(options) => rolling.entry(options).or_insert_with(Vec::new),
-                };
-                entry.push((index, phys.clone()));
-                is_window = true;
-                break;
+        if let Some(e) = phys.as_expression() {
+            for e in e.into_iter() {
+                if let Expr::Window {
+                    partition_by,
+                    options,
+                    order_by,
+                    ..
+                } = e
+                {
+                    let entry = match options {
+                        WindowType::Over(_) => {
+                            let mut key = format!("{:?}", partition_by.as_slice());
+                            if let Some((e, k)) = order_by {
+                                polars_expr::prelude::window_function_format_order_by(
+                                    &mut key,
+                                    e.as_ref(),
+                                    k,
+                                )
+                            }
+                            windows.entry(key).or_insert_with(Vec::new)
+                        },
+                        #[cfg(feature = "dynamic_group_by")]
+                        WindowType::Rolling(options) => {
+                            rolling.entry(options).or_insert_with(Vec::new)
+                        },
+                    };
+                    entry.push((index, phys.clone()));
+                    is_window = true;
+                    break;
+                }
             }
+        } else {
+            // Window physical expressions always have the `Expr`.
+            is_window = false;
         }
         if !is_window {
             other.push((index, phys.as_ref()))
