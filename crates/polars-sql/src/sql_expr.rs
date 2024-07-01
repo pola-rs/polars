@@ -17,8 +17,8 @@ use sqlparser::ast::ExactNumberInfo;
 use sqlparser::ast::{
     ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat, CastKind,
     DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    Interval, JoinConstraint, ObjectName, Query as Subquery, SelectItem, Subscript, TimezoneInfo,
-    TrimWhereField, UnaryOperator, Value as SQLValue,
+    Interval, ObjectName, Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField,
+    UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -398,6 +398,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(value) => self.visit_literal(value),
+            SQLExpr::Wildcard => Ok(Expr::Wildcard),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
                 polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
@@ -414,7 +415,7 @@ impl SQLExprVisitor<'_> {
             polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE 'WITH' clause");
         }
         let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
-        let schema = lf.schema_with_arenas(&mut self.ctx.lp_arena, &mut self.ctx.expr_arena)?;
+        let schema = self.ctx.get_frame_schema(&mut lf)?;
 
         if restriction == SubqueryRestriction::SingleColumn {
             if schema.len() != 1 {
@@ -767,6 +768,7 @@ impl SQLExprVisitor<'_> {
         let mut visitor = SQLFunctionVisitor {
             func: function,
             ctx: self.ctx,
+            active_schema: self.active_schema,
         };
         visitor.visit_function()
     }
@@ -1116,97 +1118,6 @@ impl SQLExprVisitor<'_> {
     fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
         polars_bail!(SQLInterface: "expression {:?} is not currently supported", expr);
     }
-}
-
-fn collect_compound_identifiers(
-    left: &[Ident],
-    right: &[Ident],
-    left_name: &str,
-    right_name: &str,
-) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if left.len() == 2 && right.len() == 2 {
-        let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-        let (tbl_b, col_b) = (&right[0].value, &right[1].value);
-
-        // switch left/right operands if the caller has them in reverse
-        if left_name == tbl_b || right_name == tbl_a {
-            Ok((vec![col(col_b)], vec![col(col_a)]))
-        } else {
-            Ok((vec![col(col_a)], vec![col(col_b)]))
-        }
-    } else {
-        polars_bail!(SQLInterface: "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
-    }
-}
-
-fn process_join_on(
-    expression: &sqlparser::ast::Expr,
-    left_name: &str,
-    right_name: &str,
-) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let SQLExpr::BinaryOp { left, op, right } = expression {
-        match *op {
-            BinaryOperator::Eq => {
-                if let (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) =
-                    (left.as_ref(), right.as_ref())
-                {
-                    collect_compound_identifiers(left, right, left_name, right_name)
-                } else {
-                    polars_bail!(SQLInterface: "JOIN clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
-                }
-            },
-            BinaryOperator::And => {
-                let (mut left_i, mut right_i) = process_join_on(left, left_name, right_name)?;
-                let (mut left_j, mut right_j) = process_join_on(right, left_name, right_name)?;
-                left_i.append(&mut left_j);
-                right_i.append(&mut right_j);
-                Ok((left_i, right_i))
-            },
-            _ => {
-                polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
-            },
-        }
-    } else if let SQLExpr::Nested(expr) = expression {
-        process_join_on(expr, left_name, right_name)
-    } else {
-        polars_bail!(SQLInterface: "JOIN clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
-    }
-}
-
-pub(super) fn process_join_constraint(
-    constraint: &JoinConstraint,
-    left_name: &str,
-    right_name: &str,
-) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
-    if let JoinConstraint::On(SQLExpr::BinaryOp { left, op, right }) = constraint {
-        if op == &BinaryOperator::And {
-            let (mut left_on, mut right_on) = process_join_on(left, left_name, right_name)?;
-            let (left_on_, right_on_) = process_join_on(right, left_name, right_name)?;
-            left_on.extend(left_on_);
-            right_on.extend(right_on_);
-            return Ok((left_on, right_on));
-        }
-        if op != &BinaryOperator::Eq {
-            polars_bail!(SQLInterface:
-                "only equi-join constraints are supported; found '{:?}' op in\n{:?}", op, constraint)
-        }
-        match (left.as_ref(), right.as_ref()) {
-            (SQLExpr::CompoundIdentifier(left), SQLExpr::CompoundIdentifier(right)) => {
-                return collect_compound_identifiers(left, right, left_name, right_name);
-            },
-            (SQLExpr::Identifier(left), SQLExpr::Identifier(right)) => {
-                return Ok((vec![col(&left.value)], vec![col(&right.value)]))
-            },
-            _ => {},
-        }
-    }
-    if let JoinConstraint::Using(idents) = constraint {
-        if !idents.is_empty() {
-            let using: Vec<Expr> = idents.iter().map(|id| col(&id.value)).collect();
-            return Ok((using.clone(), using.clone()));
-        }
-    }
-    polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression

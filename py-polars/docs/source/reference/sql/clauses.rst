@@ -127,13 +127,11 @@ Combines rows from two or more tables based on a related column.
 **Join Types**
 
 * `CROSS JOIN`
-* `FULL JOIN`
-* `INNER JOIN`
-* `LEFT JOIN`
-* `[LEFT] ANTI JOIN`
-* `[LEFT] SEMI JOIN`
-* `RIGHT ANTI JOIN`
-* `RIGHT SEMI JOIN`
+* `[NATURAL] FULL JOIN`
+* `[NATURAL] INNER JOIN`
+* `[NATURAL] LEFT JOIN`
+* `[LEFT | RIGHT] ANTI JOIN`
+* `[LEFT | RIGHT] SEMI JOIN`
 
 **Example:**
 
@@ -156,7 +154,6 @@ Combines rows from two or more tables based on a related column.
       FROM df1 FULL JOIN df2
       USING (ham)
     """).collect()
-
     # shape: (4, 3)
     # ┌──────┬───────┬─────┐
     # │ foo  ┆ apple ┆ ham │
@@ -168,6 +165,20 @@ Combines rows from two or more tables based on a related column.
     # │ null ┆ z     ┆ d   │
     # │ 3    ┆ null  ┆ c   │
     # └──────┴───────┴─────┘
+
+    pl.sql("""
+      SELECT COLUMNS('^\w+$')
+      FROM df1 NATURAL INNER JOIN df2
+    """).collect()
+    # shape: (2, 3)
+    # ┌─────┬───────┬─────┐
+    # │ foo ┆ apple ┆ ham │
+    # │ --- ┆ ---   ┆ --- │
+    # │ i64 ┆ str   ┆ str │
+    # ╞═════╪═══════╪═════╡
+    # │ 1   ┆ x     ┆ a   │
+    # │ 2   ┆ y     ┆ b   │
+    # └─────┴───────┴─────┘
 
 .. _where:
 

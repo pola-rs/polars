@@ -526,6 +526,41 @@ fn test_join_on_different_keys() {
 }
 
 #[test]
+fn test_join_multi_consecutive() {
+    let df1 = df! { "a" => [1, 2, 3], "b" => [4, 8, 6] }.unwrap();
+    let df2 = df! { "a" => [3, 2, 1], "b" => [6, 5, 4], "c" => ["x", "y", "z"] }.unwrap();
+    let df3 = df! { "c" => ["w", "y", "z"], "d" => [10.5, -50.0, 25.5] }.unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("tbl_a", df1.lazy());
+    ctx.register("tbl_b", df2.lazy());
+    ctx.register("tbl_c", df3.lazy());
+
+    let sql = r#"
+        SELECT tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d FROM tbl_a
+        INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        ORDER BY a DESC
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [1],
+        "b" => [4],
+        "c" => ["z"],
+        "d" => [25.5],
+    }
+    .unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
+}
+
+#[test]
 fn test_join_utf8() {
     // (色) color and (野菜) vegetable
     let df1 = df! {
