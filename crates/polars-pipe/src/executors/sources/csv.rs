@@ -27,6 +27,7 @@ pub(crate) struct CsvSource {
     // state for multi-file reads
     current_path_idx: usize,
     n_rows_read: usize,
+    first_schema: Schema,
 }
 
 impl CsvSource {
@@ -142,6 +143,7 @@ impl CsvSource {
             verbose,
             current_path_idx: 0,
             n_rows_read: 0,
+            first_schema: Default::default(),
         })
     }
 }
@@ -171,7 +173,10 @@ impl Source for CsvSource {
             };
 
             if first_read_from_file {
-                ensure_matching_schema(self.schema.as_ref(), &batches[0].schema())?;
+                if self.first_schema.len() == 0 {
+                    self.first_schema = batches[0].schema();
+                }
+                ensure_matching_schema(&self.first_schema, &batches[0].schema())?;
             }
 
             let index = get_source_index(0);
