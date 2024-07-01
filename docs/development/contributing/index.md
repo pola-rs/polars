@@ -87,6 +87,8 @@ You will need Python even if you intend to work on the Rust code only, as we rel
 Finally, install [dprint](https://dprint.dev/install/).
 This is not strictly required, but it is recommended as we use it to autoformat certain file types.
 
+This guide uses [GNU make](https://www.gnu.org/software/make/) and (indirectly) [cmake](https://cmake.org/). They should come pre-installed on your system. If you are on Windows, install them as well.
+
 You can now check that everything works correctly by going into the `py-polars` directory and running the test suite
 (warning: this may be slow the first time you run it):
 
