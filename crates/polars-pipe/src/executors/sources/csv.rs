@@ -27,9 +27,6 @@ pub(crate) struct CsvSource {
     // state for multi-file reads
     current_path_idx: usize,
     n_rows_read: usize,
-    // Used to check schema in a way that throws the same error messages as the default engine.
-    // TODO: Refactor the checking code so that we can just use the schema to do this.
-    schema_check_df: DataFrame,
 }
 
 impl CsvSource {
@@ -145,7 +142,6 @@ impl CsvSource {
             verbose,
             current_path_idx: 0,
             n_rows_read: 0,
-            schema_check_df: Default::default(),
         })
     }
 }
@@ -175,11 +171,7 @@ impl Source for CsvSource {
             };
 
             if first_read_from_file {
-                let first_df = batches.first().unwrap();
-                if self.schema_check_df.width() == 0 {
-                    self.schema_check_df = first_df.clear();
-                }
-                self.schema_check_df.vstack(first_df)?;
+                ensure_matching_schema(self.schema.as_ref(), &batches[0].schema())?;
             }
 
             let index = get_source_index(0);
