@@ -7,7 +7,7 @@ import os
 import random
 from collections import defaultdict
 from collections.abc import Sized
-from io import BytesIO, StringIO, TextIOWrapper
+from io import BytesIO, StringIO
 from operator import itemgetter
 from pathlib import Path
 from typing import (
@@ -24,7 +24,6 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
-    cast,
     get_args,
     overload,
 )
@@ -2695,8 +2694,6 @@ class DataFrame:
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
-        elif isinstance(file, TextIOWrapper):
-            file = cast(TextIOWrapper, file.buffer)
 
         self._df.write_csv(
             file,

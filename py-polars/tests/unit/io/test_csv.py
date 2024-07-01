@@ -2221,3 +2221,11 @@ a,b,c,d
 
     out = pl.scan_csv(path).select(columns).collect().columns
     assert out == columns
+
+
+@pytest.mark.write_disk()
+def test_write_csv_to_dangling_file_17328(
+    df_no_lists: pl.DataFrame, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df_no_lists.write_csv((tmp_path / "dangling.csv").open("w"))
