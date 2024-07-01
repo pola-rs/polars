@@ -3,7 +3,6 @@ use std::num::NonZeroUsize;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::mmap::try_create_file;
 use polars::io::RowIndex;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
@@ -354,30 +353,8 @@ impl PyDataFrame {
         quote_style: Option<Wrap<QuoteStyle>>,
     ) -> PyResult<()> {
         let null = null_value.unwrap_or_default();
-
-        if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let f = std::fs::File::create(&*s)?;
-            py.allow_threads(|| {
-                // No need for a buffered writer, because the csv writer does internal buffering.
-                CsvWriter::new(f)
-                    .include_bom(include_bom)
-                    .include_header(include_header)
-                    .with_separator(separator)
-                    .with_line_terminator(line_terminator)
-                    .with_quote_char(quote_char)
-                    .with_batch_size(batch_size)
-                    .with_datetime_format(datetime_format)
-                    .with_date_format(date_format)
-                    .with_time_format(time_format)
-                    .with_float_scientific(float_scientific)
-                    .with_float_precision(float_precision)
-                    .with_null_value(null)
-                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
-                    .finish(&mut self.df)
-                    .map_err(PyPolarsErr::from)
-            })?;
-        } else {
-            let mut buf = get_file_like(py_f, true)?;
+        let mut buf = get_file_like(py_f, true)?;
+        py.allow_threads(|| {
             CsvWriter::new(&mut buf)
                 .include_bom(include_bom)
                 .include_header(include_header)
@@ -393,9 +370,8 @@ impl PyDataFrame {
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
-        }
-
+                .map_err(PyPolarsErr::from)
+        })?;
         Ok(())
     }
 
@@ -412,29 +388,16 @@ impl PyDataFrame {
         data_page_size: Option<usize>,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
-
-        if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let f = std::fs::File::create(&*s)?;
-            py.allow_threads(|| {
-                ParquetWriter::new(f)
-                    .with_compression(compression)
-                    .with_statistics(statistics.0)
-                    .with_row_group_size(row_group_size)
-                    .with_data_page_size(data_page_size)
-                    .finish(&mut self.df)
-                    .map_err(PyPolarsErr::from)
-            })?;
-        } else {
-            let buf = get_file_like(py_f, true)?;
+        let buf = get_file_like(py_f, true)?;
+        py.allow_threads(|| {
             ParquetWriter::new(buf)
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
-        }
-
+                .map_err(PyPolarsErr::from)
+        })?;
         Ok(())
     }
 
@@ -469,26 +432,14 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
         future: bool,
     ) -> PyResult<()> {
-        if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let s: &str = s.as_ref();
-            let path = std::path::Path::new(s);
-            let f = try_create_file(path).map_err(PyPolarsErr::from)?;
-            py.allow_threads(|| {
-                IpcWriter::new(f)
-                    .with_compression(compression.0)
-                    .with_pl_flavor(future)
-                    .finish(&mut self.df)
-                    .map_err(PyPolarsErr::from)
-            })?;
-        } else {
-            let mut buf = get_file_like(py_f, true)?;
-
+        let mut buf = get_file_like(py_f, true)?;
+        py.allow_threads(|| {
             IpcWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_pl_flavor(future)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
-        }
+                .map_err(PyPolarsErr::from)
+        })?;
         Ok(())
     }
 
@@ -500,24 +451,14 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
         future: bool,
     ) -> PyResult<()> {
-        if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let f = std::fs::File::create(&*s)?;
-            py.allow_threads(|| {
-                IpcStreamWriter::new(f)
-                    .with_compression(compression.0)
-                    .with_pl_flavor(future)
-                    .finish(&mut self.df)
-                    .map_err(PyPolarsErr::from)
-            })?;
-        } else {
-            let mut buf = get_file_like(py_f, true)?;
-
+        let mut buf = get_file_like(py_f, true)?;
+        py.allow_threads(|| {
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_pl_flavor(future)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
-        }
+                .map_err(PyPolarsErr::from)
+        })?;
         Ok(())
     }
 
@@ -531,23 +472,14 @@ impl PyDataFrame {
         name: String,
     ) -> PyResult<()> {
         use polars::io::avro::AvroWriter;
-
-        if let Ok(s) = py_f.extract::<PyBackedStr>(py) {
-            let f = std::fs::File::create(&*s)?;
-            AvroWriter::new(f)
-                .with_compression(compression.0)
-                .with_name(name)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
-        } else {
-            let mut buf = get_file_like(py_f, true)?;
+        let mut buf = get_file_like(py_f, true)?;
+        py.allow_threads(|| {
             AvroWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_name(name)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)?;
-        }
-
+                .map_err(PyPolarsErr::from)
+        })?;
         Ok(())
     }
 }
