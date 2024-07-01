@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
+use polars::io::mmap::ensure_not_mapped;
 use polars::io::RowIndex;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
@@ -15,7 +16,7 @@ use crate::conversion::parse_parquet_compression;
 use crate::conversion::Wrap;
 use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    read_if_bytesio, EitherRustPythonFile,
+    read_if_bytesio, EitherRustPythonFile, FileLike,
 };
 
 #[pymethods]
@@ -432,7 +433,15 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
         future: bool,
     ) -> PyResult<()> {
-        let mut buf = get_file_like(py_f, true)?;
+        let either = get_either_file(py_f, true)?;
+        let mut buf: Box<dyn FileLike> = match either {
+            EitherRustPythonFile::Rust(f) => {
+                let f = f.into_inner();
+                ensure_not_mapped(&f).map_err(PyPolarsErr::from)?;
+                Box::new(f)
+            },
+            EitherRustPythonFile::Py(f) => Box::new(f),
+        };
         py.allow_threads(|| {
             IpcWriter::new(&mut buf)
                 .with_compression(compression.0)
