@@ -122,6 +122,7 @@ if TYPE_CHECKING:
     import deltalake
     import jax
     import numpy.typing as npt
+    import pyiceberg
     import torch
     from great_tables import GT
     from xlsxwriter import Workbook
@@ -4051,6 +4052,36 @@ class DataFrame:
         else:
             msg = f"unrecognised connection type {connection!r}"
             raise TypeError(msg)
+
+    def write_iceberg(self, target: str | Path) -> pyiceberg.table.Table:
+        """
+        Write DataFrame to an Iceberg table.
+
+        Parameters
+        ----------
+        target : str | Path
+            The target path or identifier for the Iceberg table.
+
+        Returns
+        -------
+        pyiceberg.Table
+            The Iceberg table object that was written to.
+        """
+        from pyiceberg.catalog.sql import SqlCatalog
+
+        catalog = SqlCatalog(
+            "default", uri="sqlite:///:memory:", warehouse=f"file://{target}"
+        )
+        catalog.create_namespace("default")
+        data = self.to_arrow()
+        schema = data.schema
+        table = catalog.create_table(
+            "default.table",
+            schema=schema,
+        )
+
+        table.overwrite(data)
+        return table
 
     @overload
     def write_delta(

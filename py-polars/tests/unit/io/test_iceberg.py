@@ -163,3 +163,24 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
+
+
+@pytest.mark.slow()
+@pytest.mark.write_disk()
+@pytest.mark.filterwarnings(
+    "ignore:No preferred file implementation for scheme*:UserWarning"
+)
+def test_write_iceberg(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ["a", "b", "c", "d", "e"],
+        }
+    )
+    iceberg_table = df.write_iceberg(tmp_path)
+    iceberg_path = iceberg_table.metadata_location
+    new_df = pl.scan_iceberg(iceberg_path).collect()
+    assert len(df) == len(new_df)
+    assert df.schema == new_df.schema
+    assert df.equals(new_df)
