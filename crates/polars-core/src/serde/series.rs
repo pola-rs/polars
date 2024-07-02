@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::fmt::Formatter;
 
-use serde::de::{MapAccess, Visitor};
+use serde::de::{Error as DeError, MapAccess, Visitor};
+use serde::ser::Error as SerError;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "dtype-array")]
@@ -79,6 +80,9 @@ impl Serialize for Series {
                 let ca = self.null().unwrap();
                 ca.serialize(serializer)
             },
+            DataType::Object(_, _) => Err(S::Error::custom(
+                "serializing data of type Object is not supported",
+            )),
             dt => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
@@ -285,9 +289,9 @@ impl<'de> Deserialize<'de> for Series {
                         let len = values.first().unwrap();
                         Ok(Series::new_null(&name, *len))
                     },
-                    dt => {
-                        panic!("{dt:?} dtype deserialization not yet implemented")
-                    },
+                    dt => Err(A::Error::custom(format!(
+                        "deserializing data of type {dt} is not supported"
+                    ))),
                 }?;
 
                 if let Some(f) = bit_settings {
