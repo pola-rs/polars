@@ -147,6 +147,19 @@ pub fn lower_ir(
             Ok(phys_sm.insert(phys_node))
         },
 
+        IR::Union { inputs, options } => {
+            if options.slice.is_some() {
+                todo!()
+            }
+
+            let inputs = inputs
+                .clone() // Needed to borrow ir_arena mutably.
+                .into_iter()
+                .map(|input| lower_ir(input, ir_arena, expr_arena, phys_sm))
+                .collect::<Result<_, _>>()?;
+            Ok(phys_sm.insert(PhysNode::OrderedUnion { inputs }))
+        },
+
         _ => todo!(),
     }
 }

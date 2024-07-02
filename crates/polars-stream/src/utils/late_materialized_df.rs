@@ -44,7 +44,7 @@ impl AnonymousScan for LateMaterializedDataFrame {
         unimplemented!()
     }
 
-    fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
+    fn scan(&self, _scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
         Ok(self.df.lock().take().unwrap())
     }
 }

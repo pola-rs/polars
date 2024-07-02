@@ -3,10 +3,8 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::Schema;
-use polars_error::PolarsResult;
 use polars_plan::plans::DataFrameUdf;
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_utils::arena::Node;
 
 mod lower_ir;
 mod to_graph;
@@ -69,4 +67,8 @@ pub enum PhysNode {
         slice: Option<(i64, usize)>,
         sort_options: SortMultipleOptions,
     },
+    
+    OrderedUnion {
+        inputs: Vec<PhysNodeKey>,
+    }
 }
