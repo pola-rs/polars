@@ -145,7 +145,7 @@ where
 
     let get_hive_path_part = |df: &DataFrame| {
         const CHAR_SET: &percent_encoding::AsciiSet =
-            &percent_encoding::CONTROLS.add(b'/').add(b'=');
+            &percent_encoding::CONTROLS.add(b'/').add(b'=').add(b':');
 
         partition_by
             .iter()
