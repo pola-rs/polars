@@ -29,5 +29,16 @@ def build_info() -> dict[str, Any]:
 
     If Polars was compiled without the `build_info` feature flag, only the `"version"`
     key is included.
+
+    Returns
+    -------
+    dict
+        A dictionary with Polars build information.
+
+    Examples
+    --------
+    Return detailed Polars build information.
+
+    >>> pl.build_info()  # doctest: +SKIP
     """
     return __build__
