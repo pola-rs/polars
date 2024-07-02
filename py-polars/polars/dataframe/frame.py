@@ -4055,44 +4055,29 @@ class DataFrame:
 
     def write_iceberg(
         self,
-        target: str | Path,
+        table: pyiceberg.table.Table,
         mode: Literal["append", "overwrite"],
-    ) -> pyiceberg.table.Table:
+    ) -> None:
         """
         Write DataFrame to an Iceberg table.
 
         Parameters
         ----------
-        target : str | Path
-            The target path or identifier for the Iceberg table.
+        table
+            The pyiceberg.table.Table object representing an Iceberg table.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
 
-        Returns
-        -------
-        pyiceberg.Table
-            The Iceberg table object that was written to.
         """
-        from pyiceberg.catalog.sql import SqlCatalog
-
-        catalog = SqlCatalog(
-            "default", uri="sqlite:///:memory:", warehouse=f"file://{target}"
-        )
-        catalog.create_namespace("default")
         data = self.to_arrow()
-        schema = data.schema
-        table = catalog.create_table(
-            "default.table",
-            schema=schema,
-        )
+
         if mode == "append":
             table.append(data)
         else:
             table.overwrite(data)
-        return table
 
     @overload
     def write_delta(

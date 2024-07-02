@@ -178,9 +178,25 @@ def test_write_iceberg(tmp_path: Path) -> None:
             "ham": ["a", "b", "c", "d", "e"],
         }
     )
-    iceberg_table = df.write_iceberg(tmp_path, mode="overwrite")
-    iceberg_path = iceberg_table.metadata_location
-    new_df = pl.scan_iceberg(iceberg_path).collect()
-    assert len(df) == len(new_df)
+
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    catalog = SqlCatalog(
+        "default", uri="sqlite:///:memory:", warehouse=f"file://{tmp_path}"
+    )
+    catalog.create_namespace("default")
+    table = catalog.create_table(
+        "default.table",
+        schema=df.to_arrow().schema,
+    )
+
+    df.write_iceberg(table, mode="overwrite")
+    new_df = pl.scan_iceberg(table).collect()
     assert df.schema == new_df.schema
+    assert len(df) == len(new_df)
     assert df.equals(new_df)
+
+    df.write_iceberg(table, mode="append")
+    new_df = pl.scan_iceberg(table).collect()
+    assert df.schema == new_df.schema
+    assert 2 * len(df) == len(new_df)
