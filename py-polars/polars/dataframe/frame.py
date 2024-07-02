@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
+import warnings
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO
@@ -3831,6 +3832,54 @@ class DataFrame:
             ), conn.cursor() as cursor:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
+                df_arrow = self.to_arrow()
+
+                # Until https://github.com/apache/arrow-adbc/issues/1950 is fixed, Uint
+                # and Time dtypes are incompatible with adbc_ingest, and must be cast.
+                vendor = conn.adbc_get_info().get("vendor_name")
+                if vendor == "PostgreSQL":
+                    schema = df_arrow.schema
+                    if {
+                        pa.time32("s"),
+                        pa.time32("ms"),
+                        pa.time64("us"),
+                        pa.time64("ns"),
+                    }.intersection(schema.types):
+                        msg = (
+                            "Time dtypes are not supported in write_database when ADBC "
+                            "postgres driver <= 1.1.0 is used."
+                        )
+                        raise ValueError(msg)
+                    unsupported_types = {
+                        pa.uint8(),
+                        pa.uint16(),
+                        pa.uint32(),
+                        pa.uint64(),
+                    }
+                    unsupported = unsupported_types.intersection(schema.types)
+                    if unsupported:
+                        warnings.warn(
+                            "Unsigned integer dtypes are not supported in write_database "
+                            "when ADBC postgres driver <= 1.1.0 is used. These columns "
+                            "will be cast to compatible Arrow types. This may result in a "
+                            "loss of precision.",
+                            stacklevel=2,
+                        )
+                        # update the pyarrow df to compatible dtype
+                        type_mapper = {
+                            pa.uint8(): pa.int16(),
+                            pa.uint16(): pa.int32(),
+                            pa.uint32(): pa.int64(),
+                            pa.uint64(): pa.int64(),
+                        }
+                        for idx, field in enumerate(schema):
+                            if field.type in unsupported_types:
+                                new_field = pa.field(
+                                    field.name, type_mapper[field.type]
+                                )
+                                schema = schema.set(idx, new_field)
+                        df_arrow = df_arrow.cast(schema)
+
                 if adbc_version >= (0, 7):
                     if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
                         if if_table_exists == "replace":
@@ -3841,7 +3890,7 @@ class DataFrame:
 
                     n_rows = cursor.adbc_ingest(
                         unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=df_arrow,
                         mode=mode,
                         catalog_name=catalog,
                         db_schema_name=db_schema,
@@ -3857,7 +3906,7 @@ class DataFrame:
                 else:
                     n_rows = cursor.adbc_ingest(
                         table_name=unpacked_table_name,
-                        data=self.to_arrow(),
+                        data=df_arrow,
                         mode=mode,
                         **(engine_options or {}),
                     )
