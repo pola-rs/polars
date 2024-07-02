@@ -346,15 +346,18 @@ class ConnectionExecutor:
     @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:
         """Check if the cursor/connection/session object is async."""
-        from sqlalchemy.ext.asyncio import (
-            AsyncSession,
-            async_sessionmaker,
-        )
+        from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import Session, sessionmaker
 
-        return isinstance(
-            conn, (Session, sessionmaker, AsyncSession, async_sessionmaker)
-        )
+        if isinstance(conn, (AsyncSession, Session, sessionmaker)):
+            return True
+
+        try:
+            from sqlalchemy.ext.asyncio import async_sessionmaker
+
+            return isinstance(conn, async_sessionmaker)
+        except ImportError:
+            return False
 
     def _normalise_cursor(self, conn: Any) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
