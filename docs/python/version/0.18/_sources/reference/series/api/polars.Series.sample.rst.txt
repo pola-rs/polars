@@ -1,0 +1,6 @@
+﻿polars.Series.sample
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.sample

@@ -1,0 +1,6 @@
+﻿polars.Expr.replace\_strict
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.replace_strict

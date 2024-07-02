@@ -1,0 +1,6 @@
+﻿polars.Series.cos
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.cos

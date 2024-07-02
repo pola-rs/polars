@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["finish_infer_field_schema","infer_field_schema","infer_file_schema"],"struct":["SchemaInferenceResult"]};

@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.max
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.max

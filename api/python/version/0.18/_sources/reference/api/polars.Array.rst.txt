@@ -1,0 +1,33 @@
+﻿polars.Array
+============
+
+.. currentmodule:: polars
+
+.. autoclass:: Array
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Array.__init__
+      ~Array.base_type
+      ~Array.is_
+      ~Array.is_not
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Array.inner
+      ~Array.is_nested
+      ~Array.width
+   
+   

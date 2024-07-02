@@ -1,0 +1,66 @@
+===========
+Computation
+===========
+
+.. currentmodule:: polars
+.. autosummary::
+   :toctree: api/
+
+    Series.abs
+    Series.arccos
+    Series.arccosh
+    Series.arcsin
+    Series.arcsinh
+    Series.arctan
+    Series.arctanh
+    Series.arg_true
+    Series.arg_unique
+    Series.cbrt
+    Series.cos
+    Series.cosh
+    Series.cot
+    Series.cum_count
+    Series.cum_max
+    Series.cum_min
+    Series.cum_prod
+    Series.cum_sum
+    Series.cumulative_eval
+    Series.diff
+    Series.dot
+    Series.entropy
+    Series.ewm_mean
+    Series.ewm_mean_by
+    Series.ewm_std
+    Series.ewm_var
+    Series.exp
+    Series.hash
+    Series.hist
+    Series.is_between
+    Series.kurtosis
+    Series.log
+    Series.log10
+    Series.log1p
+    Series.pct_change
+    Series.peak_max
+    Series.peak_min
+    Series.rank
+    Series.replace
+    Series.replace_strict
+    Series.rolling_map
+    Series.rolling_max
+    Series.rolling_mean
+    Series.rolling_median
+    Series.rolling_min
+    Series.rolling_quantile
+    Series.rolling_skew
+    Series.rolling_std
+    Series.rolling_sum
+    Series.rolling_var
+    Series.search_sorted
+    Series.sign
+    Series.sin
+    Series.sinh
+    Series.skew
+    Series.sqrt
+    Series.tan
+    Series.tanh

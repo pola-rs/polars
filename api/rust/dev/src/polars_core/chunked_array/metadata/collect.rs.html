@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-core/src/chunked_array/metadata/collect.rs`."><title>collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="polars_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (3cb521a43 2024-06-22)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<a href="#2" id="2">2</a>
+<a href="#3" id="3">3</a>
+<a href="#4" id="4">4</a>
+<a href="#5" id="5">5</a>
+<a href="#6" id="6">6</a>
+<a href="#7" id="7">7</a>
+<a href="#8" id="8">8</a>
+<a href="#9" id="9">9</a>
+<a href="#10" id="10">10</a>
+<a href="#11" id="11">11</a>
+<a href="#12" id="12">12</a>
+<a href="#13" id="13">13</a>
+<a href="#14" id="14">14</a>
+<a href="#15" id="15">15</a>
+<a href="#16" id="16">16</a>
+<a href="#17" id="17">17</a>
+<a href="#18" id="18">18</a>
+<a href="#19" id="19">19</a>
+<a href="#20" id="20">20</a>
+<a href="#21" id="21">21</a>
+<a href="#22" id="22">22</a>
+<a href="#23" id="23">23</a>
+<a href="#24" id="24">24</a>
+<a href="#25" id="25">25</a>
+<a href="#26" id="26">26</a>
+<a href="#27" id="27">27</a>
+<a href="#28" id="28">28</a>
+<a href="#29" id="29">29</a>
+<a href="#30" id="30">30</a>
+<a href="#31" id="31">31</a>
+<a href="#32" id="32">32</a>
+<a href="#33" id="33">33</a>
+<a href="#34" id="34">34</a>
+<a href="#35" id="35">35</a>
+<a href="#36" id="36">36</a>
+<a href="#37" id="37">37</a>
+<a href="#38" id="38">38</a>
+<a href="#39" id="39">39</a>
+<a href="#40" id="40">40</a>
+<a href="#41" id="41">41</a>
+<a href="#42" id="42">42</a>
+<a href="#43" id="43">43</a>
+<a href="#44" id="44">44</a>
+<a href="#45" id="45">45</a>
+<a href="#46" id="46">46</a>
+</pre></div><pre class="rust"><code><span class="kw">use super</span>::{Metadata, MetadataEnv};
+<span class="kw">use </span><span class="kw">crate</span>::chunked_array::{ChunkAgg, ChunkedArray, PolarsDataType, PolarsNumericType};
+<span class="kw">use </span><span class="kw">crate</span>::series::IsSorted;
+
+<span class="kw">pub trait </span>MetadataCollectable&lt;T&gt;: Sized {
+    <span class="kw">fn </span>collect_cheap_metadata(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {}
+
+    <span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>with_cheap_metadata(<span class="kw-2">mut </span><span class="self">self</span>) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.collect_cheap_metadata();
+        <span class="self">self
+    </span>}
+}
+
+<span class="kw">impl</span>&lt;T&gt; MetadataCollectable&lt;T&gt; <span class="kw">for </span>ChunkedArray&lt;T&gt;
+<span class="kw">where
+    </span>T: PolarsDataType,
+    T: PolarsNumericType,
+    ChunkedArray&lt;T&gt;: ChunkAgg&lt;T::Native&gt;,
+{
+    <span class="kw">fn </span>collect_cheap_metadata(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+        <span class="kw">if </span>!MetadataEnv::experimental_enabled() {
+            <span class="kw">return</span>;
+        }
+
+        <span class="kw">if </span><span class="self">self</span>.len() &lt; <span class="number">32 </span>{
+            <span class="kw">let </span>(min, max) = <span class="self">self
+                </span>.min_max()
+                .map_or((<span class="prelude-val">None</span>, <span class="prelude-val">None</span>), |(l, r)| (<span class="prelude-val">Some</span>(l), <span class="prelude-val">Some</span>(r)));
+
+            <span class="kw">let </span>has_one_value = <span class="self">self</span>.len() - <span class="self">self</span>.null_count() == <span class="number">1</span>;
+
+            <span class="kw">let </span>md = Metadata::DEFAULT
+                .sorted_opt(has_one_value.then_some(IsSorted::Ascending))
+                .min_value_opt(min)
+                .max_value_opt(max)
+                .distinct_count_opt(has_one_value.then_some(<span class="number">1</span>));
+
+            <span class="kw">if </span>!md.is_empty() {
+                <span class="macro">mdlog!</span>(<span class="string">"Initializing cheap metadata"</span>);
+            }
+
+            <span class="self">self</span>.merge_metadata(md);
+        }
+    }
+}
+</code></pre></div></section></main></body></html>

@@ -1,0 +1,4387 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://docs.pola.rs/releases/upgrade/1/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../0.20/">
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.0, mkdocs-material-9.5.27">
+    
+    
+      
+        <title>Version 1 - Polars user guide</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.6543a935.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_markdown_exec_pyodide.css">
+    
+      <link rel="stylesheet" href="../../../assets/_markdown_exec_ansi.css">
+    
+      <link rel="stylesheet" href="../../../_build/css/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+  <script
+  defer
+  data-domain="guide.pola.rs,combined.pola.rs"
+  src="https://plausible.io/js/plausible.js"
+></script>
+
+<script>
+  window.plausible = window.plausible || function () { (window.plausible.q = window.plausible.q || []).push(arguments) };
+
+  /* Register event handlers after documented loaded */
+  document.addEventListener("DOMContentLoaded", function () {
+    /* Set up search tracking */
+    if (document.forms.search) {
+      var query = document.forms.search.query;
+      query.addEventListener("blur", function() {
+        if (this.value) plausible("Search", { props: { search_term: this.value } });
+      })
+    }
+
+    /* Set up feedback, i.e. "Was this page helpful?" */
+    document$.subscribe(function () {
+      var feedback = document.forms.feedback;
+      if (typeof feedback === "undefined") return;
+
+      /* Send feedback to Plausible */
+      for (var button of feedback.querySelectorAll("[type=submit]")) {
+        button.addEventListener("click", function (ev) {
+          ev.preventDefault();
+
+          var page = document.location.pathname;
+          var value = this.getAttribute("data-md-value");
+          console.log("[feedback] User clicked", { value });
+          plausible(`Feedback: ${value}`);
+
+          /* Disable form and show note, if given */
+          feedback.firstElementChild.disabled = true;
+          var note = feedback.querySelector(".md-feedback__note [data-md-value='" + value + "']");
+          if (note) note.hidden = false;
+        })
+
+        /* Show feedback */
+        feedback.hidden = false;
+      }
+    });
+  });
+</script>
+  
+    <script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+  
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#version-1" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Polars user guide" class="md-header__button md-logo" aria-label="Polars user guide" data-md-component="logo">
+      
+  <img src="../../../_build/assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Polars user guide
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Version 1
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pola-rs/polars" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pola-rs/polars
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+    
+  
+  User guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../api/" class="md-tabs__link">
+        
+  
+    
+  
+  API reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+    
+      
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../development/contributing/" class="md-tabs__link">
+          
+  
+    
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+    
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Polars user guide" class="md-nav__button md-logo" aria-label="Polars user guide" data-md-component="logo">
+      
+  <img src="../../../_build/assets/logo.png" alt="logo">
+
+    </a>
+    Polars user guide
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pola-rs/polars" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pola-rs/polars
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../.." class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    User guide
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            User guide
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/getting-started/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Getting started
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/concepts/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Concepts
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            Concepts
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_4_2" id="__nav_1_4_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Data types
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            Data types
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/data-types/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/data-types/categoricals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Categorical data
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/data-structures/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Data structures
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/contexts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contexts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/expressions/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Expressions
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/lazy-vs-eager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lazy / eager API
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/concepts/streaming/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Streaming API
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/expressions/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Expressions
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_5">
+            <span class="md-nav__icon md-icon"></span>
+            Expressions
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/operators/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Basic operators
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/column-selections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Column selections
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/functions/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Functions
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/casting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Casting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/strings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Strings
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/aggregation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Aggregation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/missing-data/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Missing data
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/window/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Window functions
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/folds/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Folds
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/lists/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lists and Arrays
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/plugins/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Expression plugins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/user-defined-functions/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    User-defined functions (Python)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/structs/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    The Struct datatype
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/expressions/numpy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Numpy
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/transformations/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Transformations
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_6">
+            <span class="md-nav__icon md-icon"></span>
+            Transformations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/joins/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Joins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/concatenation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Concatenation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/pivot/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Pivots
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/unpivot/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Unpivots
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_6_6" id="__nav_1_6_6_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Time series
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_6_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_6_6">
+            <span class="md-nav__icon md-icon"></span>
+            Time series
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/time-series/parsing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Parsing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/time-series/filter/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Filtering
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/time-series/rolling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Grouping
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/time-series/resampling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Resampling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/transformations/time-series/timezones/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Time zones
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_7" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/lazy/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Lazy API
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_7" id="__nav_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            Lazy API
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/lazy/using/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Usage
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/lazy/optimizations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimizations
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/lazy/schemas/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Schema
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/lazy/query-plan/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Query plan
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/lazy/execution/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Query execution
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/lazy/streaming/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Streaming
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_8" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../user-guide/io/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    IO
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_8" id="__nav_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            IO
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/csv/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CSV
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/excel/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Excel
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/parquet/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Parquet
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/json/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    JSON files
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/multiple/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Multiple
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/database/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Databases
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/cloud-storage/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Cloud storage
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/io/bigquery/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Google BigQuery
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_9" id="__nav_1_9_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    SQL
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_9">
+            <span class="md-nav__icon md-icon"></span>
+            SQL
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/sql/intro/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Introduction
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/sql/show/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SHOW TABLES
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/sql/select/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SELECT
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/sql/create/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CREATE
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/sql/cte/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Common Table Expressions
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_10" id="__nav_1_10_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Migrating
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_10">
+            <span class="md-nav__icon md-icon"></span>
+            Migrating
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/migration/pandas/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Coming from Pandas
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/migration/spark/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Coming from Apache Spark
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/ecosystem/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Ecosystem
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_12" id="__nav_1_12_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Misc
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1_12">
+            <span class="md-nav__icon md-icon"></span>
+            Misc
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/misc/multiprocessing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Multiprocessing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/misc/visualization/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Visualization
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/misc/styling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Styling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/misc/comparison/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparison with other tools
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    API reference
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Development
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Development
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../development/contributing/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            Contributing
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/contributing/ide/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    IDE configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/contributing/test/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Test suite
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/contributing/ci/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Continuous integration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/contributing/code-style/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Code style
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/versioning/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Versioning
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Releases
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Releases
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Changelog
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Upgrade guides
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            Upgrade guides
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Version 1
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Version 1
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking changes
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#properly-apply-strict-parameter-in-series-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      Properly apply strict parameter in Series constructor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-data-orientation-inference-logic-for-dataframe-construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change data orientation inference logic for DataFrame construction
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consistently-convert-to-given-time-zone-in-series-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      Consistently convert to given time zone in Series constructor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-some-error-types-to-more-appropriate-variants" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update some error types to more appropriate variants
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-readscan_parquet-to-disable-hive-partitioning-by-default-for-file-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update read/scan_parquet to disable Hive partitioning by default for file inputs
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-reshape-to-return-array-types-instead-of-list-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update reshape to return Array types instead of List types
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#read-2d-numpy-arrays-as-array-type-instead-of-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      Read 2D NumPy arrays as Array type instead of List
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split-replace-functionality-into-two-separate-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      Split replace functionality into two separate methods
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve-nulls-in-ewm_mean-ewm_std-and-ewm_var" class="md-nav__link">
+    <span class="md-ellipsis">
+      Preserve nulls in ewm_mean, ewm_std, and ewm_var
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-clip-to-no-longer-propagate-nulls-in-the-given-bounds" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update clip to no longer propagate nulls in the given bounds
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-strto_datetime-to-default-to-microsecond-precision-for-format-specifiers-f-and-f" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change str.to_datetime to default to microsecond precision for format specifiers "%f" and "%.f"
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Change str.to_datetime to default to microsecond precision for format specifiers "%f" and "%.f"">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-resulting-column-names-in-pivot-when-pivoting-by-multiple-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update resulting column names in pivot when pivoting by multiple values
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#support-decimal-types-by-default-when-converting-from-arrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Support Decimal types by default when converting from Arrow
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-serde-functionality-from-plread_json-and-dataframewrite_json" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove serde functionality from pl.read_json and DataFrame.write_json
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seriesequals-no-longer-checks-names-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      Series.equals no longer checks names by default
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-columns-parameter-from-nth-expression-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove columns parameter from nth expression function
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rename-struct-fields-of-rle-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rename struct fields of rle output
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-set_sorted-to-only-accept-a-single-column" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update set_sorted to only accept a single column
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-to-raising-on-out-of-bounds-indices-in-all-getgather-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Default to raising on out-of-bounds indices in all get/gather operations
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-default-engine-for-read_excel-to-calamine" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change default engine for read_excel to "calamine"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-class-variables-from-some-datatypes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove class variables from some DataTypes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-default-offset-in-group_by_dynamic-from-negative-every-to-zero" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change default offset in group_by_dynamic from 'negative every' to 'zero'
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-default-serialization-format-of-lazyframedataframeexpr" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change default serialization format of LazyFrame/DataFrame/Expr
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constrain-access-to-globals-from-dataframesql-in-favor-of-plsql" class="md-nav__link">
+    <span class="md-ellipsis">
+      Constrain access to globals from DataFrame.sql in favor of pl.sql
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-re-export-of-type-aliases" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove re-export of type aliases
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streamline-optional-dependency-definitions-in-pyprojecttoml" class="md-nav__link">
+    <span class="md-ellipsis">
+      Streamline optional dependency definitions in pyproject.toml
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Deprecations
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deprecations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#issue-performancewarning-when-lazyframe-properties-schemadtypescolumnswidth-are-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      Issue PerformanceWarning when LazyFrame properties schema/dtypes/columns/width are used
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0.20/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Version 0.20
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0.19/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Version 0.19
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking changes
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Breaking changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#properly-apply-strict-parameter-in-series-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      Properly apply strict parameter in Series constructor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-data-orientation-inference-logic-for-dataframe-construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change data orientation inference logic for DataFrame construction
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consistently-convert-to-given-time-zone-in-series-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      Consistently convert to given time zone in Series constructor
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-some-error-types-to-more-appropriate-variants" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update some error types to more appropriate variants
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-readscan_parquet-to-disable-hive-partitioning-by-default-for-file-inputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update read/scan_parquet to disable Hive partitioning by default for file inputs
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-reshape-to-return-array-types-instead-of-list-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update reshape to return Array types instead of List types
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#read-2d-numpy-arrays-as-array-type-instead-of-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      Read 2D NumPy arrays as Array type instead of List
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#split-replace-functionality-into-two-separate-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      Split replace functionality into two separate methods
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve-nulls-in-ewm_mean-ewm_std-and-ewm_var" class="md-nav__link">
+    <span class="md-ellipsis">
+      Preserve nulls in ewm_mean, ewm_std, and ewm_var
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-clip-to-no-longer-propagate-nulls-in-the-given-bounds" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update clip to no longer propagate nulls in the given bounds
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-strto_datetime-to-default-to-microsecond-precision-for-format-specifiers-f-and-f" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change str.to_datetime to default to microsecond precision for format specifiers "%f" and "%.f"
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Change str.to_datetime to default to microsecond precision for format specifiers "%f" and "%.f"">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-resulting-column-names-in-pivot-when-pivoting-by-multiple-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update resulting column names in pivot when pivoting by multiple values
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#support-decimal-types-by-default-when-converting-from-arrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Support Decimal types by default when converting from Arrow
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-serde-functionality-from-plread_json-and-dataframewrite_json" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove serde functionality from pl.read_json and DataFrame.write_json
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seriesequals-no-longer-checks-names-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      Series.equals no longer checks names by default
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-columns-parameter-from-nth-expression-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove columns parameter from nth expression function
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rename-struct-fields-of-rle-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rename struct fields of rle output
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-set_sorted-to-only-accept-a-single-column" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update set_sorted to only accept a single column
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-to-raising-on-out-of-bounds-indices-in-all-getgather-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Default to raising on out-of-bounds indices in all get/gather operations
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-default-engine-for-read_excel-to-calamine" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change default engine for read_excel to "calamine"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-class-variables-from-some-datatypes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove class variables from some DataTypes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-default-offset-in-group_by_dynamic-from-negative-every-to-zero" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change default offset in group_by_dynamic from 'negative every' to 'zero'
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-default-serialization-format-of-lazyframedataframeexpr" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change default serialization format of LazyFrame/DataFrame/Expr
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constrain-access-to-globals-from-dataframesql-in-favor-of-plsql" class="md-nav__link">
+    <span class="md-ellipsis">
+      Constrain access to globals from DataFrame.sql in favor of pl.sql
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remove-re-export-of-type-aliases" class="md-nav__link">
+    <span class="md-ellipsis">
+      Remove re-export of type aliases
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streamline-optional-dependency-definitions-in-pyprojecttoml" class="md-nav__link">
+    <span class="md-ellipsis">
+      Streamline optional dependency definitions in pyproject.toml
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deprecations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Deprecations
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Deprecations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#issue-performancewarning-when-lazyframe-properties-schemadtypescolumnswidth-are-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      Issue PerformanceWarning when LazyFrame properties schema/dtypes/columns/width are used
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="version-1">Version 1</h1>
+<h2 id="breaking-changes">Breaking changes</h2>
+<h3 id="properly-apply-strict-parameter-in-series-constructor">Properly apply <code>strict</code> parameter in Series constructor</h3>
+<p>The behavior of the Series constructor has been updated.
+Generally, it will be more strict, unless the user passes <code>strict=False</code>.</p>
+<p>Strict construction is more efficient than non-strict construction, so make sure to pass values of the same data type to the constructor for the best performance.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">])</span>
+<span class="go">shape: (3,)</span>
+<span class="go">Series: &#39;&#39; [f64]</span>
+<span class="go">[</span>
+<span class="go">        1.0</span>
+<span class="go">        2.0</span>
+<span class="go">        3.5</span>
+<span class="go">]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">],</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">shape: (3,)</span>
+<span class="go">Series: &#39;&#39; [i64]</span>
+<span class="go">[</span>
+<span class="go">        1</span>
+<span class="go">        2</span>
+<span class="go">        null</span>
+<span class="go">]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">],</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">Int8</span><span class="p">)</span>
+<span class="go">Series: &#39;&#39; [i8]</span>
+<span class="go">[</span>
+<span class="go">        1</span>
+<span class="go">        2</span>
+<span class="go">        null</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">])</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">TypeError</span>: <span class="n">unexpected value while building Series of type Int64; found value of type Float64: 3.5</span>
+
+<span class="x">Hint: Try setting `strict=False` to allow passing data with mixed types.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">],</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">shape: (3,)</span>
+<span class="go">Series: &#39;&#39; [f64]</span>
+<span class="go">[</span>
+<span class="go">        1.0</span>
+<span class="go">        2.0</span>
+<span class="go">        3.5</span>
+<span class="go">]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">],</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">Int8</span><span class="p">)</span>
+<span class="go">Series: &#39;&#39; [i8]</span>
+<span class="go">[</span>
+<span class="go">        1</span>
+<span class="go">        2</span>
+<span class="go">        3</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="change-data-orientation-inference-logic-for-dataframe-construction">Change data orientation inference logic for DataFrame construction</h3>
+<p>Polars no longer inspects data types to infer the orientation of the data passed to the DataFrame constructor.
+Data orientation is inferred based on the data and schema dimensions.</p>
+<p>Additionally, a warning is raised whenever row orientation is inferred.
+Because of some confusing edge cases, users should pass <code>orient="row"</code> to make explicit that their input is row-based.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">data</span> <span class="o">=</span> <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">],</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">]]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<span class="go">shape: (2, 2)</span>
+<span class="go">┌──────────┬──────────┐</span>
+<span class="go">│ column_0 ┆ column_1 │</span>
+<span class="go">│ ---      ┆ ---      │</span>
+<span class="go">│ i64      ┆ str      │</span>
+<span class="go">╞══════════╪══════════╡</span>
+<span class="go">│ 1        ┆ a        │</span>
+<span class="go">│ 2        ┆ b        │</span>
+<span class="go">└──────────┴──────────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">TypeError</span>: <span class="n">unexpected value while building Series of type Int64; found value of type String: &quot;a&quot;</span>
+
+<span class="x">Hint: Try setting `strict=False` to allow passing data with mixed types.</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">orient</span><span class="o">=</span><span class="s2">&quot;row&quot;</span><span class="p">)</span>
+<span class="go">shape: (2, 2)</span>
+<span class="go">┌──────────┬──────────┐</span>
+<span class="go">│ column_0 ┆ column_1 │</span>
+<span class="go">│ ---      ┆ ---      │</span>
+<span class="go">│ i64      ┆ str      │</span>
+<span class="go">╞══════════╪══════════╡</span>
+<span class="go">│ 1        ┆ a        │</span>
+<span class="go">│ 2        ┆ b        │</span>
+<span class="go">└──────────┴──────────┘</span>
+</code></pre></div>
+<h3 id="consistently-convert-to-given-time-zone-in-series-constructor">Consistently convert to given time zone in Series constructor</h3>
+<div class="admonition danger">
+<p class="admonition-title">Danger</p>
+<p>This change may silently impact the results of your pipelines.
+If you work with time zones, please make sure to account for this change.</p>
+</div>
+<p>Handling of time zone information in the Series and DataFrame constructors was inconsistent.
+Row-wise construction would convert to the given time zone, while column-wise construction would <em>replace</em> the time zone.
+The inconsistency has been fixed by always converting to the time zone specified in the data type.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2020</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">Datetime</span><span class="p">(</span><span class="s1">&#39;us&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe/Amsterdam&#39;</span><span class="p">))</span>
+<span class="go">shape: (1,)</span>
+<span class="go">Series: &#39;&#39; [datetime[μs, Europe/Amsterdam]]</span>
+<span class="go">[</span>
+<span class="go">        2020-01-01 00:00:00 CET</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2020</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">Datetime</span><span class="p">(</span><span class="s1">&#39;us&#39;</span><span class="p">,</span> <span class="s1">&#39;Europe/Amsterdam&#39;</span><span class="p">))</span>
+<span class="go">shape: (1,)</span>
+<span class="go">Series: &#39;&#39; [datetime[μs, Europe/Amsterdam]]</span>
+<span class="go">[</span>
+<span class="go">        2020-01-01 01:00:00 CET</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="update-some-error-types-to-more-appropriate-variants">Update some error types to more appropriate variants</h3>
+<p>We have updated a lot of error types to more accurately represent the problem.
+Most commonly, <code>ComputeError</code> types were changed to <code>InvalidOperationError</code> or <code>SchemaError</code>.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">100</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">300</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">UInt8</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">polars.exceptions.ComputeError</span>: <span class="n">conversion from `i64` to `u8` failed in column &#39;a&#39; for 1 out of 3 values: [300]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">UInt8</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">polars.exceptions.InvalidOperationError</span>: <span class="n">conversion from `i64` to `u8` failed in column &#39;a&#39; for 1 out of 3 values: [300]</span>
+</code></pre></div>
+<h3 id="update-readscan_parquet-to-disable-hive-partitioning-by-default-for-file-inputs">Update <code>read/scan_parquet</code> to disable Hive partitioning by default for file inputs</h3>
+<p>Parquet reading functions now also support directory inputs.
+Hive partitioning is enabled by default for directories, but is now <em>disabled</em> by default for file inputs.
+File inputs include single files, globs, and lists of files.
+Explicitly pass <code>hive_partitioning=True</code> to restore previous behavior.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;dataset/a=1/foo.parquet&quot;</span><span class="p">)</span>
+<span class="go">shape: (2, 2)</span>
+<span class="go">┌─────┬─────┐</span>
+<span class="go">│ a   ┆ x   │</span>
+<span class="go">│ --- ┆ --- │</span>
+<span class="go">│ i64 ┆ f64 │</span>
+<span class="go">╞═════╪═════╡</span>
+<span class="go">│ 1   ┆ 1.0 │</span>
+<span class="go">│ 1   ┆ 2.0 │</span>
+<span class="go">└─────┴─────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;dataset/a=1/foo.parquet&quot;</span><span class="p">)</span>
+<span class="go">shape: (2, 1)</span>
+<span class="go">┌─────┐</span>
+<span class="go">│ x   │</span>
+<span class="go">│ --- │</span>
+<span class="go">│ f64 │</span>
+<span class="go">╞═════╡</span>
+<span class="go">│ 1.0 │</span>
+<span class="go">│ 2.0 │</span>
+<span class="go">└─────┘</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;dataset/a=1/foo.parquet&quot;</span><span class="p">,</span> <span class="n">hive_partitioning</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="go">shape: (2, 2)</span>
+<span class="go">┌─────┬─────┐</span>
+<span class="go">│ a   ┆ x   │</span>
+<span class="go">│ --- ┆ --- │</span>
+<span class="go">│ i64 ┆ f64 │</span>
+<span class="go">╞═════╪═════╡</span>
+<span class="go">│ 1   ┆ 1.0 │</span>
+<span class="go">│ 1   ┆ 2.0 │</span>
+<span class="go">└─────┴─────┘</span>
+</code></pre></div>
+<h3 id="update-reshape-to-return-array-types-instead-of-list-types">Update <code>reshape</code> to return Array types instead of List types</h3>
+<p><code>reshape</code> now returns an Array type instead of a List type.</p>
+<p>Users can restore the old functionality by calling <code>.arr.to_list()</code> on the output.
+Note that this is not more expensive than it would be to create a List type directly, because reshaping into an array is basically free.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [list[i64]]</span>
+<span class="go">[</span>
+<span class="go">        [1, 2, 3]</span>
+<span class="go">        [4, 5, 6]</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [array[i64, 3]]</span>
+<span class="go">[</span>
+<span class="go">        [1, 2, 3]</span>
+<span class="go">        [4, 5, 6]</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="read-2d-numpy-arrays-as-array-type-instead-of-list">Read 2D NumPy arrays as <code>Array</code> type instead of <code>List</code></h3>
+<p>The Series constructor now parses 2D NumPy arrays as an <code>Array</code> type rather than a <code>List</code> type.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">]])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [list[i64]]</span>
+<span class="go">[</span>
+<span class="go">        [1, 2]</span>
+<span class="go">        [3, 4]</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">]])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [array[i64, 2]]</span>
+<span class="go">[</span>
+<span class="go">        [1, 2]</span>
+<span class="go">        [3, 4]</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="split-replace-functionality-into-two-separate-methods">Split <code>replace</code> functionality into two separate methods</h3>
+<p>The API for <code>replace</code> has proven to be confusing to many users, particularly with regards to the <code>default</code> argument and the resulting data type.</p>
+<p>It has been split up into two methods: <code>replace</code> and <code>replace_strict</code>.
+<code>replace</code> now always keeps the existing data type <em>(breaking, see example below)</em> and is meant for replacing some values in your existing column.
+Its parameters <code>default</code> and <code>return_dtype</code> have been deprecated.</p>
+<p>The new method <code>replace_strict</code> is meant for creating a new column, mapping some or all of the values of the original column, and optionally specifying a default value. If no default is provided, it raises an error if any non-null values are not mapped.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span>
+<span class="go">shape: (3,)</span>
+<span class="go">Series: &#39;&#39; [str]</span>
+<span class="go">[</span>
+<span class="go">        &quot;a&quot;</span>
+<span class="go">        &quot;2&quot;</span>
+<span class="go">        &quot;3&quot;</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">polars.exceptions.InvalidOperationError</span>: <span class="n">conversion from `str` to `i64` failed in column &#39;literal&#39; for 1 out of 1 values: [&quot;a&quot;]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">replace_strict</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">s</span><span class="p">)</span>
+<span class="go">shape: (3,)</span>
+<span class="go">Series: &#39;&#39; [str]</span>
+<span class="go">[</span>
+<span class="go">        &quot;a&quot;</span>
+<span class="go">        &quot;2&quot;</span>
+<span class="go">        &quot;3&quot;</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="preserve-nulls-in-ewm_mean-ewm_std-and-ewm_var">Preserve nulls in <code>ewm_mean</code>, <code>ewm_std</code>, and <code>ewm_var</code></h3>
+<p>Polars will no longer forward-fill null values in <code>ewm</code> methods.
+The user can call <code>.forward_fill()</code> on the output to achieve the same result.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">ewm_mean</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">.9</span><span class="p">,</span> <span class="n">ignore_nulls</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">shape: (4,)</span>
+<span class="go">Series: &#39;&#39; [f64]</span>
+<span class="go">[</span>
+<span class="go">        1.0</span>
+<span class="go">        3.727273</span>
+<span class="go">        3.727273</span>
+<span class="go">        3.007913</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">ewm_mean</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">.9</span><span class="p">,</span> <span class="n">ignore_nulls</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="go">shape: (4,)</span>
+<span class="go">Series: &#39;&#39; [f64]</span>
+<span class="go">[</span>
+<span class="go">        1.0</span>
+<span class="go">        3.727273</span>
+<span class="go">        null</span>
+<span class="go">        3.007913</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="update-clip-to-no-longer-propagate-nulls-in-the-given-bounds">Update <code>clip</code> to no longer propagate nulls in the given bounds</h3>
+<p>Null values in the bounds no longer set the value to null - instead, the original value is retained.</p>
+<p><strong>Before</strong></p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="s2">&quot;min&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">1</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="s2">&quot;min&quot;</span><span class="p">))</span>
+<span class="go">shape: (3, 1)</span>
+<span class="go">┌──────┐</span>
+<span class="go">│ a    │</span>
+<span class="go">│ ---  │</span>
+<span class="go">│ i64  │</span>
+<span class="go">╞══════╡</span>
+<span class="go">│ 1    │</span>
+<span class="go">│ null │</span>
+<span class="go">│ 2    │</span>
+<span class="go">└──────┘</span>
+</code></pre></div>
+<p><strong>After</strong></p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="s2">&quot;min&quot;</span><span class="p">))</span>
+<span class="go">shape: (3, 1)</span>
+<span class="go">┌──────┐</span>
+<span class="go">│ a    │</span>
+<span class="go">│ ---  │</span>
+<span class="go">│ i64  │</span>
+<span class="go">╞══════╡</span>
+<span class="go">│ 1    │</span>
+<span class="go">│ 1    │</span>
+<span class="go">│ 2    │</span>
+<span class="go">└──────┘</span>
+</code></pre></div>
+<h3 id="change-strto_datetime-to-default-to-microsecond-precision-for-format-specifiers-f-and-f">Change <code>str.to_datetime</code> to default to microsecond precision for format specifiers <code>"%f"</code> and <code>"%.f"</code></h3>
+<p>In <code>.str.to_datetime</code>, when specifying <code>%.f</code> as the format, the default was to set the resulting datatype to nanosecond precision. This has been changed to microsecond precision.</p>
+<h4 id="example">Example</h4>
+<p><strong>Before</strong></p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;2022-08-31 00:00:00.123456789&quot;</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S%.f&quot;</span><span class="p">)</span>
+<span class="go">shape: (1,)</span>
+<span class="go">Series: &#39;&#39; [datetime[ns]]</span>
+<span class="go">[</span>
+<span class="go">        2022-08-31 00:00:00.123456789</span>
+<span class="go">]</span>
+</code></pre></div>
+<p><strong>After</strong></p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S%.f&quot;</span><span class="p">)</span>
+<span class="go">shape: (1,)</span>
+<span class="go">Series: &#39;&#39; [datetime[us]]</span>
+<span class="go">[</span>
+<span class="go">        2022-08-31 00:00:00.123456</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="update-resulting-column-names-in-pivot-when-pivoting-by-multiple-values">Update resulting column names in <code>pivot</code> when pivoting by multiple values</h3>
+<p>In <code>DataFrame.pivot</code>, when specifying multiple <code>values</code> columns, the result would redundantly include the <code>column</code> column in the column names.
+This has been addressed.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+<span class="o">...</span>     <span class="p">{</span>
+<span class="o">...</span>         <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Cady&quot;</span><span class="p">,</span> <span class="s2">&quot;Cady&quot;</span><span class="p">,</span> <span class="s2">&quot;Karen&quot;</span><span class="p">,</span> <span class="s2">&quot;Karen&quot;</span><span class="p">],</span>
+<span class="o">...</span>         <span class="s2">&quot;subject&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;maths&quot;</span><span class="p">,</span> <span class="s2">&quot;physics&quot;</span><span class="p">,</span> <span class="s2">&quot;maths&quot;</span><span class="p">,</span> <span class="s2">&quot;physics&quot;</span><span class="p">],</span>
+<span class="o">...</span>         <span class="s2">&quot;test_1&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">98</span><span class="p">,</span> <span class="mi">99</span><span class="p">,</span> <span class="mi">61</span><span class="p">,</span> <span class="mi">58</span><span class="p">],</span>
+<span class="o">...</span>         <span class="s2">&quot;test_2&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">60</span><span class="p">,</span> <span class="mi">60</span><span class="p">],</span>
+<span class="o">...</span>     <span class="p">}</span>
+<span class="o">...</span> <span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">df</span><span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="s1">&#39;name&#39;</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s1">&#39;subject&#39;</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;test_1&#39;</span><span class="p">,</span> <span class="s1">&#39;test_2&#39;</span><span class="p">])</span>
+<span class="n">shape</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="err">┌───────┬──────────────────────┬────────────────────────┬──────────────────────┬────────────────────────┐</span>
+<span class="err">│</span> <span class="n">name</span>  <span class="err">┆</span> <span class="n">test_1_subject_maths</span> <span class="err">┆</span> <span class="n">test_1_subject_physics</span> <span class="err">┆</span> <span class="n">test_2_subject_maths</span> <span class="err">┆</span> <span class="n">test_2_subject_physics</span> <span class="err">│</span>
+<span class="err">│</span> <span class="o">---</span>   <span class="err">┆</span> <span class="o">---</span>                  <span class="err">┆</span> <span class="o">---</span>                    <span class="err">┆</span> <span class="o">---</span>                  <span class="err">┆</span> <span class="o">---</span>                    <span class="err">│</span>
+<span class="err">│</span> <span class="nb">str</span>   <span class="err">┆</span> <span class="n">i64</span>                  <span class="err">┆</span> <span class="n">i64</span>                    <span class="err">┆</span> <span class="n">i64</span>                  <span class="err">┆</span> <span class="n">i64</span>                    <span class="err">│</span>
+<span class="err">╞═══════╪══════════════════════╪════════════════════════╪══════════════════════╪════════════════════════╡</span>
+<span class="err">│</span> <span class="n">Cady</span>  <span class="err">┆</span> <span class="mi">98</span>                   <span class="err">┆</span> <span class="mi">99</span>                     <span class="err">┆</span> <span class="mi">100</span>                  <span class="err">┆</span> <span class="mi">100</span>                    <span class="err">│</span>
+<span class="err">│</span> <span class="n">Karen</span> <span class="err">┆</span> <span class="mi">61</span>                   <span class="err">┆</span> <span class="mi">58</span>                     <span class="err">┆</span> <span class="mi">60</span>                   <span class="err">┆</span> <span class="mi">60</span>                     <span class="err">│</span>
+<span class="err">└───────┴──────────────────────┴────────────────────────┴──────────────────────┴────────────────────────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+<span class="o">...</span>     <span class="p">{</span>
+<span class="o">...</span>         <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;Cady&quot;</span><span class="p">,</span> <span class="s2">&quot;Cady&quot;</span><span class="p">,</span> <span class="s2">&quot;Karen&quot;</span><span class="p">,</span> <span class="s2">&quot;Karen&quot;</span><span class="p">],</span>
+<span class="o">...</span>         <span class="s2">&quot;subject&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;maths&quot;</span><span class="p">,</span> <span class="s2">&quot;physics&quot;</span><span class="p">,</span> <span class="s2">&quot;maths&quot;</span><span class="p">,</span> <span class="s2">&quot;physics&quot;</span><span class="p">],</span>
+<span class="o">...</span>         <span class="s2">&quot;test_1&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">98</span><span class="p">,</span> <span class="mi">99</span><span class="p">,</span> <span class="mi">61</span><span class="p">,</span> <span class="mi">58</span><span class="p">],</span>
+<span class="o">...</span>         <span class="s2">&quot;test_2&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">60</span><span class="p">,</span> <span class="mi">60</span><span class="p">],</span>
+<span class="o">...</span>     <span class="p">}</span>
+<span class="o">...</span> <span class="p">)</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">df</span><span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="s1">&#39;subject&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="s1">&#39;name&#39;</span><span class="p">)</span>
+<span class="err">┌───────┬──────────────┬────────────────┬──────────────┬────────────────┐</span>
+<span class="err">│</span> <span class="n">name</span>  <span class="err">┆</span> <span class="n">test_1_maths</span> <span class="err">┆</span> <span class="n">test_1_physics</span> <span class="err">┆</span> <span class="n">test_2_maths</span> <span class="err">┆</span> <span class="n">test_2_physics</span> <span class="err">│</span>
+<span class="err">│</span> <span class="o">---</span>   <span class="err">┆</span> <span class="o">---</span>          <span class="err">┆</span> <span class="o">---</span>            <span class="err">┆</span> <span class="o">---</span>          <span class="err">┆</span> <span class="o">---</span>            <span class="err">│</span>
+<span class="err">│</span> <span class="nb">str</span>   <span class="err">┆</span> <span class="n">i64</span>          <span class="err">┆</span> <span class="n">i64</span>            <span class="err">┆</span> <span class="n">i64</span>          <span class="err">┆</span> <span class="n">i64</span>            <span class="err">│</span>
+<span class="err">╞═══════╪══════════════╪════════════════╪══════════════╪════════════════╡</span>
+<span class="err">│</span> <span class="n">Cady</span>  <span class="err">┆</span> <span class="mi">98</span>           <span class="err">┆</span> <span class="mi">99</span>             <span class="err">┆</span> <span class="mi">100</span>          <span class="err">┆</span> <span class="mi">100</span>            <span class="err">│</span>
+<span class="err">│</span> <span class="n">Karen</span> <span class="err">┆</span> <span class="mi">61</span>           <span class="err">┆</span> <span class="mi">58</span>             <span class="err">┆</span> <span class="mi">60</span>           <span class="err">┆</span> <span class="mi">60</span>             <span class="err">│</span>
+<span class="err">└───────┴──────────────┴────────────────┴──────────────┴────────────────┘</span>
+</code></pre></div>
+<p>Note that the function signature has also changed:</p>
+<ul>
+<li><code>columns</code> has been renamed to <code>on</code>, and is now the first positional argument.</li>
+<li><code>index</code> and <code>values</code> are both optional. If <code>index</code> is not specified, then it
+  will use all columns not specified in <code>on</code> and <code>values</code>. If <code>values</code> is
+  not specified, it will use all columns not specified in <code>on</code> and <code>index</code>.</li>
+</ul>
+<h3 id="support-decimal-types-by-default-when-converting-from-arrow">Support Decimal types by default when converting from Arrow</h3>
+<p>Update conversion from Arrow to always convert Decimals into Polars Decimals, rather than cast to Float64.
+<code>Config.activate_decimals</code> has been removed.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">decimal</span> <span class="kn">import</span> <span class="n">Decimal</span> <span class="k">as</span> <span class="n">D</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">pyarrow</span> <span class="k">as</span> <span class="nn">pa</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">arr</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">D</span><span class="p">(</span><span class="s2">&quot;1.01&quot;</span><span class="p">),</span> <span class="n">D</span><span class="p">(</span><span class="s2">&quot;2.25&quot;</span><span class="p">)])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">from_arrow</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [f64]</span>
+<span class="go">[</span>
+<span class="go">        1.01</span>
+<span class="go">        2.25</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">from_arrow</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [decimal[3,2]]</span>
+<span class="go">[</span>
+<span class="go">        1.01</span>
+<span class="go">        2.25</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="remove-serde-functionality-from-plread_json-and-dataframewrite_json">Remove serde functionality from <code>pl.read_json</code> and <code>DataFrame.write_json</code></h3>
+<p><code>pl.read_json</code> no longer supports reading JSON files produced by <code>DataFrame.serialize</code>.
+Users should use <code>pl.DataFrame.deserialize</code> instead.</p>
+<p><code>DataFrame.write_json</code> now only writes row-oriented JSON. The parameters <code>row_oriented</code> and <code>pretty</code> have been removed.
+Users should use <code>DataFrame.serialize</code> to serialize a DataFrame.</p>
+<p><strong>Example - <code>write_json</code></strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">write_json</span><span class="p">()</span>
+<span class="go">&#39;{&quot;columns&quot;:[{&quot;name&quot;:&quot;a&quot;,&quot;datatype&quot;:&quot;Int64&quot;,&quot;bit_settings&quot;:&quot;&quot;,&quot;values&quot;:[1,2]},{&quot;name&quot;:&quot;b&quot;,&quot;datatype&quot;:&quot;Float64&quot;,&quot;bit_settings&quot;:&quot;&quot;,&quot;values&quot;:[3.0,4.0]}]}&#39;</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">write_json</span><span class="p">()</span>  <span class="c1"># Same behavior as previously `df.write_json(row_oriented=True)`</span>
+<span class="go">&#39;[{&quot;a&quot;:1,&quot;b&quot;:3.0},{&quot;a&quot;:2,&quot;b&quot;:4.0}]&#39;</span>
+</code></pre></div>
+<p><strong>Example - <code>read_json</code></strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">io</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df_ser</span> <span class="o">=</span> <span class="s1">&#39;{&quot;columns&quot;:[{&quot;name&quot;:&quot;a&quot;,&quot;datatype&quot;:&quot;Int64&quot;,&quot;bit_settings&quot;:&quot;&quot;,&quot;values&quot;:[1,2]},{&quot;name&quot;:&quot;b&quot;,&quot;datatype&quot;:&quot;Float64&quot;,&quot;bit_settings&quot;:&quot;&quot;,&quot;values&quot;:[3.0,4.0]}]}&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_json</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">df_ser</span><span class="p">))</span>
+<span class="go">shape: (2, 2)</span>
+<span class="go">┌─────┬─────┐</span>
+<span class="go">│ a   ┆ b   │</span>
+<span class="go">│ --- ┆ --- │</span>
+<span class="go">│ i64 ┆ f64 │</span>
+<span class="go">╞═════╪═════╡</span>
+<span class="go">│ 1   ┆ 3.0 │</span>
+<span class="go">│ 2   ┆ 4.0 │</span>
+<span class="go">└─────┴─────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_json</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">df_ser</span><span class="p">))</span>  <span class="c1"># Format no longer supported: data is treated as a single row</span>
+<span class="go">shape: (1, 1)</span>
+<span class="go">┌─────────────────────────────────┐</span>
+<span class="go">│ columns                         │</span>
+<span class="go">│ ---                             │</span>
+<span class="go">│ list[struct[4]]                 │</span>
+<span class="go">╞═════════════════════════════════╡</span>
+<span class="go">│ [{&quot;a&quot;,&quot;Int64&quot;,&quot;&quot;,[1.0, 2.0]}, … │</span>
+<span class="go">└─────────────────────────────────┘</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">df_ser</span><span class="p">))</span>
+<span class="go">shape: (2, 2)</span>
+<span class="go">┌─────┬─────┐</span>
+<span class="go">│ a   ┆ b   │</span>
+<span class="go">│ --- ┆ --- │</span>
+<span class="go">│ i64 ┆ f64 │</span>
+<span class="go">╞═════╪═════╡</span>
+<span class="go">│ 1   ┆ 3.0 │</span>
+<span class="go">│ 2   ┆ 4.0 │</span>
+<span class="go">└─────┴─────┘</span>
+</code></pre></div>
+<h3 id="seriesequals-no-longer-checks-names-by-default"><code>Series.equals</code> no longer checks names by default</h3>
+<p>Previously, <code>Series.equals</code> would return <code>False</code> if the Series names didn't match.
+The method now no longer checks the names by default.
+The previous behavior can be retained by setting <code>check_names=True</code>.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s1</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s2">&quot;foo&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s2</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s2">&quot;bar&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s1</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">s2</span><span class="p">)</span>
+<span class="go">False</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s1</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">s2</span><span class="p">)</span>
+<span class="go">True</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s1</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">s2</span><span class="p">,</span> <span class="n">check_names</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="go">False</span>
+</code></pre></div>
+<h3 id="remove-columns-parameter-from-nth-expression-function">Remove <code>columns</code> parameter from <code>nth</code> expression function</h3>
+<p>The <code>columns</code> parameter was removed in favor of treating positional inputs as additional indices.
+Use <code>Expr.get</code> instead to get the same functionality.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span> <span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">nth</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">))</span>
+<span class="go">shape: (1, 1)</span>
+<span class="go">┌─────┐</span>
+<span class="go">│ a   │</span>
+<span class="go">│ --- │</span>
+<span class="go">│ i64 │</span>
+<span class="go">╞═════╡</span>
+<span class="go">│ 2   │</span>
+<span class="go">└─────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">nth</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="go">TypeError: argument &#39;indices&#39;: &#39;str&#39; object cannot be interpreted as an integer</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+<span class="go">shape: (1, 1)</span>
+<span class="go">┌─────┐</span>
+<span class="go">│ a   │</span>
+<span class="go">│ --- │</span>
+<span class="go">│ i64 │</span>
+<span class="go">╞═════╡</span>
+<span class="go">│ 2   │</span>
+<span class="go">└─────┘</span>
+</code></pre></div>
+<h3 id="rename-struct-fields-of-rle-output">Rename struct fields of <code>rle</code> output</h3>
+<p>The struct fields of the <code>rle</code> method have been renamed from <code>lengths/values</code> to <code>len/value</code>.
+The data type of the <code>len</code> field has also been updated to match the index type (was previously <code>Int32</code>, now <code>UInt32</code>).</p>
+<p><strong>Before</strong></p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">rle</span><span class="p">()</span><span class="o">.</span><span class="n">struct</span><span class="o">.</span><span class="n">unnest</span><span class="p">()</span>
+<span class="go">shape: (3, 2)</span>
+<span class="go">┌─────────┬────────┐</span>
+<span class="go">│ lengths ┆ values │</span>
+<span class="go">│ ---     ┆ ---    │</span>
+<span class="go">│ i32     ┆ str    │</span>
+<span class="go">╞═════════╪════════╡</span>
+<span class="go">│ 2       ┆ a      │</span>
+<span class="go">│ 1       ┆ b      │</span>
+<span class="go">│ 3       ┆ c      │</span>
+<span class="go">└─────────┴────────┘</span>
+</code></pre></div>
+<p><strong>After</strong></p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">rle</span><span class="p">()</span><span class="o">.</span><span class="n">struct</span><span class="o">.</span><span class="n">unnest</span><span class="p">()</span>
+<span class="go">shape: (3, 2)</span>
+<span class="go">┌─────┬───────┐</span>
+<span class="go">│ len ┆ value │</span>
+<span class="go">│ --- ┆ ---   │</span>
+<span class="go">│ u32 ┆ str   │</span>
+<span class="go">╞═════╪═══════╡</span>
+<span class="go">│ 2   ┆ a     │</span>
+<span class="go">│ 1   ┆ b     │</span>
+<span class="go">│ 3   ┆ c     │</span>
+<span class="go">└─────┴───────┘</span>
+</code></pre></div>
+<h3 id="update-set_sorted-to-only-accept-a-single-column">Update <code>set_sorted</code> to only accept a single column</h3>
+<p>Calling <code>set_sorted</code> indicates that a column is sorted <em>individually</em>.
+Passing multiple columns indicates that each of those columns are also sorted individually.
+However, many users assumed this meant that the columns were sorted as a group, which led to incorrect results.</p>
+<p>To help users avoid this pitfall, we removed the possibility to specify multiple columns in <code>set_sorted</code>.
+To set multiple columns as sorted, simply call <code>set_sorted</code> multiple times.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="s2">&quot;b&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">4.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">6.0</span><span class="p">],</span> <span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">9</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">set_sorted</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">set_sorted</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">TypeError</span>: <span class="n">DataFrame.set_sorted() takes 2 positional arguments but 3 were given</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">set_sorted</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_sorted</span><span class="p">(</span><span class="s2">&quot;b&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="default-to-raising-on-out-of-bounds-indices-in-all-getgather-operations">Default to raising on out-of-bounds indices in all <code>get</code>/<code>gather</code> operations</h3>
+<p>The default behavior was inconsistent between <code>get</code> and <code>gather</code> operations in various places.
+Now all such operations will raise by default.
+Pass <code>null_on_oob=True</code> to restore previous behavior.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">]])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [i64]</span>
+<span class="go">[</span>
+<span class="go">        1</span>
+<span class="go">        null</span>
+<span class="go">]</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">polars.exceptions.ComputeError</span>: <span class="n">get index is out of bounds</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">s</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">null_on_oob</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="go">shape: (2,)</span>
+<span class="go">Series: &#39;&#39; [i64]</span>
+<span class="go">[</span>
+<span class="go">        1</span>
+<span class="go">        null</span>
+<span class="go">]</span>
+</code></pre></div>
+<h3 id="change-default-engine-for-read_excel-to-calamine">Change default engine for <code>read_excel</code> to <code>"calamine"</code></h3>
+<p>The <code>calamine</code> engine (available through the <code>fastexcel</code> package) has been added to Polars relatively recently.
+It's much faster than the other engines, and was already the default for <code>xlsb</code> and <code>xls</code> files.
+We now made it the default for all Excel files.</p>
+<p>There may be subtle differences between this engine and the previous default (<code>xlsx2csv</code>).
+One clear difference is that the <code>calamine</code> engine does not support the <code>engine_options</code> parameter.
+If you cannot get your desired behavior with the <code>calamine</code> engine, specify <code>engine="xlsx2csv"</code> to restore previous behavior.</p>
+<h3 id="example_1">Example</h3>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="s2">&quot;data.xlsx&quot;</span><span class="p">,</span> <span class="n">engine_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;skip_empty_lines&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">})</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="s2">&quot;data.xlsx&quot;</span><span class="p">,</span> <span class="n">engine_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;skip_empty_lines&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">})</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">TypeError</span>: <span class="n">read_excel() got an unexpected keyword argument &#39;skip_empty_lines&#39;</span>
+</code></pre></div>
+<p>Instead, explicitly specify the <code>xlsx2csv</code> engine or omit the <code>engine_options</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="s2">&quot;data.xlsx&quot;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;xlsx2csv&quot;</span><span class="p">,</span> <span class="n">engine_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;skip_empty_lines&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">})</span>
+</code></pre></div>
+<h3 id="remove-class-variables-from-some-datatypes">Remove class variables from some DataTypes</h3>
+<p>Some DataType classes had class variables.
+The <code>Datetime</code> class, for example, had <code>time_unit</code> and <code>time_zone</code> as class variables.
+This was unintended: these should have been instance variables.
+This has now been corrected.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">dtype</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">Datetime</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dtype</span><span class="o">.</span><span class="n">time_unit</span> <span class="ow">is</span> <span class="kc">None</span>
+<span class="go">True</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">dtype</span><span class="o">.</span><span class="n">time_unit</span> <span class="ow">is</span> <span class="kc">None</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">AttributeError</span>: <span class="n">type object &#39;Datetime&#39; has no attribute &#39;time_unit&#39;</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="nb">getattr</span><span class="p">(</span><span class="n">dtype</span><span class="p">,</span> <span class="s2">&quot;time_unit&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
+<span class="go">True</span>
+</code></pre></div>
+<h3 id="change-default-offset-in-group_by_dynamic-from-negative-every-to-zero">Change default <code>offset</code> in <code>group_by_dynamic</code> from 'negative <code>every</code>' to 'zero'</h3>
+<p>This affects the start of the first window in <code>group_by_dynamic</code>.
+The new behavior should align more with user expectations.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">date</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+<span class="gp">... </span>    <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">date</span><span class="p">(</span><span class="mi">2020</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2020</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2020</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)],</span>
+<span class="gp">... </span>    <span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span>
+<span class="gp">... </span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">group_by_dynamic</span><span class="p">(</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span> <span class="n">every</span><span class="o">=</span><span class="s2">&quot;1d&quot;</span><span class="p">,</span> <span class="n">period</span><span class="o">=</span><span class="s2">&quot;2d&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">)</span>
+<span class="go">shape: (4, 2)</span>
+<span class="go">┌────────────┬───────────┐</span>
+<span class="go">│ ts         ┆ value     │</span>
+<span class="go">│ ---        ┆ ---       │</span>
+<span class="go">│ date       ┆ list[i64] │</span>
+<span class="go">╞════════════╪═══════════╡</span>
+<span class="go">│ 2019-12-31 ┆ [1]       │</span>
+<span class="go">│ 2020-01-01 ┆ [1, 2]    │</span>
+<span class="go">│ 2020-01-02 ┆ [2, 3]    │</span>
+<span class="go">│ 2020-01-03 ┆ [3]       │</span>
+<span class="go">└────────────┴───────────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span><span class="o">.</span><span class="n">group_by_dynamic</span><span class="p">(</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span> <span class="n">every</span><span class="o">=</span><span class="s2">&quot;1d&quot;</span><span class="p">,</span> <span class="n">period</span><span class="o">=</span><span class="s2">&quot;2d&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">)</span>
+<span class="go">shape: (3, 2)</span>
+<span class="go">┌────────────┬───────────┐</span>
+<span class="go">│ ts         ┆ value     │</span>
+<span class="go">│ ---        ┆ ---       │</span>
+<span class="go">│ date       ┆ list[i64] │</span>
+<span class="go">╞════════════╪═══════════╡</span>
+<span class="go">│ 2020-01-01 ┆ [1, 2]    │</span>
+<span class="go">│ 2020-01-02 ┆ [2, 3]    │</span>
+<span class="go">│ 2020-01-03 ┆ [3]       │</span>
+<span class="go">└────────────┴───────────┘</span>
+</code></pre></div>
+<h3 id="change-default-serialization-format-of-lazyframedataframeexpr">Change default serialization format of <code>LazyFrame/DataFrame/Expr</code></h3>
+<p>The only serialization format available for the <code>serialize/deserialize</code> methods on Polars objects was JSON.
+We added a more optimized binary format and made this the default.
+JSON serialization is still available by passing <code>format="json"</code>.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">lf</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">LazyFrame</span><span class="p">({</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]})</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">serialized</span> <span class="o">=</span> <span class="n">lf</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">serialized</span>
+<span class="go">&#39;{&quot;MapFunction&quot;:{&quot;input&quot;:{&quot;DataFrameScan&quot;:{&quot;df&quot;:{&quot;columns&quot;:[{&quot;name&quot;:...&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">StringIO</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">LazyFrame</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">serialized</span><span class="p">))</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+<span class="go">shape: (1, 1)</span>
+<span class="go">┌─────┐</span>
+<span class="go">│ a   │</span>
+<span class="go">│ --- │</span>
+<span class="go">│ i64 │</span>
+<span class="go">╞═════╡</span>
+<span class="go">│ 6   │</span>
+<span class="go">└─────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">lf</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">LazyFrame</span><span class="p">({</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]})</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">serialized</span> <span class="o">=</span> <span class="n">lf</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">serialized</span>
+<span class="go">b&#39;\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf...&#39;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span>  <span class="c1"># Note: using BytesIO instead of StringIO</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">LazyFrame</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">serialized</span><span class="p">))</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+<span class="go">shape: (1, 1)</span>
+<span class="go">┌─────┐</span>
+<span class="go">│ a   │</span>
+<span class="go">│ --- │</span>
+<span class="go">│ i64 │</span>
+<span class="go">╞═════╡</span>
+<span class="go">│ 6   │</span>
+<span class="go">└─────┘</span>
+</code></pre></div>
+<h3 id="constrain-access-to-globals-from-dataframesql-in-favor-of-plsql">Constrain access to globals from <code>DataFrame.sql</code> in favor of <code>pl.sql</code></h3>
+<p>The <code>sql</code> methods on <code>DataFrame</code> and <code>LazyFrame</code> can no longer access global variables.
+These methods should be used for operating on the frame itself.
+For global access, there is now the top-level <code>sql</code> function.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df1</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;id1&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df2</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;id2&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df1</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM df1 CROSS JOIN df2&quot;</span><span class="p">)</span>
+<span class="go">shape: (4, 2)</span>
+<span class="go">┌─────┬─────┐</span>
+<span class="go">│ id1 ┆ id2 │</span>
+<span class="go">│ --- ┆ --- │</span>
+<span class="go">│ i64 ┆ i64 │</span>
+<span class="go">╞═════╪═════╡</span>
+<span class="go">│ 1   ┆ 3   │</span>
+<span class="go">│ 1   ┆ 4   │</span>
+<span class="go">│ 2   ┆ 3   │</span>
+<span class="go">│ 2   ┆ 4   │</span>
+<span class="go">└─────┴─────┘</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">df1</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM df1 CROSS JOIN df2&quot;</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="c">...</span>
+<span class="gr">polars.exceptions.SQLInterfaceError</span>: <span class="n">relation &#39;df1&#39; was not found</span>
+</code></pre></div>
+<p>Use instead:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">pl</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM df1 CROSS JOIN df2&quot;</span><span class="p">,</span> <span class="n">eager</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="go">shape: (4, 2)</span>
+<span class="go">┌─────┬─────┐</span>
+<span class="go">│ id1 ┆ id2 │</span>
+<span class="go">│ --- ┆ --- │</span>
+<span class="go">│ i64 ┆ i64 │</span>
+<span class="go">╞═════╪═════╡</span>
+<span class="go">│ 1   ┆ 3   │</span>
+<span class="go">│ 1   ┆ 4   │</span>
+<span class="go">│ 2   ┆ 3   │</span>
+<span class="go">│ 2   ┆ 4   │</span>
+<span class="go">└─────┴─────┘</span>
+</code></pre></div>
+<h3 id="remove-re-export-of-type-aliases">Remove re-export of type aliases</h3>
+<p>We have a lot of type aliases defined in the <code>polars.type_aliases</code> module.
+Some of these were re-exported at the top-level and in the <code>polars.datatypes</code> module.
+These re-exports have been removed.</p>
+<p>We plan on adding a public <code>polars.typing</code> module in the future with a number of curated type aliases.
+Until then, please define your own type aliases, or import from our <code>polars.type_aliases</code> module.
+Note that the <code>type_aliases</code> module is not technically public, so use at your own risk.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span> <span class="nf">foo</span><span class="p">(</span><span class="n">dtype</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">PolarsDataType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code><span class="n">PolarsDataType</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataType</span> <span class="o">|</span> <span class="nb">type</span><span class="p">[</span><span class="n">pl</span><span class="o">.</span><span class="n">DataType</span><span class="p">]</span>
+
+<span class="k">def</span> <span class="nf">foo</span><span class="p">(</span><span class="n">dtype</span><span class="p">:</span> <span class="n">PolarsDataType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+<h3 id="streamline-optional-dependency-definitions-in-pyprojecttoml">Streamline optional dependency definitions in <code>pyproject.toml</code></h3>
+<p>We revisited to optional dependency definitions and made some minor changes.
+If you were using the extras <code>fastexcel</code>, <code>gevent</code>, <code>matplotlib</code>, or <code>async</code>, this is a breaking change.
+Please update your Polars installation to use the new extras.</p>
+<p><strong>Example</strong></p>
+<p>Before:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;polars[fastexcel,gevent,matplotlib]&#39;</span>
+</code></pre></div>
+<p>After:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;polars[calamine,async,graph]&#39;</span>
+</code></pre></div>
+<h2 id="deprecations">Deprecations</h2>
+<h3 id="issue-performancewarning-when-lazyframe-properties-schemadtypescolumnswidth-are-used">Issue <code>PerformanceWarning</code> when LazyFrame properties <code>schema/dtypes/columns/width</code> are used</h3>
+<p>Recent improvements to the correctness of the schema resolving in the lazy engine have had significant performance impact on the cost of resolving the schema.
+It is no longer 'free' - in fact, in complex pipelines with lazy file reading, resolving the schema can be relatively expensive.</p>
+<p>Because of this, the schema-related properties on LazyFrame were no longer good API design.
+Properties represent information that is already available, and just needs to be retrieved.
+However, for the LazyFrame properties, accessing these may have significant performance cost.</p>
+<p>To solve this, we added the <code>LazyFrame.collect_schema</code> method, which retrieves the schema and returns a <code>Schema</code> object.
+The properties raise a <code>PerformanceWarning</code> and tell the user to use <code>collect_schema</code> instead.
+We chose not to deprecate the properties for now to facilitatate writing code that is generic for both DataFrames and LazyFrames.</p>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var tab,labels=set.querySelector(".tabbed-labels");for(tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: About">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                About
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../0.20/" class="md-footer__link md-footer__link--next" aria-label="Next: Version 0.20">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Version 0.20
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../..", "features": ["navigation.tracking", "navigation.instant", "navigation.tabs", "navigation.tabs.sticky", "navigation.footer", "navigation.indexes", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.ad660dcc.min.js"></script>
+      
+        <script src="../../../assets/_markdown_exec_pyodide.js"></script>
+      
+    
+  </body>
+</html>

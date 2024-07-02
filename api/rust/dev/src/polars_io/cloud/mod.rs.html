@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-io/src/cloud/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="polars_io" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (3cb521a43 2024-06-22)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<a href="#2" id="2">2</a>
+<a href="#3" id="3">3</a>
+<a href="#4" id="4">4</a>
+<a href="#5" id="5">5</a>
+<a href="#6" id="6">6</a>
+<a href="#7" id="7">7</a>
+<a href="#8" id="8">8</a>
+<a href="#9" id="9">9</a>
+<a href="#10" id="10">10</a>
+<a href="#11" id="11">11</a>
+<a href="#12" id="12">12</a>
+<a href="#13" id="13">13</a>
+<a href="#14" id="14">14</a>
+<a href="#15" id="15">15</a>
+<a href="#16" id="16">16</a>
+<a href="#17" id="17">17</a>
+<a href="#18" id="18">18</a>
+<a href="#19" id="19">19</a>
+<a href="#20" id="20">20</a>
+<a href="#21" id="21">21</a>
+</pre></div><pre class="rust"><code><span class="doccomment">//! Interface with cloud storage through the object_store crate.
+
+</span><span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">mod </span>adaptors;
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">mod </span>glob;
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">mod </span>object_store_setup;
+<span class="kw">pub mod </span>options;
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">mod </span>polars_object_store;
+
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">pub use </span>adaptors::<span class="kw-2">*</span>;
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">pub use </span>glob::<span class="kw-2">*</span>;
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">pub use </span>object_store_setup::<span class="kw-2">*</span>;
+<span class="kw">pub use </span>options::<span class="kw-2">*</span>;
+<span class="attr">#[cfg(feature = <span class="string">"cloud"</span>)]
+</span><span class="kw">pub use </span>polars_object_store::<span class="kw-2">*</span>;
+</code></pre></div></section></main></body></html>
