@@ -1,17 +1,8 @@
 use std::sync::Arc;
 
-use polars_core::frame::DataFrame;
-use polars_core::schema::Schema;
-use polars_core::series::Series;
-use polars_error::PolarsResult;
-use polars_expr::prelude::PhysicalExpr;
-use polars_expr::state::ExecutionState;
 use polars_plan::plans::DataFrameUdf;
 
-use super::{ComputeNode, PortState};
-use crate::async_executor::{JoinHandle, TaskScope};
-use crate::async_primitives::pipe::{Receiver, Sender};
-use crate::morsel::Morsel;
+use super::compute_node_prelude::*;
 
 /// A simple mapping node. Assumes the given udf is elementwise.
 pub struct MapNode {
@@ -25,7 +16,7 @@ impl MapNode {
 }
 
 impl ComputeNode for MapNode {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "map"
     }
 
@@ -40,13 +31,13 @@ impl ComputeNode for MapNode {
         _pipeline: usize,
         recv: &mut [Option<Receiver<Morsel>>],
         send: &mut [Option<Sender<Morsel>>],
-        state: &'s ExecutionState,
+        _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
         assert!(recv.len() == 1 && send.len() == 1);
         let mut recv = recv[0].take().unwrap();
         let mut send = send[0].take().unwrap();
 
-        scope.spawn_task(true, async move {
+        scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.try_map(|df| self.map.call_udf(df))?;
                 if send.send(morsel).await.is_err() {

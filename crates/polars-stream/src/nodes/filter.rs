@@ -1,13 +1,9 @@
 use std::sync::Arc;
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::polars_err;
 use polars_expr::prelude::PhysicalExpr;
-use polars_expr::state::ExecutionState;
 
-use super::{ComputeNode, PortState};
-use crate::async_executor::{JoinHandle, TaskScope};
-use crate::async_primitives::pipe::{Receiver, Sender};
-use crate::morsel::Morsel;
+use super::compute_node_prelude::*;
 
 pub struct FilterNode {
     predicate: Arc<dyn PhysicalExpr>,
@@ -20,7 +16,7 @@ impl FilterNode {
 }
 
 impl ComputeNode for FilterNode {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "filter"
     }
 
@@ -41,7 +37,7 @@ impl ComputeNode for FilterNode {
         let mut recv = recv[0].take().unwrap();
         let mut send = send[0].take().unwrap();
 
-        scope.spawn_task(true, async move {
+        scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.try_map(|df| {
                     let mask = self.predicate.evaluate(&df, state)?;

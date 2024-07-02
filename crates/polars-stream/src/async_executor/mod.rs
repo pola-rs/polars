@@ -34,9 +34,16 @@ slotmap::new_key_type! {
     struct TaskKey;
 }
 
+/// High priority tasks are scheduled preferentially over low priority tasks.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TaskPriority {
+    Low,
+    High,
+}
+
 /// Metadata associated with a task to help schedule it and clean it up.
 struct TaskMetadata {
-    priority: bool,
+    priority: TaskPriority,
 
     task_key: TaskKey,
     completed_tasks: Weak<Mutex<Vec<TaskKey>>>,
@@ -80,7 +87,7 @@ impl Executor {
             // SAFETY: this slot may only be accessed from the local thread, which we are.
             let slot = unsafe { &mut *ttl.local_slot.get() };
 
-            if priority {
+            if priority == TaskPriority::High {
                 // Insert new task into thread local slot, taking out the old task.
                 let Some(task) = slot.replace(task) else {
                     // We pushed a task into our local slot which was empty. Since
@@ -102,7 +109,7 @@ impl Executor {
             }
         } else {
             // Scheduled from an unknown thread, add to global queue.
-            if priority {
+            if priority == TaskPriority::High {
                 self.global_high_prio_task_queue.push(task);
             } else {
                 self.global_low_prio_task_queue.push(task);
@@ -257,7 +264,7 @@ impl<'scope, 'env> TaskScope<'scope, 'env> {
 
     pub fn spawn_task<F: Future + Send + 'scope>(
         &self,
-        priority: bool,
+        priority: TaskPriority,
         fut: F,
     ) -> JoinHandle<F::Output>
     where

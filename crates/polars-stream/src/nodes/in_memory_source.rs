@@ -1,15 +1,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use polars_core::frame::DataFrame;
-use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
-
-use super::{ComputeNode, PortState};
-use crate::async_executor::{JoinHandle, TaskScope};
-use crate::async_primitives::pipe::{Receiver, Sender};
+use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, Morsel, MorselSeq};
+use crate::morsel::{get_ideal_morsel_size, MorselSeq};
 
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
@@ -28,19 +22,8 @@ impl InMemorySourceNode {
 }
 
 impl ComputeNode for InMemorySourceNode {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "in_memory_source"
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
-        assert!(recv.is_empty());
-        assert!(send.len() == 1);
-
-        if self.source.is_some() && send[0] != PortState::Done {
-            send[0] = PortState::Ready;
-        } else {
-            send[0] = PortState::Done;
-        }
     }
 
     fn initialize(&mut self, num_pipelines: usize) {
@@ -49,6 +32,26 @@ impl ComputeNode for InMemorySourceNode {
         let block_count = ideal_block_count.next_multiple_of(num_pipelines);
         self.morsel_size = len.div_ceil(block_count).max(1);
         self.seq = AtomicU64::new(0);
+    }
+
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+        assert!(recv.is_empty());
+        assert!(send.len() == 1);
+
+        let exhausted = self
+            .source
+            .as_ref()
+            .map(|s| {
+                self.seq.load(Ordering::Relaxed) * self.morsel_size as u64 >= s.height() as u64
+            })
+            .unwrap_or(true);
+
+        if send[0] == PortState::Done || exhausted {
+            send[0] = PortState::Done;
+            self.source = None;
+        } else {
+            send[0] = PortState::Ready;
+        }
     }
 
     fn spawn<'env, 's>(
@@ -63,7 +66,7 @@ impl ComputeNode for InMemorySourceNode {
         let mut send = send[0].take().unwrap();
         let source = self.source.as_ref().unwrap();
 
-        scope.spawn_task(false, async move {
+        scope.spawn_task(TaskPriority::Low, async move {
             let wait_group = WaitGroup::default();
             loop {
                 let seq = self.seq.fetch_add(1, Ordering::Relaxed);
@@ -83,10 +86,5 @@ impl ComputeNode for InMemorySourceNode {
 
             Ok(())
         })
-    }
-
-    fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
-        drop(self.source.take());
-        Ok(None)
     }
 }

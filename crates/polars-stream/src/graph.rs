@@ -82,14 +82,16 @@ impl Graph {
             send_state.extend(node.outputs.iter().map(|o| self.pipes[*o].recv_state));
 
             // Compute the new state of this node given its environment.
-            // println!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
+            // eprintln!("updating {}, before: {recv_state:?} {send_state:?}", node.compute.name());
             node.compute.update_state(&mut recv_state, &mut send_state);
-            // println!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
+            // eprintln!("updating {}, after: {recv_state:?} {send_state:?}", node.compute.name());
 
             // Propagate information.
             for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
                 let pipe = &mut self.pipes[*input];
                 if pipe.recv_state != *state {
+                    // eprintln!("transitioning input pipe from {:?} to {state:?}", pipe.recv_state);
+                    assert!(pipe.recv_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
                     pipe.recv_state = *state;
                     if scheduled_for_update.insert(pipe.sender, ()).is_none() {
                         to_update.push(pipe.sender);
@@ -100,6 +102,8 @@ impl Graph {
             for (output, state) in node.outputs.iter().zip(send_state.iter()) {
                 let pipe = &mut self.pipes[*output];
                 if pipe.send_state != *state {
+                    // eprintln!("transitioning output pipe from {:?} to {state:?}", pipe.send_state);
+                    assert!(pipe.send_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
                     pipe.send_state = *state;
                     if scheduled_for_update.insert(pipe.receiver, ()).is_none() {
                         to_update.push(pipe.receiver);
@@ -136,7 +140,7 @@ pub struct LogicalPipe {
     pub recv_state: PortState,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum PortState {
     Blocked,
     Ready,

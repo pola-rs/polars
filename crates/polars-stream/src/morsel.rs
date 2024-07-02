@@ -31,6 +31,11 @@ impl MorselSeq {
         Self(self.0.checked_add(2).unwrap())
     }
 
+    // Ensures this morsel sequence comes after the offset.
+    pub fn offset_by(self, offset: Self) -> Self {
+        Self(self.0 + offset.0)
+    }
+
     pub fn to_u64(self) -> u64 {
         self.0
     }
@@ -67,6 +72,10 @@ impl Morsel {
 
     pub fn seq(&self) -> MorselSeq {
         self.seq
+    }
+
+    pub fn set_seq(&mut self, seq: MorselSeq) {
+        self.seq = seq;
     }
 
     pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {
