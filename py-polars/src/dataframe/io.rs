@@ -16,7 +16,7 @@ use crate::conversion::parse_parquet_compression;
 use crate::conversion::Wrap;
 use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    read_if_bytesio, EitherRustPythonFile, FileLike,
+    read_if_bytesio, EitherRustPythonFile,
 };
 
 #[pymethods]
@@ -169,7 +169,7 @@ impl PyDataFrame {
                 })
             },
             Rust(f) => py.allow_threads(move || {
-                ParquetReader::new(f.into_inner())
+                ParquetReader::new(f)
                     .with_projection(projection)
                     .with_columns(columns)
                     .read_parallel(parallel.0)
@@ -434,14 +434,10 @@ impl PyDataFrame {
         future: bool,
     ) -> PyResult<()> {
         let either = get_either_file(py_f, true)?;
-        let mut buf: Box<dyn FileLike> = match either {
-            EitherRustPythonFile::Rust(f) => {
-                let f = f.into_inner();
-                ensure_not_mapped(&f).map_err(PyPolarsErr::from)?;
-                Box::new(f)
-            },
-            EitherRustPythonFile::Py(f) => Box::new(f),
-        };
+        if let EitherRustPythonFile::Rust(ref f) = either {
+            ensure_not_mapped(f).map_err(PyPolarsErr::from)?;
+        }
+        let mut buf = either.into_dyn();
         py.allow_threads(|| {
             IpcWriter::new(&mut buf)
                 .with_compression(compression.0)

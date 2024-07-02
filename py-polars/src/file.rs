@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fs::{self, File};
 use std::io;
-use std::io::{BufReader, Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]
 use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
@@ -179,7 +179,16 @@ impl MmapBytesReader for PyFileLikeObject {}
 
 pub enum EitherRustPythonFile {
     Py(PyFileLikeObject),
-    Rust(BufReader<File>),
+    Rust(File),
+}
+
+impl EitherRustPythonFile {
+    pub fn into_dyn(self) -> Box<dyn FileLike> {
+        match self {
+            EitherRustPythonFile::Py(f) => Box::new(f),
+            EitherRustPythonFile::Rust(f) => Box::new(f),
+        }
+    }
 }
 
 fn get_either_file_and_path(
@@ -196,8 +205,7 @@ fn get_either_file_and_path(
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
-            let reader = BufReader::new(f);
-            Ok((EitherRustPythonFile::Rust(reader), Some(file_path)))
+            Ok((EitherRustPythonFile::Rust(f), Some(file_path)))
         } else {
             let io = py.import_bound("io").unwrap();
             #[cfg(target_family = "unix")]
@@ -235,7 +243,7 @@ fn get_either_file_and_path(
             .map(|fileno| fileno as RawFd)
             {
                 return Ok((
-                    EitherRustPythonFile::Rust(BufReader::new(unsafe { File::from_raw_fd(fd) })),
+                    EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd) }),
                     // This works on Linux and BSD with procfs mounted,
                     // otherwise it fails silently.
                     fs::canonicalize(format!("/proc/self/fd/{fd}")).ok(),
@@ -267,11 +275,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
 }
 
 pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
-    use EitherRustPythonFile::*;
-    match get_either_file(f, truncate)? {
-        Py(f) => Ok(Box::new(f)),
-        Rust(f) => Ok(Box::new(f.into_inner())),
-    }
+    Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
 /// If the give file-like is a BytesIO, read its contents.
@@ -305,7 +309,7 @@ pub fn get_mmap_bytes_reader_and_path<'a>(
     // string so read file
     else {
         match get_either_file_and_path(py_f.to_object(py_f.py()), false)? {
-            (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f.into_inner()), path)),
+            (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f), path)),
             (EitherRustPythonFile::Py(f), path) => Ok((Box::new(f), path)),
         }
     }
