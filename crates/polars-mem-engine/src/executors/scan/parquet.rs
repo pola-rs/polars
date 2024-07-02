@@ -91,12 +91,6 @@ impl ParquetExec {
                     );
 
                     let mut reader = ParquetReader::new(file)
-                        .with_schema(
-                            self.file_info
-                                .reader_schema
-                                .clone()
-                                .map(|either| either.unwrap_left()),
-                        )
                         .read_parallel(parallel)
                         .set_low_memory(self.options.low_memory)
                         .use_statistics(self.options.use_statistics)
@@ -141,6 +135,14 @@ impl ParquetExec {
                                 .with_row_index(row_index)
                                 .with_predicate(predicate.clone())
                                 .with_projection(projection.clone())
+                                .check_schema(
+                                    self.file_info
+                                        .reader_schema
+                                        .clone()
+                                        .unwrap()
+                                        .unwrap_left()
+                                        .as_ref(),
+                                )?
                                 .finish()
                         },
                     )
@@ -164,16 +166,8 @@ impl ParquetExec {
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let verbose = verbose();
-        let first_schema = self
-            .file_info
-            .reader_schema
-            .as_ref()
-            .expect("should be set")
-            .as_ref()
-            .unwrap_left();
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
-        let with_columns = self.file_options.with_columns.as_ref().map(|v| v.as_ref());
 
         let mut result = vec![];
         let batch_size = get_file_prefetch_size();
@@ -207,29 +201,14 @@ impl ParquetExec {
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
                 let first_file = batch_start == 0 && i == 0;
                 // use the cached one as this saves a cloud call
-                let (metadata, schema) = if first_file {
-                    (first_metadata.clone(), Some((*first_schema).clone()))
+                let metadata = if first_file {
+                    first_metadata.clone()
                 } else {
-                    (None, None)
+                    None
                 };
-                let mut reader = ParquetAsyncReader::from_uri(
-                    &path.to_string_lossy(),
-                    cloud_options,
-                    // Schema must be the same for all files. The hive partitions are included in this schema.
-                    schema,
-                    metadata,
-                )
-                .await?;
-
-                if !first_file {
-                    let schema = reader.schema().await?;
-                    check_projected_arrow_schema(
-                        first_schema.as_ref(),
-                        schema.as_ref(),
-                        with_columns,
-                        "schema of all files in a single scan_parquet must be equal",
-                    )?
-                }
+                let mut reader =
+                    ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, metadata)
+                        .await?;
 
                 let num_rows = reader.num_rows().await?;
                 PolarsResult::Ok((num_rows, reader))
@@ -263,6 +242,15 @@ impl ParquetExec {
                         .as_ref()
                         .map(|x| x[i].materialize_partition_columns());
 
+                    let schema = self
+                        .file_info
+                        .reader_schema
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap_left()
+                        .clone();
+
                     async move {
                         let file_info = file_info.clone();
                         let remaining_rows_to_read = *remaining_rows_to_read;
@@ -289,6 +277,8 @@ impl ParquetExec {
                             .with_n_rows(remaining_rows_to_read)
                             .with_row_index(row_index)
                             .with_projection(projection)
+                            .check_schema(schema.as_ref())
+                            .await?
                             .use_statistics(use_statistics)
                             .with_predicate(predicate)
                             .set_rechunk(false)
