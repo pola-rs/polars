@@ -5020,9 +5020,12 @@ class Expr:
 
     def eq_missing(self, other: Any) -> Expr:
         """
-        Method equivalent of equality operator `expr == other` where `None == None`.
+        Equality operator where null is treated as a distinct value.
 
         This differs from default `eq` where null values are propagated.
+        With this method, null is equal to null and is not equal to any other value.
+
+
 
         Parameters
         ----------
@@ -5033,8 +5036,8 @@ class Expr:
         --------
         >>> df = pl.DataFrame(
         ...     data={
-        ...         "x": [1.0, 2.0, float("nan"), 4.0, None, None],
-        ...         "y": [2.0, 2.0, float("nan"), 4.0, 5.0, None],
+        ...         "x": [1.0, 2.0, float("nan"), None, None, 5.0],
+        ...         "y": [2.0, 2.0, float("nan"), None, 5.0, None],
         ...     }
         ... )
         >>> df.with_columns(
@@ -5050,9 +5053,9 @@ class Expr:
         │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
         │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
         │ NaN  ┆ NaN  ┆ true   ┆ true           │
-        │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
-        │ null ┆ 5.0  ┆ null   ┆ false          │
         │ null ┆ null ┆ null   ┆ true           │
+        │ null ┆ 5.0  ┆ null   ┆ false          │
+        │ 5.0  ┆ null ┆ null   ┆ false          │
         └──────┴──────┴────────┴────────────────┘
         """
         other = parse_into_expression(other, str_as_lit=True)
