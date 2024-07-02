@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use percent_encoding::percent_decode;
-use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
@@ -68,19 +66,6 @@ pub fn hive_partitions_from_paths(
     reader_schema: &Schema,
     try_parse_dates: bool,
 ) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
-    let paths = paths
-        .iter()
-        .map(|x| {
-            Ok(PathBuf::from(
-                percent_decode(x.to_str().unwrap().as_bytes())
-                    .decode_utf8()
-                    .map_err(to_compute_err)?
-                    .as_ref(),
-            ))
-        })
-        .collect::<PolarsResult<Vec<PathBuf>>>()?;
-    let paths = paths.as_slice();
-
     let Some(path) = paths.first() else {
         return Ok(None);
     };
@@ -97,7 +82,11 @@ pub fn hive_partitions_from_paths(
                 if index == file_index {
                     return None;
                 }
-                parse_hive_string(part)
+                let (k, v) = parse_hive_string(part)?;
+                let Ok(v) = percent_encoding::percent_decode(v.as_bytes()).decode_utf8() else {
+                    return None;
+                };
+                Some((k, v))
             })
         }};
     }
@@ -158,7 +147,7 @@ pub fn hive_partitions_from_paths(
                         continue;
                     }
 
-                    entry.insert(infer_field_schema(value, try_parse_dates, false));
+                    entry.insert(infer_field_schema(value.as_ref(), try_parse_dates, false));
                 }
             }
 

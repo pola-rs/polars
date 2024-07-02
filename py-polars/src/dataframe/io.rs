@@ -438,6 +438,51 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[cfg(feature = "parquet")]
+    #[pyo3(signature = (py_f, partition_by, compression, compression_level, statistics, row_group_size, data_page_size))]
+    pub fn write_parquet_partitioned(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        partition_by: Vec<String>,
+        compression: &str,
+        compression_level: Option<i32>,
+        statistics: Wrap<StatisticsOptions>,
+        row_group_size: Option<usize>,
+        data_page_size: Option<usize>,
+    ) -> PyResult<()> {
+        use std::path::PathBuf;
+
+        use polars_io::partition::get_hive_partitions_iter;
+
+        let Ok(base_path) = py_f.extract::<PyBackedStr>(py) else {
+            return Err(PyPolarsErr::from(polars_err!(ComputeError: "expected path-like")).into());
+        };
+        let base_path = PathBuf::from(&*base_path);
+        let compression = parse_parquet_compression(compression, compression_level)?;
+
+        py.allow_threads(|| {
+            for (path_part, mut part_df) in
+                get_hive_partitions_iter(&self.df, partition_by.as_ref())
+                    .map_err(PyPolarsErr::from)?
+            {
+                let dir = base_path.join(path_part);
+                std::fs::create_dir_all(&dir)?;
+                let f = std::fs::File::create(dir.join("data.parquet"))?;
+
+                ParquetWriter::new(f)
+                    .with_compression(compression)
+                    .with_statistics(statistics.0)
+                    .with_row_group_size(row_group_size)
+                    .with_data_page_size(data_page_size)
+                    .finish(&mut part_df)
+                    .map_err(PyPolarsErr::from)?;
+            }
+
+            Ok(())
+        })
+    }
+
     #[cfg(feature = "json")]
     pub fn write_json(&mut self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);

@@ -19,7 +19,6 @@ pub mod ndjson;
 mod options;
 #[cfg(feature = "parquet")]
 pub mod parquet;
-#[cfg(feature = "partition")]
 pub mod partition;
 #[cfg(feature = "async")]
 pub mod pl_async;
