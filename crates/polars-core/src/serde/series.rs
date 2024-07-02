@@ -80,6 +80,7 @@ impl Serialize for Series {
                 let ca = self.null().unwrap();
                 ca.serialize(serializer)
             },
+            #[cfg(feature = "object")]
             DataType::Object(_, _) => Err(S::Error::custom(
                 "serializing data of type Object is not supported",
             )),
