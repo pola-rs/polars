@@ -2696,7 +2696,8 @@ class DataFrame:
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
         elif isinstance(file, TextIOWrapper):
-            file = cast(TextIOWrapper, file.buffer)
+            orig_file = file  # avoid closing it # noqa: F841
+            file = cast(IO[bytes], file.buffer)
 
         self._df.write_csv(
             file,
