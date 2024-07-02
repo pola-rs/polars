@@ -179,6 +179,7 @@ month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx"]
+polars_cloud = []
 
 panic_on_schema = []
 
