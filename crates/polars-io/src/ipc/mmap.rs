@@ -15,11 +15,17 @@ impl<R: MmapBytesReader> IpcReader<R> {
         &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
+        #[cfg(target_family = "unix")]
+        use std::os::unix::fs::MetadataExt;
         match self.reader.to_file() {
             Some(file) => {
+                #[cfg(target_family = "unix")]
+                let metadata = file.metadata()?;
                 let mmap = unsafe { memmap::Mmap::map(file).unwrap() };
-                let mmap_key = self.memory_map.take().unwrap();
-                let semaphore = MMapSemaphore::new(mmap_key, mmap);
+                #[cfg(target_family = "unix")]
+                let semaphore = MMapSemaphore::new(metadata.dev(), metadata.ino(), mmap);
+                #[cfg(not(target_family = "unix"))]
+                let semaphore = MMapSemaphore::new(mmap);
                 let metadata =
                     read::read_file_metadata(&mut std::io::Cursor::new(semaphore.as_ref()))?;
 

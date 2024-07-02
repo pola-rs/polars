@@ -1,3 +1,5 @@
+use std::io::BufReader;
+
 use polars_core::datatypes::create_enum_data_type;
 use polars_core::export::arrow::array::Utf8ViewArray;
 use polars_core::export::arrow::datatypes::Field;
@@ -15,8 +17,8 @@ use crate::prelude::ArrowDataType;
 pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     use polars_core::export::arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
-        EitherRustPythonFile::Rust(mut r) => {
-            read_file_metadata(&mut r).map_err(PyPolarsErr::from)?
+        EitherRustPythonFile::Rust(r) => {
+            read_file_metadata(&mut BufReader::new(r)).map_err(PyPolarsErr::from)?
         },
         EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
@@ -32,7 +34,9 @@ pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     use polars_parquet::read::{infer_schema, read_metadata};
 
     let metadata = match get_either_file(py_f, false)? {
-        EitherRustPythonFile::Rust(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
+        EitherRustPythonFile::Rust(r) => {
+            read_metadata(&mut BufReader::new(r)).map_err(PyPolarsErr::from)?
+        },
         EitherRustPythonFile::Py(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
     let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;

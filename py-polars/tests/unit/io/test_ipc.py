@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+import re
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -348,7 +350,17 @@ def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
     # now open as memory mapped
     df = pl.read_ipc(p, memory_map=True)
 
-    with pytest.raises(
-        ComputeError, match="cannot write to file: already memory mapped"
-    ):
-        df.write_ipc(p)
+    if os.name == "nt":
+        # In Windows, it's the duty of the system to ensure exclusive access
+        with pytest.raises(
+            OSError,
+            match=re.escape(
+                "The requested operation cannot be performed on a file with a user-mapped section open. (os error 1224)"
+            ),
+        ):
+            df.write_ipc(p)
+    else:
+        with pytest.raises(
+            ComputeError, match="cannot write to file: already memory mapped"
+        ):
+            df.write_ipc(p)
