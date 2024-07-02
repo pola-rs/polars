@@ -44,7 +44,10 @@ pub fn get_file_prefetch_size() -> usize {
     static FILE_PREFETCH_SIZE: OnceLock<usize> = OnceLock::new();
     *FILE_PREFETCH_SIZE.get_or_init(|| {
         std::env::var("POLARS_PREFETCH_SIZE")
-            .map(|s| s.parse::<usize>().expect("POLARS_PREFETCH_SIZE must be integer"))
+            .map(|s| {
+                s.parse::<usize>()
+                    .expect("POLARS_PREFETCH_SIZE must be integer")
+            })
             .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads() * 2, 16))
     })
 }
@@ -53,7 +56,10 @@ pub fn get_rg_prefetch_size() -> usize {
     static ROW_GROUP_PREFETCH_SIZE: OnceLock<usize> = OnceLock::new();
     *ROW_GROUP_PREFETCH_SIZE.get_or_init(|| {
         std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
-            .map(|s| s.parse::<usize>().expect("POLARS_ROW_GROUP_PREFETCH_SIZE must be integer"))
+            .map(|s| {
+                s.parse::<usize>()
+                    .expect("POLARS_ROW_GROUP_PREFETCH_SIZE must be integer")
+            })
             // Set it to something big, but not unlimited.
             .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
     })
