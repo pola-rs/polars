@@ -4053,7 +4053,11 @@ class DataFrame:
             msg = f"unrecognised connection type {connection!r}"
             raise TypeError(msg)
 
-    def write_iceberg(self, target: str | Path) -> pyiceberg.table.Table:
+    def write_iceberg(
+        self,
+        target: str | Path,
+        mode: Literal["append", "overwrite"],
+    ) -> pyiceberg.table.Table:
         """
         Write DataFrame to an Iceberg table.
 
@@ -4061,6 +4065,11 @@ class DataFrame:
         ----------
         target : str | Path
             The target path or identifier for the Iceberg table.
+        mode : {'append', 'overwrite'}
+            How to handle existing data.
+
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
 
         Returns
         -------
@@ -4079,8 +4088,10 @@ class DataFrame:
             "default.table",
             schema=schema,
         )
-
-        table.overwrite(data)
+        if mode == "append":
+            table.append(data)
+        else:
+            table.overwrite(data)
         return table
 
     @overload

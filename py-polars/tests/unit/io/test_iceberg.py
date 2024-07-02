@@ -178,7 +178,7 @@ def test_write_iceberg(tmp_path: Path) -> None:
             "ham": ["a", "b", "c", "d", "e"],
         }
     )
-    iceberg_table = df.write_iceberg(tmp_path)
+    iceberg_table = df.write_iceberg(tmp_path, mode="overwrite")
     iceberg_path = iceberg_table.metadata_location
     new_df = pl.scan_iceberg(iceberg_path).collect()
     assert len(df) == len(new_df)
