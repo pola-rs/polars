@@ -333,7 +333,18 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_struct<'py>(ob: &Bound<'py, PyAny>, strict: bool) -> PyResult<AnyValue<'py>> {
-        let dict = ob.downcast::<PyDict>().unwrap();
+        let convert = ob.hasattr("_asdict")?;
+        let cmd: Bound<'py, PyDict>;
+        let cm: Bound<'py, PyAny>;
+        let list: Bound<'py, PySequence>;
+        let dict = if convert {
+            list = ob.downcast::<PySequence>()?.clone();
+            cm = list.call_method0("_asdict")?;
+            cmd = cm.downcast::<PyDict>()?.clone();
+            &cmd
+        } else {
+            ob.downcast::<PyDict>()?
+        };
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
         let mut vals = Vec::with_capacity(len);
@@ -365,6 +376,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
     fn get_conversion_function(ob: &Bound<'_, PyAny>, py: Python<'_>) -> InitFn {
+        let ob_as_dict = ob.hasattr(intern!(ob.py(), "_asdict")).unwrap();
         if ob.is_none() {
             get_null
         }
@@ -379,10 +391,10 @@ pub(crate) fn py_object_to_any_value<'py>(
             get_str
         } else if ob.is_instance_of::<PyBytes>() {
             get_bytes
+        } else if ob.is_instance_of::<PyDict>() || ob_as_dict {
+            get_struct
         } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
             get_list
-        } else if ob.is_instance_of::<PyDict>() {
-            get_struct
         } else if ob.hasattr(intern!(py, "_s")).unwrap() {
             get_list_from_series
         } else {
