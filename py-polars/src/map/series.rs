@@ -2173,18 +2173,23 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         avs.push(first_value);
 
         if self.null_count() > 0 {
-            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
-                let out_wrapped = match opt_val {
-                    None => Wrap(AnyValue::Null),
-                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
-                };
-                out_wrapped.0
-            });
+            let iter = self
+                .into_iter()
+                .skip(init_null_count + 1)
+                .take(self.len() - 1 - init_null_count)
+                .map(|opt_val| {
+                    let out_wrapped = match opt_val {
+                        None => Wrap(AnyValue::Null),
+                        Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
+                    };
+                    out_wrapped.0
+                });
             avs.extend(iter);
         } else {
             let iter = self
                 .into_no_null_iter()
                 .skip(init_null_count + 1)
+                .take(self.len() - 1 - init_null_count)
                 .map(|val| {
                     call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
                         .unwrap()
