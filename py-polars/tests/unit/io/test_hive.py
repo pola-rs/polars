@@ -580,7 +580,7 @@ def test_hive_partition_columns_contained_in_file(
 
 
 @pytest.mark.write_disk()
-def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
+def test_hive_partition_dates(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
             "date1": [
@@ -646,3 +646,68 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
             lf.collect(),
             df.with_columns(pl.col("date1", "date2").cast(pl.String)),
         )
+
+
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.select(
+            pl.Series("a", [1, 2, 3, 4], dtype=pl.Int8),
+            pl.Series("b", [1, 2, 3, 4], dtype=pl.Int8),
+            pl.Series("x", [1, 2, 3, 4]),
+        ),
+        pl.select(
+            pl.Series(
+                "a",
+                [1.2981275, 2.385974035, 3.1231892749185718397510, 4.129387128949156],
+                dtype=pl.Float64,
+            ),
+            pl.Series("b", ["a", "b", " / c = : ", "d"]),
+            pl.Series("x", [1, 2, 3, 4]),
+        ),
+    ],
+)
+@pytest.mark.write_disk()
+def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
+    root = tmp_path
+    df.write_parquet_partitioned(root, ["a", "b"])
+
+    lf = pl.scan_parquet(root)
+    assert_frame_equal(lf.collect(), df)
+
+    lf = pl.scan_parquet(root, hive_schema={"a": pl.String, "b": pl.String})
+    assert_frame_equal(lf.collect(), df.with_columns(pl.col("a", "b").cast(pl.String)))
+
+
+@pytest.mark.write_disk()
+def test_hive_write_dates(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "date1": [
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                None,
+            ],
+            "date2": [
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                None,
+                datetime(2023, 3, 1, 1, 1, 1, 1),
+            ],
+            "x": [1, 2, 3, 4],
+        },
+        schema={"date1": pl.Date, "date2": pl.Datetime, "x": pl.Int32},
+    )
+
+    root = tmp_path
+    df.write_parquet_partitioned(root, ["date1", "date2"])
+
+    lf = pl.scan_parquet(root)
+    assert_frame_equal(lf.collect(), df)
+
+    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+    assert_frame_equal(
+        lf.collect(),
+        df.with_columns(pl.col("date1", "date2").cast(pl.String)),
+    )

@@ -127,3 +127,66 @@ where
     }
     path
 }
+
+/// Creates an iterator of (hive partition path, DataFrame) pairs, e.g.:
+/// ("a=1/b=1", DataFrame)
+pub fn get_hive_partitions_iter<'a, S>(
+    df: &'a DataFrame,
+    partition_by: &'a [S],
+) -> PolarsResult<Box<dyn Iterator<Item = (String, DataFrame)> + 'a>>
+where
+    S: AsRef<str>,
+{
+    for x in partition_by.iter() {
+        if df.get_column_index(x.as_ref()).is_none() {
+            polars_bail!(ColumnNotFound: "{}", x.as_ref());
+        }
+    }
+
+    let get_hive_path_part = |df: &DataFrame| {
+        const CHAR_SET: &percent_encoding::AsciiSet =
+            &percent_encoding::CONTROLS.add(b'/').add(b'=');
+
+        partition_by
+            .iter()
+            .map(|x| {
+                let s = df.column(x.as_ref()).unwrap().slice(0, 1);
+
+                format!(
+                    "{}={}",
+                    s.name(),
+                    percent_encoding::percent_encode(
+                        s.cast(&DataType::String)
+                            .unwrap()
+                            .str()
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or("__HIVE_DEFAULT_PARTITION__")
+                            .as_bytes(),
+                        CHAR_SET
+                    )
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+
+    let groups = df.group_by(partition_by)?;
+    let groups = groups.take_groups();
+
+    let out: Box<dyn Iterator<Item = (String, DataFrame)>> = match groups {
+        GroupsProxy::Idx(idx) => Box::new(idx.into_iter().map(move |(_, group)| {
+            let part_df =
+                unsafe { df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending) };
+            (get_hive_path_part(&part_df), part_df)
+        })),
+        GroupsProxy::Slice { groups, .. } => {
+            Box::new(groups.into_iter().map(move |[offset, len]| {
+                let part_df = df.slice(offset as i64, len as usize);
+                (get_hive_path_part(&part_df), part_df)
+            }))
+        },
+    };
+
+    Ok(out)
+}
