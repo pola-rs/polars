@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::POOL;
 
 // Formatting environment variables (typically referenced/set from the python-side Config object)
@@ -30,24 +32,38 @@ pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_COR
 pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
 
 pub fn verbose() -> bool {
-    std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
+    static VERBOSE: OnceLock<bool> = OnceLock::new();
+    *VERBOSE.get_or_init(|| {
+        std::env::var("POLARS_VERBOSE")
+            .map(|s| s == "1")
+            .unwrap_or(false)
+    })
 }
 
 pub fn get_file_prefetch_size() -> usize {
-    std::env::var("POLARS_PREFETCH_SIZE")
-        .map(|s| s.parse::<usize>().expect("integer"))
-        .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads() * 2, 16))
+    static FILE_PREFETCH_SIZE: OnceLock<usize> = OnceLock::new();
+    *FILE_PREFETCH_SIZE.get_or_init(|| {
+        std::env::var("POLARS_PREFETCH_SIZE")
+            .map(|s| s.parse::<usize>().expect("integer"))
+            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads() * 2, 16))
+    })
 }
 
 pub fn get_rg_prefetch_size() -> usize {
-    std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
-        .map(|s| s.parse::<usize>().expect("integer"))
-        // Set it to something big, but not unlimited.
-        .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
+    static ROW_GROUP_PREFETCH_SIZE: OnceLock<usize> = OnceLock::new();
+    *ROW_GROUP_PREFETCH_SIZE.get_or_init(|| {
+        std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
+            .map(|s| s.parse::<usize>().expect("integer"))
+            // Set it to something big, but not unlimited.
+            .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
+    })
 }
 
 pub fn force_async() -> bool {
-    std::env::var("POLARS_FORCE_ASYNC")
-        .map(|value| value == "1")
-        .unwrap_or_default()
+    static FORCE_ASYNC: OnceLock<bool> = OnceLock::new();
+    *FORCE_ASYNC.get_or_init(|| {
+        std::env::var("POLARS_FORCE_ASYNC")
+            .map(|value| value == "1")
+            .unwrap_or_default()
+    })
 }
