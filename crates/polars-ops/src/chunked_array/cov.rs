@@ -13,7 +13,7 @@ fn multiply_sum(x: &[f64; COV_BUF_SIZE], y: &[f64; COV_BUF_SIZE], k: usize) -> f
 }
 
 /// Compute the covariance between two columns.
-pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
+pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8, min_periods: usize) -> Option<f64>
 where
     T: PolarsNumericType,
     T::Native: ToPrimitive,
@@ -30,13 +30,13 @@ where
                     _ => None,
                 })
             });
-            online_cov(iters, ddof)
+            online_cov(iters, ddof, min_periods)
         } else {
             let iters = a
                 .downcast_iter()
                 .zip(b.downcast_iter())
                 .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()));
-            online_cov(iters, ddof)
+            online_cov(iters, ddof, min_periods)
         };
         Some(out)
     }
@@ -44,7 +44,7 @@ where
 
 /// # Arguments
 /// `iter` - Iterator over `T` tuple where any `Option<T>` would skip the tuple.
-fn online_cov<I, J, T>(iters: I, ddof: u8) -> f64
+fn online_cov<I, J, T>(iters: I, ddof: u8, min_periods: usize) -> f64
 where
     I: Iterator<Item = J>,
     J: IntoIterator<Item = (T, T)> + Clone,
@@ -94,11 +94,20 @@ where
         }
     }
 
-    cxy / (n - ddof as f64)
+    if min_periods > n as usize {
+        f64::NAN
+    } else {
+        cxy / (n - ddof as f64)
+    }
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
+pub fn pearson_corr<T>(
+    a: &ChunkedArray<T>,
+    b: &ChunkedArray<T>,
+    ddof: u8,
+    min_periods: usize,
+) -> Option<f64>
 where
     T: PolarsNumericType,
     T::Native: ToPrimitive,
@@ -113,20 +122,20 @@ where
                 _ => None,
             })
         });
-        online_pearson_corr(iters, ddof)
+        online_pearson_corr(iters, ddof, min_periods)
     } else {
         let iters = a
             .downcast_iter()
             .zip(b.downcast_iter())
             .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()));
-        online_pearson_corr(iters, ddof)
+        online_pearson_corr(iters, ddof, min_periods)
     };
     Some(out)
 }
 
 /// # Arguments
 /// `iter` - Iterator over `T` tuple where any `Option<T>` would skip the tuple.
-fn online_pearson_corr<I, J, T>(iters: I, ddof: u8) -> f64
+fn online_pearson_corr<I, J, T>(iters: I, ddof: u8, min_periods: usize) -> f64
 where
     I: Iterator<Item = J>,
     J: IntoIterator<Item = (T, T)> + Clone,
@@ -188,7 +197,8 @@ where
 
     let denom = sample_std_x * sample_std_y;
     let result = sample_cov / denom;
-    if denom.is_zero() {
+
+    if denom.is_zero() || min_periods > n as usize {
         f64::NAN
     } else {
         result

@@ -212,8 +212,8 @@ pub fn len() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::cov(a.inner, b.inner, ddof).into()
+pub fn cov(a: PyExpr, b: PyExpr, ddof: u8, min_periods: usize) -> PyExpr {
+    dsl::cov(a.inner, b.inner, ddof, min_periods).into()
 }
 
 #[pyfunction]
@@ -462,8 +462,8 @@ pub fn map_mul(
 }
 
 #[pyfunction]
-pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::pearson_corr(a.inner, b.inner, ddof).into()
+pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8, min_periods: usize) -> PyExpr {
+    dsl::pearson_corr(a.inner, b.inner, ddof, min_periods).into()
 }
 
 #[pyfunction]
@@ -487,10 +487,16 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
 }
 
 #[pyfunction]
-pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) -> PyExpr {
+pub fn spearman_rank_corr(
+    a: PyExpr,
+    b: PyExpr,
+    ddof: u8,
+    propagate_nans: bool,
+    min_periods: usize,
+) -> PyExpr {
     #[cfg(feature = "propagate_nans")]
     {
-        dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+        dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans, min_periods).into()
     }
     #[cfg(not(feature = "propagate_nans"))]
     {
