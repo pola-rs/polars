@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal
 
 
@@ -37,16 +38,21 @@ def test_corr_nan() -> None:
     assert str(df.select(pl.corr("a", "b", ddof=1))[0, 0]) == "nan"
 
 
+@StringCache()
 def test_hist() -> None:
-    a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
-    assert (
-        str(a.hist(bin_count=4).to_dict(as_series=False))
-        == "{'breakpoint': [0.0, 2.25, 4.5, 6.75, inf], 'category': ['(-inf, 0.0]', '(0.0, 2.25]', '(2.25, 4.5]', '(4.5, 6.75]', '(6.75, inf]'], 'count': [0, 3, 2, 0, 2]}"
+    s = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
+    out = s.hist(bin_count=4)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([2.75, 4.5, 6.25, 8.0], dtype=pl.Float64),
+            "category": pl.Series(
+                ["(0.993, 2.75]", "(2.75, 4.5]", "(4.5, 6.25]", "(6.25, 8.0]"],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([3, 2, 0, 2], dtype=pl.get_index_type()),
+        }
     )
-
-    assert a.hist(
-        bins=[0, 2], include_category=False, include_breakpoint=False
-    ).to_series().to_list() == [0, 3, 4]
+    assert_frame_equal(out, expected, categorical_as_str=True)
 
 
 @pytest.mark.parametrize("values", [[], [None]])
