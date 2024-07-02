@@ -12,7 +12,11 @@ pub struct OrderedUnionNode {
 
 impl OrderedUnionNode {
     pub fn new() -> Self {
-        Self { cur_input_idx: 0, max_morsel_seq_sent: Mutex::new(MorselSeq::new(0)), morsel_offset: MorselSeq::new(0) }
+        Self {
+            cur_input_idx: 0,
+            max_morsel_seq_sent: Mutex::new(MorselSeq::new(0)),
+            morsel_offset: MorselSeq::new(0),
+        }
     }
 }
 
@@ -38,10 +42,10 @@ impl ComputeNode for OrderedUnionNode {
         }
 
         // Mark all inputs after the current one as blocked.
-        for i in self.cur_input_idx + 1..recv.len() {
-            recv[i] = PortState::Blocked;
+        for r in recv.iter_mut().skip(self.cur_input_idx + 1) {
+            *r = PortState::Blocked;
         }
-        
+
         // Set the morsel offset one higher than any sent so far.
         self.morsel_offset = self.max_morsel_seq_sent.lock().successor();
     }
@@ -58,7 +62,7 @@ impl ComputeNode for OrderedUnionNode {
         assert!(ready_recv.len() == 1 && send.len() == 1);
         let mut recv = ready_recv.into_iter().next().unwrap();
         let mut send = send[0].take().unwrap();
-        
+
         scope.spawn_task(TaskPriority::High, async move {
             let mut max_seq = MorselSeq::new(0);
             while let Ok(mut morsel) = recv.recv().await {
@@ -70,7 +74,7 @@ impl ComputeNode for OrderedUnionNode {
                     break;
                 }
             }
-            
+
             // Update our global maximum.
             let mut max_morsel_seq_sent = self.max_morsel_seq_sent.lock();
             *max_morsel_seq_sent = max_morsel_seq_sent.max(max_seq.successor());

@@ -30,7 +30,7 @@ impl MorselSeq {
         // significant bit to indicate the final morsel with that sequence id.
         Self(self.0.checked_add(2).unwrap())
     }
-    
+
     // Ensures this morsel sequence comes after the offset.
     pub fn offset_by(self, offset: Self) -> Self {
         Self(self.0 + offset.0)

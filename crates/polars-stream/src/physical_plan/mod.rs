@@ -67,8 +67,8 @@ pub enum PhysNode {
         slice: Option<(i64, usize)>,
         sort_options: SortMultipleOptions,
     },
-    
+
     OrderedUnion {
         inputs: Vec<PhysNodeKey>,
-    }
+    },
 }

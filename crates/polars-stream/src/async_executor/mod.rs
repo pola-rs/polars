@@ -38,7 +38,7 @@ slotmap::new_key_type! {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TaskPriority {
     Low,
-    High
+    High,
 }
 
 /// Metadata associated with a task to help schedule it and clean it up.

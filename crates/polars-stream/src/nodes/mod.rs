@@ -2,8 +2,8 @@ pub mod filter;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
-pub mod ordered_union;
 pub mod map;
+pub mod ordered_union;
 pub mod select;
 pub mod simple_projection;
 
@@ -12,11 +12,12 @@ mod compute_node_prelude {
     pub use polars_core::frame::DataFrame;
     pub use polars_error::PolarsResult;
     pub use polars_expr::state::ExecutionState;
-    pub use crate::async_executor::{JoinHandle, TaskScope, TaskPriority};
+
+    pub use super::ComputeNode;
+    pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
     pub use crate::async_primitives::pipe::{Receiver, Sender};
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
-    pub use super::ComputeNode;
 }
 
 use compute_node_prelude::*;

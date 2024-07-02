@@ -11,10 +11,10 @@ pub enum InMemoryMapNode {
     Sink {
         sink_node: InMemorySinkNode,
         num_pipelines: usize,
-        map: Arc<dyn DataFrameUdf>
+        map: Arc<dyn DataFrameUdf>,
     },
     Source(InMemorySourceNode),
-    Done
+    Done,
 }
 
 impl InMemoryMapNode {
@@ -22,7 +22,7 @@ impl InMemoryMapNode {
         Self::Sink {
             sink_node: InMemorySinkNode::new(input_schema),
             num_pipelines: 0,
-            map
+            map,
         }
     }
 }
@@ -46,12 +46,18 @@ impl ComputeNode for InMemoryMapNode {
         if send[0] == PortState::Done && !matches!(self, Self::Done) {
             *self = Self::Done;
         }
-        
+
         // If the input is done, transition to being a source.
-        if let Self::Sink { sink_node, num_pipelines, map } = self {
+        if let Self::Sink {
+            sink_node,
+            num_pipelines,
+            map,
+        } = self
+        {
             if recv[0] == PortState::Done {
                 let df = sink_node.get_output().unwrap();
-                let mut source_node = InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap()).unwrap()));
+                let mut source_node =
+                    InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap()).unwrap()));
                 source_node.initialize(*num_pipelines);
                 *self = Self::Source(source_node);
             }
@@ -69,7 +75,7 @@ impl ComputeNode for InMemoryMapNode {
             Self::Done => {
                 recv[0] = PortState::Done;
                 send[0] = PortState::Done;
-            }
+            },
         }
     }
 
@@ -88,7 +94,7 @@ impl ComputeNode for InMemoryMapNode {
         match self {
             Self::Sink { sink_node, .. } => sink_node.spawn(scope, pipeline, recv, &mut [], state),
             Self::Source(source) => source.spawn(scope, pipeline, &mut [], send, state),
-            Self::Done => unreachable!()
+            Self::Done => unreachable!(),
         }
     }
 }
