@@ -65,7 +65,7 @@ fsspec = ["fsspec"]
 
 # Other I/O
 deltalake = ["deltalake >= 0.15.0"]
-iceberg = ["pyiceberg >= 0.5.0"]
+iceberg = ["pyiceberg >= 0.6.1"]
 
 # Other
 async = ["gevent"]
