@@ -88,54 +88,16 @@ def test_hive_partitioned_predicate_pushdown(
     )
 
 
-def init_env_spawned_single_threaded_async() -> None:
-    os.environ["SPAWNED_PROCESS"] = "1"
-    os.environ["POLARS_MAX_THREADS"] = "1"
-    os.environ["POLARS_PREFETCH_SIZE"] = "1"
-
-
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
-def test_hive_partitioned_predicate_pushdown_single_threaded_async(
+def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
     capfd: Any,
 ) -> None:
-    # We need to run this in a separate process to avoid leakage of
-    # `POLARS_MAX_THREADS`. You can test this locally (on a
-    # system with > 1 threads) by removing the process-spawning logic and
-    # directly calling `init_env_spawned_single_threaded_async`, and then
-    # running:
-    # ```
-    # python -m pytest py-polars/tests/unit/io/ -m '' -k \
-    #   test_hive_partitioned_predicate_pushdown
-    # ```
-    # And observe that the below assertion of `thread_pool_size` will fail.
-    if "SPAWNED_PROCESS" not in os.environ:
-        with get_context("spawn").Pool(
-            1, initializer=init_env_spawned_single_threaded_async
-        ) as p:
-            pytest_path = Path(__file__).relative_to(Path.cwd())
-            pytest_path: str = f"{pytest_path}::test_hive_partitioned_predicate_pushdown_single_threaded_async"  # type: ignore[no-redef]
-
-            assert (
-                p.map(
-                    pytest.main,  # type: ignore[arg-type]
-                    [
-                        [
-                            pytest_path,
-                            "-m",
-                            "",
-                        ]
-                    ],
-                )[0]
-                == 0
-            )
-
-        return
-
-    assert pl.thread_pool_size() == 1
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
 
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
