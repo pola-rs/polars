@@ -193,14 +193,14 @@ impl EitherRustPythonFile {
 
 fn get_either_file_and_path(
     py_f: PyObject,
-    truncate: bool,
+    write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
     Python::with_gil(|py| {
         let py_f = py_f.bind(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = std::path::Path::new(&*s);
             let file_path = resolve_homedir(file_path);
-            let f = if truncate {
+            let f = if write {
                 File::create(&file_path)?
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
@@ -226,7 +226,7 @@ fn get_either_file_and_path(
                             Err(_) => false,
                         })
                         .is_some()))
-                && (!truncate
+                && (!write
                     || py_f
                         .getattr("flush")
                         .and_then(|flush| flush.call0())
@@ -256,12 +256,7 @@ fn get_either_file_and_path(
                 Ensure you pass a path to the file instead of a python file object when possible for best \
                 performance.");
             }
-            let f = PyFileLikeObject::with_requirements(
-                py_f.to_object(py),
-                !truncate,
-                truncate,
-                !truncate,
-            )?;
+            let f = PyFileLikeObject::with_requirements(py_f.to_object(py), !write, write, !write)?;
             Ok((EitherRustPythonFile::Py(f), None))
         }
     })
@@ -269,9 +264,9 @@ fn get_either_file_and_path(
 
 ///
 /// # Arguments
-/// * `truncate` - open or create a new file.
-pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPythonFile> {
-    Ok(get_either_file_and_path(py_f, truncate)?.0)
+/// * `write` - open for writing; will truncate existing file and create new file if not.
+pub fn get_either_file(py_f: PyObject, write: bool) -> PyResult<EitherRustPythonFile> {
+    Ok(get_either_file_and_path(py_f, write)?.0)
 }
 
 pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
