@@ -16,9 +16,7 @@ pip
 # ------------
 
 # Interop
-# Unpin NumPy when support is implemented in numpy crate:
-# https://github.com/pola-rs/polars/issues/16998
-numpy<2
+numpy
 numba; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow

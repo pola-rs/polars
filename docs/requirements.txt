@@ -6,9 +6,7 @@ seaborn
 plotly
 altair
 numba
-# Unpin NumPy when support is implemented in numpy crate:
-# https://github.com/pola-rs/polars/issues/16998
-numpy<2
+numpy
 
 mkdocs-material==9.5.27
 mkdocs-macros-plugin==1.0.5
