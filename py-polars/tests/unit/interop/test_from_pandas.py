@@ -291,13 +291,16 @@ def test_untrusted_categorical_input() -> None:
     assert_frame_equal(result, expected, categorical_as_str=True)
 
 
-def test_from_pandas_pyarrow_not_available(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.fixture()
+def _set_pyarrow_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "polars._utils.construction.dataframe._PYARROW_AVAILABLE", False
     )
     monkeypatch.setattr("polars._utils.construction.series._PYARROW_AVAILABLE", False)
+
+
+@pytest.mark.usefixtures("_set_pyarrow_unavailable")
+def test_from_pandas_pyarrow_not_available_succeeds() -> None:
     data: dict[str, Any] = {
         "a": [1, 2],
         "b": ["one", "two"],
@@ -309,14 +312,22 @@ def test_from_pandas_pyarrow_not_available(
         "h": np.array([1, 2], dtype="timedelta64[ms]"),
         "i": [True, False],
     }
+
+    # DataFrame
     result = pl.from_pandas(pd.DataFrame(data))
     expected = pl.DataFrame(data)
     assert_frame_equal(result, expected)
+
+    # Series
     for col in data:
         s_pd = pd.Series(data[col])
         result_s = pl.from_pandas(s_pd)
         expected_s = pl.Series(data[col])
         assert_series_equal(result_s, expected_s)
+
+
+@pytest.mark.usefixtures("_set_pyarrow_unavailable")
+def test_from_pandas_pyarrow_not_available_fails() -> None:
     with pytest.raises(ImportError, match="pyarrow is required"):
         pl.from_pandas(pd.DataFrame({"a": [1, 2, 3]}, dtype="Int64"))
     with pytest.raises(ImportError, match="pyarrow is required"):
