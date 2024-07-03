@@ -141,10 +141,8 @@ def test_map_groups_numpy_output_3057() -> None:
     )
 
     result = df.group_by("id", maintain_order=True).agg(
-        pl.map_groups(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(
-            "result"
-        )
+        pl.map_groups(["y", "t"], lambda lst: np.mean([lst[0], lst[1]])).alias("result")
     )
 
-    expected = pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]})
+    expected = pl.DataFrame({"id": [0, 1], "result": [2.266666, 7.333333]})
     assert_frame_equal(result, expected)

@@ -45,7 +45,7 @@ def test_error_on_reducing_map() -> None:
             r"the input length \(6\); consider using `apply` instead"
         ),
     ):
-        df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
+        df.group_by("id").agg(pl.map_batches(["t", "y"], np.mean))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
