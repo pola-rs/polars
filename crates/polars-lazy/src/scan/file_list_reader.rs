@@ -223,9 +223,6 @@ fn expand_paths(
         }
     }
 
-    dbg!(paths);
-    dbg!(&out_paths);
-
     Ok((
         out_paths.into_iter().collect::<Arc<[_]>>(),
         *expand_start_idx,
