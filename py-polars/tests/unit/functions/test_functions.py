@@ -226,8 +226,8 @@ def test_min_periods_handling_correlation() -> None:
         pl.corr("a", "b", min_periods=4).alias("pearson"),
         pl.corr("a", "b", method="spearman", min_periods=4).alias("spearman"),
     )
-    assert str(out1["pearson"][0]) == "nan"
-    assert str(out1["spearman"][0]) == "nan"
+    assert not out1["pearson"][0]
+    assert not out1["spearman"][0]
 
 
 def test_align_frames() -> None:
