@@ -76,10 +76,13 @@ impl AExpr {
             Column(name) => schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
-            Literal(sv) => Ok(match sv {
-                LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new(sv.output_name(), sv.get_datatype()),
-            }),
+            Literal(sv) => {
+                *nested = 0;
+                Ok(match sv {
+                    LiteralValue::Series(s) => s.field().into_owned(),
+                    _ => Field::new(sv.output_name(), sv.get_datatype()),
+                })
+            },
             BinaryExpr { left, right, op } => {
                 use DataType::*;
 
