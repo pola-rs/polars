@@ -1,7 +1,5 @@
 hypothesis
-# Unpin NumPy when support is implemented in numpy crate:
-# https://github.com/pola-rs/polars/issues/16998
-numpy<2
+numpy
 pandas
 pyarrow
 

@@ -42,7 +42,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 # Interop
 # TODO: Remove NumPy upper bound once we support NumPy 2.0.0
 # https://github.com/pola-rs/polars/issues/16998
-numpy = ["numpy >= 1.16.0, < 2.0.0"]
+numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
