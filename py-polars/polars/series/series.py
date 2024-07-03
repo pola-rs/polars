@@ -4342,11 +4342,21 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    def to_arrow(self) -> pa.Array:
+    def to_arrow(self, *, future: bool = False) -> pa.Array:
         """
         Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
+
+        Parameters
+        ----------
+        future
+            Setting this to `True` will write Polars' internal data structures that
+            might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -4360,7 +4370,7 @@ class Series:
           3
         ]
         """
-        return self._s.to_arrow()
+        return self._s.to_arrow(future)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
