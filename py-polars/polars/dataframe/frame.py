@@ -8170,8 +8170,7 @@ class DataFrame:
             Include the columns used to partition the DataFrame in the output.
         as_dict
             Return a dictionary instead of a list. The dictionary keys are tuples of
-            the distinct group values that identify each group. If a single string
-            was passed to `by`, the keys are a single value instead of a tuple.
+            the distinct group values that identify each group.
 
         Examples
         --------
