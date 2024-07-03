@@ -271,7 +271,7 @@ def test_read_csv(tmp_path: Path) -> None:
         pl.sql("SELECT * FROM read_csv('a','b','c')")
 
 
-def test_global_variable_inference_17398():
+def test_global_variable_inference_17398() -> None:
     users = pl.DataFrame({"id": "1"})
 
     res = pl.sql(
