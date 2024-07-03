@@ -573,8 +573,9 @@ impl StringNameSpace {
 
     #[cfg(feature = "extract_jsonpath")]
     pub fn json_decode(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
+        // Apply, because dtype should be inferred only once and be consistent over chunks/morsels.
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::JsonDecode {
+            .apply_private(FunctionExpr::StringExpr(StringFunction::JsonDecode {
                 dtype,
                 infer_schema_len,
             }))
