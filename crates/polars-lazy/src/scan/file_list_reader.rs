@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use polars_core::config;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_io::cloud::{object_path_from_string, CloudOptions};
+use polars_io::cloud::CloudOptions;
 use polars_io::utils::is_cloud_url;
 use polars_io::RowIndex;
 use polars_plan::prelude::UnionArgs;
@@ -55,6 +55,8 @@ fn expand_paths(
     if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "async")]
         {
+            use polars_io::cloud::object_path_from_string;
+
             let format_path = |scheme: &str, bucket: &str, location: &str| {
                 if is_cloud {
                     format!("{}://{}/{}", scheme, bucket, location)
