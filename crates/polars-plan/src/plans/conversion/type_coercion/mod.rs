@@ -451,7 +451,7 @@ impl OptimizationRule for TypeCoercionRule {
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice, not {}", offset_dtype);
                 let (_, length_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
-                polars_ensure!(length_dtype.is_integer(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
+                polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
                 None
             },
             _ => None,

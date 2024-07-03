@@ -747,3 +747,16 @@ def test_slice_rejects_non_integral() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(pl.col("a").slice(pl.lit("1"), None)).collect()
+
+
+def test_slice() -> None:
+    data = {"a": [0, 1, 2, 3], "b": [1, 2, 3, 4]}
+    df = pl.DataFrame(data)
+
+    result = df.select(pl.col("a").slice(1))
+    expected = pl.DataFrame({"a": data["a"][1:]})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.all().slice(1, 1))
+    expected = pl.DataFrame({"a": data["a"][1:2], "b": data["b"][1:2]})
+    assert_frame_equal(result, expected)
