@@ -12,8 +12,8 @@ pub fn into_reduction(
     node: Node,
     expr_arena: Arena<AExpr>,
     field: &Field,
-) -> (Box<dyn Reduction>, Node) {
-    match expr_arena.get(node) {
+) -> Option<(Box<dyn Reduction>, Node)> {
+    let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Sum(node) => {
                 (
@@ -65,13 +65,11 @@ pub fn into_reduction(
                     )
                 }
             },
-            IRAggExpr::First(_) => {
-                todo!()
-            }
-            _ => todo!(),
+            _ => return None,
         },
         _ => {
-            todo!()
+            return None
         },
-    }
+    };
+    Some(out)
 }
