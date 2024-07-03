@@ -73,3 +73,7 @@ def test_numpy_disambiguation() -> None:
         "b": [1, 2],
     }
     assert result == expected
+
+
+def test_respect_dtype_with_series_from_numpy() -> None:
+    assert pl.Series("foo", np.array([1, 2, 3]), dtype=pl.UInt32).dtype == pl.UInt32
