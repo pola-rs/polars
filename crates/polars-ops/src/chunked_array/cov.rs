@@ -44,7 +44,7 @@ where
 
 /// # Arguments
 /// `iter` - Iterator over `T` tuple where any `Option<T>` would skip the tuple.
-fn online_cov<I, J, T>(iters: I, ddof: u8, min_periods: usize) -> f64
+fn online_cov<I, J, T>(iters: I, ddof: u8, min_periods: usize) -> Option<f64>
 where
     I: Iterator<Item = J>,
     J: IntoIterator<Item = (T, T)> + Clone,
@@ -97,7 +97,7 @@ where
     if min_periods > n as usize {
         None
     } else {
-        cxy / (n - ddof as f64)
+        Some(cxy / (n - ddof as f64))
     }
 }
 
@@ -135,7 +135,7 @@ where
 
 /// # Arguments
 /// `iter` - Iterator over `T` tuple where any `Option<T>` would skip the tuple.
-fn online_pearson_corr<I, J, T>(iters: I, ddof: u8, min_periods: usize) -> f64
+fn online_pearson_corr<I, J, T>(iters: I, ddof: u8, min_periods: usize) -> Option<f64>
 where
     I: Iterator<Item = J>,
     J: IntoIterator<Item = (T, T)> + Clone,
@@ -199,10 +199,10 @@ where
     let result = sample_cov / denom;
 
     if denom.is_zero() {
-        f64::NAN
+        Some(f64::NAN)
     } else if min_periods > n as usize {
         None
     } else {
-        result
+        Some(result)
     }
 }
