@@ -61,9 +61,17 @@ def get_series_item_by_key(
     elif isinstance(key, Sequence):
         if not key:
             return s.clear()
-        if isinstance(key[0], bool):
+
+        first = key[0]
+        if isinstance(first, bool):
             _raise_on_boolean_mask()
-        indices = pl.Series("", key, dtype=Int64)
+
+        try:
+            indices = pl.Series("", key, dtype=Int64)
+        except TypeError:
+            msg = f"cannot select elements using Sequence with elements of type {type(first).__name__!r}"
+            raise TypeError(msg) from None
+
         indices = _convert_series_to_indices(indices, s.len())
         return _select_elements_by_index(s, indices)
 
