@@ -354,10 +354,11 @@ def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_pandas_natype_17355() -> None:
+@pytest.mark.parametrize("null", [pd.NA, np.nan, None, float("nan")])
+def test_from_pandas_string_with_natype_17355(null: Any) -> None:
     # https://github.com/pola-rs/polars/issues/17355
 
-    pd_df = pd.DataFrame({"col": ["a", pd.NA]})
+    pd_df = pd.DataFrame({"col": ["a", null]})
     result = pl.from_pandas(pd_df)
     expected = pl.DataFrame({"col": ["a", None]})
     assert_frame_equal(result, expected)
