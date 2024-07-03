@@ -135,3 +135,15 @@ pub async fn build_object_store(
     }
     Ok((cloud_location, store))
 }
+
+mod test {
+    #[test]
+    fn test_object_path_from_string() {
+        use super::object_path_from_string;
+
+        let path = "%25";
+        let out = object_path_from_string(path.to_string());
+
+        assert_eq!(out.as_ref(), path);
+    }
+}
