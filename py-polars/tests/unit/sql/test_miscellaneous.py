@@ -247,6 +247,29 @@ def test_limit_offset() -> None:
         assert len(out) == min(limit, n_values - offset)
 
 
+def test_nested_subquery_table_leakage() -> None:
+    a = pl.LazyFrame({"id": [1, 2, 3]})
+    b = pl.LazyFrame({"val": [2, 3, 4]})
+
+    ctx = pl.SQLContext(a=a, b=b)
+    ctx.execute("""
+      SELECT *
+      FROM a
+      WHERE id IN (
+          SELECT derived.val
+          FROM (SELECT val FROM b) AS derived
+      )
+    """)
+
+    # after execution of the above query, confirm that we don't see the
+    # inner "derived" table alias still being registered in the context
+    with pytest.raises(
+        SQLInterfaceError,
+        match="relation 'derived' was not found",
+    ):
+        ctx.execute("SELECT * FROM derived")
+
+
 def test_register_context() -> None:
     # use as context manager unregisters tables created within each scope
     # on exit from that scope; arbitrary levels of nesting are supported.
