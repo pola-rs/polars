@@ -341,3 +341,12 @@ def test_from_pandas_nan_to_null_16453(monkeypatch: pytest.MonkeyPatch) -> None:
         {"a": [None, 1.0, 2], "b": [1.0, 2.0, 3.0], "c": [4.0, 5.0, 6.0]}
     )
     assert_frame_equal(result, expected)
+
+
+def test_from_pandas_natype_17355() -> None:
+    # https://github.com/pola-rs/polars/issues/17355
+
+    pd_df = pd.DataFrame({"col": ["a", pd.NA]})
+    result = pl.from_pandas(pd_df)
+    expected = pl.DataFrame({"col": ["a", None]})
+    assert_frame_equal(result, expected)
