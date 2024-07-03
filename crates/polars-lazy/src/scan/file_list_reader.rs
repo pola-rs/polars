@@ -55,6 +55,8 @@ fn expand_paths(
     if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
         #[cfg(feature = "async")]
         {
+            use polars_io::cloud::object_path_from_string;
+
             let format_path = |scheme: &str, bucket: &str, location: &str| {
                 if is_cloud {
                     format!("{}://{}/{}", scheme, bucket, location)
@@ -70,7 +72,7 @@ fn expand_paths(
                     let (cloud_location, store) =
                         polars_io::cloud::build_object_store(path, cloud_options).await?;
 
-                    let prefix = cloud_location.prefix.clone().into();
+                    let prefix = object_path_from_string(cloud_location.prefix.clone());
 
                     let out = if !path.ends_with("/")
                         && cloud_location.expansion.is_none()

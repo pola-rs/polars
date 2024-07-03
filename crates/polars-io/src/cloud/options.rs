@@ -131,16 +131,6 @@ impl CloudType {
 #[cfg(feature = "cloud")]
 pub(crate) fn parse_url(input: &str) -> std::result::Result<url::Url, url::ParseError> {
     Ok(if input.contains("://") {
-        let input = if input.starts_with("https://") {
-            std::borrow::Cow::Borrowed(input)
-        } else {
-            // Some paths may contain '%', we need to double-encode as it doesn't seem
-            // possible to construct `Url` without having it decode the path.
-            // TODO: Maybe we can avoid using `Url`.
-            const PERC: percent_encoding::AsciiSet = percent_encoding::CONTROLS.add(b'%');
-            std::borrow::Cow::<str>::from(percent_encoding::percent_encode(input.as_bytes(), &PERC))
-        };
-        let input = input.as_ref();
         url::Url::parse(input)?
     } else {
         let path = std::path::Path::new(input);
