@@ -446,9 +446,6 @@ pub trait IndexOfSchema: Debug {
     /// Get a vector of all column names.
     fn get_names(&self) -> Vec<&str>;
 
-    /// Get a vector of (name, dtype) pairs
-    fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, DataType)>;
-
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
             polars_err!(
@@ -467,13 +464,6 @@ impl IndexOfSchema for Schema {
     fn get_names(&self) -> Vec<&str> {
         self.iter_names().map(|name| name.as_str()).collect()
     }
-
-    fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, DataType)> {
-        self.inner
-            .iter()
-            .map(|(name, dtype)| (name.as_str(), dtype.clone()))
-            .collect()
-    }
 }
 
 impl IndexOfSchema for ArrowSchema {
@@ -483,13 +473,6 @@ impl IndexOfSchema for ArrowSchema {
 
     fn get_names(&self) -> Vec<&str> {
         self.fields.iter().map(|f| f.name.as_str()).collect()
-    }
-
-    fn get_names_and_dtypes(&'_ self) -> Vec<(&'_ str, DataType)> {
-        self.fields
-            .iter()
-            .map(|x| (x.name.as_str(), DataType::from_arrow(&x.data_type, true)))
-            .collect()
     }
 }
 
