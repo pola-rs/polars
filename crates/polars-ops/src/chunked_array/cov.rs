@@ -38,7 +38,7 @@ where
                 .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()));
             online_cov(iters, ddof, min_periods)
         };
-        Some(out?)
+        out
     }
 }
 
@@ -130,7 +130,7 @@ where
             .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()));
         online_pearson_corr(iters, ddof, min_periods)
     };
-    Some(out?)
+    out
 }
 
 /// # Arguments
