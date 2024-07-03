@@ -110,6 +110,7 @@ def is_simple_numpy_backed_pandas_series(
         raise ValueError(msg)
     return (str(series.dtype) in PANDAS_SIMPLE_NUMPY_DTYPES) or (
         series.dtype == "object"
+        and not series.hasnans
         and not series.empty
         and isinstance(next(iter(series)), str)
     )
