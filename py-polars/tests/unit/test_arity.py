@@ -101,3 +101,18 @@ def test_negate_inlined_14278() -> None:
         ],
         "count": [2, 2, 2],
     }
+
+
+def test_nested_level_literals_17377() -> None:
+    df = pl.LazyFrame({"group": [1, 2], "value": [1, 2]})
+
+    df2 = df.group_by("group").agg(
+        [
+            pl.when((pl.col("value") < 0).all())
+            .then(None)
+            .otherwise(pl.col("value").mean())
+            .alias("res")
+        ]
+    )
+
+    assert df2.collect_schema() == pl.Schema({"group": pl.Int64(), "res": pl.Float64()})
