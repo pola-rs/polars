@@ -72,7 +72,10 @@ fn expand_paths(
 
                     let prefix = cloud_location.prefix.clone().into();
 
-                    let out = if !path.ends_with("/") && store.head(&prefix).await.is_ok() {
+                    let out = if !path.ends_with("/")
+                        && cloud_location.expansion.is_none()
+                        && store.head(&prefix).await.is_ok()
+                    {
                         (
                             0,
                             vec![PathBuf::from(format_path(
