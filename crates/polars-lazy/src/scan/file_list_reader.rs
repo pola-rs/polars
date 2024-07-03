@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use polars_core::config;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
-use polars_io::cloud::CloudOptions;
+use polars_io::cloud::{object_path_from_string, CloudOptions};
 use polars_io::utils::is_cloud_url;
 use polars_io::RowIndex;
 use polars_plan::prelude::UnionArgs;
@@ -70,7 +70,7 @@ fn expand_paths(
                     let (cloud_location, store) =
                         polars_io::cloud::build_object_store(path, cloud_options).await?;
 
-                    let prefix = cloud_location.prefix.clone().into();
+                    let prefix = object_path_from_string(cloud_location.prefix.clone());
 
                     let out = if !path.ends_with("/")
                         && cloud_location.expansion.is_none()
@@ -222,6 +222,9 @@ fn expand_paths(
             }
         }
     }
+
+    dbg!(paths);
+    dbg!(&out_paths);
 
     Ok((
         out_paths.into_iter().collect::<Arc<[_]>>(),

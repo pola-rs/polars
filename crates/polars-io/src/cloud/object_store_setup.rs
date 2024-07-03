@@ -40,6 +40,14 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
     )
 }
 
+/// Simply construct an object_store `Path` struct from a string.
+pub fn object_path_from_string(path: String) -> object_store::path::Path {
+    // We transmute because they don't expose a way to just create it from a string
+    // without encoding or decoding it. If one day we can't use this transmute hack
+    // anymore then we'll just have to `Path::from_url_path(percent_encode(path))`
+    unsafe { std::mem::transmute::<String, object_store::path::Path>(path) }
+}
+
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub async fn build_object_store(
     url: &str,
