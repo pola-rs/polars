@@ -489,3 +489,15 @@ def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
         pl.scan_parquet(tmp_path / "**/*").collect(), pl.concat(3 * [df])
     )
     assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+
+
+def test_scan_async_whitespace_in_path(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a b.parquet"
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(path)
+    assert_frame_equal(pl.scan_parquet(path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*.parquet").collect(), df)
