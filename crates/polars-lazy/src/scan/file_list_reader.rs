@@ -72,7 +72,7 @@ fn expand_paths(
                     let (cloud_location, store) =
                         polars_io::cloud::build_object_store(path, cloud_options).await?;
 
-                    let prefix = object_path_from_string(cloud_location.prefix.clone());
+                    let prefix = object_path_from_string(cloud_location.prefix.clone())?;
 
                     let out = if !path.ends_with("/")
                         && cloud_location.expansion.is_none()

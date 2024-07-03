@@ -85,7 +85,7 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
 
                         let cloud_path = {
                             assert!(expansion.is_none(), "path should not contain wildcards");
-                            object_path_from_string(prefix)
+                            object_path_from_string(prefix)?
                         };
 
                         let object_store = object_store.clone();
