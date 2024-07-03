@@ -78,7 +78,7 @@ impl IpcReaderAsync {
             // Any wildcards should already have been resolved here. Without this assertion they would
             // be ignored.
             debug_assert!(expansion.is_none(), "path should not contain wildcards");
-            object_path_from_string(prefix)
+            object_path_from_string(prefix)?
         };
 
         Ok(Self {
