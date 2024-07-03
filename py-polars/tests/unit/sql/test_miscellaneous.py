@@ -269,3 +269,16 @@ def test_read_csv(tmp_path: Path) -> None:
         match="`read_csv` expects a single file path; found 3 arguments",
     ):
         pl.sql("SELECT * FROM read_csv('a','b','c')")
+
+
+def test_global_variable_inference_17398() -> None:
+    users = pl.DataFrame({"id": "1"})
+
+    res = pl.sql(
+        query="""
+          WITH user_by_email AS (SELECT id FROM users)
+          SELECT * FROM user_by_email
+        """,
+        eager=True,
+    )
+    assert_frame_equal(res, users)

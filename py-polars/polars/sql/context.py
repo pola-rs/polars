@@ -279,7 +279,7 @@ class SQLContext(Generic[FrameType]):
         possible_names = (
             {
                 nm.strip('"')
-                for nm in re.split(r"\s", q[1])
+                for nm in re.split(r"\b", q[1])
                 if re.match(r'^("[^"]+")$', nm) or nm.isidentifier()
             }
             if len(q) > 1
