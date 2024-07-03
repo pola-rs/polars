@@ -62,18 +62,25 @@ pub(super) fn process_projection(
     // the whole file while we only want the count
     if exprs.len() == 1 && is_count(exprs[0].node(), expr_arena) {
         let input_schema = lp_arena.get(input).schema(lp_arena);
-        // simply select the last column
-        // NOTE: the first can be the inserted index column, so that might not work
-        let (first_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
-        let expr = expr_arena.add(AExpr::Column(ColumnName::from(first_name.as_str())));
-        if !acc_projections.is_empty() {
-            check_double_projection(
-                &exprs[0],
-                expr_arena,
-                &mut acc_projections,
-                &mut projected_names,
-            );
-        }
+        let expr = if input_schema.is_empty() {
+            // If the input schema is empty, we should just project
+            // ourselves
+            exprs[0].node()
+        } else {
+            // simply select the last column
+            // NOTE: the first can be the inserted index column, so that might not work
+            let (first_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
+            let expr = expr_arena.add(AExpr::Column(ColumnName::from(first_name.as_str())));
+            if !acc_projections.is_empty() {
+                check_double_projection(
+                    &exprs[0],
+                    expr_arena,
+                    &mut acc_projections,
+                    &mut projected_names,
+                );
+            }
+            expr
+        };
         add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
         local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;

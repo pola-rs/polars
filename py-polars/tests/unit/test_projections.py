@@ -511,3 +511,14 @@ def test_projection_pushdown_semi_anti_no_selection(
     assert "PROJECT 1/2" in (
         q_a.join(q_b, left_on="a", right_on="b", how=how).explain()
     )
+
+
+def test_projection_empty_frame_len_16904() -> None:
+    df = pl.LazyFrame({})
+
+    q = df.select(pl.len())
+
+    assert "PROJECT */0" in q.explain()
+
+    expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
+    assert_frame_equal(q.collect(), expect)
