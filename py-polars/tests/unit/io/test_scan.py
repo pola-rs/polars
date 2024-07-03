@@ -391,6 +391,29 @@ def test_scan_with_row_index_limit_and_filter(
 
 
 @pytest.mark.write_disk()
+def test_scan_with_row_index_projected_out(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
+    subset = next(iter(data_file.df.schema.keys()))
+    df = (
+        _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
+        .select(subset)
+        .collect()
+    )
+
+    if force_async:
+        _assert_force_async(capfd)
+
+    assert_frame_equal(df, data_file.df.select(subset))
+
+
+@pytest.mark.write_disk()
 def test_scan_with_row_index_filter_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:

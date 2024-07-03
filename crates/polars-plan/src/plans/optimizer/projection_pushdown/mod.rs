@@ -394,7 +394,7 @@ impl ProjectionPushDown {
             },
             Scan {
                 paths,
-                file_info,
+                mut file_info,
                 mut hive_parts,
                 scan_type,
                 predicate,
@@ -482,6 +482,21 @@ impl ProjectionPushDown {
                     };
                 }
 
+                // File builder has a row index, but projected columns
+                // do not include it, so cull.
+                if let Some(RowIndex { ref name, .. }) = file_options.row_index {
+                    if output_schema
+                        .as_ref()
+                        .map_or(false, |schema| !schema.contains(name))
+                    {
+                        // Need to remove it from the input schema so
+                        // that projection indices are correct.
+                        let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
+                        file_schema.shift_remove(name);
+                        file_info.schema = Arc::new(file_schema);
+                        file_options.row_index = None;
+                    }
+                };
                 let lp = Scan {
                     paths,
                     file_info,
