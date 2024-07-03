@@ -318,6 +318,25 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(Vec::new()) }
     }
 
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_schema(schema: &Schema) -> Self {
+        let cols = schema
+            .iter()
+            .map(|(name, dtype)| Series::new_empty(name, dtype))
+            .collect();
+        unsafe { DataFrame::new_no_checks(cols) }
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
+        let cols = schema
+            .fields
+            .iter()
+            .map(|fld| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
+            .collect();
+        unsafe { DataFrame::new_no_checks(cols) }
+    }
+
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
     ///
     /// # Example
@@ -1121,7 +1140,7 @@ impl DataFrame {
         series: Series,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
-            series.len() == self.height(),
+            self.width() == 0 || series.len() == self.height(),
             ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
             series.len(), self.height(),
         );

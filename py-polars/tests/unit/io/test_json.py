@@ -4,6 +4,7 @@ import io
 import json
 import typing
 from collections import OrderedDict
+from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -51,6 +52,14 @@ def test_write_json_duration() -> None:
     value = df.write_json()
     expected = '[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]'
     assert value == expected
+
+
+def test_write_json_decimal() -> None:
+    df = pl.DataFrame({"a": pl.Series([D("1.00"), D("2.00"), None])})
+
+    # we don't guarantee a format, just round-circling
+    value = df.write_json()
+    assert value == """[{"a":"1.00"},{"a":"2.00"},{"a":null}]"""
 
 
 def test_json_infer_schema_length_11148() -> None:

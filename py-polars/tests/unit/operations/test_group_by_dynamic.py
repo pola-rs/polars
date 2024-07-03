@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import Label, StartBy
+    from polars._typing import Label, StartBy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 

@@ -206,7 +206,7 @@ pub(super) fn build_page<R: Read>(
 
     if bytes_read != read_size {
         return Err(ParquetError::oos(
-            "The page header reported the wrong page size".to_string(),
+            "The page header reported the wrong page size",
         ));
     }
 

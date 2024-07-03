@@ -10,7 +10,7 @@ from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSynta
 from polars.testing import assert_frame_equal
 
 
-def test_date() -> None:
+def test_date_func() -> None:
     df = pl.DataFrame(
         {
             "date": [
@@ -27,9 +27,18 @@ def test_date() -> None:
     expected = pl.DataFrame({"date": [True, False, False]})
     assert_frame_equal(result, expected)
 
-    result = pl.select(pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)"""))
+    result = pl.select(pl.sql_expr("CAST(DATE('2023-03', '%Y-%m') as STRING)"))
     expected = pl.DataFrame({"literal": ["2023-03-01"]})
     assert_frame_equal(result, expected)
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"DATE expects 1-2 arguments \(found 0\)",
+    ):
+        df.sql("SELECT DATE() FROM self")
+
+    with pytest.raises(InvalidOperationError):
+        df.sql("SELECT DATE('2077-07-07','not_a_valid_strftime_format') FROM self")
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -236,6 +245,165 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
         match="(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
+
+
+def test_strftime() -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                None,
+                datetime(1980, 9, 30, 1, 25, 50),
+                datetime(2077, 7, 17, 11, 30, 55),
+            ],
+            "dt": [date(1978, 7, 5), date(1969, 12, 31), date(2020, 4, 10)],
+            "tm": [time(10, 10, 10), time(22, 33, 55), None],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          STRFTIME(dtm,'%m.%d.%Y/%T') AS s_dtm,
+          STRFTIME(dt ,'%B %d, %Y') AS s_dt,
+          STRFTIME(tm ,'%S.%M.%H') AS s_tm,
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "s_dtm": [None, "09.30.1980/01:25:50", "07.17.2077/11:30:55"],
+        "s_dt": ["July 05, 1978", "December 31, 1969", "April 10, 2020"],
+        "s_tm": ["10.10.10", "55.33.22", None],
+    }
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"STRFTIME expects 2 arguments \(found 4\)",
+    ):
+        pl.sql_expr("STRFTIME(dtm,'%Y-%m-%d','[extra]','[param]')")
+
+
+def test_strptime() -> None:
+    df = pl.DataFrame(
+        {
+            "s_dtm": [None, "09.30.1980/01:25:50", "07.17.2077/11:30:55"],
+            "s_dt": ["July 5, 1978", "December 31, 1969", "April 10, 2020"],
+            "s_tm": ["10.10.10", "55.33.22", None],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          STRPTIME(s_dtm,'%m.%d.%Y/%T') AS dtm,
+          STRPTIME(s_dt ,'%B %d, %Y')::date AS dt,
+          STRPTIME(s_tm ,'%S.%M.%H')::time AS tm
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "dtm": [
+            None,
+            datetime(1980, 9, 30, 1, 25, 50),
+            datetime(2077, 7, 17, 11, 30, 55),
+        ],
+        "dt": [date(1978, 7, 5), date(1969, 12, 31), date(2020, 4, 10)],
+        "tm": [time(10, 10, 10), time(22, 33, 55), None],
+    }
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"STRPTIME expects 2 arguments \(found 3\)",
+    ):
+        pl.sql_expr("STRPTIME(s,'%Y.%m.%d',false) AS dt")
+
+
+def test_temporal_stings_to_datetime() -> None:
+    df = pl.DataFrame(
+        {
+            "s_dt": ["2077-10-10", "1942-01-08", "2000-07-05"],
+            "s_dtm1": [
+                "1999-12-31 10:30:45",
+                "2020-06-10",
+                "2022-08-07T00:01:02.654321",
+            ],
+            "s_dtm2": ["31-12-1999 10:30", "10-06-2020 00:00", "07-08-2022 00:01"],
+            "s_tm": ["02:04:06", "12:30:45.999", "23:59:59.123456"],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          DATE(s_dt) AS dt1,
+          DATETIME(s_dt) AS dt2,
+          DATETIME(s_dtm1) AS dtm1,
+          DATETIME(s_dtm2,'%d-%m-%Y %H:%M') AS dtm2,
+          TIME(s_tm) AS tm
+        FROM self
+        """
+    )
+    assert res.schema == {
+        "dt1": pl.Date,
+        "dt2": pl.Datetime("us"),
+        "dtm1": pl.Datetime("us"),
+        "dtm2": pl.Datetime("us"),
+        "tm": pl.Time,
+    }
+    assert res.rows() == [
+        (
+            date(2077, 10, 10),
+            datetime(2077, 10, 10, 0, 0),
+            datetime(1999, 12, 31, 10, 30, 45),
+            datetime(1999, 12, 31, 10, 30),
+            time(2, 4, 6),
+        ),
+        (
+            date(1942, 1, 8),
+            datetime(1942, 1, 8, 0, 0),
+            datetime(2020, 6, 10, 0, 0),
+            datetime(2020, 6, 10, 0, 0),
+            time(12, 30, 45, 999000),
+        ),
+        (
+            date(2000, 7, 5),
+            datetime(2000, 7, 5, 0, 0),
+            datetime(2022, 8, 7, 0, 1, 2, 654321),
+            datetime(2022, 8, 7, 0, 1),
+            time(23, 59, 59, 123456),
+        ),
+    ]
+
+    for fn in ("DATE", "TIME", "DATETIME"):
+        with pytest.raises(
+            SQLSyntaxError,
+            match=rf"{fn} expects 1-2 arguments \(found 3\)",
+        ):
+            pl.sql_expr(rf"{fn}(s,fmt,misc) AS xyz")
+
+
+def test_temporal_typed_literals() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          DATE '2020-12-30' AS dt,
+          TIME '00:01:02' AS tm1,
+          TIME '23:59:59.123456' AS tm2,
+          TIMESTAMP '1930-01-01 12:30:00' AS dtm1,
+          TIMESTAMP '2077-04-27T23:45:30.123456' AS dtm2
+        FROM
+          (VALUES (0)) tbl (x)
+        """,
+        eager=True,
+    )
+    assert res.to_dict(as_series=False) == {
+        "dt": [date(2020, 12, 30)],
+        "tm1": [time(0, 1, 2)],
+        "tm2": [time(23, 59, 59, 123456)],
+        "dtm1": [datetime(1930, 1, 1, 12, 30)],
+        "dtm2": [datetime(2077, 4, 27, 23, 45, 30, 123456)],
+    }
+
+
+@pytest.mark.parametrize("fn", ["DATE", "TIME", "TIMESTAMP"])
+def test_typed_literals_errors(fn: str) -> None:
+    with pytest.raises(SQLSyntaxError, match=f"invalid {fn} literal '999'"):
+        pl.sql_expr(f"{fn} '999'")
 
 
 @pytest.mark.parametrize(

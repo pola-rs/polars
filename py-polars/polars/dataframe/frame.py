@@ -31,6 +31,11 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._typing import (
+    DbWriteMode,
+    JaxExportType,
+    TorchExportType,
+)
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -49,9 +54,11 @@ from polars._utils.deprecation import (
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
+from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     is_bool_sequence,
+    no_default,
     normalize_filepath,
     parse_version,
     scale_bytes,
@@ -91,6 +98,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
+    ColumnNotFoundError,
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
@@ -98,7 +106,6 @@ from polars.exceptions import (
 from polars.functions import col, lit
 from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
-from polars.type_aliases import DbWriteMode, JaxExportType, TorchExportType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -120,9 +127,7 @@ if TYPE_CHECKING:
     from xlsxwriter import Workbook
 
     from polars import DataType, Expr, LazyFrame, Series
-    from polars.interchange.dataframe import PolarsDataFrame
-    from polars.ml.torch import PolarsDataset
-    from polars.type_aliases import (
+    from polars._typing import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -156,6 +161,7 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
         SelectorType,
+        SerializationFormat,
         SingleColSelector,
         SingleIndexSelector,
         SizeUnit,
@@ -163,6 +169,9 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
+    from polars._utils.various import NoDefault
+    from polars.interchange.dataframe import PolarsDataFrame
+    from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -413,11 +422,11 @@ class DataFrame:
             raise TypeError(msg)
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> DataFrame:
+    def deserialize(
+        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+    ) -> DataFrame:
         """
         Read a serialized DataFrame from a file.
-
-        .. versionadded:: 0.20.31
 
         Parameters
         ----------
@@ -425,17 +434,27 @@ class DataFrame:
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
+        format
+            The format with which the DataFrame was serialized. Options:
+
+            - `"binary"`: Deserialize from binary format (bytes). This is the default.
+            - `"json"`: Deserialize from JSON format (string).
 
         See Also
         --------
         DataFrame.serialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
         >>> import io
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4.0, 5.0, 6.0]})
-        >>> json = df.serialize()
-        >>> pl.DataFrame.deserialize(io.StringIO(json))
+        >>> bytes = df.serialize()
+        >>> pl.DataFrame.deserialize(io.BytesIO(bytes))
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -452,7 +471,15 @@ class DataFrame:
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
 
-        return cls._from_pydf(PyDataFrame.deserialize(source))
+        if format == "binary":
+            deserializer = PyDataFrame.deserialize_binary
+        elif format == "json":
+            deserializer = PyDataFrame.deserialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return cls._from_pydf(deserializer(source))
 
     @classmethod
     def _from_pydf(cls, py_df: PyDataFrame) -> DataFrame:
@@ -560,9 +587,14 @@ class DataFrame:
         return self
 
     @property
+    @unstable()
     def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Polars does not implement plotting logic itself, but instead defers to
         hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_
@@ -654,7 +686,6 @@ class DataFrame:
         Format measure_b values to two decimal places:
 
         >>> df.style.fmt_number("measure_b", decimals=2)  # doctest: +SKIP
-
         """
         if not _GREAT_TABLES_AVAILABLE:
             msg = "great_tables is required for `.style`"
@@ -2344,54 +2375,81 @@ class DataFrame:
         return output.getvalue()
 
     @overload
-    def serialize(self, file: None = ...) -> str: ...
+    def serialize(
+        self, file: None = ..., *, format: Literal["binary"] = ...
+    ) -> bytes: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None: ...
+    def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
 
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
+    @overload
+    def serialize(
+        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+    ) -> None: ...
+
+    def serialize(
+        self,
+        file: IOBase | str | Path | None = None,
+        *,
+        format: SerializationFormat = "binary",
+    ) -> bytes | str | None:
+        r"""
         Serialize this DataFrame to a file or string in JSON format.
-
-        .. versionadded:: 0.20.31
 
         Parameters
         ----------
         file
             File path or writable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+        format
+            The format in which to serialize. Options:
+
+            - `"binary"`: Serialize to binary format (bytes). This is the default.
+            - `"json"`: Serialize to JSON format (string).
+
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
 
         Examples
         --------
+        Serialize the DataFrame into a binary representation.
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...     }
         ... )
-        >>> df.serialize()
-        '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
+        >>> bytes = df.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1gcolumns\x82\xa4dnamecfoohdatatypeeInt64lbit_settings\x00fvalues\x83...'
+
+        The bytes can later be deserialized back into a DataFrame.
+
+        >>> import io
+        >>> pl.DataFrame.deserialize(io.BytesIO(bytes))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 6   │
+        │ 2   ┆ 7   │
+        │ 3   ┆ 8   │
+        └─────┴─────┘
         """
-
-        def serialize_to_string() -> str:
-            with BytesIO() as buf:
-                self._df.serialize(buf)
-                json_bytes = buf.getvalue()
-            return json_bytes.decode("utf8")
-
-        if file is None:
-            return serialize_to_string()
-        elif isinstance(file, StringIO):
-            json_str = serialize_to_string()
-            file.write(json_str)
-            return None
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-            self._df.serialize(file)
-            return None
+        if format == "binary":
+            serializer = self._df.serialize_binary
+        elif format == "json":
+            serializer = self._df.serialize_json
         else:
-            self._df.serialize(file)
-            return None
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return serialize_polars_object(serializer, file, format)
 
     @overload
     def write_json(self, file: None = ...) -> str: ...
@@ -2507,6 +2565,7 @@ class DataFrame:
         datetime_format: str | None = ...,
         date_format: str | None = ...,
         time_format: str | None = ...,
+        float_scientific: bool | None = ...,
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
@@ -2526,6 +2585,7 @@ class DataFrame:
         datetime_format: str | None = ...,
         date_format: str | None = ...,
         time_format: str | None = ...,
+        float_scientific: bool | None = ...,
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
@@ -2544,6 +2604,7 @@ class DataFrame:
         datetime_format: str | None = None,
         date_format: str | None = None,
         time_format: str | None = None,
+        float_scientific: bool | None = None,
         float_precision: int | None = None,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
@@ -2582,6 +2643,9 @@ class DataFrame:
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
+        float_scientific
+            Whether to use scientific form always (true), never (false), or
+            automatically (None) for `Float32` and `Float64` datatypes.
         float_precision
             Number of decimal places to write, applied to both `Float32` and
             `Float64` datatypes.
@@ -2645,6 +2709,7 @@ class DataFrame:
             datetime_format,
             date_format,
             time_format,
+            float_scientific,
             float_precision,
             null_value,
             quote_style,
@@ -3594,7 +3659,7 @@ class DataFrame:
             Additional options to pass to the engine's associated insert method:
 
             * "sqlalchemy" - currently inserts using Pandas' `to_sql` method, though
-              this will eventually be phased out in favour of a native solution.
+              this will eventually be phased out in favor of a native solution.
             * "adbc" - inserts using the ADBC cursor's `adbc_ingest` method.
 
         Examples
@@ -3679,12 +3744,14 @@ class DataFrame:
                 )
                 raise ValueError(msg)
 
-            conn = (
-                _open_adbc_connection(connection)
+            conn, can_close_conn = (
+                (_open_adbc_connection(connection), True)
                 if isinstance(connection, str)
-                else connection
+                else (connection, False)
             )
-            with conn, conn.cursor() as cursor:
+            with (
+                conn if can_close_conn else contextlib.nullcontext()
+            ), conn.cursor() as cursor:
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
                 if adbc_version >= (0, 7):
@@ -7348,18 +7415,29 @@ class DataFrame:
         """
         return [wrap_s(s) for s in self._df.get_columns()]
 
-    def get_column(self, name: str) -> Series:
+    @overload
+    def get_column(self, name: str, *, default: Series | NoDefault = ...) -> Series: ...
+
+    @overload
+    def get_column(self, name: str, *, default: Any) -> Any: ...
+
+    def get_column(
+        self, name: str, *, default: Any | NoDefault = no_default
+    ) -> Series | Any:
         """
         Get a single column by name.
 
         Parameters
         ----------
-        name : str
-            Name of the column to retrieve.
+        name
+            String name of the column to retrieve.
+        default
+            Value to return if the column does not exist; if not explicitly set and
+            the column is not present a `ColumnNotFoundError` exception is raised.
 
         Returns
         -------
-        Series
+        Series (or arbitrary default value, if specified).
 
         See Also
         --------
@@ -7372,12 +7450,32 @@ class DataFrame:
         shape: (3,)
         Series: 'foo' [i64]
         [
-                1
-                2
-                3
+            1
+            2
+            3
         ]
+
+        Missing column handling; can optionally provide an arbitrary default value
+        to the method (otherwise a `ColumnNotFoundError` exception is raised).
+
+        >>> df.get_column("baz", default=pl.Series("baz", ["?", "?", "?"]))
+        shape: (3,)
+        Series: 'baz' [str]
+        [
+            "?"
+            "?"
+            "?"
+        ]
+        >>> res = df.get_column("baz", default=None)
+        >>> res is None
+        True
         """
-        return wrap_s(self._df.get_column(name))
+        try:
+            return wrap_s(self._df.get_column(name))
+        except ColumnNotFoundError:
+            if default is no_default:
+                raise
+            return default
 
     def fill_null(
         self,
@@ -8357,8 +8455,6 @@ class DataFrame:
         Operations on a `LazyFrame` are not executed until this is requested by either
         calling:
 
-        * :meth:`.fetch() <polars.LazyFrame.fetch>`
-            (run on a small number of rows)
         * :meth:`.collect() <polars.LazyFrame.collect>`
             (run on all data)
         * :meth:`.describe_plan() <polars.LazyFrame.describe_plan>`
@@ -8367,9 +8463,11 @@ class DataFrame:
             (print optimized query plan)
         * :meth:`.show_graph() <polars.LazyFrame.show_graph>`
             (show (un)optimized query plan as graphviz graph)
+        * :meth:`.collect_schema() <polars.LazyFrame.collect_schema>`
+            (return the final frame schema)
 
-        Lazy operations are advised because they allow for query optimization and more
-        parallelization.
+        Lazy operations are recommended because they allow for query optimization and
+        additional parallelism.
 
         Returns
         -------

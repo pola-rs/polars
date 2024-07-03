@@ -112,7 +112,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 
             if bytes_read != read_size {
                 Err(ParquetError::oos(
-                    "The page header reported the wrong page size".to_string(),
+                    "The page header reported the wrong page size",
                 ))?
             }
 

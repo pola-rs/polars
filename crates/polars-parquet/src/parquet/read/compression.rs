@@ -33,8 +33,8 @@ fn decompress_v2(
 
     if can_decompress {
         if offset > buffer.len() || offset > compressed.len() {
-            return Err(ParquetError::OutOfSpec(
-                "V2 Page Header reported incorrect offset to compressed data".to_string(),
+            return Err(ParquetError::oos(
+                "V2 Page Header reported incorrect offset to compressed data",
             ));
         }
 
@@ -43,8 +43,8 @@ fn decompress_v2(
         compression::decompress(compression, &compressed[offset..], &mut buffer[offset..])?;
     } else {
         if buffer.len() != compressed.len() {
-            return Err(ParquetError::OutOfSpec(
-                "V2 Page Header reported incorrect decompressed size".to_string(),
+            return Err(ParquetError::oos(
+                "V2 Page Header reported incorrect decompressed size",
             ));
         }
         buffer.copy_from_slice(compressed);

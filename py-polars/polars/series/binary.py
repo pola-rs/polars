@@ -6,8 +6,8 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
+    from polars._typing import IntoExpr, TransferEncoding
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExpr, TransferEncoding
 
 
 @expr_dispatch

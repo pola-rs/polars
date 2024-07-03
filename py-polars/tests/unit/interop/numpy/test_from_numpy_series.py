@@ -9,7 +9,7 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])

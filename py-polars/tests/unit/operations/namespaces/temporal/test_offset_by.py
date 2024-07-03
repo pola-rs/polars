@@ -9,7 +9,7 @@ import polars as pl
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
 
 
 @pytest.mark.parametrize(

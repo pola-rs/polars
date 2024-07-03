@@ -13,7 +13,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import SchemaDict
+    from polars._typing import SchemaDict
 
 
 @dataclass
@@ -391,6 +391,29 @@ def test_scan_with_row_index_limit_and_filter(
 
 
 @pytest.mark.write_disk()
+def test_scan_with_row_index_projected_out(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
+    subset = next(iter(data_file.df.schema.keys()))
+    df = (
+        _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
+        .select(subset)
+        .collect()
+    )
+
+    if force_async:
+        _assert_force_async(capfd)
+
+    assert_frame_equal(df, data_file.df.select(subset))
+
+
+@pytest.mark.write_disk()
 def test_scan_with_row_index_filter_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
@@ -471,3 +494,38 @@ def test_scan_directory(
 
     out = scan(tmp_path).collect()
     assert_frame_equal(out, df)
+
+
+def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
+    for dir in ["dir1", "dir2", "dir3"]:
+        (tmp_path / dir).mkdir()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df.write_parquet(tmp_path / "dir1/data.bin")
+    df.write_parquet(tmp_path / "dir2/data.parquet")
+    df.write_parquet(tmp_path / "data.parquet")
+
+    assert_frame_equal(pl.scan_parquet(tmp_path / "**/*.bin").collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "**/data*.bin").collect(), df)
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "**/*").collect(), pl.concat(3 * [df])
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+
+
+@pytest.mark.parametrize("file_name", ["a b", "a %25 b"])
+def test_scan_async_whitespace_in_path(
+    tmp_path: Path, monkeypatch: Any, file_name: str
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / f"{file_name}.parquet"
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(path)
+    assert_frame_equal(pl.scan_parquet(path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*.parquet").collect(), df)
+    path.unlink()

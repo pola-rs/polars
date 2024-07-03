@@ -27,7 +27,10 @@ pub fn decode(values: &[u8]) -> (u64, usize) {
     #[cfg(target_feature = "bmi2")]
     {
         if polars_utils::cpuid::has_fast_bmi2() && values.len() >= 8 {
-            return unsafe { decode_uleb_bmi2(values) };
+            let (result, consumed) = unsafe { decode_uleb_bmi2(values) };
+            if consumed <= 8 {
+                return (result, consumed);
+            }
         }
     }
 

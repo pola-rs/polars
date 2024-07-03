@@ -102,10 +102,14 @@ pub fn page_to_vec<T: NativeType>(
             NativePageState::Required(values) => Ok(values.map(Some).collect()),
             NativePageState::RequiredDictionary(dict) => dict
                 .indexes
+                .iter()
                 .map(|x| dict.dict.value(x as usize).copied().map(Some))
                 .collect(),
             NativePageState::OptionalDictionary(validity, dict) => {
-                let values = dict.indexes.map(|x| dict.dict.value(x as usize).copied());
+                let values = dict
+                    .indexes
+                    .iter()
+                    .map(|x| dict.dict.value(x as usize).copied());
                 deserialize_optional(validity, values)
             },
         },

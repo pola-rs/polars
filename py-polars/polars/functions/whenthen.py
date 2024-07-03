@@ -10,7 +10,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars.type_aliases import IntoExprColumn
+    from polars._typing import IntoExprColumn
 
 
 def when(

@@ -332,4 +332,9 @@ impl LazyFileListReader for LazyCsvReader {
         };
         concat_impl(&lfs, args)
     }
+
+    /// [CloudOptions] used to list files.
+    fn cloud_options(&self) -> Option<&CloudOptions> {
+        self.cloud_options.as_ref()
+    }
 }

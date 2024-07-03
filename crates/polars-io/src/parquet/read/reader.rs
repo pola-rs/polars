@@ -80,22 +80,38 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Set the [`Schema`] if already known. This must be exactly the same as
-    /// the schema in the file itself.
-    pub fn with_schema(mut self, schema: Option<ArrowSchemaRef>) -> Self {
-        self.schema = schema;
-        self
+    /// Ensure the schema of the file matches the given schema. Calling this
+    /// after setting the projection will ensure only the projected indices
+    /// are checked.
+    pub fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
+        let self_schema = self.schema()?;
+        let self_schema = self_schema.as_ref();
+
+        if let Some(ref projection) = self.projection {
+            let projection = projection.as_slice();
+
+            ensure_matching_schema(
+                &schema.try_project(projection)?,
+                &self_schema.try_project(projection)?,
+            )?;
+        } else {
+            ensure_matching_schema(schema, self_schema)?;
+        }
+
+        Ok(self)
     }
 
     /// [`Schema`] of the file.
     pub fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
-        match &self.schema {
-            Some(schema) => Ok(schema.clone()),
+        self.schema = Some(match &self.schema {
+            Some(schema) => schema.clone(),
             None => {
                 let metadata = self.get_metadata()?;
-                Ok(Arc::new(read::infer_schema(metadata)?))
+                Arc::new(read::infer_schema(metadata)?)
             },
-        }
+        });
+
+        Ok(self.schema.clone().unwrap())
     }
 
     /// Use statistics in the parquet to determine if pages
@@ -226,7 +242,6 @@ impl ParquetAsyncReader {
     pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
-        schema: Option<ArrowSchemaRef>,
         metadata: Option<FileMetaDataRef>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
@@ -238,20 +253,40 @@ impl ParquetAsyncReader {
             predicate: None,
             use_statistics: true,
             hive_partition_columns: None,
-            schema,
+            schema: None,
             parallel: Default::default(),
         })
     }
 
+    pub async fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
+        let self_schema = self.schema().await?;
+        let self_schema = self_schema.as_ref();
+
+        if let Some(ref projection) = self.projection {
+            let projection = projection.as_slice();
+
+            ensure_matching_schema(
+                &schema.try_project(projection)?,
+                &self_schema.try_project(projection)?,
+            )?;
+        } else {
+            ensure_matching_schema(schema, self_schema)?;
+        }
+
+        Ok(self)
+    }
+
     pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
-        Ok(match self.schema.as_ref() {
+        self.schema = Some(match self.schema.as_ref() {
             Some(schema) => Arc::clone(schema),
             None => {
                 let metadata = self.reader.get_metadata().await?;
                 let arrow_schema = polars_parquet::arrow::read::infer_schema(metadata)?;
                 Arc::new(arrow_schema)
             },
-        })
+        });
+
+        Ok(self.schema.clone().unwrap())
     }
 
     pub async fn num_rows(&mut self) -> PolarsResult<usize> {

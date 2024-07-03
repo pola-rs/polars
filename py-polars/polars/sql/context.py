@@ -12,6 +12,7 @@ from typing import (
     overload,
 )
 
+from polars._typing import FrameType
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals
@@ -23,7 +24,6 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.lazyframe import LazyFrame
 from polars.series import Series
-from polars.type_aliases import FrameType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext

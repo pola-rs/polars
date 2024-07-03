@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PivotAgg
+    from polars._typing import PivotAgg
 
 
 def test_pivot() -> None:

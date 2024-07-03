@@ -1,3 +1,5 @@
+use recursive::recursive;
+
 use super::*;
 
 impl IR {
@@ -61,6 +63,7 @@ impl IR {
     }
 
     /// Get the schema of the logical plan node.
+    #[recursive]
     pub fn schema<'a>(&'a self, arena: &'a Arena<IR>) -> Cow<'a, SchemaRef> {
         use IR::*;
         let schema = match self {

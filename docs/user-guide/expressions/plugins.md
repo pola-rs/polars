@@ -97,7 +97,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 from polars.plugins import register_plugin_function
-from polars.type_aliases import IntoExpr
+from polars._typing import IntoExpr
 
 
 def pig_latinnify(expr: IntoExpr) -> pl.Expr:

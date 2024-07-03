@@ -53,9 +53,9 @@ impl StringNameSpace {
 
     /// Uses aho-corasick to replace many patterns.
     /// # Arguments
-    /// - `patterns`: an expression that evaluates to an String column
-    /// - `replace_with`: an expression that evaluates to an String column
-    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    /// - `patterns`: an expression that evaluates to a String column
+    /// - `replace_with`: an expression that evaluates to a String column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case-insensitive matching.
     ///   When this option is enabled, searching will be performed without respect to case for
     ///   ASCII letters (a-z and A-Z) only.
     #[cfg(feature = "find_many")]
@@ -70,6 +70,31 @@ impl StringNameSpace {
                 ascii_case_insensitive,
             }),
             &[patterns, replace_with],
+            false,
+            false,
+        )
+    }
+
+    /// Uses aho-corasick to replace many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to a String column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case-insensitive matching.
+    ///   When this option is enabled, searching will be performed without respect to case for
+    ///   ASCII letters (a-z and A-Z) only.
+    /// - `overlapping`: Whether matches may overlap.
+    #[cfg(feature = "find_many")]
+    pub fn extract_many(
+        self,
+        patterns: Expr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ExtractMany {
+                ascii_case_insensitive,
+                overlapping,
+            }),
+            &[patterns],
             false,
             false,
         )

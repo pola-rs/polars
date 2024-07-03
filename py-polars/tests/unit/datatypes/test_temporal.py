@@ -26,7 +26,7 @@ from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         PolarsTemporalType,
         TimeUnit,
@@ -996,7 +996,7 @@ def test_datetime_instance_selection() -> None:
         assert res == [pl.Datetime(time_unit)]
         assert len(df.filter(pl.col(time_unit) == test_data[time_unit][0])) == 1
 
-    assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
+    assert list(df.select(pl.exclude(DATETIME_DTYPES))) == []
 
 
 def test_sum_duration() -> None:

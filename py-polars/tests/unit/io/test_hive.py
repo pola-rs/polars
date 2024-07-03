@@ -1,6 +1,11 @@
+import os
+import sys
+import urllib.parse
 import warnings
 from collections import OrderedDict
+from datetime import datetime
 from functools import partial
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any, Callable
 
@@ -8,30 +13,25 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import DuplicateError, SchemaFieldNotFoundError
+from polars.exceptions import SchemaFieldNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-@pytest.mark.skip(
-    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
-)
-@pytest.mark.xdist_group("streaming")
-@pytest.mark.write_disk()
-def test_hive_partitioned_predicate_pushdown(
-    io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
+def impl_test_hive_partitioned_predicate_pushdown(
+    io_files_path: Path,
+    tmp_path: Path,
+    monkeypatch: Any,
+    capfd: Any,
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
 
     root = tmp_path / "partitioned_data"
 
-    # Ignore the pyarrow legacy warning until we can write properly with new settings.
-    warnings.filterwarnings("ignore")
     pq.write_to_dataset(
         df.to_arrow(),
         root_path=root,
         partition_cols=["category", "fats_g"],
-        use_legacy_dataset=True,
     )
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=False)
     # checks schema
@@ -72,6 +72,79 @@ def test_hive_partitioned_predicate_pushdown(
     )
 
 
+@pytest.mark.xdist_group("streaming")
+@pytest.mark.write_disk()
+def test_hive_partitioned_predicate_pushdown(
+    io_files_path: Path,
+    tmp_path: Path,
+    monkeypatch: Any,
+    capfd: Any,
+) -> None:
+    impl_test_hive_partitioned_predicate_pushdown(
+        io_files_path,
+        tmp_path,
+        monkeypatch,
+        capfd,
+    )
+
+
+def init_env_spawned_single_threaded_async() -> None:
+    os.environ["SPAWNED_PROCESS"] = "1"
+    os.environ["POLARS_MAX_THREADS"] = "1"
+    os.environ["POLARS_PREFETCH_SIZE"] = "1"
+
+
+@pytest.mark.xdist_group("streaming")
+@pytest.mark.write_disk()
+def test_hive_partitioned_predicate_pushdown_single_threaded_async(
+    io_files_path: Path,
+    tmp_path: Path,
+    monkeypatch: Any,
+    capfd: Any,
+) -> None:
+    # We need to run this in a separate process to avoid leakage of
+    # `POLARS_MAX_THREADS`. You can test this locally (on a
+    # system with > 1 threads) by removing the process-spawning logic and
+    # directly calling `init_env_spawned_single_threaded_async`, and then
+    # running:
+    # ```
+    # python -m pytest py-polars/tests/unit/io/ -m '' -k \
+    #   test_hive_partitioned_predicate_pushdown
+    # ```
+    # And observe that the below assertion of `thread_pool_size` will fail.
+    if "SPAWNED_PROCESS" not in os.environ:
+        with get_context("spawn").Pool(
+            1, initializer=init_env_spawned_single_threaded_async
+        ) as p:
+            pytest_path = Path(__file__).relative_to(Path.cwd())
+            pytest_path: str = f"{pytest_path}::test_hive_partitioned_predicate_pushdown_single_threaded_async"  # type: ignore[no-redef]
+
+            assert (
+                p.map(
+                    pytest.main,  # type: ignore[arg-type]
+                    [
+                        [
+                            pytest_path,
+                            "-m",
+                            "",
+                        ]
+                    ],
+                )[0]
+                == 0
+            )
+
+        return
+
+    assert pl.thread_pool_size() == 1
+
+    impl_test_hive_partitioned_predicate_pushdown(
+        io_files_path,
+        tmp_path,
+        monkeypatch,
+        capfd,
+    )
+
+
 @pytest.mark.write_disk()
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
@@ -102,9 +175,6 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     assert result.to_dict(as_series=False) == expected
 
 
-@pytest.mark.skip(
-    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
-)
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
@@ -139,9 +209,6 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
         ]
 
 
-@pytest.mark.skip(
-    reason="Broken by pyarrow 15 release: https://github.com/pola-rs/polars/issues/13892"
-)
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(
@@ -178,17 +245,6 @@ def test_hive_partitioned_projection_pushdown(
         result = q.select("category").collect()
 
         assert_frame_equal(result, expected)
-
-
-@pytest.mark.write_disk()
-def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
-    df = pl.read_ipc(io_files_path / "*.ipc")
-    root = tmp_path / "sugars_g=10"
-    root.mkdir()
-    df.write_parquet(root / "file.parquet")
-
-    with pytest.raises(DuplicateError, match="invalid Hive partition schema"):
-        pl.scan_parquet(tmp_path, hive_partitioning=True).collect()
 
 
 @pytest.mark.write_disk()
@@ -443,3 +499,150 @@ def test_hive_partition_schema_inference(tmp_path: Path) -> None:
         out = pl.scan_parquet(tmp_path).collect()
 
         assert_series_equal(out["a"], expected[i])
+
+
+@pytest.mark.write_disk()
+def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
+
+    dfs = [
+        pl.DataFrame({"x": 1}),
+        pl.DataFrame({"x": 2}),
+        pl.DataFrame({"x": 3}),
+    ]
+
+    paths = [
+        tmp_path / "a=1/b=1/data.bin",
+        tmp_path / "a=2/b=2/data.bin",
+        tmp_path / "a=3/b=3/data.bin",
+    ]
+
+    for i in range(3):
+        paths[i].parent.mkdir(exist_ok=True, parents=True)
+        dfs[i].write_parquet(paths[i])
+
+    lf = pl.scan_parquet(tmp_path)
+
+    assert_frame_equal(
+        lf.collect(), pl.DataFrame({k: [1, 2, 3] for k in ["x", "a", "b"]})
+    )
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("projection_pushdown", [True, False])
+def test_hive_partition_columns_contained_in_file(
+    tmp_path: Path, projection_pushdown: bool
+) -> None:
+    path = tmp_path / "a=1/b=2/data.bin"
+    path.parent.mkdir(exist_ok=True, parents=True)
+    df = pl.DataFrame(
+        {"x": 1, "a": 1, "b": 2, "y": 1},
+        schema={"x": pl.Int32, "a": pl.Int8, "b": pl.Int16, "y": pl.Int32},
+    )
+    df.write_parquet(path)
+
+    def assert_with_projections(lf: pl.LazyFrame, df: pl.DataFrame) -> None:
+        for projection in [
+            ["a"],
+            ["b"],
+            ["x"],
+            ["y"],
+            ["a", "x"],
+            ["b", "x"],
+            ["a", "y"],
+            ["b", "y"],
+            ["x", "y"],
+            ["a", "b", "x"],
+            ["a", "b", "y"],
+        ]:
+            assert_frame_equal(
+                lf.select(projection).collect(projection_pushdown=projection_pushdown),
+                df.select(projection),
+            )
+
+    lf = pl.scan_parquet(path, hive_partitioning=True)
+    rhs = df
+    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_with_projections(lf, rhs)
+
+    lf = pl.scan_parquet(
+        path,
+        hive_schema={"a": pl.String, "b": pl.String},
+        hive_partitioning=True,
+    )
+    rhs = df.with_columns(pl.col("a", "b").cast(pl.String))
+    assert_frame_equal(
+        lf.collect(projection_pushdown=projection_pushdown),
+        rhs,
+    )
+    assert_with_projections(lf, rhs)
+
+
+@pytest.mark.write_disk()
+def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "date1": [
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                None,
+            ],
+            "date2": [
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                None,
+                datetime(2023, 3, 1),
+            ],
+            "x": [1, 2, 3, 4],
+        },
+        schema={"date1": pl.Date, "date2": pl.Datetime, "x": pl.Int32},
+    )
+
+    root = tmp_path / "pyarrow"
+    pq.write_to_dataset(
+        df.to_arrow(),
+        root_path=root,
+        partition_cols=["date1", "date2"],
+    )
+
+    lf = pl.scan_parquet(
+        root, hive_schema=df.clear().select("date1", "date2").collect_schema()
+    )
+    assert_frame_equal(lf.collect(), df.select("x", "date1", "date2"))
+
+    lf = pl.scan_parquet(root)
+    assert_frame_equal(lf.collect(), df.select("x", "date1", "date2"))
+
+    lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+    assert_frame_equal(
+        lf.collect(),
+        df.select("x", "date1", "date2").with_columns(
+            pl.col("date1", "date2").cast(pl.String)
+        ),
+    )
+
+    for perc_escape in [True, False] if sys.platform != "win32" else [True]:
+        root = tmp_path / f"includes_hive_cols_in_file_{perc_escape}"
+        for (date1, date2), part_df in df.group_by(
+            pl.col("date1").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+            pl.col("date2").cast(pl.String).fill_null("__HIVE_DEFAULT_PARTITION__"),
+        ):
+            if perc_escape:
+                date2 = urllib.parse.quote(date2)  # type: ignore[call-overload]
+
+            path = root / f"date1={date1}/date2={date2}/data.bin"
+            path.parent.mkdir(exist_ok=True, parents=True)
+            part_df.write_parquet(path)
+
+        # The schema for the hive columns is included in the file, so it should
+        # just work
+        lf = pl.scan_parquet(root)
+        assert_frame_equal(lf.collect(), df)
+
+        lf = pl.scan_parquet(root, try_parse_hive_dates=False)
+        assert_frame_equal(
+            lf.collect(),
+            df.with_columns(pl.col("date1", "date2").cast(pl.String)),
+        )

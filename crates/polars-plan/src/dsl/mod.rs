@@ -368,7 +368,7 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 returns_scalar: true,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: true,
+                cast_to_supertypes: Some(Default::default()),
                 ..Default::default()
             },
         }
@@ -685,6 +685,12 @@ impl Expr {
         input.push(self);
         input.extend_from_slice(arguments);
 
+        let cast_to_supertypes = if cast_to_supertypes {
+            Some(Default::default())
+        } else {
+            None
+        };
+
         Expr::Function {
             input,
             function: function_expr,
@@ -707,6 +713,12 @@ impl Expr {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
         input.extend_from_slice(arguments);
+
+        let cast_to_supertypes = if cast_to_supertypes {
+            Some(Default::default())
+        } else {
+            None
+        };
 
         Expr::Function {
             input,
@@ -1007,7 +1019,7 @@ impl Expr {
             function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: true,
+                cast_to_supertypes: Some(Default::default()),
                 ..Default::default()
             },
         }

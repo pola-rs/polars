@@ -30,6 +30,7 @@
 //!     but also with `QUOTE_NON_NULL = false`.
 //!  3. A serializer that quotes only non-nulls. This is a bare serializer with `QUOTE_NON_NULL = true`.
 
+use std::fmt::LowerExp;
 use std::io::Write;
 
 use arrow::array::{Array, BooleanArray, NullArray, PrimitiveArray, Utf8ViewArray};
@@ -38,6 +39,7 @@ use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use memchr::{memchr3, memchr_iter};
+use num_traits::NumCast;
 use polars_core::prelude::*;
 
 use crate::csv::write::{QuoteStyle, SerializeOptions};
@@ -121,7 +123,7 @@ fn integer_serializer<I: NativeType + itoa::Integer>(array: &PrimitiveArray<I>) 
     })
 }
 
-fn float_serializer_no_precision<I: NativeType + ryu::Float>(
+fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
@@ -139,7 +141,60 @@ fn float_serializer_no_precision<I: NativeType + ryu::Float>(
     })
 }
 
-fn float_serializer_with_precision<I: NativeType>(
+fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        // Float writing into a buffer of `Vec<u8>` cannot fail.
+        let _ = write!(buf, "{item:.e}");
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let v: f64 = NumCast::from(item).unwrap();
+        let value = v.to_string();
+        buf.extend_from_slice(value.as_bytes());
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
+    array: &PrimitiveArray<I>,
+    precision: usize,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        // Float writing into a buffer of `Vec<u8>` cannot fail.
+        let _ = write!(buf, "{item:.precision$e}");
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_with_precision_positional<I: NativeType>(
     array: &PrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer {
@@ -178,6 +233,24 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
         array
             .as_any()
             .downcast_ref::<BooleanArray>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+#[cfg(feature = "dtype-decimal")]
+fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer {
+    let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
+
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let value = arrow::compute::decimal::format_decimal(item, scale, trim_zeros);
+        buf.extend_from_slice(value.as_str().as_bytes());
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i128>>()
             .expect(ARRAY_MISMATCH_MSG)
             .iter()
     })
@@ -463,12 +536,30 @@ pub(super) fn serializer_for<'a>(
         DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
         DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
         DataType::Float32 => match options.float_precision {
-            Some(precision) => quote_if_always!(float_serializer_with_precision::<f32>, precision),
-            None => quote_if_always!(float_serializer_no_precision::<f32>),
+            Some(precision) => match options.float_scientific {
+                Some(true) => {
+                    quote_if_always!(float_serializer_with_precision_scientific::<f32>, precision)
+                },
+                _ => quote_if_always!(float_serializer_with_precision_positional::<f32>, precision),
+            },
+            None => match options.float_scientific {
+                Some(true) => quote_if_always!(float_serializer_no_precision_scientific::<f32>),
+                Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f32>),
+                None => quote_if_always!(float_serializer_no_precision_autoformat::<f32>),
+            },
         },
         DataType::Float64 => match options.float_precision {
-            Some(precision) => quote_if_always!(float_serializer_with_precision::<f64>, precision),
-            None => quote_if_always!(float_serializer_no_precision::<f64>),
+            Some(precision) => match options.float_scientific {
+                Some(true) => {
+                    quote_if_always!(float_serializer_with_precision_scientific::<f64>, precision)
+                },
+                _ => quote_if_always!(float_serializer_with_precision_positional::<f64>, precision),
+            },
+            None => match options.float_scientific {
+                Some(true) => quote_if_always!(float_serializer_no_precision_scientific::<f64>),
+                Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f64>),
+                None => quote_if_always!(float_serializer_no_precision_autoformat::<f64>),
+            },
         },
         DataType::Null => quote_if_always!(null_serializer),
         DataType::Boolean => {
@@ -592,6 +683,18 @@ pub(super) fn serializer_for<'a>(
                 },
                 array,
             )
+        },
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, scale) => {
+            let array = array.as_any().downcast_ref().unwrap();
+            match options.quote_style {
+                QuoteStyle::Never => Box::new(decimal_serializer(array, scale.unwrap_or(0)))
+                    as Box<dyn Serializer + Send>,
+                _ => Box::new(quote_serializer(decimal_serializer(
+                    array,
+                    scale.unwrap_or(0),
+                ))),
+            }
         },
         _ => polars_bail!(ComputeError: "datatype {dtype} cannot be written to csv"),
     };

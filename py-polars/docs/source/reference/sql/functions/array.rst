@@ -105,7 +105,7 @@ Returns the value at the given index in the array.
       SELECT
         foo, bar,
         ARRAY_GET(foo, 1) AS foo_at_1,
-        ARRAY_GET(bar, 2) AS bar_at_2
+        ARRAY_GET(bar, 3) AS bar_at_2
       FROM self
     """)
     # shape: (2, 4)
@@ -114,8 +114,8 @@ Returns the value at the given index in the array.
     # │ ---       ┆ ---        ┆ ---      ┆ ---      │
     # │ list[i64] ┆ list[i64]  ┆ i64      ┆ i64      │
     # ╞═══════════╪════════════╪══════════╪══════════╡
-    # │ [1, 2]    ┆ [6, 7]     ┆ 2        ┆ null     │
-    # │ [4, 3, 2] ┆ [8, 9, 10] ┆ 3        ┆ 10       │
+    # │ [1, 2]    ┆ [6, 7]     ┆ 1        ┆ null     │
+    # │ [4, 3, 2] ┆ [8, 9, 10] ┆ 4        ┆ 10       │
     # └───────────┴────────────┴──────────┴──────────┘
 
 .. _array_length:

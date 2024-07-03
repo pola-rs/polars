@@ -22,6 +22,7 @@ pub struct HiveOptions {
     pub enabled: Option<bool>,
     pub hive_start_idx: usize,
     pub schema: Option<SchemaRef>,
+    pub try_parse_dates: bool,
 }
 
 impl Default for HiveOptions {
@@ -30,6 +31,7 @@ impl Default for HiveOptions {
             enabled: Some(true),
             hive_start_idx: 0,
             schema: None,
+            try_parse_dates: true,
         }
     }
 }

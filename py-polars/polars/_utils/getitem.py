@@ -23,7 +23,7 @@ from polars.meta.index_type import get_index_type
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
-    from polars.type_aliases import (
+    from polars._typing import (
         MultiColSelector,
         MultiIndexSelector,
         SingleColSelector,

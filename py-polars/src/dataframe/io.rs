@@ -1,10 +1,9 @@
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
-use std::ops::Deref;
 
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::mmap::{try_create_file, ReaderBytes};
+use polars::io::mmap::try_create_file;
 use polars::io::RowIndex;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
@@ -187,27 +186,6 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn deserialize(py: Python, mut py_f: Bound<PyAny>) -> PyResult<Self> {
-        use crate::file::read_if_bytesio;
-        py_f = read_if_bytesio(py_f);
-        let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
-
-        py.allow_threads(move || {
-            let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
-            let bytes = mmap_read.deref();
-            match serde_json::from_slice::<DataFrame>(bytes) {
-                Ok(df) => Ok(df.into()),
-                Err(e) => {
-                    let msg = format!("{e}");
-                    let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
-                    Err(PyErr::from(e))
-                },
-            }
-        })
-    }
-
-    #[staticmethod]
-    #[cfg(feature = "json")]
     pub fn read_json(
         py: Python,
         mut py_f: Bound<PyAny>,
@@ -370,6 +348,7 @@ impl PyDataFrame {
         datetime_format: Option<String>,
         date_format: Option<String>,
         time_format: Option<String>,
+        float_scientific: Option<bool>,
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
@@ -390,6 +369,7 @@ impl PyDataFrame {
                     .with_datetime_format(datetime_format)
                     .with_date_format(date_format)
                     .with_time_format(time_format)
+                    .with_float_scientific(float_scientific)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
                     .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
@@ -408,6 +388,7 @@ impl PyDataFrame {
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)
                 .with_time_format(time_format)
+                .with_float_scientific(float_scientific)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
@@ -455,14 +436,6 @@ impl PyDataFrame {
         }
 
         Ok(())
-    }
-
-    #[cfg(feature = "json")]
-    pub fn serialize(&mut self, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-        serde_json::to_writer(file, &self.df)
-            .map_err(|e| polars_err!(ComputeError: "{e}"))
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")).into())
     }
 
     #[cfg(feature = "json")]

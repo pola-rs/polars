@@ -110,6 +110,25 @@ def test_is_between(foods_ipc_path: Path) -> None:
     assert not any((22 <= cal <= 30) for cal in out["calories"])
 
 
+def test_starts_with() -> None:
+    lf = pl.LazyFrame(
+        {
+            "x": ["aaa", "bbb", "a"],
+            "y": ["abc", "b", "aa"],
+        },
+    )
+    assert lf.sql("SELECT x ^@ 'a' AS x_starts_with_a FROM self").collect().rows() == [
+        (True,),
+        (False,),
+        (True,),
+    ]
+    assert lf.sql("SELECT x ^@ y AS x_starts_with_y FROM self").collect().rows() == [
+        (False,),
+        (True,),
+        (False,),
+    ]
+
+
 @pytest.mark.parametrize("match_float", [False, True])
 def test_unary_ops_8890(match_float: bool) -> None:
     with pl.SQLContext(

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, IntoExprColumn
+    from polars._typing import ClosedInterval, IntoExprColumn
 
 
 @overload

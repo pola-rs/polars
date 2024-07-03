@@ -327,6 +327,7 @@ fn get_arithmetic_field(
                 | (Date, Duration(_))
                 | (Duration(_), Time)
                 | (Time, Duration(_)) => try_get_supertype(left_field.data_type(), &right_type)?,
+                (Datetime(tu, _), Date) | (Date, Datetime(tu, _)) => Duration(*tu),
                 // T - T != T if T is a datetime / date
                 (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, tur)),
                 (_, Datetime(_, _)) | (Datetime(_, _), _) => {

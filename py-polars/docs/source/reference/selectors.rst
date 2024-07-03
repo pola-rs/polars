@@ -35,11 +35,22 @@ Set operations
 
 Selectors support the following ``set`` operations:
 
-- UNION:        ``A | B``
-- INTERSECTION: ``A & B``
-- DIFFERENCE:   ``A - B``
-- EXCLUSIVE OR: ``A ^ B``
-- COMPLEMENT:   ``~A``
+.. table::
+   :widths: 20 60
+
+   +------------------------+------------+
+   | Operation              | Expression |
+   +========================+============+
+   | `UNION`                | ``A | B``  |
+   +------------------------+------------+
+   | `INTERSECTION`         | ``A & B``  |
+   +------------------------+------------+
+   | `DIFFERENCE`           | ``A - B``  |
+   +------------------------+------------+
+   | `SYMMETRIC DIFFERENCE` | ``A ^ B``  |
+   +------------------------+------------+
+   | `COMPLEMENT`           | ``~A``     |
+   +------------------------+------------+
 
 Note that both individual selector results and selector set operations will always return
 matching columns in the same order as the underlying frame schema.
@@ -91,7 +102,7 @@ Examples
         "Lmn": pl.Duration,
     }
 
-    # Select the EXCLUSIVE OR of numeric columns and columns that contain an "e"
+    # Select the SYMMETRIC DIFFERENCE of numeric columns and columns that contain an "e"
     assert df.select(cs.contains("e") ^ cs.numeric()).schema == {
         "abc": UInt16,
         "bbb": UInt32,

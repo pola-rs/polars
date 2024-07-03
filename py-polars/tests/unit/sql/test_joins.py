@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -323,3 +323,145 @@ def test_implicit_joins() -> None:
             WHERE t1.a = t2.b
             """
         )
+
+
+def test_natural_joins_01() -> None:
+    df1 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 4],
+            "FirstName": ["Jernau Morat", "Cheradenine", "Byr", "Diziet"],
+            "LastName": ["Gurgeh", "Zakalwe", "Genar-Hofoen", "Sma"],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 5],
+            "Role": ["Protagonist", "Protagonist", "Protagonist", "Antagonist"],
+            "Book": [
+                "Player of Games",
+                "Use of Weapons",
+                "Excession",
+                "Consider Phlebas",
+            ],
+        }
+    )
+    df3 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 4],
+            "Affiliation": ["Culture", "Culture", "Culture", "Shellworld"],
+            "Species": ["Pan-human", "Human", "Human", "Oct"],
+        }
+    )
+    df4 = pl.DataFrame(
+        {
+            "CharacterID": [1, 2, 3, 6],
+            "Ship": [
+                "Limiting Factor",
+                "Xenophobe",
+                "Grey Area",
+                "Falling Outside The Normal Moral Constraints",
+            ],
+            "Drone": ["Flere-Imsaho", "Skaffen-Amtiskaw", "Eccentric", "Psychopath"],
+        }
+    )
+    with pl.SQLContext(
+        {"df1": df1, "df2": df2, "df3": df3, "df4": df4}, eager=True
+    ) as ctx:
+        # note: use of 'COLUMNS' is a neat way to drop
+        # all non-coalesced "<name>:<suffix>" cols
+        res = ctx.execute(
+            """
+            SELECT COLUMNS('^[^:]*$')
+            FROM df1
+            NATURAL LEFT JOIN df2
+            NATURAL INNER JOIN df3
+            NATURAL LEFT JOIN df4
+            ORDER BY ALL
+            """
+        )
+        assert res.rows(named=True) == [
+            {
+                "CharacterID": 1,
+                "FirstName": "Jernau Morat",
+                "LastName": "Gurgeh",
+                "Role": "Protagonist",
+                "Book": "Player of Games",
+                "Affiliation": "Culture",
+                "Species": "Pan-human",
+                "Ship": "Limiting Factor",
+                "Drone": "Flere-Imsaho",
+            },
+            {
+                "CharacterID": 2,
+                "FirstName": "Cheradenine",
+                "LastName": "Zakalwe",
+                "Role": "Protagonist",
+                "Book": "Use of Weapons",
+                "Affiliation": "Culture",
+                "Species": "Human",
+                "Ship": "Xenophobe",
+                "Drone": "Skaffen-Amtiskaw",
+            },
+            {
+                "CharacterID": 3,
+                "FirstName": "Byr",
+                "LastName": "Genar-Hofoen",
+                "Role": "Protagonist",
+                "Book": "Excession",
+                "Affiliation": "Culture",
+                "Species": "Human",
+                "Ship": "Grey Area",
+                "Drone": "Eccentric",
+            },
+            {
+                "CharacterID": 4,
+                "FirstName": "Diziet",
+                "LastName": "Sma",
+                "Role": None,
+                "Book": None,
+                "Affiliation": "Shellworld",
+                "Species": "Oct",
+                "Ship": None,
+                "Drone": None,
+            },
+        ]
+
+    # misc errors
+    with pytest.raises(SQLSyntaxError, match=r"did you mean COLUMNS\(\*\)\?"):
+        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5")
+
+    with pytest.raises(SQLSyntaxError, match=r"COLUMNS expects a regex"):
+        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2")
+
+
+@pytest.mark.parametrize(
+    ("cols_constraint", "expected"),
+    [
+        (">= 5", [(8, 8, 6)]),
+        ("< 7", [(5, 4, 4)]),
+        ("< 8", [(5, 4, 4), (7, 4, 4), (0, 7, 2)]),
+        ("!= 4", [(8, 8, 6), (2, 8, 6), (0, 7, 2)]),
+    ],
+)
+def test_natural_joins_02(cols_constraint: str, expected: list[tuple[int]]) -> None:
+    df1 = pl.DataFrame(  # noqa: F841
+        {
+            "x": [1, 5, 3, 8, 6, 7, 4, 0, 2],
+            "y": [3, 4, 6, 8, 3, 4, 1, 7, 8],
+        }
+    )
+    df2 = pl.DataFrame(  # noqa: F841
+        {
+            "y": [0, 4, 0, 8, 0, 4, 0, 7, None],
+            "z": [9, 8, 7, 6, 5, 4, 3, 2, 1],
+        },
+    )
+    actual = pl.sql(
+        f"""
+        SELECT * EXCLUDE "y:df2"
+        FROM df1 NATURAL JOIN df2
+        WHERE COLUMNS(*) {cols_constraint}
+        """
+    ).collect()
+
+    assert actual.rows() == expected

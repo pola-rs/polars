@@ -109,6 +109,11 @@ impl LazyFileListReader for LazyIpcReader {
     fn row_index(&self) -> Option<&RowIndex> {
         self.args.row_index.as_ref()
     }
+
+    /// [CloudOptions] used to list files.
+    fn cloud_options(&self) -> Option<&CloudOptions> {
+        self.args.cloud_options.as_ref()
+    }
 }
 
 impl LazyFrame {

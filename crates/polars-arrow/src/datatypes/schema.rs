@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_error::{polars_bail, PolarsResult};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -61,6 +62,24 @@ impl ArrowSchema {
             fields,
             metadata: self.metadata,
         }
+    }
+
+    pub fn try_project(&self, indices: &[usize]) -> PolarsResult<Self> {
+        let fields = indices.iter().map(|&i| {
+            let Some(out) = self.fields.get(i) else {
+                polars_bail!(
+                    SchemaFieldNotFound: "projection index {} is out of bounds for schema of length {}",
+                    i, self.fields.len()
+                );
+            };
+
+            Ok(out.clone())
+        }).collect::<PolarsResult<Vec<_>>>()?;
+
+        Ok(ArrowSchema {
+            fields,
+            metadata: self.metadata.clone(),
+        })
     }
 }
 

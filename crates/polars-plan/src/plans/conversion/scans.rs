@@ -52,8 +52,7 @@ pub(super) fn parquet_file_info(
         {
             let uri = path.to_string_lossy();
             get_runtime().block_on(async {
-                let mut reader =
-                    ParquetAsyncReader::from_uri(&uri, cloud_options, None, None).await?;
+                let mut reader = ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
                 let reader_schema = reader.schema().await?;
                 let num_rows = reader.num_rows().await?;
                 let metadata = reader.get_metadata().await?.clone();

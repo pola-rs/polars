@@ -181,7 +181,7 @@ def test_custom_schema() -> None:
     df = pl.DataFrame(schema=CustomSchema(bool=pl.Boolean, misc=pl.UInt8))
     assert df.schema == OrderedDict([("bool", pl.Boolean), ("misc", pl.UInt8)])
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(schema=CustomSchema(bool="boolean", misc="unsigned int"))
 
 

@@ -68,8 +68,8 @@ def test_top_k() -> None:
     # dataframe
     df = pl.DataFrame(
         {
-            "a": [1, 2, 3, 4, 2, 2],
-            "b": [3, 2, 1, 4, 3, 2],
+            "a": [1, 2, 3, 4, 2, 2, None],
+            "b": [None, 2, 1, 4, 3, 2, None],
         }
     )
 
@@ -81,7 +81,7 @@ def test_top_k() -> None:
 
     assert_frame_equal(
         df.top_k(3, by=["a", "b"], reverse=True),
-        pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
+        pl.DataFrame({"a": [1, 2, 2], "b": [None, 2, 2]}),
         check_row_order=False,
     )
     assert_frame_equal(

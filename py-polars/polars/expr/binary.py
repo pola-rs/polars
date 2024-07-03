@@ -7,7 +7,7 @@ from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import IntoExpr, TransferEncoding
+    from polars._typing import IntoExpr, TransferEncoding
 
 
 class ExprBinaryNameSpace:

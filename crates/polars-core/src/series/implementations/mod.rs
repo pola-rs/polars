@@ -27,6 +27,7 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
+use std::sync::RwLockReadGuard;
 
 use ahash::RandomState;
 
@@ -69,7 +70,7 @@ where
 }
 
 macro_rules! impl_dyn_series {
-    ($ca: ident) => {
+    ($ca: ident, $pdt:ty) => {
         impl private::PrivateSeries for SeriesWrap<$ca> {
             fn compute_len(&mut self) {
                 self.0.compute_len()
@@ -240,8 +241,8 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
-            fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
-                self.metadata().map(|v| v as &dyn MetadataTrait)
+            fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+                self.metadata_dyn()
             }
 
             fn bitand(&self, other: &Series) -> PolarsResult<Series> {
@@ -471,17 +472,17 @@ macro_rules! impl_dyn_series {
 }
 
 #[cfg(feature = "dtype-u8")]
-impl_dyn_series!(UInt8Chunked);
+impl_dyn_series!(UInt8Chunked, UInt8Type);
 #[cfg(feature = "dtype-u16")]
-impl_dyn_series!(UInt16Chunked);
-impl_dyn_series!(UInt32Chunked);
-impl_dyn_series!(UInt64Chunked);
+impl_dyn_series!(UInt16Chunked, UInt16Type);
+impl_dyn_series!(UInt32Chunked, UInt32Type);
+impl_dyn_series!(UInt64Chunked, UInt64Type);
 #[cfg(feature = "dtype-i8")]
-impl_dyn_series!(Int8Chunked);
+impl_dyn_series!(Int8Chunked, Int8Type);
 #[cfg(feature = "dtype-i16")]
-impl_dyn_series!(Int16Chunked);
-impl_dyn_series!(Int32Chunked);
-impl_dyn_series!(Int64Chunked);
+impl_dyn_series!(Int16Chunked, Int16Type);
+impl_dyn_series!(Int32Chunked, Int32Type);
+impl_dyn_series!(Int64Chunked, Int64Type);
 
 impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedArray<T>> {
     fn bit_repr(&self) -> Option<BitRepr> {

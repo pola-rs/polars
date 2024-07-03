@@ -15,7 +15,7 @@ pub mod pivot;
     feature = "csv",
     feature = "json"
 ))]
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -366,8 +366,11 @@ impl LazyFrame {
         sort_options: SortMultipleOptions,
     ) -> Self {
         // this will optimize to top-k
-        self.sort_by_exprs(by_exprs, sort_options.with_order_reversed())
-            .slice(0, k)
+        self.sort_by_exprs(
+            by_exprs,
+            sort_options.with_order_reversed().with_nulls_last(true),
+        )
+        .slice(0, k)
     }
 
     pub fn bottom_k<E: AsRef<[Expr]>>(
@@ -377,7 +380,8 @@ impl LazyFrame {
         sort_options: SortMultipleOptions,
     ) -> Self {
         // this will optimize to bottom-k
-        self.sort_by_exprs(by_exprs, sort_options).slice(0, k)
+        self.sort_by_exprs(by_exprs, sort_options.with_nulls_last(true))
+            .slice(0, k)
     }
 
     /// Reverse the `DataFrame` from top to bottom.
@@ -673,7 +677,7 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
+        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &expr_arena)?;
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
@@ -752,10 +756,14 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
-    pub fn sink_parquet(self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+    pub fn sink_parquet(
+        self,
+        path: impl AsRef<Path>,
+        options: ParquetWriteOptions,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Parquet(options),
             },
             "collect().write_parquet()",
@@ -787,10 +795,10 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
-    pub fn sink_ipc(self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
+    pub fn sink_ipc(self, path: impl AsRef<Path>, options: IpcWriterOptions) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Ipc(options),
             },
             "collect().write_ipc()",
@@ -832,10 +840,10 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "csv")]
-    pub fn sink_csv(self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
+    pub fn sink_csv(self, path: impl AsRef<Path>, options: CsvWriterOptions) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Csv(options),
             },
             "collect().write_csv()",
@@ -846,10 +854,10 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "json")]
-    pub fn sink_json(self, path: PathBuf, options: JsonWriterOptions) -> PolarsResult<()> {
+    pub fn sink_json(self, path: impl AsRef<Path>, options: JsonWriterOptions) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
-                path: Arc::new(path),
+                path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Json(options),
             },
             "collect().write_ndjson()` or `collect().write_json()",

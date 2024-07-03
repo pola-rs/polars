@@ -24,7 +24,7 @@ from tests.unit.conftest import FLOAT_DTYPES
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_init_signature_match() -> None:
@@ -355,7 +355,7 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 
 
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().select("*").fetch(2)
+    res = fruits_cars.lazy().select("*")._fetch(2)
     assert_frame_equal(res, res[:2])
 
 

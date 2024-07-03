@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
+from polars._utils.unstable import unstable
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Expr, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
+    from polars.polars import PySeries
 
 
 @expr_dispatch
@@ -1878,6 +1879,41 @@ class StringNameSpace:
             "Tell you what me want, what me really really want"
             "Can me feel the love tonight"
         ]
+        """
+
+    @unstable()
+    def extract_many(
+        self,
+        patterns: Series | list[str],
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to extract many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", ["discontent"])
+        >>> patterns = ["winter", "disco", "onte", "discontent"]
+        >>> s.str.extract_many(patterns, overlapping=True)
+        shape: (1,)
+        Series: 'values' [list[str]]
+        [
+            ["disco", "onte", "discontent"]
+        ]
+
         """
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:

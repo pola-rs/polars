@@ -14,14 +14,14 @@ from polars.datatypes import (
     Int64,
     List,
     Struct,
-    py_type_to_dtype,
+    parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
 from tests.unit.conftest import DATETIME_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from polars.datatypes.classes import DataTypeClass
-    from polars.type_aliases import PolarsDataType
 
 SIMPLE_DTYPES: list[DataTypeClass] = [
     *[dt.base_type() for dt in NUMERIC_DTYPES],
@@ -66,8 +66,8 @@ def test_dtype_time_units() -> None:
     assert pl.Duration("ns") != pl.Duration("us")
 
     # check timeunit from pytype
-    assert py_type_to_dtype(datetime) == pl.Datetime("us")
-    assert py_type_to_dtype(timedelta) == pl.Duration
+    assert parse_into_dtype(datetime) == pl.Datetime("us")
+    assert parse_into_dtype(timedelta) == pl.Duration
 
     with pytest.raises(ValueError, match="invalid `time_unit`"):
         pl.Datetime("?")  # type: ignore[arg-type]

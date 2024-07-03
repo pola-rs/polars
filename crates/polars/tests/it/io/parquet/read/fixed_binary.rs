@@ -21,11 +21,13 @@ pub fn page_to_vec(
         },
         FixedLenBinaryPageState::RequiredDictionary(dict) => dict
             .indexes
+            .iter()
             .map(|x| dict.dict.value(x as usize).map(|x| x.to_vec()).map(Some))
             .collect(),
         FixedLenBinaryPageState::OptionalDictionary(validity, dict) => {
             let values = dict
                 .indexes
+                .iter()
                 .map(|x| dict.dict.value(x as usize).map(|x| x.to_vec()));
             deserialize_optional(validity, values)
         },

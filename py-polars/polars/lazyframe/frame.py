@@ -34,6 +34,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
+from polars._utils.serde import serialize_polars_object
 from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -72,7 +73,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
     is_polars_dtype,
-    py_type_to_dtype,
+    parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
 from polars.dependencies import import_optional, subprocess
@@ -93,8 +94,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, DataType, Expr
-    from polars.dependencies import numpy as np
-    from polars.type_aliases import (
+    from polars._typing import (
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
@@ -112,9 +112,11 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SchemaDefinition,
         SchemaDict,
+        SerializationFormat,
         StartBy,
         UniqueKeepStrategy,
     )
+    from polars.dependencies import numpy as np
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -346,7 +348,9 @@ class LazyFrame:
         return self
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> LazyFrame:
+    def deserialize(
+        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+    ) -> LazyFrame:
         """
         Read a logical plan from a file to construct a LazyFrame.
 
@@ -356,10 +360,15 @@ class LazyFrame:
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
+        format
+            The format with which the LazyFrame was serialized. Options:
+
+            - `"binary"`: Deserialize from binary format (bytes). This is the default.
+            - `"json"`: Deserialize from JSON format (string).
 
         Warnings
         --------
-        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        This function uses :mod:`pickle` if the logical plan contains Python UDFs,
         and as such inherits the security implications. Deserializing can execute
         arbitrary code, so it should only be attempted on trusted data.
 
@@ -367,12 +376,17 @@ class LazyFrame:
         --------
         LazyFrame.serialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
         >>> import io
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
-        >>> json = lf.serialize()
-        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        >>> bytes = lf.serialize()
+        >>> pl.LazyFrame.deserialize(io.BytesIO(bytes)).collect()
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -387,7 +401,15 @@ class LazyFrame:
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
 
-        return cls._from_pyldf(PyLazyFrame.deserialize(source))
+        if format == "binary":
+            deserializer = PyLazyFrame.deserialize_binary
+        elif format == "json":
+            deserializer = PyLazyFrame.deserialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return cls._from_pyldf(deserializer(source))
 
     @property
     def columns(self) -> list[str]:
@@ -626,13 +648,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 """
 
     @overload
-    def serialize(self, file: None = ...) -> str: ...
+    def serialize(
+        self, file: None = ..., *, format: Literal["binary"] = ...
+    ) -> bytes: ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None: ...
+    def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
 
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
+    @overload
+    def serialize(
+        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+    ) -> None: ...
+
+    def serialize(
+        self,
+        file: IOBase | str | Path | None = None,
+        *,
+        format: SerializationFormat = "binary",
+    ) -> bytes | str | None:
+        r"""
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
         Parameters
@@ -640,24 +674,34 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         file
             File path to which the result should be written. If set to `None`
             (default), the output is returned as a string instead.
+        format
+            The format in which to serialize. Options:
+
+            - `"binary"`: Serialize to binary format (bytes). This is the default.
+            - `"json"`: Serialize to JSON format (string).
 
         See Also
         --------
         LazyFrame.deserialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
-        Serialize the logical plan into a JSON string.
+        Serialize the logical plan into a binary representation.
 
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
-        >>> json = lf.serialize()
-        >>> json
-        '{"MapFunction":{"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"filter":null}},"function":{"Stats":"Sum"}}}'
+        >>> bytes = lf.serialize()
+        >>> bytes  # doctest: +ELLIPSIS
+        b'\xa1kMapFunction\xa2einput\xa1mDataFrameScan\xa4bdf\xa1gcolumns\x81\xa4d...'
 
-        The logical plan can later be deserialized back into a LazyFrame.
+        The bytes can later be deserialized back into a LazyFrame.
 
         >>> import io
-        >>> pl.LazyFrame.deserialize(io.StringIO(json)).collect()
+        >>> pl.LazyFrame.deserialize(io.BytesIO(bytes)).collect()
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -667,26 +711,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6   │
         └─────┘
         """
-
-        def serialize_to_string() -> str:
-            with BytesIO() as buf:
-                self._ldf.serialize(buf)
-                json_bytes = buf.getvalue()
-            return json_bytes.decode("utf8")
-
-        if file is None:
-            return serialize_to_string()
-        elif isinstance(file, StringIO):
-            json_str = serialize_to_string()
-            file.write(json_str)
-            return None
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-            self._ldf.serialize(file)
-            return None
+        if format == "binary":
+            serializer = self._ldf.serialize_binary
+        elif format == "json":
+            serializer = self._ldf.serialize_json
         else:
-            self._ldf.serialize(file)
-            return None
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return serialize_polars_object(serializer, file, format)
 
     def pipe(
         self,
@@ -2324,6 +2357,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         datetime_format: str | None = None,
         date_format: str | None = None,
         time_format: str | None = None,
+        float_scientific: bool | None = None,
         float_precision: int | None = None,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
@@ -2374,6 +2408,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             A format string, with the specifiers defined by the
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
+        float_scientific
+            Whether to use scientific form always (true), never (false), or
+            automatically (None) for `Float32` and `Float64` datatypes.
         float_precision
             Number of decimal places to write, applied to both `Float32` and
             `Float64` datatypes.
@@ -2448,6 +2485,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             datetime_format=datetime_format,
             date_format=date_format,
             time_format=time_format,
+            float_scientific=float_scientific,
             float_precision=float_precision,
             null_value=null_value,
             quote_style=quote_style,
@@ -2545,6 +2583,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
         )
 
+    @deprecate_function(
+        "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
+        "instead, in conjunction with a call to `head`.",
+        version="1.0",
+    )
     def fetch(
         self,
         n_rows: int = 500,
@@ -2562,6 +2605,58 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
+
+        .. deprecated:: 1.0
+            Use :meth:`collect` instead, in conjunction with a call to :meth:`head`.`
+
+        Notes
+        -----
+        This is similar to a :func:`collect` operation, but it overwrites the number of
+        rows read by *every* scan operation. Be aware that `fetch` does not guarantee
+        the final number of rows in the DataFrame. Filters, join operations and fewer
+        rows being available in the scanned data will all influence the final number
+        of rows (joins are especially susceptible to this, and may return no data
+        at all if `n_rows` is too small as the join keys may not be present).
+
+        Warnings
+        --------
+        This is strictly a utility function that can help to debug queries using a
+        smaller number of rows, and should *not* be used in production code.
+        """
+        return self._fetch(
+            n_rows=n_rows,
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            no_optimization=no_optimization,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            streaming=streaming,
+        )
+
+    def _fetch(
+        self,
+        n_rows: int = 500,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        cluster_with_columns: bool = True,
+        streaming: bool = False,
+    ) -> DataFrame:
+        """
+        Collect a small number of rows for debugging purposes.
+
+        Do not confuse with `collect`; this function will frequently return
+        incorrect data (see the warning for additional details).
 
         Parameters
         ----------
@@ -2619,7 +2714,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum())._fetch(2)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2781,7 +2876,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 c = by_dtype(c)  # type: ignore[arg-type]
 
-            dtype = py_type_to_dtype(dtype)
+            dtype = parse_into_dtype(dtype)
             cast_map.update(
                 {c: dtype}
                 if isinstance(c, str)
@@ -4106,6 +4201,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
 
         elif how == "cross":
+            if left_on is not None or right_on is not None:
+                msg = "cross join should not pass join keys"
+                raise ValueError(msg)
             return self._from_pyldf(
                 self._ldf.join(
                     other._ldf,

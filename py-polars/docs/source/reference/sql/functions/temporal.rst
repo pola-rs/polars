@@ -7,38 +7,14 @@ Temporal
 
    * - Function
      - Description
-   * - :ref:`DATE <date>`
-     - Converts a formatted string date to an actual Date type.
+
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - :ref:`EXTRACT <extract>`
      - Offers the same functionality as `DATE_PART` with slightly different syntax.
+   * - :ref:`STRFTIME <strftime>`
+     - Formats a temporal value (Datetime, Date, or Time) as a string.
 
-.. _date:
-
-DATE
-----
-Converts a formatted string date to an actual Date type; ISO-8601 format is assumed
-unless a strftime-compatible formatting string is provided as the second parameter.
-
-**Example:**
-
-.. code-block:: python
-
-    df = pl.DataFrame({"str_date": ["1969.10.30", "2024.07.05", "2077.02.28"]})
-    df.sql("""
-      SELECT str_date, DATE(str_date, '%Y.%m.%d') AS date FROM self
-    """)
-    # shape: (3, 2)
-    # ┌────────────┬────────────┐
-    # │ str_date   ┆ date       │
-    # │ ---        ┆ ---        │
-    # │ str        ┆ date       │
-    # ╞════════════╪════════════╡
-    # │ 1969.10.30 ┆ 1969-10-30 │
-    # │ 2024.07.05 ┆ 2024-07-05 │
-    # │ 2077.02.28 ┆ 2077-02-28 │
-    # └────────────┴────────────┘
 
 .. _date_part:
 
@@ -90,7 +66,6 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
         DATE_PART('day', dt) AS day
       FROM self
     """)
-
     # shape: (3, 4)
     # ┌────────────┬──────┬───────┬─────┐
     # │ dt         ┆ year ┆ month ┆ day │
@@ -136,11 +111,11 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
 
     df = pl.DataFrame(
       {
-          "dt": [
-              date(1969, 12, 31),
-              date(2026, 8, 22),
-              date(2077, 2, 10),
-          ]
+        "dt": [
+          date(1969, 12, 31),
+          date(2026, 8, 22),
+          date(2077, 2, 10),
+        ],
       }
     )
     df.sql("""
@@ -151,7 +126,6 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
         EXTRACT(quarter FROM dt) AS quarter,
       FROM self
     """)
-
     # shape: (3, 4)
     # ┌────────────┬────────┬──────┬─────────┐
     # │ dt         ┆ decade ┆ year ┆ quarter │
@@ -162,3 +136,34 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # │ 2026-08-22 ┆ 202    ┆ 2026 ┆ 3       │
     # │ 2077-02-10 ┆ 207    ┆ 2077 ┆ 1       │
     # └────────────┴────────┴──────┴─────────┘
+
+.. _strftime:
+
+STRFTIME
+--------
+Formats a temporal value (Datetime, Date, or Time) as a string using a `chrono strftime <https://docs.rs/chrono/latest/chrono/format/strftime/>`_-compatible formatting string.
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "dt": [date(1978, 7, 5), None, date(2020, 4, 10)],
+        "tm": [time(10, 10, 10), time(22, 33, 55), None],
+      }
+    )
+    df.sql("""
+      SELECT
+        STRFTIME(dt, '%B %d, %Y') AS s_dt,
+        STRFTIME(tm, '%H.%M.%S') AS s_tm,
+      FROM self
+    """)
+    # shape: (3, 2)
+    # ┌────────────────┬──────────┐
+    # │ s_dt           ┆ s_tm     │
+    # │ ---            ┆ ---      │
+    # │ str            ┆ str      │
+    # ╞════════════════╪══════════╡
+    # │ July 05, 1978  ┆ 10.10.10 │
+    # │ null           ┆ 22.33.55 │
+    # │ April 10, 2020 ┆ null     │
+    # └────────────────┴──────────┘

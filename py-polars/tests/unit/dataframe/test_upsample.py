@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import FillNullStrategy, PolarsIntegerType
+    from polars._typing import FillNullStrategy, PolarsIntegerType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 

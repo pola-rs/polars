@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
+use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
@@ -137,7 +138,10 @@ pub struct FunctionOptions {
     /// sum(x) -> {4}
     pub returns_scalar: bool,
     // if the expression and its inputs should be cast to supertypes
-    pub cast_to_supertypes: bool,
+    // `None` -> Don't cast.
+    // `Some` -> cast with given options.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub cast_to_supertypes: Option<SuperTypeOptions>,
     // The physical expression may rename the output of this function.
     // If set to `false` the physical engine will ensure the left input
     // expression is the output name.
@@ -179,7 +183,7 @@ impl Default for FunctionOptions {
             input_wildcard_expansion: false,
             returns_scalar: false,
             fmt_str: "",
-            cast_to_supertypes: false,
+            cast_to_supertypes: None,
             allow_rename: false,
             pass_name_to_apply: false,
             changes_length: false,

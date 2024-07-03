@@ -24,7 +24,7 @@ from polars.exceptions import (
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ConcatMethod
+    from polars._typing import ConcatMethod
 
 
 def test_error_on_empty_group_by() -> None:
@@ -45,7 +45,7 @@ def test_error_on_reducing_map() -> None:
             r"the input length \(6\); consider using `apply` instead"
         ),
     ):
-        df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
+        df.group_by("id").agg(pl.map_batches(["t", "y"], np.mean))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
@@ -325,8 +325,8 @@ def test_datetime_time_add_err() -> None:
 
 def test_invalid_dtype() -> None:
     with pytest.raises(
-        ValueError,
-        match=r"given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
+        TypeError,
+        match="cannot parse input of type 'str' into Polars data type: 'mayonnaise'",
     ):
         pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
 
@@ -474,7 +474,7 @@ def test_with_column_duplicates() -> None:
     df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
     with pytest.raises(
         ComputeError,
-        match=r"the name: 'same' passed to `LazyFrame.with_columns` is duplicate.*",
+        match=r"the name 'same' passed to `LazyFrame.with_columns` is duplicate.*",
     ):
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
@@ -676,7 +676,7 @@ def test_raise_on_sorted_multi_args() -> None:
 def test_err_invalid_comparison() -> None:
     with pytest.raises(
         SchemaError,
-        match="could not evalulate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
+        match="could not evaluate comparison between series 'a' of dtype: date and series 'b' of dtype: bool",
     ):
         _ = pl.Series("a", [date(2020, 1, 1)]) == pl.Series("b", [True])
 

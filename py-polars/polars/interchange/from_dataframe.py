@@ -16,9 +16,9 @@ from polars.interchange.utils import (
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
+    from polars._typing import PolarsDataType
     from polars.interchange.protocol import Buffer, Column, Dtype, SupportsInterchange
     from polars.interchange.protocol import DataFrame as InterchangeDataFrame
-    from polars.type_aliases import PolarsDataType
 
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:

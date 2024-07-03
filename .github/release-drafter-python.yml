@@ -12,7 +12,7 @@ version-resolver:
     labels:
       - breaking
       - breaking python
-  patch:
+  minor:
     labels:
       - performance
       - enhancement

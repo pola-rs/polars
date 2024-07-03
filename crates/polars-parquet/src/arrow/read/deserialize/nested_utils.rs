@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::iter::{Peekable, Zip};
 
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
@@ -7,7 +8,7 @@ use polars_utils::slice::GetSaferUnchecked;
 
 use super::super::PagesIter;
 use super::utils::{DecodedState, MaybeNext, PageState};
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::hybrid_rle::{BufferedHybridRleDecoderIter, HybridRleDecoder};
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::read::levels::get_bit_width;
 
@@ -238,7 +239,7 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
 }
 
 pub struct NestedPage<'a> {
-    iter: std::iter::Peekable<std::iter::Zip<HybridRleDecoder<'a>, HybridRleDecoder<'a>>>,
+    iter: Peekable<Zip<BufferedHybridRleDecoderIter<'a>, BufferedHybridRleDecoderIter<'a>>>,
 }
 
 impl<'a> NestedPage<'a> {
@@ -251,9 +252,12 @@ impl<'a> NestedPage<'a> {
         let max_def_level = page.descriptor.max_def_level;
 
         let reps =
-            HybridRleDecoder::try_new(rep_levels, get_bit_width(max_rep_level), page.num_values())?;
+            HybridRleDecoder::new(rep_levels, get_bit_width(max_rep_level), page.num_values());
         let defs =
-            HybridRleDecoder::try_new(def_levels, get_bit_width(max_def_level), page.num_values())?;
+            HybridRleDecoder::new(def_levels, get_bit_width(max_def_level), page.num_values());
+
+        let reps = reps.into_iter();
+        let defs = defs.into_iter();
 
         let iter = reps.zip(defs).peekable();
 
@@ -523,7 +527,7 @@ where
             }
         },
         Ok(Some(page)) => {
-            let page = match page {
+            let page = match &page {
                 Page::Data(page) => page,
                 Page::Dict(dict_page) => {
                     *dict = Some(decoder.deserialize_dict(dict_page));

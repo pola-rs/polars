@@ -1,5 +1,7 @@
+use arrow::datatypes::ArrowSchemaRef;
+use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
-use hive::hive_partitions_from_paths;
+use hive::{hive_partitions_from_paths, HivePartitions};
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -86,7 +88,7 @@ pub fn to_alp_impl(
             paths,
             predicate,
             mut scan_type,
-            file_options,
+            mut file_options,
         } => {
             let mut file_info = if let Some(file_info) = file_info {
                 file_info
@@ -136,19 +138,42 @@ pub fn to_alp_impl(
 
             let hive_parts = if hive_parts.is_some() {
                 hive_parts
-            } else if file_options.hive_options.enabled.unwrap() {
+            } else if file_options.hive_options.enabled.unwrap()
+                && file_info.reader_schema.is_some()
+            {
+                #[allow(unused_assignments)]
+                let mut owned = None;
+
                 hive_partitions_from_paths(
                     paths.as_ref(),
                     file_options.hive_options.hive_start_idx,
                     file_options.hive_options.schema.clone(),
+                    match file_info.reader_schema.as_ref().unwrap() {
+                        Either::Left(v) => {
+                            owned = Some(Schema::from(v));
+                            owned.as_ref().unwrap()
+                        },
+                        Either::Right(v) => v.as_ref(),
+                    },
+                    file_options.hive_options.try_parse_dates,
                 )?
             } else {
                 None
             };
 
             if let Some(ref hive_parts) = hive_parts {
-                file_info.update_schema_with_hive_schema(hive_parts[0].schema().clone())?;
+                let hive_schema = hive_parts[0].schema();
+                file_info.update_schema_with_hive_schema(hive_schema.clone());
             }
+
+            file_options.with_columns = if file_info.reader_schema.is_some() {
+                maybe_init_projection_excluding_hive(
+                    file_info.reader_schema.as_ref().unwrap(),
+                    hive_parts.as_ref().map(|x| &x[0]),
+                )
+            } else {
+                None
+            };
 
             if let Some(row_index) = &file_options.row_index {
                 let schema = Arc::make_mut(&mut file_info.schema);
@@ -374,33 +399,37 @@ pub fn to_alp_impl(
             right_on,
             mut options,
         } => {
-            let mut turn_off_coalesce = false;
-            for e in left_on.iter().chain(right_on.iter()) {
-                if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
-                    polars_bail!(
-                        ComputeError:
-                        "'alias' is not allowed in a join key, use 'with_columns' first",
-                    )
+            if matches!(options.args.how, JoinType::Cross) {
+                polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
+            } else {
+                let mut turn_off_coalesce = false;
+                for e in left_on.iter().chain(right_on.iter()) {
+                    if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
+                        polars_bail!(
+                            ComputeError:
+                            "'alias' is not allowed in a join key, use 'with_columns' first",
+                        )
+                    }
+                    // Any expression that is not a simple column expression will turn of coalescing.
+                    turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
                 }
-                // Any expression that is not a simple column expression will turn of coalescing.
-                turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
-            }
-            if turn_off_coalesce {
-                let options = Arc::make_mut(&mut options);
-                options.args.coalesce = JoinCoalesce::KeepColumns;
-            }
+                if turn_off_coalesce {
+                    let options = Arc::make_mut(&mut options);
+                    options.args.coalesce = JoinCoalesce::KeepColumns;
+                }
 
-            options.args.validation.is_valid_join(&options.args.how)?;
+                options.args.validation.is_valid_join(&options.args.how)?;
 
-            polars_ensure!(
-                left_on.len() == right_on.len(),
-                ComputeError:
-                    format!(
-                        "the number of columns given as join key (left: {}, right:{}) should be equal",
-                        left_on.len(),
-                        right_on.len()
-                    )
-            );
+                polars_ensure!(
+                    left_on.len() == right_on.len(),
+                    ComputeError:
+                        format!(
+                            "the number of columns given as join key (left: {}, right:{}) should be equal",
+                            left_on.len(),
+                            right_on.len()
+                        )
+                );
+            }
 
             let input_left = to_alp_impl(owned(input_left), expr_arena, lp_arena, convert)
                 .map_err(|e| e.context(failed_input!(join left)))?;
@@ -707,7 +736,7 @@ fn resolve_with_columns(
 
         if !output_names.insert(field.name().clone()) {
             let msg = format!(
-                "the name: '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
+                "the name '{}' passed to `LazyFrame.with_columns` is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column name. \
                     If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
                     duplicate column names.",
@@ -801,4 +830,35 @@ where
             }
         })
         .collect()
+}
+
+pub(crate) fn maybe_init_projection_excluding_hive(
+    reader_schema: &Either<ArrowSchemaRef, SchemaRef>,
+    hive_parts: Option<&HivePartitions>,
+) -> Option<Arc<[String]>> {
+    // Update `with_columns` with a projection so that hive columns aren't loaded from the
+    // file
+    let hive_parts = hive_parts?;
+
+    let hive_schema = hive_parts.schema();
+
+    let (first_hive_name, _) = hive_schema.get_at_index(0)?;
+
+    let names = match reader_schema {
+        Either::Left(ref v) => {
+            let names = v.get_names();
+            names.contains(&first_hive_name.as_str()).then_some(names)
+        },
+        Either::Right(ref v) => v.contains(first_hive_name.as_str()).then(|| v.get_names()),
+    };
+
+    let names = names?;
+
+    Some(
+        names
+            .iter()
+            .filter(|x| !hive_schema.contains(x))
+            .map(ToString::to_string)
+            .collect::<Arc<[_]>>(),
+    )
 }

@@ -12,8 +12,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars._typing import IntoExpr, PolarsDataType
     from polars.polars import PyExpr
-    from polars.type_aliases import IntoExpr, PolarsDataType
 
 
 def parse_into_expression(

@@ -5,7 +5,7 @@ import re
 
 from hypothesis import settings
 
-from polars.type_aliases import ParametricProfileNames
+from polars._typing import ParametricProfileNames
 
 
 def load_profile(
@@ -13,6 +13,10 @@ def load_profile(
 ) -> None:
     """
     Load a named (or custom) hypothesis profile for use with the parametric tests.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
 
     Parameters
     ----------
@@ -70,6 +74,10 @@ def load_profile(
 def set_profile(profile: ParametricProfileNames | int) -> None:
     """
     Set the env var `POLARS_HYPOTHESIS_PROFILE` to the given profile name/value.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
 
     Parameters
     ----------

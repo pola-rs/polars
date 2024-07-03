@@ -8,7 +8,9 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
-use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
+use crate::cloud::{
+    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
+};
 use crate::file_cache::{init_entries_from_uri_list, FileCacheEntry};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::{materialize_projection, IpcReader};
@@ -76,7 +78,7 @@ impl IpcReaderAsync {
             // Any wildcards should already have been resolved here. Without this assertion they would
             // be ignored.
             debug_assert!(expansion.is_none(), "path should not contain wildcards");
-            Path::from_url_path(prefix).map_err(to_compute_err)?
+            object_path_from_string(prefix)
         };
 
         Ok(Self {
