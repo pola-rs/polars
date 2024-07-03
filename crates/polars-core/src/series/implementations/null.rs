@@ -36,8 +36,11 @@ impl NullChunked {
     }
 }
 impl PrivateSeriesNumeric for NullChunked {
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        UInt32Chunked::full_null(self.name.as_ref(), self.len())
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(BitRepr::Small(UInt32Chunked::full_null(
+            self.name.as_ref(),
+            self.len(),
+        )))
     }
 }
 
@@ -237,6 +240,24 @@ impl SeriesTrait for NullChunked {
             chunks,
         }
         .into_series()
+    }
+
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (l, r) = chunkops::split_at(self.chunks(), offset, self.len());
+        (
+            NullChunked {
+                name: self.name.clone(),
+                length: l.iter().map(|arr| arr.len() as IdxSize).sum(),
+                chunks: l,
+            }
+            .into_series(),
+            NullChunked {
+                name: self.name.clone(),
+                length: r.iter().map(|arr| arr.len() as IdxSize).sum(),
+                chunks: r,
+            }
+            .into_series(),
+        )
     }
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {

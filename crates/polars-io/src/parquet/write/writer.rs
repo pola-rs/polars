@@ -11,6 +11,7 @@ use polars_parquet::write::{
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
 use crate::prelude::chunk_df_for_writing;
+use crate::shared::schema_to_arrow_checked;
 
 /// Write a DataFrame to Parquet format.
 #[must_use]
@@ -82,9 +83,7 @@ where
     }
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
-        let fields = schema.to_arrow(true).fields;
-        let schema = ArrowSchema::from(fields);
-
+        let schema = schema_to_arrow_checked(schema, true, "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();

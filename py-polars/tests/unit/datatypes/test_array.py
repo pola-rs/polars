@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -22,8 +22,7 @@ def test_cast_list_array() -> None:
 
     # width is incorrect
     with pytest.raises(
-        pl.ComputeError,
-        match=r"not all elements have the specified width",
+        ComputeError, match=r"not all elements have the specified width"
     ):
         s.cast(pl.Array(pl.Int64, 2))
 
@@ -283,17 +282,6 @@ def test_create_nested_array() -> None:
         dtype=pl.Array(pl.Array(pl.Int64, 2), 2),
     )
     assert s2.to_list() == data
-
-
-def test_array_ndarray_reshape() -> None:
-    shape = (8, 4, 2, 1)
-    s = pl.Series(range(64)).reshape(shape, nested_type=pl.Array)
-    n = s.to_numpy()
-    assert n.shape == shape
-    assert (n[0] == s[0].to_numpy()).all()
-    n = n[0]
-    s = s[0]
-    assert (n[0] == s[0].to_numpy()).all()
 
 
 def test_recursive_array_dtype() -> None:

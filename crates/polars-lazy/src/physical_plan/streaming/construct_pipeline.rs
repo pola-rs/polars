@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
@@ -11,7 +13,6 @@ use polars_pipe::pipeline::{
 };
 use polars_plan::prelude::expr_ir::ExprIR;
 
-use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::streaming::tree::{PipelineNode, Tree};
 use crate::prelude::*;
 
@@ -241,13 +242,12 @@ fn get_pipeline_node(
         df: Arc::new(DataFrame::empty()),
         schema: Arc::new(Schema::new()),
         output_schema: None,
-        projection: None,
-        selection: None,
+        filter: None,
     });
 
     IR::MapFunction {
         function: FunctionNode::Pipeline {
-            function: Arc::new(move |_df: DataFrame| {
+            function: Arc::new(Mutex::new(move |_df: DataFrame| {
                 let mut state = ExecutionState::new();
                 if state.verbose() {
                     eprintln!("RUN STREAMING PIPELINE");
@@ -255,7 +255,7 @@ fn get_pipeline_node(
                 }
                 state.set_in_streaming_engine();
                 execute_pipeline(state, std::mem::take(&mut pipelines))
-            }),
+            })),
             schema,
             original: original_lp.map(Arc::new),
         },

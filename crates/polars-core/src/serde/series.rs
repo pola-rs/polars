@@ -70,6 +70,15 @@ impl Serialize for Series {
                 let ca = self.time().unwrap();
                 ca.serialize(serializer)
             },
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                let ca = self.decimal().unwrap();
+                ca.serialize(serializer)
+            },
+            DataType::Null => {
+                let ca = self.null().unwrap();
+                ca.serialize(serializer)
+            },
             dt => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
@@ -194,6 +203,13 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&DataType::Time).unwrap())
                     },
+                    #[cfg(feature = "dtype-decimal")]
+                    DataType::Decimal(precision, Some(scale)) => {
+                        let values: Vec<Option<i128>> = map.next_value()?;
+                        Ok(ChunkedArray::from_slice_options(&name, &values)
+                            .into_decimal_unchecked(precision, scale)
+                            .into_series())
+                    },
                     DataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
                         Ok(Series::new(&name, values))
@@ -263,6 +279,11 @@ impl<'de> Deserialize<'de> for Series {
                     dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values).cast(&dt).unwrap())
+                    },
+                    DataType::Null => {
+                        let values: Vec<usize> = map.next_value()?;
+                        let len = values.first().unwrap();
+                        Ok(Series::new_null(&name, *len))
                     },
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")

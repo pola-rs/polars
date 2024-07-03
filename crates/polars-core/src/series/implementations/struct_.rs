@@ -9,7 +9,11 @@ unsafe impl IntoSeries for StructChunked {
     }
 }
 
-impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {}
+impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
 
 impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn compute_len(&mut self) {
@@ -124,6 +128,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let mut out = self.0._apply_fields(|s| s.slice(offset, length));
         out.update_chunks(0);
         out.into_series()
+    }
+
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b): (Vec<_>, Vec<_>) = self.0.fields().iter().map(|s| s.split_at(offset)).unzip();
+
+        let a = StructChunked::new(self.name(), &a).unwrap();
+        let b = StructChunked::new(self.name(), &b).unwrap();
+        (a.into_series(), b.into_series())
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {

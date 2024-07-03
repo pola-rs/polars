@@ -1,5 +1,5 @@
 //! API to perform page-level filtering (also known as indexes)
-use crate::parquet::error::Error as ParquetError;
+use crate::parquet::error::ParquetError;
 use crate::parquet::indexes::{
     select_pages, BooleanIndex, ByteIndex, FixedLenByteIndex, Index as ParquetIndex, NativeIndex,
     PageLocation,

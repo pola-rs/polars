@@ -2,6 +2,8 @@ use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS, SECON
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+#[cfg(feature = "timezones")]
 use polars_time::base_utc_offset as base_utc_offset_fn;
 #[cfg(feature = "timezones")]
 use polars_time::dst_offset as dst_offset_fn;
@@ -343,6 +345,7 @@ pub(super) fn convert_time_zone(s: &Series, time_zone: &TimeZone) -> PolarsResul
     match s.dtype() {
         DataType::Datetime(_, _) => {
             let mut ca = s.datetime()?.clone();
+            validate_time_zone(time_zone)?;
             ca.set_time_zone(time_zone.clone())?;
             Ok(ca.into_series())
         },
@@ -528,10 +531,10 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
                 microseconds = microseconds.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&nanoseconds) {
-                microseconds = microseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000));
+                microseconds = (microseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000)))?;
             }
             if !is_zero_scalar(&milliseconds) {
-                microseconds = microseconds + (milliseconds * 1_000);
+                microseconds = (microseconds + (milliseconds * 1_000))?;
             }
             microseconds
         },
@@ -540,10 +543,10 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
                 nanoseconds = nanoseconds.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&microseconds) {
-                nanoseconds = nanoseconds + (microseconds * 1_000);
+                nanoseconds = (nanoseconds + (microseconds * 1_000))?;
             }
             if !is_zero_scalar(&milliseconds) {
-                nanoseconds = nanoseconds + (milliseconds * 1_000_000);
+                nanoseconds = (nanoseconds + (milliseconds * 1_000_000))?;
             }
             nanoseconds
         },
@@ -552,10 +555,10 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
                 milliseconds = milliseconds.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&nanoseconds) {
-                milliseconds = milliseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000_000));
+                milliseconds = (milliseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000_000)))?;
             }
             if !is_zero_scalar(&microseconds) {
-                milliseconds = milliseconds + (microseconds.wrapping_trunc_div_scalar(1_000));
+                milliseconds = (milliseconds + (microseconds.wrapping_trunc_div_scalar(1_000)))?;
             }
             milliseconds
         },
@@ -568,19 +571,19 @@ pub(super) fn duration(s: &[Series], time_unit: TimeUnit) -> PolarsResult<Series
         TimeUnit::Milliseconds => MILLISECONDS,
     };
     if !is_zero_scalar(&seconds) {
-        duration = duration + seconds * multiplier;
+        duration = (duration + seconds * multiplier)?;
     }
     if !is_zero_scalar(&minutes) {
-        duration = duration + minutes * (multiplier * 60);
+        duration = (duration + minutes * (multiplier * 60))?;
     }
     if !is_zero_scalar(&hours) {
-        duration = duration + hours * (multiplier * 60 * 60);
+        duration = (duration + hours * (multiplier * 60 * 60))?;
     }
     if !is_zero_scalar(&days) {
-        duration = duration + days * (multiplier * SECONDS_IN_DAY);
+        duration = (duration + days * (multiplier * SECONDS_IN_DAY))?;
     }
     if !is_zero_scalar(&weeks) {
-        duration = duration + weeks * (multiplier * SECONDS_IN_DAY * 7);
+        duration = (duration + weeks * (multiplier * SECONDS_IN_DAY * 7))?;
     }
 
     duration.cast(&DataType::Duration(time_unit))

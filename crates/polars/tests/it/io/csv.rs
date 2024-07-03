@@ -2,7 +2,6 @@ use std::io::Cursor;
 use std::num::NonZeroUsize;
 
 use polars::io::RowIndex;
-use polars_core::export::chrono;
 use polars_core::utils::concat_df;
 
 use super::*;
@@ -41,7 +40,10 @@ fn write_csv() {
 }
 
 #[test]
+#[cfg(feature = "timezones")]
 fn write_dates() {
+    use polars_core::export::chrono;
+
     let s0 = Series::new("date", [chrono::NaiveDate::from_yo_opt(2024, 33), None]);
     let s1 = Series::new("time", [None, chrono::NaiveTime::from_hms_opt(19, 50, 0)]);
     let s2 = Series::new(
@@ -512,9 +514,7 @@ fn test_empty_bytes_to_dataframe() {
 
     let result = CsvReadOptions::default()
         .with_has_header(false)
-        .with_columns(Some(Arc::new(
-            schema.iter_names().map(|s| s.to_string()).collect(),
-        )))
+        .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
         .with_schema(Some(Arc::new(schema)))
         .into_reader_with_file_handle(file)
         .finish();

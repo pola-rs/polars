@@ -2,7 +2,7 @@ use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
 
 use super::column_descriptor::ColumnDescriptor;
 use crate::parquet::compression::Compression;
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::Statistics;
 
@@ -111,7 +111,7 @@ impl ColumnChunkMetaData {
     }
 
     /// Decodes the raw statistics into [`Statistics`].
-    pub fn statistics(&self) -> Option<Result<Statistics>> {
+    pub fn statistics(&self) -> Option<ParquetResult<Statistics>> {
         self.metadata().statistics.as_ref().map(|x| {
             Statistics::deserialize(x, self.column_descr.descriptor.primitive_type.clone())
         })
@@ -179,7 +179,7 @@ impl ColumnChunkMetaData {
     pub(crate) fn try_from_thrift(
         column_descr: ColumnDescriptor,
         column_chunk: ColumnChunk,
-    ) -> Result<Self> {
+    ) -> ParquetResult<Self> {
         // validate metadata
         if let Some(meta) = &column_chunk.meta_data {
             let _: u64 = meta.total_compressed_size.try_into()?;
@@ -191,7 +191,7 @@ impl ColumnChunkMetaData {
 
             let _: Compression = meta.codec.try_into()?;
         } else {
-            return Err(Error::oos("Column chunk requires metadata"));
+            return Err(ParquetError::oos("Column chunk requires metadata"));
         }
 
         Ok(Self {

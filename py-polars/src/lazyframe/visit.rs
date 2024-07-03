@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use polars_plan::logical_plan::{to_aexpr, Context, IR};
+use polars_plan::plans::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};

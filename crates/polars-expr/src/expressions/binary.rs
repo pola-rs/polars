@@ -39,7 +39,9 @@ fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResu
     match op {
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
-        Operator::Multiply => left.try_mul_owned(right),
+        Operator::Multiply if left.dtype().is_numeric() && right.dtype().is_numeric() => {
+            left.try_mul_owned(right)
+        },
         _ => apply_operator(&left, &right, op),
     }
 }
@@ -53,21 +55,26 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::LtEq => ChunkCompare::lt_eq(left, right).map(|ca| ca.into_series()),
         Operator::Eq => ChunkCompare::equal(left, right).map(|ca| ca.into_series()),
         Operator::NotEq => ChunkCompare::not_equal(left, right).map(|ca| ca.into_series()),
-        Operator::Plus => left.try_add(right),
-        Operator::Minus => left.try_sub(right),
-        Operator::Multiply => left.try_mul(right),
-        Operator::Divide => left.try_div(right),
+        Operator::Plus => left + right,
+        Operator::Minus => left - right,
+        Operator::Multiply => left * right,
+        Operator::Divide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => left.try_div(right),
-            Date | Datetime(_, _) | Float32 | Float64 => left.try_div(right),
+            Decimal(_, _) => left / right,
+            Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             dt @ Array(_, _) => {
                 let left_dt = dt.cast_leaf(Float64);
                 let right_dt = right.dtype().cast_leaf(Float64);
-                left.cast(&left_dt)?.try_div(&right.cast(&right_dt)?)
+                left.cast(&left_dt)? / right.cast(&right_dt)?
             },
-            _ => left.cast(&Float64)?.try_div(&right.cast(&Float64)?),
+            _ => {
+                if right.dtype().is_temporal() {
+                    return left / right;
+                }
+                left.cast(&Float64)? / right.cast(&Float64)?
+            },
         },
         Operator::FloorDivide => {
             #[cfg(feature = "round_series")]
@@ -88,7 +95,7 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
             .cast(&DataType::Boolean)?
             .bitand(&right.cast(&DataType::Boolean)?),
         Operator::Xor => left.bitxor(right),
-        Operator::Modulus => left.try_rem(right),
+        Operator::Modulus => left % right,
         Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_series()),
         Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_series()),
     }

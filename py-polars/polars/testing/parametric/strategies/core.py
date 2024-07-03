@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars import LazyFrame
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 _ROW_LIMIT = 5  # max generated frame/series length
@@ -35,7 +35,6 @@ def series(  # noqa: D417
     *,
     name: str | SearchStrategy[str] | None = None,
     dtype: PolarsDataType | None = None,
-    size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
     strategy: SearchStrategy[Any] | None = None,
@@ -50,6 +49,10 @@ def series(  # noqa: D417
     """
     Hypothesis strategy for producing Polars Series.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     name : {str, strategy}, optional
@@ -57,9 +60,6 @@ def series(  # noqa: D417
         constructor name-param.
     dtype : PolarsDataType, optional
         a valid polars DataType for the resulting series.
-    size : int, optional
-        if set, creates a Series of exactly this size (ignoring min_size/max_size
-        params).
     min_size : int
         if not passing an exact size, can set a minimum here (defaults to 0).
         no-op if `size` is set.
@@ -83,6 +83,13 @@ def series(  # noqa: D417
     **kwargs
         Additional keyword arguments that are passed to the underlying data generation
         strategies.
+
+    size : int, optional
+        if set, creates a Series of exactly this size (ignoring min_size/max_size
+        params).
+
+        .. deprecated:: 1.0.0
+            Use `min_size` and `max_size` instead.
 
     null_probability : float
         Percentage chance (expressed between 0.0 => 1.0) that any Series value is null.
@@ -145,6 +152,12 @@ def series(  # noqa: D417
             version="0.20.26",
         )
         allow_chunks = chunked
+    if (size := kwargs.pop("size", None)) is not None:
+        issue_deprecation_warning(
+            "`size` is deprecated. Use `min_size` and `max_size` instead.",
+            version="1.0.0",
+        )
+        min_size = max_size = size
 
     if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
         allowed_dtypes = [allowed_dtypes]
@@ -177,7 +190,9 @@ def series(  # noqa: D417
             )
         dtype = draw(dtype_strat)
 
-    if size is None:
+    if min_size == max_size:
+        size = min_size
+    else:
         size = draw(st.integers(min_value=min_size, max_value=max_size))
 
     if isinstance(name, st.SearchStrategy):
@@ -220,7 +235,6 @@ def dataframes(
     lazy: Literal[False] = ...,
     min_cols: int = 0,
     max_cols: int = _COL_LIMIT,
-    size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
     include_cols: Sequence[column] | column | None = None,
@@ -240,7 +254,6 @@ def dataframes(
     lazy: Literal[True],
     min_cols: int = 0,
     max_cols: int = _COL_LIMIT,
-    size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
     include_cols: Sequence[column] | column | None = None,
@@ -262,7 +275,6 @@ def dataframes(  # noqa: D417
     lazy: bool = False,
     min_cols: int = 1,
     max_cols: int = _COL_LIMIT,
-    size: int | None = None,
     min_size: int = 0,
     max_size: int = _ROW_LIMIT,
     include_cols: Sequence[column] | column | None = None,
@@ -276,6 +288,10 @@ def dataframes(  # noqa: D417
     """
     Hypothesis strategy for producing Polars DataFrames or LazyFrames.
 
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     cols : {int, columns}, optional
@@ -288,9 +304,6 @@ def dataframes(  # noqa: D417
     max_cols : int, optional
         if not passing an exact size, can set a maximum value here (defaults to
         MAX_COLS).
-    size : int, optional
-        if set, will create a DataFrame of exactly this size (and ignore
-        the min_size/max_size len params).
     min_size : int, optional
         if not passing an exact size, set the minimum number of rows in the
         DataFrame.
@@ -315,6 +328,13 @@ def dataframes(  # noqa: D417
     **kwargs
         Additional keyword arguments that are passed to the underlying data generation
         strategies.
+
+    size : int, optional
+        if set, will create a DataFrame of exactly this size (and ignore
+        the min_size/max_size len params).
+
+        .. deprecated:: 1.0.0
+            Use `min_size` and `max_size` instead.
 
     null_probability : {float, dict[str,float]}, optional
         percentage chance (expressed between 0.0 => 1.0) that a generated value is
@@ -374,7 +394,8 @@ def dataframes(  # noqa: D417
     ...         column("x", dtype=pl.Int32),
     ...         column("y", dtype=pl.Float64),
     ...     ],
-    ...     size=2,
+    ...     min_size=2,
+    ...     max_size=2,
     ... )
     >>> dfs.example()  # doctest: +SKIP
     shape: (2, 2)
@@ -401,6 +422,12 @@ def dataframes(  # noqa: D417
             version="0.20.26",
         )
         allow_chunks = chunked
+    if (size := kwargs.pop("size", None)) is not None:
+        issue_deprecation_warning(
+            "`size` is deprecated. Use `min_size` and `max_size` instead.",
+            version="1.0.0",
+        )
+        min_size = max_size = size
 
     if isinstance(include_cols, column):
         include_cols = [include_cols]
@@ -418,7 +445,9 @@ def dataframes(  # noqa: D417
     if include_cols:
         cols.extend(list(include_cols))
 
-    if size is None:
+    if min_size == max_size:
+        size = min_size
+    else:
         size = draw(st.integers(min_value=min_size, max_value=max_size))
 
     # Process columns
@@ -439,7 +468,8 @@ def dataframes(  # noqa: D417
                 series(
                     name=c.name,
                     dtype=c.dtype,
-                    size=size,
+                    min_size=size,
+                    max_size=size,
                     strategy=c.strategy,
                     allow_null=c.allow_null,  # type: ignore[arg-type]
                     allow_chunks=allow_series_chunks,
@@ -470,6 +500,10 @@ def dataframes(  # noqa: D417
 class column:
     """
     Define a column for use with the `dataframes` strategy.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
 
     Parameters
     ----------

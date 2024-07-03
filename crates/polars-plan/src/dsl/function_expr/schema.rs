@@ -107,10 +107,16 @@ impl FunctionExpr {
                 sort: _,
                 parallel: _,
                 name,
+                normalize,
             } => mapper.map_dtype(|dt| {
+                let count_dt = if *normalize {
+                    DataType::Float64
+                } else {
+                    IDX_DTYPE
+                };
                 DataType::Struct(vec![
                     Field::new(fields[0].name().as_str(), dt.clone()),
-                    Field::new(name, IDX_DTYPE),
+                    Field::new(name, count_dt),
                 ])
             }),
             #[cfg(feature = "unique_counts")]
@@ -308,7 +314,9 @@ impl FunctionExpr {
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "replace")]
-            Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
+            Replace => mapper.with_same_dtype(),
+            #[cfg(feature = "replace")]
+            ReplaceStrict { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
             FillNullWithStrategy(_) => mapper.with_same_dtype(),
             GatherEvery { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "reinterpret")]
@@ -526,11 +534,13 @@ impl<'a> FieldsMapper<'a> {
     pub fn replace_dtype(&self, return_dtype: Option<DataType>) -> PolarsResult<Field> {
         let dtype = match return_dtype {
             Some(dtype) => dtype,
-            // Supertype of `new` and `default`
             None => {
-                let column_type = &self.fields[0];
                 let new = &self.fields[2];
-                try_get_supertype(column_type.data_type(), new.data_type())?
+                let default = self.fields.get(3);
+                match default {
+                    Some(default) => try_get_supertype(default.data_type(), new.data_type())?,
+                    None => new.data_type().clone(),
+                }
             },
         };
         self.with_dtype(dtype)

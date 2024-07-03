@@ -2,7 +2,7 @@ use std::any::Any;
 
 use parquet_format_safe::ColumnIndex;
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 use crate::parquet::parquet_bridge::BoundaryOrder;
 use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 use crate::parquet::types::NativeType;
@@ -86,7 +86,7 @@ impl<T: NativeType> NativeIndex<T> {
     pub(crate) fn try_new(
         index: ColumnIndex,
         primitive_type: PrimitiveType,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ParquetError> {
         let len = index.min_values.len();
 
         let null_counts = index
@@ -114,7 +114,7 @@ impl<T: NativeType> NativeIndex<T> {
                     null_count,
                 })
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>, ParquetError>>()?;
 
         Ok(Self {
             primitive_type,
@@ -159,7 +159,7 @@ impl ByteIndex {
     pub(crate) fn try_new(
         index: ColumnIndex,
         primitive_type: PrimitiveType,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ParquetError> {
         let len = index.min_values.len();
 
         let null_counts = index
@@ -185,7 +185,7 @@ impl ByteIndex {
                     null_count,
                 })
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>, ParquetError>>()?;
 
         Ok(Self {
             primitive_type,
@@ -219,7 +219,7 @@ impl FixedLenByteIndex {
     pub(crate) fn try_new(
         index: ColumnIndex,
         primitive_type: PrimitiveType,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ParquetError> {
         let len = index.min_values.len();
 
         let null_counts = index
@@ -245,7 +245,7 @@ impl FixedLenByteIndex {
                     null_count,
                 })
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>, ParquetError>>()?;
 
         Ok(Self {
             primitive_type,
@@ -274,7 +274,7 @@ pub struct BooleanIndex {
 }
 
 impl BooleanIndex {
-    pub(crate) fn try_new(index: ColumnIndex) -> Result<Self, Error> {
+    pub(crate) fn try_new(index: ColumnIndex) -> Result<Self, ParquetError> {
         let len = index.min_values.len();
 
         let null_counts = index
@@ -302,7 +302,7 @@ impl BooleanIndex {
                     null_count,
                 })
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>, ParquetError>>()?;
 
         Ok(Self {
             indexes,

@@ -15,7 +15,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Series
-    from polars.type_aliases import (
+    from polars._typing import (
         CategoricalOrdering,
         PolarsDataType,
         PythonDataType,
@@ -179,38 +179,6 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
-
-
-class DataTypeGroup(frozenset):  # type: ignore[type-arg]
-    """Group of data types."""
-
-    _match_base_type: bool
-
-    def __new__(
-        cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
-    ) -> DataTypeGroup:
-        """
-        Construct a DataTypeGroup.
-
-        Parameters
-        ----------
-        items :
-            iterable of data types
-        match_base_type:
-            match the base type
-        """
-        for it in items:
-            if not isinstance(it, (DataType, DataTypeClass)):
-                msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
-                raise TypeError(msg)
-        dtype_group = super().__new__(cls, items)
-        dtype_group._match_base_type = match_base_type
-        return dtype_group
-
-    def __contains__(self, item: Any) -> bool:
-        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
-            item = item.base_type()
-        return super().__contains__(item)
 
 
 class NumericType(DataType):
@@ -636,7 +604,7 @@ class List(NestedType):
     inner: PolarsDataType
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
+        self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -707,7 +675,7 @@ class Array(NestedType):
             msg = "Array constructor is missing the required argument `shape`"
             raise TypeError(msg)
 
-        inner_parsed = polars.datatypes.py_type_to_dtype(inner)
+        inner_parsed = polars.datatypes.parse_into_dtype(inner)
         inner_shape = inner_parsed.shape if isinstance(inner_parsed, Array) else ()
 
         if isinstance(shape, int):
@@ -786,7 +754,7 @@ class Field:
 
     def __init__(self, name: str, dtype: PolarsDataType):
         self.name = name
-        self.dtype = polars.datatypes.py_type_to_dtype(dtype)
+        self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)

@@ -61,31 +61,32 @@ impl DurationMethods for DurationChunked {
 
     /// Extract the seconds from a `Duration`
     fn minutes(&self) -> Int64Chunked {
-        match self.time_unit() {
-            TimeUnit::Milliseconds => (&self.0).wrapping_trunc_div_scalar(MILLISECONDS * 60),
-            TimeUnit::Microseconds => (&self.0).wrapping_trunc_div_scalar(MICROSECONDS * 60),
-            TimeUnit::Nanoseconds => (&self.0).wrapping_trunc_div_scalar(NANOSECONDS * 60),
-        }
+        let tu = match self.time_unit() {
+            TimeUnit::Milliseconds => MILLISECONDS,
+            TimeUnit::Microseconds => MICROSECONDS,
+            TimeUnit::Nanoseconds => NANOSECONDS,
+        };
+        (&self.0).wrapping_trunc_div_scalar(tu * 60)
     }
 
     /// Extract the seconds from a `Duration`
     fn seconds(&self) -> Int64Chunked {
-        match self.time_unit() {
-            TimeUnit::Milliseconds => (&self.0).wrapping_trunc_div_scalar(MILLISECONDS),
-            TimeUnit::Microseconds => (&self.0).wrapping_trunc_div_scalar(MICROSECONDS),
-            TimeUnit::Nanoseconds => (&self.0).wrapping_trunc_div_scalar(NANOSECONDS),
-        }
+        let tu = match self.time_unit() {
+            TimeUnit::Milliseconds => MILLISECONDS,
+            TimeUnit::Microseconds => MICROSECONDS,
+            TimeUnit::Nanoseconds => NANOSECONDS,
+        };
+        (&self.0).wrapping_trunc_div_scalar(tu)
     }
 
     /// Extract the milliseconds from a `Duration`
     fn milliseconds(&self) -> Int64Chunked {
-        match self.time_unit() {
-            TimeUnit::Milliseconds => self.0.clone(),
-            TimeUnit::Microseconds => self.0.clone().wrapping_trunc_div_scalar(1000),
-            TimeUnit::Nanoseconds => {
-                (&self.0).wrapping_trunc_div_scalar(NANOSECONDS_IN_MILLISECOND)
-            },
-        }
+        let t = match self.time_unit() {
+            TimeUnit::Milliseconds => return self.0.clone(),
+            TimeUnit::Microseconds => 1000,
+            TimeUnit::Nanoseconds => NANOSECONDS_IN_MILLISECOND,
+        };
+        (&self.0).wrapping_trunc_div_scalar(t)
     }
 
     /// Extract the microseconds from a `Duration`

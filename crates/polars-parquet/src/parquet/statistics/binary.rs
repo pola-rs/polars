@@ -1,6 +1,6 @@
 use parquet_format_safe::Statistics as ParquetStatistics;
 
-use crate::parquet::error::Result;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::PrimitiveType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,7 +13,10 @@ pub struct BinaryStatistics {
 }
 
 impl BinaryStatistics {
-    pub fn deserialize(v: &ParquetStatistics, primitive_type: PrimitiveType) -> Result<Self> {
+    pub fn deserialize(
+        v: &ParquetStatistics,
+        primitive_type: PrimitiveType,
+    ) -> ParquetResult<Self> {
         Ok(BinaryStatistics {
             primitive_type,
             null_count: v.null_count,

@@ -10,6 +10,7 @@ from hypothesis import assume, given, reject
 
 import polars as pl
 from polars._utils.various import parse_version
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 
@@ -93,7 +94,7 @@ def test_business_day_count_w_week_mask_invalid() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError, match="`week_mask` must have at least one business day"
+        ComputeError, match="`week_mask` must have at least one business day"
     ):
         df.select(pl.business_day_count("start", "end", week_mask=[False] * 7))
 
@@ -108,7 +109,7 @@ def test_business_day_count_schema() -> None:
     result = lf.select(
         business_day_count=pl.business_day_count("start", "end"),
     )
-    assert result.schema["business_day_count"] == pl.Int32
+    assert result.collect_schema()["business_day_count"] == pl.Int32
     assert result.collect().schema["business_day_count"] == pl.Int32
     assert 'col("start").business_day_count([col("end")])' in result.explain()
 

@@ -5,7 +5,7 @@ use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use super::super::metadata::FileMetaData;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
 use super::metadata::{deserialize_metadata, metadata_len};
-use crate::parquet::error::{Error, Result};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::HEADER_SIZE;
 
 async fn stream_len(
@@ -26,11 +26,11 @@ async fn stream_len(
 /// Asynchronously reads the files' metadata
 pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>(
     reader: &mut R,
-) -> Result<FileMetaData> {
+) -> ParquetResult<FileMetaData> {
     let file_size = stream_len(reader).await?;
 
     if file_size < HEADER_SIZE + FOOTER_SIZE {
-        return Err(Error::oos(
+        return Err(ParquetError::oos(
             "A parquet file must contain a header and footer with at least 12 bytes",
         ));
     }
@@ -50,7 +50,7 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
 
     // check this is indeed a parquet file
     if buffer[default_end_len - 4..] != PARQUET_MAGIC {
-        return Err(Error::oos("Invalid Parquet file. Corrupt footer"));
+        return Err(ParquetError::oos("Invalid Parquet file. Corrupt footer"));
     }
 
     let metadata_len = metadata_len(&buffer, default_end_len);
@@ -58,7 +58,7 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
 
     let footer_len = FOOTER_SIZE + metadata_len;
     if footer_len > file_size {
-        return Err(Error::oos(
+        return Err(ParquetError::oos(
             "The footer size must be smaller or equal to the file's size",
         ));
     }

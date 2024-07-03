@@ -1,12 +1,8 @@
-use std::io::BufWriter;
-
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::error::PyPolarsErr;
 use crate::expr::ToPyExprs;
-use crate::file::get_file_like;
-use crate::prelude::polars_err;
-use crate::{PyExpr, PyPolarsErr};
+use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
@@ -71,16 +67,6 @@ impl PyExpr {
         Ok(out.into())
     }
 
-    fn _meta_selector_sub(&self, other: PyExpr) -> PyResult<PyExpr> {
-        let out = self
-            .inner
-            .clone()
-            .meta()
-            ._selector_sub(other.inner)
-            .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
     fn _meta_selector_and(&self, other: PyExpr) -> PyResult<PyExpr> {
         let out = self
             .inner
@@ -91,41 +77,28 @@ impl PyExpr {
         Ok(out.into())
     }
 
+    fn _meta_selector_sub(&self, other: PyExpr) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._selector_sub(other.inner)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    fn _meta_selector_xor(&self, other: PyExpr) -> PyResult<PyExpr> {
+        let out = self
+            .inner
+            .clone()
+            .meta()
+            ._selector_xor(other.inner)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
     fn _meta_as_selector(&self) -> PyExpr {
         self.inner.clone().meta()._into_selector().into()
-    }
-
-    #[cfg(all(feature = "json", feature = "serde_json"))]
-    fn serialize(&self, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-        serde_json::to_writer(file, &self.inner)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-        Ok(())
-    }
-
-    #[staticmethod]
-    #[cfg(feature = "json")]
-    fn deserialize(py_f: PyObject) -> PyResult<PyExpr> {
-        // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
-        // so don't bother with files.
-        let mut json = String::new();
-        let _ = get_file_like(py_f, false)?
-            .read_to_string(&mut json)
-            .unwrap();
-
-        // SAFETY:
-        // We skipped the serializing/deserializing of the static in lifetime in `DataType`
-        // so we actually don't have a lifetime at all when serializing.
-
-        // &str still has a lifetime. But it's ok, because we drop it immediately
-        // in this scope.
-        let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
-
-        let inner: polars_lazy::prelude::Expr = serde_json::from_str(json).map_err(|_| {
-            let msg = "could not deserialize input into an expression";
-            PyPolarsErr::from(polars_err!(ComputeError: msg))
-        })?;
-        Ok(PyExpr { inner })
     }
 
     fn meta_tree_format(&self) -> PyResult<String> {

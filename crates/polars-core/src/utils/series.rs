@@ -17,7 +17,7 @@ where
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     let failure_mask = !input.is_null() & output.is_null();
-    let failures = input.filter_threaded(&failure_mask, false)?;
+    let failures = input.filter(&failure_mask)?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
@@ -33,7 +33,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     };
 
     polars_bail!(
-        ComputeError:
+        InvalidOperation:
         "conversion from `{}` to `{}` failed in column '{}' for {} out of {} values: {}{}",
         input.dtype(),
         output.dtype(),

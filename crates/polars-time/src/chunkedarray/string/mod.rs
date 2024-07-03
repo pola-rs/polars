@@ -2,6 +2,7 @@ pub mod infer;
 use chrono::DateTime;
 mod patterns;
 mod strptime;
+use chrono::format::ParseErrorKind;
 use chrono::ParseError;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
@@ -19,9 +20,11 @@ fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    ["%T", "%T%.3f", "%T%.6f", "%T%.9f"]
-        .into_iter()
-        .find(|&fmt| convert(val, fmt).is_ok())
+    patterns::TIME_H_M_S
+        .iter()
+        .chain(patterns::TIME_H_M_S)
+        .find(|fmt| convert(val, fmt).is_ok())
+        .copied()
 }
 
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -52,22 +55,8 @@ struct ParseErrorByteCopy(ParseErrorKind);
 
 impl From<ParseError> for ParseErrorByteCopy {
     fn from(e: ParseError) -> Self {
-        // We need to do this until chrono ParseErrorKind is public
-        // blocked by https://github.com/chronotope/chrono/pull/588.
-        unsafe { std::mem::transmute(e) }
+        ParseErrorByteCopy(e.kind())
     }
-}
-
-#[allow(dead_code)]
-enum ParseErrorKind {
-    OutOfRange,
-    Impossible,
-    NotEnough,
-    Invalid,
-    /// The input string has been prematurely ended.
-    TooShort,
-    TooLong,
-    BadFormat,
 }
 
 fn get_first_val(ca: &StringChunked) -> PolarsResult<&str> {
@@ -221,7 +210,7 @@ pub trait StringMethods: AsString {
                 NonExistent::Raise,
             ),
             #[cfg(feature = "timezones")]
-            (true, _) => Ok(ca.into_datetime(tu, Some("UTC".to_string()))),
+            (true, tz) => Ok(ca.into_datetime(tu, tz.cloned().or_else(|| Some("UTC".to_string())))),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -305,7 +294,10 @@ pub trait StringMethods: AsString {
                 Ok(string_ca
                     .apply_generic(|opt_s| convert.eval(opt_s?, use_cache))
                     .with_name(string_ca.name())
-                    .into_datetime(tu, Some("UTC".to_string())))
+                    .into_datetime(
+                        tu,
+                        Some(tz.map(|x| x.to_string()).unwrap_or("UTC".to_string())),
+                    ))
             }
             #[cfg(not(feature = "timezones"))]
             {

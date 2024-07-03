@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -12,7 +13,7 @@ from polars._utils.convert import (
     timedelta_to_int,
 )
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration, Time
+from polars.datatypes import Date, Datetime, Duration, Enum, Time
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
@@ -22,7 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import PolarsDataType, TimeUnit
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def lit(
@@ -125,6 +126,12 @@ def lit(
 
     elif isinstance(value, (list, tuple)):
         return lit(pl.Series("literal", [value], dtype=dtype))
+
+    elif isinstance(value, enum.Enum):
+        lit_value = value.value
+        if dtype is None and isinstance(value, str):
+            dtype = Enum(m.value for m in type(value))
+        return lit(lit_value, dtype=dtype)
 
     if dtype:
         return wrap_expr(plr.lit(value, allow_object)).cast(dtype)

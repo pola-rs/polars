@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _GEVENT_AVAILABLE = True
+_GREAT_TABLES_AVAILABLE = True
 _HVPLOT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
@@ -70,30 +71,30 @@ class _LazyModule(ModuleType):
         self.__dict__.update(module.__dict__)
         return module
 
-    def __getattr__(self, attr: Any) -> Any:
+    def __getattr__(self, name: str) -> Any:
         # have "hasattr('__wrapped__')" return False without triggering import
         # (it's for decorators, not modules, but keeps "make doctest" happy)
-        if attr == "__wrapped__":
-            msg = f"{self._module_name!r} object has no attribute {attr!r}"
+        if name == "__wrapped__":
+            msg = f"{self._module_name!r} object has no attribute {name!r}"
             raise AttributeError(msg)
 
         # accessing the proxy module's attributes triggers import of the real thing
         if self._module_available:
             # import the module and return the requested attribute
             module = self._import()
-            return getattr(module, attr)
+            return getattr(module, name)
 
         # user has not installed the proxied/lazy module
-        elif attr == "__name__":
+        elif name == "__name__":
             return self._module_name
-        elif re.match(r"^__\w+__$", attr) and attr != "__version__":
+        elif re.match(r"^__\w+__$", name) and name != "__version__":
             # allow some minimal introspection on private module
             # attrs to avoid unnecessary error-handling elsewhere
             return None
         else:
             # all other attribute access raises a helpful exception
             pfx = self._mod_pfx.get(self._module_name, "")
-            msg = f"{pfx}{attr} requires {self._module_name!r} module to be installed"
+            msg = f"{pfx}{name} requires {self._module_name!r} module to be installed"
             raise ModuleNotFoundError(msg) from None
 
 
@@ -152,6 +153,7 @@ if TYPE_CHECKING:
     import deltalake
     import fsspec
     import gevent
+    import great_tables
     import hvplot
     import hypothesis
     import numpy
@@ -175,6 +177,7 @@ else:
     # heavy/optional third party libs
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    great_tables, _GREAT_TABLES_AVAILABLE = _lazy_import("great_tables")
     hvplot, _HVPLOT_AVAILABLE = _lazy_import("hvplot")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
@@ -262,7 +265,7 @@ def import_optional(
     Please install it using the command `pip install definitely_a_real_module`.
     """
     from polars._utils.various import parse_version
-    from polars.exceptions import ModuleUpgradeRequired
+    from polars.exceptions import ModuleUpgradeRequiredError
 
     module_root = module_name.split(".", 1)[0]
     try:
@@ -285,7 +288,7 @@ def import_optional(
                 f"{'.'.join(str(v) for v in min_version)} or higher"
                 f" (found {'.'.join(str(v) for v in mod_version)})"
             )
-            raise ModuleUpgradeRequired(msg)
+            raise ModuleUpgradeRequiredError(msg)
 
     return module
 
@@ -301,6 +304,7 @@ __all__ = [
     "deltalake",
     "fsspec",
     "gevent",
+    "great_tables",
     "hvplot",
     "numpy",
     "pandas",

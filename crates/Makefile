@@ -116,6 +116,8 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-io
 	cargo publish --allow-dirty -p polars-plan
 	cargo publish --allow-dirty -p polars-expr
+	cargo publish --allow-dirty -p polars-mem-engine
+	cargo publish --allow-dirty -p polars-stream
 	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql

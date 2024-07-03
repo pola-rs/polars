@@ -12,6 +12,7 @@ from typing import (
     overload,
 )
 
+from polars._typing import FrameType
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals
@@ -23,7 +24,6 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.lazyframe import LazyFrame
 from polars.series import Series
-from polars.type_aliases import FrameType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext
@@ -52,6 +52,9 @@ if TYPE_CHECKING:
         pa.Table,
         pa.RecordBatch,
     ]
+
+
+__all__ = ["SQLContext"]
 
 
 def _compatible_frame(obj: Any) -> bool:
@@ -150,7 +153,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = None,
         *,
         register_globals: bool | int = False,
-        all_compatible: bool = False,
         eager: bool = False,
         **named_frames: CompatibleFrameType | None,
     ) -> None:
@@ -163,13 +165,11 @@ class SQLContext(Generic[FrameType]):
             A `{name:frame, ...}` mapping which can include Polars frames *and*
             pandas DataFrames, Series and pyarrow Table and RecordBatch objects.
         register_globals
-            Register compatible objects found in the globals, automatically mapping
-            their variable name to a table name. If given an integer then only the
+            Register compatible objects (polars DataFrame, LazyFrame, and Series) found
+            in the globals, automatically mapping their variable name to a table name.
+            To register other objects (pandas/pyarrow data) pass them explicitly, or
+            call the `execute_global` classmethod. If given an integer then only the
             most recent "n" objects found will be registered.
-        all_compatible
-            If `register_globals` is set this option controls whether we *also* register
-            all pandas DataFrame, Series, and pyarrow Table and RecordBatch objects.
-            If False, only Polars classes are registered with the SQL engine.
         eager
             If True, returns execution results as `DataFrame` instead of `LazyFrame`.
             (Note that the query itself is always executed in lazy-mode; this parameter
@@ -203,7 +203,7 @@ class SQLContext(Generic[FrameType]):
         frames = dict(frames or {})
         if register_globals:
             for name, obj in _get_frame_locals(
-                all_compatible=all_compatible,
+                all_compatible=False,
                 n_objects=None if (register_globals is True) else None,
             ).items():
                 if name not in frames and name not in named_frames:
@@ -237,9 +237,10 @@ class SQLContext(Generic[FrameType]):
         Notes
         -----
         * This convenience method automatically registers all compatible objects in
-          the local stack, mapping their variable name to a table name. Note that in
-          addition to polars DataFrame, LazyFrame, and Series this method will *also*
-          register pandas DataFrame, Series, and pyarrow Table and RecordBatch objects.
+          the local stack that are referenced in the query, mapping their variable name
+          to a table name. Note that in addition to polars DataFrame, LazyFrame, and
+          Series this method *also* registers pandas DataFrame, Series, and pyarrow
+          Table and RecordBatch objects.
         * Instead of calling this classmethod you should consider using `pl.sql`,
           which will use this code internally.
 
@@ -274,13 +275,16 @@ class SQLContext(Generic[FrameType]):
         # basic extraction of possible table names from the query, so we don't register
         # unnecessary objects from the globals (ideally we shuoold look to make the
         # underlying `sqlparser-rs` lib parse the query to identify table names)
-        q = re.split(r"\bFROM\b", query, maxsplit=1, flags=re.I)[1]
-        possible_names = {
-            nm
-            for nm in re.split(r"\s", q)
-            if re.match(r'^("[^"]+")$', nm)
-            or (nm.isidentifier() and nm.lower() not in _SQL_KEYWORDS_)
-        }
+        q = re.split(r"\bFROM\b", query, maxsplit=1, flags=re.I)
+        possible_names = (
+            {
+                nm.strip('"')
+                for nm in re.split(r"\s", q[1])
+                if re.match(r'^("[^"]+")$', nm) or nm.isidentifier()
+            }
+            if len(q) > 1
+            else set()
+        )
         # get compatible frame objects from the globals, constraining by possible names
         named_frames = _get_frame_locals(all_compatible=True, named=possible_names)
         with cls(frames=named_frames, register_globals=False) as ctx:
@@ -380,6 +384,7 @@ class SQLContext(Generic[FrameType]):
         ...         ("The Shawshank Redemption", 1994, 25_000_000, 28_341_469, 9.3),
         ...     ],
         ...     schema=["title", "release_year", "budget", "gross", "imdb_score"],
+        ...     orient="row",
         ... )
         >>> ctx = pl.SQLContext(films=df)
 
@@ -666,58 +671,3 @@ class SQLContext(Generic[FrameType]):
         ['foo_bar', 'hello_data']
         """
         return sorted(self._ctxt.get_tables())
-
-
-_SQL_KEYWORDS_ = {
-    "and",
-    "anti",
-    "array",
-    "as",
-    "asc",
-    "boolean",
-    "by",
-    "case",
-    "create",
-    "date",
-    "datetime",
-    "desc",
-    "distinct",
-    "double",
-    "drop",
-    "exclude",
-    "float",
-    "from",
-    "full",
-    "group",
-    "having",
-    "in",
-    "inner",
-    "int",
-    "interval",
-    "join",
-    "left",
-    "limit",
-    "not",
-    "null",
-    "offset",
-    "on",
-    "or",
-    "order",
-    "outer",
-    "regexp",
-    "right",
-    "rlike",
-    "select",
-    "semi",
-    "show",
-    "table",
-    "tables",
-    "then",
-    "using",
-    "when",
-    "where",
-    "with",
-}
-
-
-__all__ = ["SQLContext"]

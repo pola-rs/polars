@@ -1,6 +1,6 @@
 use polars::datatypes::TimeUnit;
+use polars_core::prelude::{NonExistent, QuantileInterpolOptions};
 use polars_core::series::IsSorted;
-use polars_core::utils::arrow::legacy::kernels::NonExistent;
 use polars_ops::prelude::ClosedInterval;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
@@ -321,7 +321,7 @@ pub struct Agg {
     #[pyo3(get)]
     name: PyObject,
     #[pyo3(get)]
-    arguments: usize,
+    arguments: Vec<usize>,
     #[pyo3(get)]
     // Arbitrary control options
     options: PyObject,
@@ -556,7 +556,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 },
                 Binary(_) => return Err(PyNotImplementedError::new_err("binary literal")),
                 Range { .. } => return Err(PyNotImplementedError::new_err("range literal")),
-                Date(..) | DateTime(..) => Literal {
+                Date(..) | DateTime(..) | Decimal(..) => Literal {
                     value: Wrap(lit.to_any_value().unwrap()).to_object(py),
                     dtype,
                 },
@@ -635,7 +635,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 propagate_nans,
             } => Agg {
                 name: "min".to_object(py),
-                arguments: input.0,
+                arguments: vec![input.0],
                 options: propagate_nans.to_object(py),
             },
             IRAggExpr::Max {
@@ -643,59 +643,78 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 propagate_nans,
             } => Agg {
                 name: "max".to_object(py),
-                arguments: input.0,
+                arguments: vec![input.0],
                 options: propagate_nans.to_object(py),
             },
             IRAggExpr::Median(n) => Agg {
                 name: "median".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::NUnique(n) => Agg {
                 name: "n_unique".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::First(n) => Agg {
                 name: "first".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::Last(n) => Agg {
                 name: "last".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::Mean(n) => Agg {
                 name: "mean".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
-            IRAggExpr::Implode(_) => return Err(PyNotImplementedError::new_err("implode")),
-            IRAggExpr::Quantile { .. } => return Err(PyNotImplementedError::new_err("quantile")),
+            IRAggExpr::Implode(n) => Agg {
+                name: "implode".to_object(py),
+                arguments: vec![n.0],
+                options: py.None(),
+            },
+            IRAggExpr::Quantile {
+                expr,
+                quantile,
+                interpol,
+            } => Agg {
+                name: "quantile".to_object(py),
+                arguments: vec![expr.0, quantile.0],
+                options: match interpol {
+                    QuantileInterpolOptions::Nearest => "nearest",
+                    QuantileInterpolOptions::Lower => "lower",
+                    QuantileInterpolOptions::Higher => "higher",
+                    QuantileInterpolOptions::Midpoint => "midpoint",
+                    QuantileInterpolOptions::Linear => "linear",
+                }
+                .to_object(py),
+            },
             IRAggExpr::Sum(n) => Agg {
                 name: "sum".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
             IRAggExpr::Count(n, include_null) => Agg {
                 name: "count".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: include_null.to_object(py),
             },
             IRAggExpr::Std(n, ddof) => Agg {
                 name: "std".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: ddof.to_object(py),
             },
             IRAggExpr::Var(n, ddof) => Agg {
                 name: "var".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: ddof.to_object(py),
             },
             IRAggExpr::AggGroups(n) => Agg {
                 name: "agg_groups".to_object(py),
-                arguments: n.0,
+                arguments: vec![n.0],
                 options: py.None(),
             },
         }
@@ -876,6 +895,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         ascii_case_insensitive,
                     )
                         .to_object(py),
+                    StringFunction::ExtractMany { .. } => {
+                        return Err(PyNotImplementedError::new_err("extract_many"))
+                    },
                 },
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"))
@@ -1040,7 +1062,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 .to_object(py),
                 FunctionExpr::Atan2 => ("atan2",).to_object(py),
                 FunctionExpr::Sign => ("sign",).to_object(py),
-                FunctionExpr::FillNull => return Err(PyNotImplementedError::new_err("fill null")),
+                FunctionExpr::FillNull => ("fill_null",).to_object(py),
                 FunctionExpr::RollingExpr(rolling) => match rolling {
                     RollingFunction::Min(_) => {
                         return Err(PyNotImplementedError::new_err("rolling min"))
@@ -1104,7 +1126,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Reshape(_, _) => {
                     return Err(PyNotImplementedError::new_err("reshape"))
                 },
-                FunctionExpr::RepeatBy => return Err(PyNotImplementedError::new_err("repeat by")),
+                FunctionExpr::RepeatBy => ("repeat_by",).to_object(py),
                 FunctionExpr::ArgUnique => ("argunique",).to_object(py),
                 FunctionExpr::Rank {
                     options: _,
@@ -1115,7 +1137,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     has_max: _,
                 } => return Err(PyNotImplementedError::new_err("clip")),
                 FunctionExpr::AsStruct => return Err(PyNotImplementedError::new_err("as struct")),
-                FunctionExpr::TopK { .. } => return Err(PyNotImplementedError::new_err("top k")),
+                FunctionExpr::TopK { descending } => ("top_k", descending).to_object(py),
                 FunctionExpr::CumCount { reverse } => ("cumcount", reverse).to_object(py),
                 FunctionExpr::CumSum { reverse } => ("cumsum", reverse).to_object(py),
                 FunctionExpr::CumProd { reverse } => ("cumprod", reverse).to_object(py),
@@ -1126,6 +1148,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     sort: _,
                     parallel: _,
                     name: _,
+                    normalize: _,
                 } => return Err(PyNotImplementedError::new_err("value counts")),
                 FunctionExpr::UniqueCounts => ("unique_counts",).to_object(py),
                 FunctionExpr::ApproxNUnique => {
@@ -1217,8 +1240,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::EwmVar { options: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm var"))
                 },
-                FunctionExpr::Replace { return_dtype: _ } => {
-                    return Err(PyNotImplementedError::new_err("replace"))
+                FunctionExpr::Replace => return Err(PyNotImplementedError::new_err("replace")),
+                FunctionExpr::ReplaceStrict { return_dtype: _ } => {
+                    return Err(PyNotImplementedError::new_err("replace_strict"))
                 },
                 FunctionExpr::Negate => return Err(PyNotImplementedError::new_err("negate")),
                 FunctionExpr::FillNullWithStrategy(_) => {
@@ -1236,9 +1260,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"))
                 },
-                FunctionExpr::TopKBy { .. } => {
-                    return Err(PyNotImplementedError::new_err("top_k_by"))
-                },
+                FunctionExpr::TopKBy { descending } => ("top_k_by", descending).to_object(py),
                 FunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"))
                 },

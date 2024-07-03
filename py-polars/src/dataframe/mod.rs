@@ -2,12 +2,13 @@ mod construction;
 mod export;
 mod general;
 mod io;
+mod serde;
 
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::PyPolarsErr;
+use crate::error::PyPolarsErr;
 
 #[pyclass]
 #[repr(transparent)]

@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Sequence
 
+import polars.functions as F
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
@@ -26,7 +27,7 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
-    from polars.type_aliases import ParallelStrategy, SchemaDict
+    from polars._typing import ParallelStrategy, SchemaDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -40,9 +41,10 @@ def read_parquet(
     row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
-    hive_partitioning: bool = True,
+    hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
     rechunk: bool = False,
     low_memory: bool = False,
     storage_options: dict[str, Any] | None = None,
@@ -81,7 +83,9 @@ def read_parquet(
         can be skipped from reading.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
-        to prune reads.
+        to prune reads. This is unset by default (i.e. `None`), meaning it is
+        automatically enabled when a single directory is passed, and otherwise
+        disabled.
     glob
         Expand path given via globbing rules.
     hive_schema
@@ -91,6 +95,8 @@ def read_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    try_parse_hive_dates
+        Whether to try parsing hive values as date/datetime types.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -179,6 +185,7 @@ def read_parquet(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
         rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
@@ -189,8 +196,9 @@ def read_parquet(
 
     if columns is not None:
         if is_int_sequence(columns):
-            columns = [lf.columns[i] for i in columns]
-        lf = lf.select(columns)
+            lf = lf.select(F.nth(columns))
+        else:
+            lf = lf.select(columns)
 
     return lf.collect()
 
@@ -272,7 +280,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
         Dictionary mapping column names to datatypes
     """
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
 
     return _read_parquet_schema(source)
 
@@ -287,9 +295,10 @@ def scan_parquet(
     row_index_offset: int = 0,
     parallel: ParallelStrategy = "auto",
     use_statistics: bool = True,
-    hive_partitioning: bool = True,
+    hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
     rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
@@ -332,6 +341,8 @@ def scan_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    try_parse_hive_dates
+        Whether to try parsing hive values as date/datetime types.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
@@ -381,9 +392,11 @@ def scan_parquet(
         issue_unstable_warning(msg)
 
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     else:
-        source = [normalize_filepath(source) for source in source]
+        source = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
 
     return _scan_parquet_impl(
         source,
@@ -398,6 +411,7 @@ def scan_parquet(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
         glob=glob,
     )
@@ -415,9 +429,10 @@ def _scan_parquet_impl(
     storage_options: dict[str, object] | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
-    hive_partitioning: bool = True,
+    hive_partitioning: bool | None = None,
     glob: bool = True,
     hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
     retries: int = 0,
 ) -> LazyFrame:
     if isinstance(source, list):
@@ -445,6 +460,7 @@ def _scan_parquet_impl(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
         retries=retries,
         glob=glob,
     )

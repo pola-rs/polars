@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
@@ -102,7 +103,7 @@ def test_qcut_full_null() -> None:
 def test_qcut_allow_duplicates() -> None:
     s = pl.Series([1, 2, 2, 3])
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         s.qcut([0.50, 0.51])
 
     result = s.qcut([0.50, 0.51], allow_duplicates=True)

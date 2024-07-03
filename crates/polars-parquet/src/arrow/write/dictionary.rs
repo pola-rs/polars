@@ -9,6 +9,7 @@ use super::binary::{
 use super::fixed_len_bytes::{
     build_statistics as fixed_binary_build_statistics, encode_plain as fixed_binary_encode_plain,
 };
+use super::pages::PrimitiveNested;
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
@@ -142,8 +143,8 @@ fn serialize_keys<K: DictionaryKey>(
 
     let mut nested = nested.to_vec();
     let array = array.clone().sliced(start, len);
-    if let Some(Nested::Primitive(_, _, c)) = nested.last_mut() {
-        *c = len;
+    if let Some(Nested::Primitive(PrimitiveNested { ref mut length, .. })) = nested.last_mut() {
+        *length = len;
     } else {
         unreachable!("")
     }

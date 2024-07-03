@@ -1,4 +1,5 @@
 import sys
+from collections import OrderedDict
 from datetime import datetime
 from typing import Any
 
@@ -6,10 +7,12 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars._typing import SelectorType
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -50,7 +53,7 @@ def df() -> pl.DataFrame:
 
 def test_selector_all(df: pl.DataFrame) -> None:
     assert df.schema == df.select(cs.all()).schema
-    assert {} == df.select(~cs.all()).schema
+    assert df.select(~cs.all()).schema == {}
     assert df.schema == df.select(~(~cs.all())).schema
     assert df.select(cs.all() & pl.col("abc")).schema == {"abc": pl.UInt16}
 
@@ -97,18 +100,24 @@ def test_selector_alpha() -> None:
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
-    assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
-        "abc": pl.UInt16,
-        "eee": pl.Boolean,
-        "fgg": pl.Boolean,
-    }
-    assert df.select(~cs.by_dtype(pl.INTEGER_DTYPES, pl.TEMPORAL_DTYPES)).schema == {
-        "cde": pl.Float64,
-        "def": pl.Float32,
-        "eee": pl.Boolean,
-        "fgg": pl.Boolean,
-        "qqR": pl.String,
-    }
+    assert df.select(cs.boolean() | cs.by_dtype(pl.UInt16)).schema == OrderedDict(
+        {
+            "abc": pl.UInt16,
+            "eee": pl.Boolean,
+            "fgg": pl.Boolean,
+        }
+    )
+    assert df.select(
+        ~cs.by_dtype(*INTEGER_DTYPES, *TEMPORAL_DTYPES)
+    ).schema == pl.Schema(
+        {
+            "cde": pl.Float64(),
+            "def": pl.Float32(),
+            "eee": pl.Boolean(),
+            "fgg": pl.Boolean(),
+            "qqR": pl.String(),
+        }
+    )
     assert df.select(cs.by_dtype()).schema == {}
     assert df.select(cs.by_dtype([])).schema == {}
 
@@ -176,6 +185,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     ).columns
     assert selected_cols == ["fgg"]
 
+    for missing_column in ("missing", "???"):
+        assert df.select(cs.by_name(missing_column, require_all=False)).columns == []
+
     # check "by_name & col"
     for selector_expr, expected in (
         (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),
@@ -196,20 +208,20 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
 
 def test_selector_contains(df: pl.DataFrame) -> None:
     assert df.select(cs.contains("b")).columns == ["abc", "bbb"]
-    assert df.select(cs.contains(("e", "g"))).columns == [
+    assert df.select(cs.contains(("e", "g"))).columns == [  # type: ignore[arg-type]
         "cde",
         "def",
         "eee",
         "fgg",
         "ghi",
     ]
-    assert df.select(~cs.contains(("b", "e", "g"))).columns == [
+    assert df.select(~cs.contains("b", "e", "g")).columns == [
         "JJK",
         "Lmn",
         "opp",
         "qqR",
     ]
-    assert df.select(cs.contains(("ee", "x"))).columns == ["eee"]
+    assert df.select(cs.contains("ee", "x")).columns == ["eee"]
 
     # expected errors
     with pytest.raises(TypeError):
@@ -597,32 +609,44 @@ def test_selector_repr() -> None:
 
 def test_selector_sets(df: pl.DataFrame) -> None:
     # or
-    assert df.select(cs.temporal() | cs.string() | cs.starts_with("e")).schema == {
-        "eee": pl.Boolean,
-        "ghi": pl.Time,
-        "JJK": pl.Date,
-        "Lmn": pl.Duration,
-        "opp": pl.Datetime("ms"),
-        "qqR": pl.String,
-    }
+    assert df.select(
+        cs.temporal() | cs.string() | cs.starts_with("e")
+    ).schema == OrderedDict(
+        {
+            "eee": pl.Boolean,
+            "ghi": pl.Time,
+            "JJK": pl.Date,
+            "Lmn": pl.Duration,
+            "opp": pl.Datetime("ms"),
+            "qqR": pl.String,
+        }
+    )
 
     # and
-    assert df.select(cs.temporal() & cs.matches("opp|JJK")).schema == {
-        "JJK": pl.Date,
-        "opp": pl.Datetime("ms"),
-    }
+    assert df.select(cs.temporal() & cs.matches("opp|JJK")).schema == OrderedDict(
+        {
+            "JJK": pl.Date,
+            "opp": pl.Datetime("ms"),
+        }
+    )
 
     # SET A - SET B
-    assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == {
-        "ghi": pl.Time,
-        "Lmn": pl.Duration,
-    }
+    assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == OrderedDict(
+        {
+            "ghi": pl.Time,
+            "Lmn": pl.Duration,
+        }
+    )
 
     # equivalent (though more verbose) to the above, using `exclude`
-    assert df.select(cs.exclude(~cs.temporal() | cs.matches("opp|JJK"))).schema == {
-        "ghi": pl.Time,
-        "Lmn": pl.Duration,
-    }
+    assert df.select(
+        cs.exclude(~cs.temporal() | cs.matches("opp|JJK"))
+    ).schema == OrderedDict(
+        {
+            "ghi": pl.Time,
+            "Lmn": pl.Duration,
+        }
+    )
 
     frame = pl.DataFrame({"colx": [0, 1, 2], "coly": [3, 4, 5], "colz": [6, 7, 8]})
     sub_expr = cs.matches("[yz]$") - pl.col("colx")  # << shouldn't behave as set
@@ -631,7 +655,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
         df.select(pl.col("colx") - cs.matches("[yz]$"))
 
-    # COMPLEMENT SET
+    # complement
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
         "abc": pl.UInt16,
         "bbb": pl.UInt32,
@@ -643,6 +667,21 @@ def test_selector_sets(df: pl.DataFrame) -> None:
         "opp": pl.Datetime("ms"),
         "qqR": pl.String,
     }
+
+    # exclusive or
+    for selected in (
+        df.select((cs.matches("e|g")) ^ cs.numeric()),
+        df.select((cs.contains("b", "g")) ^ pl.col("eee")),
+    ):
+        assert selected.schema == OrderedDict(
+            {
+                "abc": pl.UInt16,
+                "bbb": pl.UInt32,
+                "eee": pl.Boolean,
+                "fgg": pl.Boolean,
+                "ghi": pl.Time,
+            }
+        )
 
 
 def test_selector_dispatch_default_operator() -> None:
@@ -688,19 +727,6 @@ def test_selector_expr_dispatch() -> None:
             pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).name.keep()
         ),
     )
-
-    # check that "as_expr" behaves, both explicitly and implicitly
-    for nan_or_inf in (
-        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),
-        cs.float().is_nan().as_expr() | cs.float().is_infinite(),
-        cs.float().is_nan() | cs.float().is_infinite(),
-    ):
-        assert_frame_equal(
-            expected,
-            df.with_columns(
-                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).name.keep()
-            ).fill_null(0),
-        )
 
 
 def test_regex_expansion_group_by_9947() -> None:
@@ -753,6 +779,30 @@ def test_selector_or() -> None:
     result = df.select(cs.by_name("idx") | ~cs.numeric())
 
     expected = pl.DataFrame(
-        {"idx": [0, 1, 2], "str": ["x", "y", "z"]}, schema_overrides={"idx": pl.UInt32}
+        {"idx": [0, 1, 2], "str": ["x", "y", "z"]},
+        schema_overrides={"idx": pl.UInt32},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        (cs.string() | cs.numeric()),
+        (cs.numeric() | cs.string()),
+        ~(~cs.numeric() & ~cs.string()),
+        ~(~cs.string() & ~cs.numeric()),
+        (cs.signed_integer() ^ cs.contains("b", "e", "q")) - cs.starts_with("e"),
+    ],
+)
+def test_selector_result_order(df: pl.DataFrame, selector: SelectorType) -> None:
+    # ensure that selector results always match schema column-order
+    assert df.select(selector).schema == OrderedDict(
+        {
+            "abc": pl.UInt16,
+            "bbb": pl.UInt32,
+            "cde": pl.Float64,
+            "def": pl.Float32,
+            "qqR": pl.String,
+        }
+    )

@@ -1,4 +1,3 @@
-use std::io::Cursor;
 use std::ops::Neg;
 
 use polars::lazy::dsl;
@@ -8,11 +7,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
-use pyo3::types::PyBytes;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
-use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::PyExpr;
 
@@ -78,28 +74,6 @@ impl PyExpr {
     }
     fn lt(&self, other: Self) -> Self {
         self.inner.clone().lt(other.inner).into()
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.inner, &mut writer)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-
-        Ok(PyBytes::new_bound(py, &writer).to_object(py))
-    }
-
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        // Used in pickle/pickling
-        match state.extract::<PyBackedBytes>(py) {
-            Ok(s) => {
-                let cursor = Cursor::new(&*s);
-                self.inner = ciborium::de::from_reader(cursor)
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
-            },
-            Err(e) => Err(e),
-        }
     }
 
     fn alias(&self, name: &str) -> Self {
@@ -251,8 +225,11 @@ impl PyExpr {
     fn len(&self) -> Self {
         self.inner.clone().len().into()
     }
-    fn value_counts(&self, sort: bool, parallel: bool, name: String) -> Self {
-        self.inner.clone().value_counts(sort, parallel, name).into()
+    fn value_counts(&self, sort: bool, parallel: bool, name: String, normalize: bool) -> Self {
+        self.inner
+            .clone()
+            .value_counts(sort, parallel, name, normalize)
+            .into()
     }
     fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
@@ -260,10 +237,10 @@ impl PyExpr {
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    fn cast(&self, data_type: Wrap<DataType>, strict: bool, allow_overflow: bool) -> Self {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool, wrap_numerical: bool) -> Self {
         let dt = data_type.0;
 
-        let options = if allow_overflow {
+        let options = if wrap_numerical {
             CastOptions::Overflowing
         } else if strict {
             CastOptions::Strict
@@ -793,13 +770,8 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
-    fn reshape(&self, dims: Vec<i64>, is_list: bool) -> Self {
-        let nested = if is_list {
-            NestedType::List
-        } else {
-            NestedType::Array
-        };
-        self.inner.clone().reshape(&dims, nested).into()
+    fn reshape(&self, dims: Vec<i64>) -> Self {
+        self.inner.clone().reshape(&dims, NestedType::Array).into()
     }
 
     fn to_physical(&self) -> Self {
@@ -926,7 +898,11 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
-    fn replace(
+    fn replace(&self, old: PyExpr, new: PyExpr) -> Self {
+        self.inner.clone().replace(old.inner, new.inner).into()
+    }
+
+    fn replace_strict(
         &self,
         old: PyExpr,
         new: PyExpr,
@@ -935,7 +911,7 @@ impl PyExpr {
     ) -> Self {
         self.inner
             .clone()
-            .replace(
+            .replace_strict(
                 old.inner,
                 new.inner,
                 default.map(|e| e.inner),

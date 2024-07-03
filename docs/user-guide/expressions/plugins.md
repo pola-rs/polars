@@ -97,7 +97,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 from polars.plugins import register_plugin_function
-from polars.type_aliases import IntoExpr
+from polars._typing import IntoExpr
 
 
 def pig_latinnify(expr: IntoExpr) -> pl.Expr:
@@ -126,7 +126,7 @@ df = pl.DataFrame(
 out = df.with_columns(pig_latin=pig_latinnify("convert"))
 ```
 
-Alternatively, you can [register a custom namespace](https://docs.pola.rs/py-polars/html/reference/api/polars.api.register_expr_namespace.html#polars.api.register_expr_namespace), which enables you to write:
+Alternatively, you can [register a custom namespace](https://docs.pola.rs/api/python/stable/reference/api/polars.api.register_expr_namespace.html#polars.api.register_expr_namespace), which enables you to write:
 
 ```python
 out = df.with_columns(

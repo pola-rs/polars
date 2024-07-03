@@ -1,8 +1,8 @@
 import pytest
 
 import polars as pl
+from polars._typing import TransferEncoding
 from polars.testing import assert_frame_equal
-from polars.type_aliases import TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -28,6 +28,7 @@ def test_contains() -> None:
             (4, None),
         ],
         schema=["idx", "bin"],
+        orient="row",
     )
     for pattern, expected in (
         (b"e * ", [True, False, False, None]),
@@ -95,25 +96,25 @@ def test_starts_ends_with() -> None:
 def test_base64_encode() -> None:
     df = pl.DataFrame({"data": [b"asd", b"qwe"]})
 
-    assert ["YXNk", "cXdl"] == df["data"].bin.encode("base64").to_list()
+    assert df["data"].bin.encode("base64").to_list() == ["YXNk", "cXdl"]
 
 
 def test_base64_decode() -> None:
     df = pl.DataFrame({"data": [b"YXNk", b"cXdl"]})
 
-    assert [b"asd", b"qwe"] == df["data"].bin.decode("base64").to_list()
+    assert df["data"].bin.decode("base64").to_list() == [b"asd", b"qwe"]
 
 
 def test_hex_encode() -> None:
     df = pl.DataFrame({"data": [b"asd", b"qwe"]})
 
-    assert ["617364", "717765"] == df["data"].bin.encode("hex").to_list()
+    assert df["data"].bin.encode("hex").to_list() == ["617364", "717765"]
 
 
 def test_hex_decode() -> None:
     df = pl.DataFrame({"data": [b"617364", b"717765"]})
 
-    assert [b"asd", b"qwe"] == df["data"].bin.decode("hex").to_list()
+    assert df["data"].bin.decode("hex").to_list() == [b"asd", b"qwe"]
 
 
 @pytest.mark.parametrize(

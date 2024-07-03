@@ -97,18 +97,48 @@ macro_rules! impl_dyn_series {
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = sub,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
             fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = add,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::add_to(&self.0, rhs)
             }
             fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = mul,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::multiply(&self.0, rhs)
             }
             fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = div,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::divide(&self.0, rhs)
             }
             fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+                polars_ensure!(
+                    self.dtype() == rhs.dtype(),
+                    opq = rem,
+                    self.dtype(),
+                    rhs.dtype()
+                );
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
             #[cfg(feature = "algorithm_group_by")]
@@ -135,6 +165,10 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
+            fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+                self.metadata_dyn()
+            }
+
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }
@@ -158,6 +192,11 @@ macro_rules! impl_dyn_series {
 
             fn slice(&self, offset: i64, length: usize) -> Series {
                 return self.0.slice(offset, length).into_series();
+            }
+
+            fn split_at(&self, offset: i64) -> (Series, Series) {
+                let (a, b) = self.0.split_at(offset);
+                (a.into_series(), b.into_series())
             }
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {

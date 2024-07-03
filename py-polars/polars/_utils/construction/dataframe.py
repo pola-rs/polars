@@ -30,6 +30,7 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
+    issue_warning,
     parse_version,
 )
 from polars._utils.wrap import wrap_df, wrap_s
@@ -41,7 +42,8 @@ from polars.datatypes import (
     Struct,
     Unknown,
     is_polars_dtype,
-    py_type_to_dtype,
+    parse_into_dtype,
+    try_parse_into_dtype,
 )
 from polars.dependencies import (
     _NUMPY_AVAILABLE,
@@ -53,7 +55,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -61,13 +63,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         Orientation,
         PolarsDataType,
         SchemaDefinition,
         SchemaDict,
     )
+    from polars.polars import PySeries
 
 _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
@@ -191,7 +193,7 @@ def _unpack_schema(
         if is_polars_dtype(dtype, include_unknown=True):
             return dtype
         else:
-            return py_type_to_dtype(dtype)
+            return parse_into_dtype(dtype)
 
     def _parse_schema_overrides(
         schema_overrides: SchemaDict | None = None,
@@ -226,6 +228,10 @@ def _unpack_schema(
             else:
                 col = col[0]
             column_names.append(col)
+
+    if n_expected is not None and len(column_names) != n_expected:
+        msg = "data does not match the number of columns"
+        raise ShapeError(msg)
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
@@ -533,18 +539,21 @@ def _sequence_of_sequence_to_pydf(
     infer_schema_length: int | None,
 ) -> PyDataFrame:
     if orient is None:
-        # note: limit type-checking to smaller data; larger values are much more
-        # likely to indicate col orientation anyway, so minimise extra checks.
-        if len(first_element) > 1000:
-            orient = "col" if schema and len(schema) == len(data) else "row"
-        elif (schema is not None and len(schema) == len(data)) or not schema:
-            # check if element types in the first 'row' resolve to a single dtype.
-            row_types = {type(value) for value in first_element if value is not None}
-            if int in row_types and float in row_types:
-                row_types.discard(int)
-            orient = "col" if len(row_types) == 1 else "row"
+        if schema is None:
+            orient = "col"
         else:
-            orient = "row"
+            # Try to infer orientation from schema length and data dimensions
+            is_row_oriented = (len(schema) == len(first_element)) and (
+                len(schema) != len(data)
+            )
+            orient = "row" if is_row_oriented else "col"
+
+            if is_row_oriented:
+                issue_warning(
+                    "Row orientation inferred during DataFrame construction."
+                    ' Explicitly specify the orientation by passing `orient="row"` to silence this warning.',
+                    DataOrientationWarning,
+                )
 
     if orient == "row":
         column_names, schema_overrides = _unpack_schema(
@@ -555,13 +564,6 @@ def _sequence_of_sequence_to_pydf(
             if schema_overrides
             else {}
         )
-        if (
-            column_names
-            and len(first_element) > 0
-            and len(first_element) != len(column_names)
-        ):
-            msg = "the row data does not match the number of columns"
-            raise ShapeError(msg)
 
         unpack_nested = False
         for col, tp in local_schema_override.items():
@@ -589,7 +591,7 @@ def _sequence_of_sequence_to_pydf(
             )
         return pydf
 
-    if orient == "col" or orient is None:
+    elif orient == "col":
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides, n_expected=len(data)
         )
@@ -604,8 +606,9 @@ def _sequence_of_sequence_to_pydf(
         ]
         return PyDataFrame(data_series)
 
-    msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
-    raise ValueError(msg)
+    else:
+        msg = f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
+        raise ValueError(msg)
 
 
 def _sequence_of_series_to_pydf(
@@ -629,7 +632,7 @@ def _sequence_of_series_to_pydf(
             s = s.alias(column_names[i])
         new_dtype = schema_overrides.get(column_names[i])
         if new_dtype and new_dtype != s.dtype:
-            s = s.cast(new_dtype, strict=strict, allow_overflow=False)
+            s = s.cast(new_dtype, strict=strict, wrap_numerical=False)
         data_series.append(s._s)
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
@@ -647,14 +650,14 @@ def _sequence_of_tuple_to_pydf(
     orient: Orientation | None,
     infer_schema_length: int | None,
 ) -> PyDataFrame:
-    # infer additional meta information if named tuple
+    # infer additional meta information if namedtuple
     if is_namedtuple(first_element.__class__):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             annotations = getattr(first_element, "__annotations__", None)
             if annotations and len(annotations) == len(schema):
                 schema = [
-                    (name, py_type_to_dtype(tp, raise_unmatched=False))
+                    (name, try_parse_into_dtype(tp))
                     for name, tp in first_element.__annotations__.items()
                 ]
         if orient is None:
@@ -766,7 +769,7 @@ def _sequence_of_pandas_to_pydf(
         pyseries = plc.pandas_to_pyseries(name=name, values=s)
         dtype = schema_overrides.get(name)
         if dtype is not None and dtype != pyseries.dtype():
-            pyseries = pyseries.cast(dtype, strict=strict, allow_overflow=False)
+            pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         data_series.append(pyseries)
 
     return PyDataFrame(data_series)
@@ -894,7 +897,7 @@ def _establish_dataclass_or_model_schema(
     else:
         column_names = []
         overrides = {
-            col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
+            col: (try_parse_into_dtype(tp) or Unknown)
             for col, tp in try_get_type_hints(first_element.__class__).items()
             if ((col in model_fields) if model_fields else (col != "__slots__"))
         }
@@ -1354,7 +1357,7 @@ def series_to_pydf(
         new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
             data_series[0] = data_series[0].cast(
-                new_dtype, strict=strict, allow_overflow=False
+                new_dtype, strict=strict, wrap_numerical=False
             )
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
@@ -1381,7 +1384,7 @@ def dataframe_to_pydf(
         for name, new_dtype in schema_overrides.items():
             if new_dtype != existing_schema[name]:
                 data_series[name] = data_series[name].cast(
-                    new_dtype, strict=strict, allow_overflow=False
+                    new_dtype, strict=strict, wrap_numerical=False
                 )
 
     series_cols = _handle_columns_arg(list(data_series.values()), columns=column_names)

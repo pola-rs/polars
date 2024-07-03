@@ -10,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars.dependencies import gevent
+from polars.exceptions import ColumnNotFoundError
 
 pytestmark = pytest.mark.slow()
 
@@ -56,8 +57,8 @@ _aio_collect = pytest.mark.parametrize(
     [
         (_aio_collect_async, None),
         (_aio_collect_all_async, None),
-        (partial(_aio_collect_async, True), pl.ColumnNotFoundError),
-        (partial(_aio_collect_all_async, True), pl.ColumnNotFoundError),
+        (partial(_aio_collect_async, True), ColumnNotFoundError),
+        (partial(_aio_collect_all_async, True), ColumnNotFoundError),
     ],
 )
 
@@ -134,8 +135,8 @@ _gevent_collect = pytest.mark.parametrize(
     [
         (_gevent_collect_async, None),
         (_gevent_collect_all_async, None),
-        (partial(_gevent_collect_async, True), pl.ColumnNotFoundError),
-        (partial(_gevent_collect_all_async, True), pl.ColumnNotFoundError),
+        (partial(_gevent_collect_async, True), ColumnNotFoundError),
+        (partial(_gevent_collect_all_async, True), ColumnNotFoundError),
     ],
 )
 

@@ -9,10 +9,11 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_group_by() -> None:
@@ -643,7 +644,7 @@ def test_group_by_binary_agg_with_literal() -> None:
 
 @pytest.mark.slow()
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
-def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> None:
+def test_overflow_mean_partitioned_group_by_5194(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(
         [
             pl.Series("data", [10_00_00_00] * 100_000, dtype=dtype),
@@ -1002,3 +1003,139 @@ def test_partitioned_group_by_chunked(partition_limit: int) -> None:
         df.group_by(gps).sum().sort("oo"),
         df.rechunk().group_by(gps, maintain_order=True).sum(),
     )
+
+
+def test_schema_on_agg() -> None:
+    lf = pl.LazyFrame({"a": ["x", "x", "y", "n"], "b": [1, 2, 3, 4]})
+
+    result = lf.group_by("a").agg(
+        pl.col("b").min().alias("min"),
+        pl.col("b").max().alias("max"),
+        pl.col("b").sum().alias("sum"),
+        pl.col("b").first().alias("first"),
+        pl.col("b").last().alias("last"),
+    )
+    expected_schema = {
+        "a": pl.String,
+        "min": pl.Int64,
+        "max": pl.Int64,
+        "sum": pl.Int64,
+        "first": pl.Int64,
+        "last": pl.Int64,
+    }
+    assert result.collect_schema() == expected_schema
+
+
+def test_group_by_schema_err() -> None:
+    lf = pl.LazyFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]})
+    with pytest.raises(ColumnNotFoundError):
+        lf.group_by("not-existent").agg(
+            pl.col("bar").max().alias("max_bar")
+        ).collect_schema()
+
+
+@pytest.mark.parametrize(
+    ("data", "expr", "expected_select", "expected_gb"),
+    [
+        (
+            {"x": ["x"], "y": ["y"]},
+            pl.coalesce(pl.col("x"), pl.col("y")),
+            {"x": pl.String},
+            {"x": pl.List(pl.String)},
+        ),
+        (
+            {"x": [True]},
+            pl.col("x").sum(),
+            {"x": pl.UInt32},
+            {"x": pl.UInt32},
+        ),
+        (
+            {"a": [[1, 2]]},
+            pl.col("a").list.sum(),
+            {"a": pl.Int64},
+            {"a": pl.List(pl.Int64)},
+        ),
+    ],
+)
+def test_schemas(
+    data: dict[str, list[Any]],
+    expr: pl.Expr,
+    expected_select: dict[str, PolarsDataType],
+    expected_gb: dict[str, PolarsDataType],
+) -> None:
+    df = pl.DataFrame(data)
+
+    # test selection schema
+    schema = df.select(expr).schema
+    for key, dtype in expected_select.items():
+        assert schema[key] == dtype
+
+    # test group_by schema
+    schema = df.group_by(pl.lit(1)).agg(expr).schema
+    for key, dtype in expected_gb.items():
+        assert schema[key] == dtype
+
+
+def test_lit_iter_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["A", "A", "A", "A"],
+            "dates": [
+                date(1970, 1, 1),
+                date(1970, 1, 1),
+                date(1970, 1, 2),
+                date(1970, 1, 3),
+            ],
+        }
+    )
+
+    result = df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1))
+    expected = {
+        "key": ["A"],
+        "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
+    }
+    assert result.to_dict(as_series=False) == expected
+
+
+def test_absence_off_null_prop_8224() -> None:
+    # a reminder to self to not do null propagation
+    # it is inconsistent and makes output dtype
+    # dependent of the data, big no!
+
+    def sub_col_min(column: str, min_column: str) -> pl.Expr:
+        return pl.col(column).sub(pl.col(min_column).min())
+
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2],
+            "vals_num": [10.0, 11.0, 12.0, 13.0],
+            "vals_partial": [None, None, 12.0, 13.0],
+            "vals_null": [None, None, None, None],
+        }
+    )
+
+    q = (
+        df.lazy()
+        .group_by("group")
+        .agg(
+            sub_col_min("vals_num", "vals_num").alias("sub_num"),
+            sub_col_min("vals_num", "vals_partial").alias("sub_partial"),
+            sub_col_min("vals_num", "vals_null").alias("sub_null"),
+        )
+    )
+
+    assert q.collect().dtypes == [
+        pl.Int64,
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+    ]
+
+
+def test_grouped_slice_literals() -> None:
+    assert pl.DataFrame({"idx": [1, 2, 3]}).group_by(True).agg(
+        x=pl.lit([1, 2]).slice(
+            -1, 1
+        ),  # slices a list of 1 element, so remains the same element
+        x2=pl.lit(pl.Series([1, 2])).slice(-1, 1),
+    ).to_dict(as_series=False) == {"literal": [True], "x": [[1, 2]], "x2": [2]}

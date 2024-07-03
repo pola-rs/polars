@@ -4,7 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import Int64
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExprColumn, PolarsIntegerType
+    from polars._typing import IntoExprColumn, PolarsIntegerType
 
 
 @overload
@@ -217,8 +217,8 @@ def int_range(
     if isinstance(start, int) and isinstance(end, int) and eager:
         return wrap_s(plr.eager_int_range(start, end, step, dtype))
 
-    start = parse_as_expression(start)
-    end = parse_as_expression(end)
+    start = parse_into_expression(start)
+    end = parse_into_expression(end)
     result = wrap_expr(plr.int_range(start, end, step, dtype))
 
     if eager:
@@ -326,9 +326,9 @@ def int_ranges(
         end = start
         start = 0
 
-    start = parse_as_expression(start)
-    end = parse_as_expression(end)
-    step = parse_as_expression(step)
+    start = parse_into_expression(start)
+    end = parse_into_expression(end)
+    step = parse_into_expression(step)
     result = wrap_expr(plr.int_ranges(start, end, step, dtype))
 
     if eager:

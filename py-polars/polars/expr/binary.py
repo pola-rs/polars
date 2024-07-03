@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import IntoExpr, TransferEncoding
+    from polars._typing import IntoExpr, TransferEncoding
 
 
 class ExprBinaryNameSpace:
@@ -62,7 +62,7 @@ class ExprBinaryNameSpace:
         │ blue   ┆ true              ┆ false              │
         └────────┴───────────────────┴────────────────────┘
         """
-        literal = parse_as_expression(literal, str_as_lit=True)
+        literal = parse_into_expression(literal, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_contains(literal))
 
     def ends_with(self, suffix: IntoExpr) -> Expr:
@@ -109,7 +109,7 @@ class ExprBinaryNameSpace:
         │ blue   ┆ true          ┆ false          │
         └────────┴───────────────┴────────────────┘
         """
-        suffix = parse_as_expression(suffix, str_as_lit=True)
+        suffix = parse_into_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_ends_with(suffix))
 
     def starts_with(self, prefix: IntoExpr) -> Expr:
@@ -158,7 +158,7 @@ class ExprBinaryNameSpace:
         │ blue   ┆ false           ┆ true             │
         └────────┴─────────────────┴──────────────────┘
         """
-        prefix = parse_as_expression(prefix, str_as_lit=True)
+        prefix = parse_into_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:

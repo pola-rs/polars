@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import math
 from contextlib import nullcontext
-from typing import Any, ContextManager
+from typing import TYPE_CHECKING, Any, ContextManager
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_comparison_order_null_broadcasting() -> None:
@@ -199,7 +203,7 @@ def reference_ordering_missing(lhs: Any, rhs: Any) -> str:
 
 
 def verify_total_ordering(
-    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+    lhs: Any, rhs: Any, dummy: Any, dtype: PolarsDataType
 ) -> None:
     ref = reference_ordering_propagating(lhs, rhs)
     refmiss = reference_ordering_missing(lhs, rhs)
@@ -239,7 +243,7 @@ def verify_total_ordering(
 
 
 def verify_total_ordering_broadcast(
-    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+    lhs: Any, rhs: Any, dummy: Any, dtype: PolarsDataType
 ) -> None:
     ref = reference_ordering_propagating(lhs, rhs)
     refmiss = reference_ordering_missing(lhs, rhs)
@@ -371,5 +375,20 @@ def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
 def test_cat_compare_with_bool() -> None:
     data = pl.DataFrame([pl.Series("col1", ["a", "b"], dtype=pl.Categorical)])
 
-    with pytest.raises(pl.ComputeError, match="cannot compare categorical with bool"):
+    with pytest.raises(ComputeError, match="cannot compare categorical with bool"):
         data.filter(pl.col("col1") == True)  # noqa: E712
+
+
+def test_schema_ne_missing_9256() -> None:
+    df = pl.DataFrame({"a": [0, 1, None], "b": [True, False, True]})
+
+    assert df.select(pl.col("a").ne_missing(0).or_(pl.col("b")))["a"].all()
+
+
+def test_nested_binary_literal_super_type_12227() -> None:
+    # The `.alias` is important here to trigger the bug.
+    result = pl.select(x=1).select((pl.lit(0) + ((pl.col("x") > 0) * 0.1)).alias("x"))
+    assert result.item() == 0.1
+
+    result = pl.select((pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0))
+    assert result.item() == 0.1

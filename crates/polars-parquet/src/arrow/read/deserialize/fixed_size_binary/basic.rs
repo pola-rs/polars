@@ -29,7 +29,7 @@ pub(super) struct Optional<'a> {
 
 impl<'a> Optional<'a> {
     pub(super) fn try_new(page: &'a DataPage, size: usize) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
 
         let values = values.chunks_exact(size);
 
@@ -84,13 +84,13 @@ impl<'a> FilteredRequired<'a> {
 
 #[derive(Debug)]
 pub(super) struct RequiredDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
     pub dict: &'a Dict,
 }
 
 impl<'a> RequiredDictionary<'a> {
     pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
+        let values = dict_indices_decoder(page)?.into_iter();
 
         Ok(Self { dict, values })
     }
@@ -103,14 +103,14 @@ impl<'a> RequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(super) struct OptionalDictionary<'a> {
-    pub(super) values: hybrid_rle::HybridRleDecoder<'a>,
+    pub(super) values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
     pub(super) validity: OptionalPageValidity<'a>,
     pub(super) dict: &'a Dict,
 }
 
 impl<'a> OptionalDictionary<'a> {
     pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?;
+        let values = dict_indices_decoder(page)?.into_iter();
 
         Ok(Self {
             values,
@@ -186,7 +186,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                 FilteredRequired::new(page, self.size),
             )),
             (Encoding::Plain, _, true, true) => {
-                let (_, _, values) = split_buffer(page)?;
+                let values = split_buffer(page)?.values;
 
                 Ok(State::FilteredOptional(
                     FilteredOptionalPageValidity::try_new(page)?,

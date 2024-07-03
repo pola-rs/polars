@@ -41,7 +41,7 @@ where
 macro_rules! impl_operation {
     ($operation:ident, $method:ident, $function:expr) => {
         impl $operation for Series {
-            type Output = Series;
+            type Output = PolarsResult<Series>;
 
             fn $method(self, rhs: Self) -> Self::Output {
                 #[cfg(feature = "performant")]
@@ -51,7 +51,7 @@ macro_rules! impl_operation {
                         let (lhs, rhs) = coerce_lhs_rhs_owned(self, rhs).unwrap();
                         let (lhs, rhs) = align_chunks_binary_owned_series(lhs, rhs);
                         use DataType::*;
-                        match lhs.dtype() {
+                        Ok(match lhs.dtype() {
                             #[cfg(feature = "dtype-i8")]
                             Int8 => apply_operation_mut::<Int8Type, _>(lhs, rhs, $function),
                             #[cfg(feature = "dtype-i16")]
@@ -67,7 +67,7 @@ macro_rules! impl_operation {
                             Float32 => apply_operation_mut::<Float32Type, _>(lhs, rhs, $function),
                             Float64 => apply_operation_mut::<Float64Type, _>(lhs, rhs, $function),
                             _ => unreachable!(),
-                        }
+                        })
                     } else {
                         (&self).$method(&rhs)
                     }
@@ -89,25 +89,25 @@ impl_operation!(Div, div, |a, b| a.div(b));
 impl Series {
     pub fn try_add_owned(self, other: Self) -> PolarsResult<Self> {
         if is_eligible(self.dtype(), other.dtype()) {
-            Ok(self + other)
+            self + other
         } else {
-            self.try_add(&other)
+            std::ops::Add::add(&self, &other)
         }
     }
 
     pub fn try_sub_owned(self, other: Self) -> PolarsResult<Self> {
         if is_eligible(self.dtype(), other.dtype()) {
-            Ok(self - other)
+            self - other
         } else {
-            self.try_sub(&other)
+            std::ops::Sub::sub(&self, &other)
         }
     }
 
     pub fn try_mul_owned(self, other: Self) -> PolarsResult<Self> {
         if is_eligible(self.dtype(), other.dtype()) {
-            Ok(self * other)
+            self * other
         } else {
-            self.try_mul(&other)
+            std::ops::Mul::mul(&self, &other)
         }
     }
 }

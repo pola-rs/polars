@@ -5,7 +5,6 @@ use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use polars_core::config::{get_rg_prefetch_size, verbose};
-use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_parquet::read::RowGroupMetaData;
 use polars_parquet::write::FileMetaData;
@@ -16,7 +15,9 @@ use tokio::sync::Mutex;
 use super::mmap::ColumnStore;
 use super::predicates::read_this_row_group;
 use super::read_impl::compute_row_group_range;
-use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
+use crate::cloud::{
+    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
+};
 use crate::parquet::metadata::FileMetaDataRef;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
@@ -48,7 +49,7 @@ impl ParquetObjectStore {
         // Any wildcards should already have been resolved here. Without this assertion they would
         // be ignored.
         debug_assert!(expansion.is_none(), "path should not contain wildcards");
-        let path = ObjectPath::from_url_path(prefix).map_err(to_compute_err)?;
+        let path = object_path_from_string(prefix);
 
         Ok(ParquetObjectStore {
             store: PolarsObjectStore::new(store),
@@ -123,7 +124,7 @@ pub async fn fetch_metadata(
             file_byte_length
                 .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize)
                 .ok_or_else(|| {
-                    polars_parquet::parquet::error::Error::OutOfSpec(
+                    polars_parquet::parquet::error::ParquetError::OutOfSpec(
                         "not enough bytes to contain parquet footer".to_string(),
                     )
                 })?..file_byte_length,
@@ -136,13 +137,13 @@ pub async fn fetch_metadata(
         let magic = read_n(reader).unwrap();
         debug_assert!(reader.is_empty());
         if magic != polars_parquet::parquet::PARQUET_MAGIC {
-            return Err(polars_parquet::parquet::error::Error::OutOfSpec(
+            return Err(polars_parquet::parquet::error::ParquetError::OutOfSpec(
                 "incorrect magic in parquet footer".to_string(),
             )
             .into());
         }
         footer_byte_size.try_into().map_err(|_| {
-            polars_parquet::parquet::error::Error::OutOfSpec(
+            polars_parquet::parquet::error::ParquetError::OutOfSpec(
                 "negative footer byte length".to_string(),
             )
         })?
@@ -154,7 +155,7 @@ pub async fn fetch_metadata(
             file_byte_length
                 .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize + footer_byte_length)
                 .ok_or_else(|| {
-                    polars_parquet::parquet::error::Error::OutOfSpec(
+                    polars_parquet::parquet::error::ParquetError::OutOfSpec(
                         "not enough bytes to contain parquet footer".to_string(),
                     )
                 })?..file_byte_length,

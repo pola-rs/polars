@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import FillNullStrategy, PolarsIntegerType
+    from polars._typing import FillNullStrategy, PolarsIntegerType
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -209,7 +210,7 @@ def test_upsample_index_invalid(
         }
     ).set_sorted("index")
 
-    with pytest.raises(pl.InvalidOperationError, match=r"must be a parsed integer"):
+    with pytest.raises(InvalidOperationError, match=r"must be a parsed integer"):
         df.upsample(
             time_column="index",
             every="1h",

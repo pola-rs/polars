@@ -18,6 +18,19 @@ load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
 )
 
+# Data type groups
+SIGNED_INTEGER_DTYPES = [pl.Int8(), pl.Int16(), pl.Int32(), pl.Int64()]
+UNSIGNED_INTEGER_DTYPES = [pl.UInt8(), pl.UInt16(), pl.UInt32(), pl.UInt64()]
+INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
+FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
+NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
+
+DATETIME_DTYPES = [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]
+DURATION_DTYPES = [pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")]
+TEMPORAL_DTYPES = [*DATETIME_DTYPES, *DURATION_DTYPES, pl.Date(), pl.Time()]
+
+NESTED_DTYPES = [pl.List, pl.Struct, pl.Array]
+
 
 @pytest.fixture()
 def partition_limit() -> int:
@@ -198,6 +211,9 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     if not pl.build_info()["compiler"]["debug"]:
         pytest.skip("Memory usage only available in debug/dev builds.")
+
+    if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
+        pytest.skip("Hangs when combined with async glob")
 
     if sys.platform == "win32":
         # abi3 wheels don't have the tracemalloc C APIs, which breaks linking

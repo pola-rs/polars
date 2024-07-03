@@ -132,30 +132,6 @@ def test_predicate_pushdown_block_8661() -> None:
     }
 
 
-def test_predicate_pushdown_with_context_11014() -> None:
-    df1 = pl.LazyFrame(
-        {
-            "df1_c1": [1, 2, 3],
-            "df1_c2": [2, 3, 4],
-        }
-    )
-
-    df2 = pl.LazyFrame(
-        {
-            "df2_c1": [2, 3, 4],
-            "df2_c2": [3, 4, 5],
-        }
-    )
-
-    out = (
-        df1.with_context(df2)
-        .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
-        .collect(predicate_pushdown=True)
-    )
-
-    assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
-
-
 def test_predicate_pushdown_cumsum_9566() -> None:
     df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
 
@@ -180,16 +156,13 @@ def test_is_in_join_blocked() -> None:
     lf1 = pl.LazyFrame(
         {"Groups": ["A", "B", "C", "D", "E", "F"], "values0": [1, 2, 3, 4, 5, 6]}
     )
-
     lf2 = pl.LazyFrame(
         {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
     )
-
-    lf_all = lf2.join(
-        lf1, left_on="values20", right_on="values0", how="left", coalesce=True
-    )
+    lf_all = lf2.join(lf1, left_on="values20", right_on="values0", how="left")
 
     result = lf_all.filter(~pl.col("Groups").is_in(["A", "B", "F"]))
+
     expected = pl.LazyFrame(
         {
             "values22": [None, 4, 5],
@@ -471,9 +444,7 @@ def test_predicate_pd_join_13300() -> None:
     lf = pl.LazyFrame({"col3": range(10, 14), "new_col": range(11, 15)})
     lf_other = pl.LazyFrame({"col4": [0, 11, 2, 13]})
 
-    lf = lf.join(
-        lf_other, left_on="new_col", right_on="col4", how="left", coalesce=True
-    )
+    lf = lf.join(lf_other, left_on="new_col", right_on="col4", how="left")
     lf = lf.filter(pl.col("new_col") < 12)
     assert lf.collect().to_dict(as_series=False) == {"col3": [10], "new_col": [11]}
 

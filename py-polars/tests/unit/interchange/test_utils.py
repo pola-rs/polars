@@ -14,6 +14,7 @@ from polars.interchange.utils import (
 )
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from polars.interchange.protocol import Dtype
 
 NE = Endianness.NATIVE
@@ -50,7 +51,7 @@ NE = Endianness.NATIVE
         ),
     ],
 )
-def test_dtype_conversions(polars_dtype: pl.PolarsDataType, dtype: Dtype) -> None:
+def test_dtype_conversions(polars_dtype: PolarsDataType, dtype: Dtype) -> None:
     assert polars_dtype_to_dtype(polars_dtype) == dtype
     assert dtype_to_polars_dtype(dtype) == polars_dtype
 
@@ -75,7 +76,7 @@ def test_dtype_to_polars_dtype_categorical(dtype: Dtype) -> None:
         pl.Enum(["a", "b"]),
     ],
 )
-def test_polars_dtype_to_dtype_categorical(polars_dtype: pl.PolarsDataType) -> None:
+def test_polars_dtype_to_dtype_categorical(polars_dtype: PolarsDataType) -> None:
     assert polars_dtype_to_dtype(polars_dtype) == (DtypeKind.CATEGORICAL, 32, "I", NE)
 
 
@@ -134,7 +135,7 @@ def test_get_buffer_length_in_elements_unsupported_dtype() -> None:
     ],
 )
 def test_polars_dtype_to_data_buffer_dtype(
-    dtype: pl.PolarsDataType, expected: pl.PolarsDataType
+    dtype: PolarsDataType, expected: PolarsDataType
 ) -> None:
     assert polars_dtype_to_data_buffer_dtype(dtype) == expected
 

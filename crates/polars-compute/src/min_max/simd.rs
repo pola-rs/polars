@@ -30,6 +30,10 @@ where
     F: FnMut(Simd<T, N>, Simd<T, N>) -> Simd<T, N>,
     LaneCount<N>: SupportedLaneCount,
 {
+    if arr.is_empty() {
+        return None;
+    }
+
     let mut arr_chunks = arr.chunks_exact(N);
 
     let identity = Simd::splat(scalar_identity);

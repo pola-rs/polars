@@ -116,7 +116,7 @@ web_root = "https://docs.pola.rs"
 
 # Specify version for version switcher dropdown menu
 git_ref = os.environ.get("POLARS_VERSION", "main")
-version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
+version_match = re.fullmatch(r"py-(\d+)\.\d+\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
 html_js_files = [
@@ -130,7 +130,7 @@ html_theme_options = {
     "external_links": [
         {
             "name": "User guide",
-            "url": f"{web_root}/user-guide/",
+            "url": f"{web_root}/",
         },
     ],
     "icon_links": [
@@ -155,7 +155,7 @@ html_theme_options = {
         "image_dark": f"{static_assets_root}/logos/polars-logo-dimmed-medium.png",
     },
     "switcher": {
-        "json_url": f"{web_root}/docs/python/dev/_static/version_switcher.json",
+        "json_url": f"{web_root}/api/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
     "show_version_warning_banner": False,

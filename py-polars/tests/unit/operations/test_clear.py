@@ -68,10 +68,10 @@ def test_clear_lf() -> None:
         }
     )
     ldfe = lf.clear()
-    assert ldfe.schema == lf.schema
+    assert ldfe.collect_schema() == lf.collect_schema()
 
     ldfe = lf.clear(2)
-    assert ldfe.schema == lf.schema
+    assert ldfe.collect_schema() == lf.collect_schema()
     assert ldfe.collect().rows() == [(None, None, None), (None, None, None)]
 
 

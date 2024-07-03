@@ -21,7 +21,7 @@ from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import (
+    from polars._typing import (
         ConnectionOrCursor,
         DbReadEngine,
         SchemaDefinition,
@@ -75,11 +75,11 @@ class MockCursor:
         self.batched = batched
         self.n_calls = 1
 
-    def __getattr__(self, item: str) -> Any:
-        if "fetch" in item:
-            self.called.append(item)
+    def __getattr__(self, name: str) -> Any:
+        if "fetch" in name:
+            self.called.append(name)
             return self.resultset
-        super().__getattr__(item)  # type: ignore[misc]
+        super().__getattr__(name)  # type: ignore[misc]
 
     def close(self) -> Any:
         pass

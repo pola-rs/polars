@@ -144,7 +144,7 @@ impl<'a> CoreReader<'a> {
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
-        columns: Option<Arc<Vec<String>>>,
+        columns: Option<Arc<[String]>>,
         encoding: CsvEncoding,
         mut n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
@@ -475,9 +475,9 @@ impl<'a> CoreReader<'a> {
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             let mut df = if projection.len() == self.schema.len() {
-                DataFrame::from(self.schema.as_ref())
+                DataFrame::empty_with_schema(self.schema.as_ref())
             } else {
-                DataFrame::from(
+                DataFrame::empty_with_schema(
                     &projection
                         .iter()
                         .map(|&i| self.schema.get_at_index(i).unwrap())

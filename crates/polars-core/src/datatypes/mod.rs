@@ -12,6 +12,7 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
 mod time_unit;
@@ -32,6 +33,7 @@ use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
+pub use into_scalar::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;

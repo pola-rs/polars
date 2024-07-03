@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -42,7 +43,7 @@ def test_str_slice_expr() -> None:
     assert_frame_equal(out, expected)
 
     # negative length is not allowed
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("a").str.slice(0, -1))
 
 
@@ -237,9 +238,9 @@ def test_str_decode() -> None:
 
 def test_str_decode_exception() -> None:
     s = pl.Series(["not a valid", "626172", None])
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s.str.decode(encoding="hex")
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s.str.decode(encoding="base64")
     with pytest.raises(ValueError):
         s.str.decode("utf8")  # type: ignore[arg-type]
@@ -265,6 +266,7 @@ def test_str_find(strict: bool) -> None:
             "pat": pl.String,
             "lit": pl.String,
         },
+        orient="row",
     )
     city, pop, pat, lit = (pl.col(c) for c in ("city", "population", "pat", "lit"))
 
@@ -290,7 +292,7 @@ def test_str_find_invalid_regex() -> None:
     df = pl.DataFrame({"txt": ["AbCdEfG"]})
     rx_invalid = "(?i)AB.))"
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.with_columns(pl.col("txt").str.find(rx_invalid, strict=True))
 
     res = df.with_columns(pl.col("txt").str.find(rx_invalid, strict=False))
@@ -337,7 +339,7 @@ def test_hex_decode_return_dtype() -> None:
     assert df.schema == {"a": pl.Binary}
 
     ldf = pl.LazyFrame(data).select(expr)
-    assert ldf.schema == {"a": pl.Binary}
+    assert ldf.collect_schema() == {"a": pl.Binary}
 
 
 def test_base64_decode_return_dtype() -> None:
@@ -348,7 +350,7 @@ def test_base64_decode_return_dtype() -> None:
     assert df.schema == {"a": pl.Binary}
 
     ldf = pl.LazyFrame(data).select(expr)
-    assert ldf.schema == {"a": pl.Binary}
+    assert ldf.collect_schema() == {"a": pl.Binary}
 
 
 def test_str_replace_str_replace_all() -> None:
@@ -407,7 +409,7 @@ def test_str_to_integer() -> None:
         check_exact=True,
     )
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         hex.str.to_integer(base=16)
 
 
@@ -422,7 +424,7 @@ def test_str_to_integer_base_expr() -> None:
     # test strict raise
     df = pl.DataFrame({"str": ["110", "ff00", "cafe", None], "base": [2, 10, 10, 8]})
 
-    with pytest.raises(pl.ComputeError, match="failed for 2 value"):
+    with pytest.raises(ComputeError, match="failed for 2 value"):
         df.select(pl.col("str").str.to_integer(base="base"))
 
 
@@ -446,7 +448,7 @@ def test_str_to_integer_base_literal() -> None:
     )
     assert_frame_equal(result, expected)
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.with_columns(
             pl.col("bin").str.to_integer(base=2),
             pl.col("hex").str.to_integer(base=16),
@@ -628,7 +630,7 @@ def test_json_decode_lazy_expr() -> None:
     expected = pl.DataFrame(
         {"json": [{"a": 1, "b": True}, None, {"a": 2, "b": False}]}
     ).lazy()
-    assert ldf.schema == {"json": dtype}
+    assert ldf.collect_schema() == {"json": dtype}
     assert_frame_equal(ldf, expected)
 
 
@@ -781,7 +783,7 @@ def test_contains() -> None:
         pl.Series([None, None, None]).cast(pl.Boolean).to_list()
         == s_txt.str.contains("(not_valid_regex", literal=False, strict=False).to_list()
     )
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         s_txt.str.contains("(not_valid_regex", literal=False, strict=True)
     assert (
         pl.Series([True, False, False]).cast(pl.Boolean).to_list()
@@ -791,6 +793,7 @@ def test_contains() -> None:
     df = pl.DataFrame(
         data=[(1, "some * * text"), (2, "(with) special\n * chars"), (3, "**etc...?$")],
         schema=["idx", "text"],
+        orient="row",
     )
     for pattern, as_literal, expected in (
         (r"\* \*", False, [True, False, False]),
@@ -848,7 +851,7 @@ def test_contains_expr() -> None:
         "contains_lit": [False, True, False, None, None, False],
     }
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.select(
             pl.col("text").str.contains(pl.col("pattern"), literal=False, strict=True)
         )
@@ -939,7 +942,7 @@ def test_replace_all() -> None:
             )["text"].to_list()
         )
         # invalid regex (but valid literal - requires "literal=True")
-        with pytest.raises(pl.ComputeError):
+        with pytest.raises(ComputeError):
             df["text"].str.replace_all("*", "")
 
     assert (
@@ -1132,7 +1135,7 @@ def test_decode_strict() -> None:
     expected = {"strings": [b"\xd0\x86\xd0\xbd77", None, None]}
     assert result.to_dict(as_series=False) == expected
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df.select(pl.col("strings").str.decode("base64", strict=True))
 
 
@@ -1444,7 +1447,7 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
         "captures"
     )
 
-    assert df.schema == {"candidate": pl.String, "ref": pl.String}
+    assert df.collect_schema() == {"candidate": pl.String, "ref": pl.String}
 
 
 def test_string_reverse() -> None:
@@ -1484,3 +1487,37 @@ def test_replace_lit_n_char_13385(
     res = s.str.replace("a", "b", literal=True)
     expected_s = pl.Series(expected_dat, dtype=pl.String)
     assert_series_equal(res, expected_s)
+
+
+def test_extract_many() -> None:
+    df = pl.DataFrame({"values": ["discontent"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    assert (
+        df.with_columns(
+            pl.col("values")
+            .str.extract_many(patterns, overlapping=False)
+            .alias("matches"),
+            pl.col("values")
+            .str.extract_many(patterns, overlapping=True)
+            .alias("matches_overlapping"),
+        )
+    ).to_dict(as_series=False) == {
+        "values": ["discontent"],
+        "matches": [["disco"]],
+        "matches_overlapping": [["disco", "onte", "discontent"]],
+    }
+
+    # many patterns
+    df = pl.DataFrame(
+        {
+            "values": ["discontent", "rhapsody"],
+            "patterns": [
+                ["winter", "disco", "onte", "discontent"],
+                ["rhap", "ody", "coalesce"],
+            ],
+        }
+    )
+
+    assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
+        as_series=False
+    ) == {"values": [["disco"], ["rhap", "ody"]]}

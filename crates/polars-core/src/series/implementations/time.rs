@@ -140,6 +140,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_time().into_series()
     }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_series(), b.into_series())
+    }
 
     fn mean(&self) -> Option<f64> {
         self.0.mean()
@@ -310,15 +314,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<TimeChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        true
-    }
-
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }

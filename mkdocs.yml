@@ -43,7 +43,7 @@ nav:
       - user-guide/transformations/joins.md
       - user-guide/transformations/concatenation.md
       - user-guide/transformations/pivot.md
-      - user-guide/transformations/melt.md
+      - user-guide/transformations/unpivot.md
       - Time series:
         - user-guide/transformations/time-series/parsing.md
         - user-guide/transformations/time-series/filter.md
@@ -81,6 +81,7 @@ nav:
     - Misc:
       - user-guide/misc/multiprocessing.md
       - user-guide/misc/visualization.md
+      - user-guide/misc/styling.md
       - user-guide/misc/comparison.md
 
   - API reference: api/index.md
@@ -98,6 +99,7 @@ nav:
     - releases/changelog.md
     - Upgrade guides:
       - releases/upgrade/index.md
+      - releases/upgrade/1.md
       - releases/upgrade/0.20.md
       - releases/upgrade/0.19.md
 

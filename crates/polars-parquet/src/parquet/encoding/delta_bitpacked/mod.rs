@@ -7,10 +7,10 @@ pub use encoder::encode;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parquet::error::Error;
+    use crate::parquet::error::ParquetError;
 
     #[test]
-    fn basic() -> Result<(), Error> {
+    fn basic() -> Result<(), ParquetError> {
         let data = vec![1, 3, 1, 2, 3];
 
         let mut buffer = vec![];
@@ -23,7 +23,7 @@ mod tests {
     }
 
     #[test]
-    fn negative_value() -> Result<(), Error> {
+    fn negative_value() -> Result<(), ParquetError> {
         let data = vec![1, 3, -1, 2, 3];
 
         let mut buffer = vec![];
@@ -36,7 +36,7 @@ mod tests {
     }
 
     #[test]
-    fn some() -> Result<(), Error> {
+    fn some() -> Result<(), ParquetError> {
         let data = vec![
             -2147483648,
             -1777158217,
@@ -51,13 +51,13 @@ mod tests {
         encode(data.clone().into_iter(), &mut buffer);
         let iter = Decoder::try_new(&buffer)?;
 
-        let result = iter.collect::<Result<Vec<_>, Error>>()?;
+        let result = iter.collect::<Result<Vec<_>, ParquetError>>()?;
         assert_eq!(result, data);
         Ok(())
     }
 
     #[test]
-    fn more_than_one_block() -> Result<(), Error> {
+    fn more_than_one_block() -> Result<(), ParquetError> {
         let mut data = vec![1, 3, -1, 2, 3, 10, 1];
         for x in 0..128 {
             data.push(x - 10)
@@ -73,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn test_another() -> Result<(), Error> {
+    fn test_another() -> Result<(), ParquetError> {
         let data = vec![2, 3, 1, 2, 1];
 
         let mut buffer = vec![];

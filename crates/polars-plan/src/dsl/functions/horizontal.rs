@@ -7,7 +7,7 @@ fn cum_fold_dtype() -> GetOutput {
         for fld in &fields[1..] {
             st = get_supertype(&st, &fld.dtype).unwrap();
         }
-        Field::new(
+        Ok(Field::new(
             &fields[0].name,
             DataType::Struct(
                 fields
@@ -15,7 +15,7 @@ fn cum_fold_dtype() -> GetOutput {
                     .map(|fld| Field::new(fld.name(), st.clone()))
                     .collect(),
             ),
-        )
+        ))
     })
 }
 
@@ -275,7 +275,7 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: false,
-            cast_to_supertypes: false,
+            cast_to_supertypes: None,
             ..Default::default()
         },
     })
@@ -293,7 +293,7 @@ pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: false,
-            cast_to_supertypes: false,
+            cast_to_supertypes: None,
             ..Default::default()
         },
     })
@@ -309,7 +309,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         function: FunctionExpr::Coalesce,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             input_wildcard_expansion: true,
             ..Default::default()
         },

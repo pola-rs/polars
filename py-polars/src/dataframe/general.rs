@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 use either::Either;
 use polars::prelude::*;
 use polars_core::frame::*;
@@ -8,7 +6,7 @@ use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::PyList;
 
 use super::*;
 use crate::conversion::Wrap;
@@ -27,35 +25,6 @@ impl PyDataFrame {
         let columns = columns.to_series();
         let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
-    }
-
-    #[cfg(feature = "ipc_streaming")]
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        // Used in pickle/pickling
-        let mut buf: Vec<u8> = vec![];
-        IpcStreamWriter::new(&mut buf)
-            .with_pl_flavor(true)
-            .finish(&mut self.df.clone())
-            .expect("ipc writer");
-        Ok(PyBytes::new_bound(py, &buf).to_object(py))
-    }
-    #[cfg(feature = "ipc_streaming")]
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        // Used in pickle/pickling
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                let c = Cursor::new(s.as_bytes());
-                let reader = IpcStreamReader::new(c);
-
-                reader
-                    .finish()
-                    .map(|df| {
-                        self.df = df;
-                    })
-                    .map_err(|e| PyPolarsErr::from(e).into())
-            },
-            Err(e) => Err(e),
-        }
     }
 
     pub fn estimated_size(&self) -> usize {
@@ -397,31 +366,31 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn melt(
+    pub fn unpivot(
         &self,
-        id_vars: Vec<PyBackedStr>,
-        value_vars: Vec<PyBackedStr>,
+        on: Vec<PyBackedStr>,
+        index: Vec<PyBackedStr>,
         value_name: Option<&str>,
         variable_name: Option<&str>,
     ) -> PyResult<Self> {
-        let args = MeltArgs {
-            id_vars: strings_to_smartstrings(id_vars),
-            value_vars: strings_to_smartstrings(value_vars),
+        let args = UnpivotArgs {
+            on: strings_to_smartstrings(on),
+            index: strings_to_smartstrings(index),
             value_name: value_name.map(|s| s.into()),
             variable_name: variable_name.map(|s| s.into()),
             streamable: false,
         };
 
-        let df = self.df.melt2(args).map_err(PyPolarsErr::from)?;
+        let df = self.df.unpivot2(args).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
     #[cfg(feature = "pivot")]
-    #[pyo3(signature = (index, columns, values, maintain_order, sort_columns, aggregate_expr, separator))]
+    #[pyo3(signature = (on, index, values, maintain_order, sort_columns, aggregate_expr, separator))]
     pub fn pivot_expr(
         &self,
-        index: Vec<String>,
-        columns: Vec<String>,
+        on: Vec<String>,
+        index: Option<Vec<String>>,
         values: Option<Vec<String>>,
         maintain_order: bool,
         sort_columns: bool,
@@ -432,8 +401,8 @@ impl PyDataFrame {
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
         let df = fun(
             &self.df,
+            on,
             index,
-            columns,
             values,
             sort_columns,
             agg_expr,

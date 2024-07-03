@@ -1,10 +1,12 @@
 use std::any::Any;
 use std::borrow::Cow;
+use std::sync::RwLockReadGuard;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::metadata::MetadataTrait;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -38,6 +40,11 @@ macro_rules! invalid_operation_panic {
     };
 }
 
+pub enum BitRepr {
+    Small(UInt32Chunked),
+    Large(UInt64Chunked),
+}
+
 pub(crate) mod private {
     use ahash::RandomState;
 
@@ -46,15 +53,10 @@ pub(crate) mod private {
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
 
     pub trait PrivateSeriesNumeric {
-        fn bit_repr_is_large(&self) -> bool {
-            false
-        }
-        fn bit_repr_large(&self) -> UInt64Chunked {
-            unimplemented!()
-        }
-        fn bit_repr_small(&self) -> UInt32Chunked {
-            unimplemented!()
-        }
+        /// Return a bit representation
+        ///
+        /// If there is no available bit representation this returns `None`.
+        fn bit_repr(&self) -> Option<BitRepr>;
     }
 
     pub trait PrivateSeries {
@@ -193,6 +195,10 @@ pub trait SeriesTrait:
         polars_bail!(opq = bitxor, self._dtype());
     }
 
+    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        None
+    }
+
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;
 
@@ -238,6 +244,12 @@ pub trait SeriesTrait:
     /// When offset is negative the offset is counted from the
     /// end of the array
     fn slice(&self, _offset: i64, _length: usize) -> Series;
+
+    /// Get a zero copy view of the data.
+    ///
+    /// When offset is negative the offset is counted from the
+    /// end of the array
+    fn split_at(&self, _offset: i64) -> (Series, Series);
 
     #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> PolarsResult<()>;
@@ -362,6 +374,8 @@ pub trait SeriesTrait:
     }
 
     /// Get unique values in the Series.
+    ///
+    /// A `null` value also counts as a unique value.
     fn n_unique(&self) -> PolarsResult<usize> {
         polars_bail!(opq = n_unique, self._dtype());
     }

@@ -73,7 +73,7 @@ def test_show_tables(test_frame: pl.LazyFrame) -> None:
 )
 def test_truncate_table(truncate_sql: str, test_frame: pl.LazyFrame) -> None:
     # 'truncate' preserves the table, but optimally drops all rows within it
-    expected = pl.DataFrame(schema=test_frame.schema)
+    expected = pl.DataFrame(schema=test_frame.collect_schema())
 
     with pl.SQLContext(frame=test_frame, eager=True) as ctx:
         res = ctx.execute(truncate_sql)

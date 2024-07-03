@@ -33,34 +33,51 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
-Documentation = "https://docs.pola.rs/py-polars/html/reference/index.html"
+Documentation = "https://docs.pola.rs/api/python/stable/reference/index.html"
 Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-adbc = ["adbc_driver_manager", "adbc_driver_sqlite"]
-async = ["nest_asyncio"]
-cloudpickle = ["cloudpickle"]
-connectorx = ["connectorx >= 0.3.2"]
-deltalake = ["deltalake >= 0.15.0"]
-fastexcel = ["fastexcel >= 0.9"]
-fsspec = ["fsspec"]
-gevent = ["gevent"]
-iceberg = ["pyiceberg >= 0.5.0"]
-matplotlib = ["matplotlib"]
+# Interop
+# TODO: Remove NumPy upper bound once we support NumPy 2.0.0
+# https://github.com/pola-rs/polars/issues/16998
 numpy = ["numpy >= 1.16.0"]
-openpyxl = ["openpyxl >= 3.0.0"]
-pandas = ["pyarrow >= 7.0.0", "pandas"]
-plot = ["hvplot >= 0.9.1"]
+pandas = ["pandas", "polars[pyarrow]"]
 pyarrow = ["pyarrow >= 7.0.0"]
 pydantic = ["pydantic"]
-sqlalchemy = ["sqlalchemy", "pandas"]
-timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+
+# Excel
+calamine = ["fastexcel >= 0.9"]
+openpyxl = ["openpyxl >= 3.0.0"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 xlsxwriter = ["xlsxwriter"]
+excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
+
+# Database
+adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
+connectorx = ["connectorx >= 0.3.2"]
+sqlalchemy = ["sqlalchemy", "polars[pandas]"]
+database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+
+# Cloud
+fsspec = ["fsspec"]
+
+# Other I/O
+deltalake = ["deltalake >= 0.15.0"]
+iceberg = ["pyiceberg >= 0.5.0"]
+
+# Other
+async = ["gevent"]
+cloudpickle = ["cloudpickle"]
+graph = ["matplotlib"]
+plot = ["hvplot >= 0.9.1", "polars[pandas]"]
+style = ["great-tables >= 0.8.0"]
+timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+
+# All
 all = [
-  "polars[adbc,async,cloudpickle,connectorx,deltalake,fastexcel,fsspec,gevent,numpy,pandas,plot,pyarrow,pydantic,iceberg,sqlalchemy,timezone,xlsx2csv,xlsxwriter]",
+  "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
 
 [tool.maturin]
@@ -89,6 +106,7 @@ module = [
   "deltalake.*",
   "fsspec.*",
   "gevent",
+  "great_tables",
   "hvplot.*",
   "jax.*",
   "kuzu",

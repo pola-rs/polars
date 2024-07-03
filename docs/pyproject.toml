@@ -4,4 +4,5 @@ fix = true
 [tool.ruff.lint]
 ignore = [
   "E402", # Module level import not at top of file
+  "F811", # Redefinition of unused variable
 ]

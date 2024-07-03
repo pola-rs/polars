@@ -26,11 +26,7 @@ fn test_chunked_left_join() -> PolarsResult<()> {
         &band_members,
         ["name"],
         ["name"],
-        JoinArgs {
-            how: JoinType::Left,
-            coalesce: JoinCoalesce::CoalesceColumns,
-            ..Default::default()
-        },
+        JoinArgs::new(JoinType::Left),
     )?;
     let expected = df![
         "name" => ["john", "paul", "keith"],
@@ -290,7 +286,7 @@ fn test_join_categorical() {
     let out = df_a
         .join(&df_b, ["b"], ["bar"], JoinType::Left.into())
         .unwrap();
-    assert_eq!(out.shape(), (6, 6));
+    assert_eq!(out.shape(), (6, 5));
     let correct_ham = &[
         Some("let"),
         None,
@@ -380,7 +376,7 @@ fn test_empty_df_join() -> PolarsResult<()> {
     ])?;
 
     let out = df.left_join(&empty_df, ["key"], ["key"])?;
-    assert_eq!(out.shape(), (2, 5));
+    assert_eq!(out.shape(), (2, 4));
 
     Ok(())
 }
@@ -402,7 +398,6 @@ fn test_unit_df_join() -> PolarsResult<()> {
     let expected = df![
         "a" => [1],
         "b" => [2],
-        "a_right" => [1],
         "b_right" => [1]
     ]?;
     assert!(out.equals(&expected));

@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars import PolarsDataType
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_simplify_expression_lit_true_4376() -> None:
@@ -24,7 +29,7 @@ def test_filter_contains_nth_11205() -> None:
     assert df.filter(pl.first()).is_empty()
 
 
-def test_melt_values_predicate_pushdown() -> None:
+def test_unpivot_values_predicate_pushdown() -> None:
     lf = pl.DataFrame(
         {
             "id": [1],
@@ -35,7 +40,7 @@ def test_melt_values_predicate_pushdown() -> None:
     ).lazy()
 
     assert (
-        lf.melt("id", ["asset_key_1", "asset_key_2", "asset_key_3"])
+        lf.unpivot(index="id", on=["asset_key_1", "asset_key_2", "asset_key_3"])
         .filter(pl.col("value") == pl.lit("123"))
         .collect()
     ).to_dict(as_series=False) == {
@@ -268,3 +273,15 @@ def test_filter(dtype: PolarsDataType, size: int, selectivity: float) -> None:
     reference = pl.Series(np_payload[np_mask]).cast(dtype)
     result = payload.filter(mask)
     assert_series_equal(reference, result)
+
+
+def test_filter_group_aware_17030() -> None:
+    df = pl.DataFrame({"foo": ["1", "2", "1", "2", "1", "2"]})
+
+    trim_col = "foo"
+    group_count = pl.col(trim_col).count().over(trim_col)
+    group_cum_count = pl.col(trim_col).cum_count().over(trim_col)
+    filter_expr = (
+        (group_count > 2) & (group_cum_count > 1) & (group_cum_count < group_count)
+    )
+    assert df.filter(filter_expr)["foo"].to_list() == ["1", "2"]

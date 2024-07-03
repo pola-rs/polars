@@ -5,6 +5,7 @@ use super::*;
 use crate::chunked_array::cast::CastOptions;
 use crate::config::verbose;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca_unordered;
+use crate::series::BitRepr;
 use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a group_by operation.
@@ -163,11 +164,15 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
             DataType::Int64 => {
-                let ca = self.bit_repr_large();
+                let BitRepr::Large(ca) = self.to_bit_repr() else {
+                    unreachable!()
+                };
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
             DataType::Int32 => {
-                let ca = self.bit_repr_small();
+                let BitRepr::Small(ca) = self.to_bit_repr() else {
+                    unreachable!()
+                };
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
             DataType::Float64 => {

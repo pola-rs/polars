@@ -419,7 +419,7 @@ fn test_resolve_join_column_select_13618() {
 }
 
 #[test]
-fn test_compound_join_nested_and_with_brackets() {
+fn test_compound_join_and_select_exclude_rename_replace() {
     let df1 = df! {
         "a" => [1, 2, 3, 4, 5],
         "b" => [1, 2, 3, 4, 5],
@@ -442,10 +442,13 @@ fn test_compound_join_nested_and_with_brackets() {
     ctx.register("df2", df2.lazy());
 
     let sql = r#"
-        SELECT df1.* EXCLUDE "e", df2.e
-        FROM df1
-          INNER JOIN df2 ON df1.a = df2.a AND
-            ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
+        SELECT * RENAME ("ee" AS "e")
+        FROM (
+          SELECT df1.* EXCLUDE "e", df2.e AS "ee"
+          FROM df1
+            INNER JOIN df2 ON df1.a = df2.a AND
+              ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
+        ) tbl
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {
@@ -465,10 +468,13 @@ fn test_compound_join_nested_and_with_brackets() {
     );
 
     let sql = r#"
-        SELECT * EXCLUDE ("e", "e:df2"), df1.e
-        FROM df1
-          INNER JOIN df2 ON df1.a = df2.a AND
-            ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
+        SELECT * REPLACE ("ee" || "ee" AS "ee")
+        FROM (
+          SELECT * EXCLUDE ("e", "e:df2"), df1.e AS "ee"
+          FROM df1
+            INNER JOIN df2 ON df1.a = df2.a AND
+              ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
+        ) tbl
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -481,7 +487,7 @@ fn test_compound_join_nested_and_with_brackets() {
         "b:df2" => [1, 3],
         "c:df2" => [0, 4],
         "d:df2" => [0, 4],
-        "e" => ["a", "c"],
+        "ee" => ["aa", "cc"],
     }
     .unwrap();
 
@@ -511,6 +517,41 @@ fn test_join_on_different_keys() {
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {"y" => [0, 1, 3]}.unwrap();
+    assert!(
+        actual.equals(&expected),
+        "expected = {:?}\nactual={:?}",
+        expected,
+        actual
+    );
+}
+
+#[test]
+fn test_join_multi_consecutive() {
+    let df1 = df! { "a" => [1, 2, 3], "b" => [4, 8, 6] }.unwrap();
+    let df2 = df! { "a" => [3, 2, 1], "b" => [6, 5, 4], "c" => ["x", "y", "z"] }.unwrap();
+    let df3 = df! { "c" => ["w", "y", "z"], "d" => [10.5, -50.0, 25.5] }.unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("tbl_a", df1.lazy());
+    ctx.register("tbl_b", df2.lazy());
+    ctx.register("tbl_c", df3.lazy());
+
+    let sql = r#"
+        SELECT tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d FROM tbl_a
+        INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
+        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        ORDER BY a DESC
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    let expected = df! {
+        "a" => [1],
+        "b" => [4],
+        "c" => ["z"],
+        "d" => [25.5],
+    }
+    .unwrap();
+
     assert!(
         actual.equals(&expected),
         "expected = {:?}\nactual={:?}",
@@ -561,6 +602,9 @@ fn test_join_utf8() {
         actual
     );
 }
+
+#[test]
+fn test_table() {}
 
 #[test]
 #[should_panic]

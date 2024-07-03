@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from typing import Any
 
 import pytest
 
 import polars as pl
-from polars import NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 def test_regex_exclude() -> None:
@@ -37,7 +39,7 @@ def test_regex_in_filter() -> None:
 
 
 def test_regex_selection() -> None:
-    ldf = pl.LazyFrame(
+    lf = pl.LazyFrame(
         {
             "foo": [1],
             "fooey": [1],
@@ -45,16 +47,23 @@ def test_regex_selection() -> None:
             "bar": [1],
         }
     )
-    assert ldf.select([pl.col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
+    result = lf.select([pl.col("^foo.*$")])
+    assert result.collect_schema().names() == ["foo", "fooey", "foobar"]
 
 
-def test_exclude_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.exclude("a"), ["b", "c"]),
+        (pl.all().exclude(pl.Boolean), ["a", "b"]),
+        (pl.all().exclude([pl.Boolean]), ["a", "b"]),
+        (pl.all().exclude(NUMERIC_DTYPES), ["c"]),
+    ],
+)
+def test_exclude_selection(expr: pl.Expr, expected: list[str]) -> None:
+    lf = pl.LazyFrame({"a": [1], "b": [1], "c": [True]})
 
-    assert ldf.select([pl.exclude("a")]).columns == ["b", "c"]
-    assert ldf.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
-    assert ldf.select(pl.all().exclude(NUMERIC_DTYPES)).columns == ["c"]
+    assert lf.select(expr).collect_schema().names() == expected
 
 
 def test_struct_name_resolving_15430() -> None:
@@ -77,24 +86,20 @@ def test_struct_name_resolving_15430() -> None:
     assert b.columns == ["b"]
 
 
-def test_exclude_keys_in_aggregation_16170() -> None:
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.all().name.prefix("agg_"), ["A", "agg_B", "agg_C"]),
+        (pl.col("B", "C").name.prefix("agg_"), ["A", "agg_B", "agg_C"]),
+        (pl.col("A", "C").name.prefix("agg_"), ["A", "agg_A", "agg_C"]),
+    ],
+)
+def test_exclude_keys_in_aggregation_16170(expr: pl.Expr, expected: list[str]) -> None:
     df = pl.DataFrame({"A": [4, 4, 3], "B": [1, 2, 3], "C": [5, 6, 7]})
 
     # wildcard excludes aggregation column
-    assert df.lazy().group_by("A").agg(pl.all().name.prefix("agg_")).columns == [
-        "A",
-        "agg_B",
-        "agg_C",
-    ]
-
-    # specifically named columns are not excluded
-    assert df.lazy().group_by("A").agg(
-        pl.col("B", "C").name.prefix("agg_")
-    ).columns == ["A", "agg_B", "agg_C"]
-
-    assert df.lazy().group_by("A").agg(
-        pl.col("A", "C").name.prefix("agg_")
-    ).columns == ["A", "agg_A", "agg_C"]
+    result = df.lazy().group_by("A").agg(expr)
+    assert result.collect_schema().names() == expected
 
 
 @pytest.mark.parametrize(

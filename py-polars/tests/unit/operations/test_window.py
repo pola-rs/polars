@@ -494,3 +494,20 @@ def test_window_order_by_8662() -> None:
         "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
         "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
     }
+
+
+def test_window_chunked_std_17102() -> None:
+    c1 = pl.DataFrame({"A": [1, 1], "B": [1.0, 2.0]})
+    c2 = pl.DataFrame({"A": [2, 2], "B": [1.0, 2.0]})
+
+    df = pl.concat([c1, c2], rechunk=False)
+    out = df.select(pl.col("B").std().over("A").alias("std"))
+    assert out.unique().item() == 0.7071067811865476
+
+
+def test_window_17308() -> None:
+    df = pl.DataFrame({"A": [1, 2], "B": [3, 4], "grp": ["A", "B"]})
+
+    assert df.select(pl.col("A").sum(), pl.col("B").sum().over("grp")).to_dict(
+        as_series=False
+    ) == {"A": [3, 3], "B": [3, 4]}

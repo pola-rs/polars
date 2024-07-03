@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal as D
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_abs() -> None:
@@ -46,7 +50,7 @@ def test_builtin_abs() -> None:
 @pytest.mark.parametrize(
     "dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64]
 )
-def test_abs_builtin(dtype: pl.PolarsDataType) -> None:
+def test_abs_builtin(dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"a": [-1, 0, 1, None]}, schema={"a": dtype})
     result = lf.select(abs(pl.col("a")))
     expected = pl.LazyFrame({"a": [1, 0, 1, None]}, schema={"a": dtype})
@@ -89,7 +93,7 @@ def test_abs_unsigned_int() -> None:
 def test_abs_non_numeric() -> None:
     df = pl.DataFrame({"a": ["p", "q", "r"]})
     with pytest.raises(
-        pl.InvalidOperationError, match="`abs` operation not supported for dtype `str`"
+        InvalidOperationError, match="`abs` operation not supported for dtype `str`"
     ):
         df.select(pl.col("a").abs())
 
@@ -98,7 +102,7 @@ def test_abs_date() -> None:
     df = pl.DataFrame({"date": [date(1960, 1, 1), date(1970, 1, 1), date(1980, 1, 1)]})
 
     with pytest.raises(
-        pl.InvalidOperationError, match="`abs` operation not supported for dtype `date`"
+        InvalidOperationError, match="`abs` operation not supported for dtype `date`"
     ):
         df.select(pl.col("date").abs())
 

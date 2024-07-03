@@ -2,29 +2,38 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use memmap::Mmap;
 use once_cell::sync::Lazy;
+use polars_core::config::verbose;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::create_file;
 
 // Keep track of memory mapped files so we don't write to them while reading
 // Use a btree as it uses less memory than a hashmap and this thing never shrinks.
-static MEMORY_MAPPED_FILES: Lazy<Mutex<BTreeMap<PathBuf, u32>>> =
+// Write handle in Windows is exclusive, so this is only necessary in Unix.
+#[cfg(target_family = "unix")]
+static MEMORY_MAPPED_FILES: Lazy<Mutex<BTreeMap<(u64, u64), u32>>> =
     Lazy::new(|| Mutex::new(Default::default()));
 
 pub(crate) struct MMapSemaphore {
-    path: PathBuf,
+    #[cfg(target_family = "unix")]
+    key: (u64, u64),
     mmap: Mmap,
 }
 
 impl MMapSemaphore {
-    pub(super) fn new(path: PathBuf, mmap: Mmap) -> Self {
+    #[cfg(target_family = "unix")]
+    pub(super) fn new(dev: u64, ino: u64, mmap: Mmap) -> Self {
         let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        guard.insert(path.clone(), 1);
-        Self { path, mmap }
+        let key = (dev, ino);
+        guard.insert(key, 1);
+        Self { key, mmap }
+    }
+
+    #[cfg(not(target_family = "unix"))]
+    pub(super) fn new(mmap: Mmap) -> Self {
+        Self { mmap }
     }
 }
 
@@ -35,10 +44,11 @@ impl AsRef<[u8]> for MMapSemaphore {
     }
 }
 
+#[cfg(target_family = "unix")]
 impl Drop for MMapSemaphore {
     fn drop(&mut self) {
         let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        if let Entry::Occupied(mut e) = guard.entry(std::mem::take(&mut self.path)) {
+        if let Entry::Occupied(mut e) = guard.entry(self.key) {
             let v = e.get_mut();
             *v -= 1;
 
@@ -49,14 +59,17 @@ impl Drop for MMapSemaphore {
     }
 }
 
-/// Open a file to get write access. This will check if the file is currently registered as memory mapped.
-pub fn try_create_file(path: &Path) -> PolarsResult<File> {
-    let guard = MEMORY_MAPPED_FILES.lock().unwrap();
-    if guard.contains_key(path) {
-        polars_bail!(ComputeError: "cannot write to file: already memory mapped")
+pub fn ensure_not_mapped(file: &File) -> PolarsResult<()> {
+    #[cfg(target_family = "unix")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let guard = MEMORY_MAPPED_FILES.lock().unwrap();
+        let metadata = file.metadata()?;
+        if guard.contains_key(&(metadata.dev(), metadata.ino())) {
+            polars_bail!(ComputeError: "cannot write to file: already memory mapped");
+        }
     }
-    drop(guard);
-    create_file(path)
+    Ok(())
 }
 
 /// Trait used to get a hold to file handler or to the underlying bytes
@@ -130,14 +143,27 @@ impl std::ops::Deref for ReaderBytes<'_> {
     }
 }
 
-impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
-    fn from(m: &'a T) -> Self {
+impl<'a, T: 'a + MmapBytesReader> From<&'a mut T> for ReaderBytes<'a> {
+    fn from(m: &'a mut T) -> Self {
         match m.to_bytes() {
-            Some(s) => ReaderBytes::Borrowed(s),
+            // , but somehow bchk doesn't see that lifetime is 'a.
+            Some(s) => {
+                let s = unsafe { std::mem::transmute::<&[u8], &'a [u8]>(s) };
+                ReaderBytes::Borrowed(s)
+            },
             None => {
-                let f = m.to_file().unwrap();
-                let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
-                ReaderBytes::Mapped(mmap, f)
+                if let Some(f) = m.to_file() {
+                    let f = unsafe { std::mem::transmute::<&File, &'a File>(f) };
+                    let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
+                    ReaderBytes::Mapped(mmap, f)
+                } else {
+                    if verbose() {
+                        eprintln!("could not memory map file; read to buffer.")
+                    }
+                    let mut buf = vec![];
+                    m.read_to_end(&mut buf).expect("could not read");
+                    ReaderBytes::Owned(buf)
+                }
             },
         }
     }

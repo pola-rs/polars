@@ -12,7 +12,7 @@ use super::super::utils::{
 };
 use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 
@@ -23,7 +23,7 @@ pub(super) struct FilteredRequiredValues<'a> {
 
 impl<'a> FilteredRequiredValues<'a> {
     pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
 
         let values = values.chunks_exact(std::mem::size_of::<P>());
@@ -47,7 +47,7 @@ pub(super) struct Values<'a> {
 
 impl<'a> Values<'a> {
     pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, _, values) = split_buffer(page)?;
+        let values = split_buffer(page)?.values;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
         Ok(Self {
             values: values.chunks_exact(std::mem::size_of::<P>()),
@@ -65,7 +65,7 @@ pub(super) struct ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
     pub dict: &'a Vec<T>,
 }
 
@@ -74,7 +74,7 @@ where
     T: NativeType,
 {
     pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?;
+        let values = utils::dict_indices_decoder(page)?.into_iter();
 
         Ok(Self { dict, values })
     }
@@ -97,6 +97,8 @@ where
     OptionalDictionary(OptionalPageValidity<'a>, ValuesDictionary<'a, T>),
     FilteredRequired(FilteredRequiredValues<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
+    RequiredByteStreamSplit(byte_stream_split::Decoder<'a>),
+    OptionalByteStreamSplit(OptionalPageValidity<'a>, byte_stream_split::Decoder<'a>),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -111,6 +113,8 @@ where
             State::OptionalDictionary(optional, _) => optional.len(),
             State::FilteredRequired(values) => values.len(),
             State::FilteredOptional(optional, _) => optional.len(),
+            State::RequiredByteStreamSplit(decoder) => decoder.len(),
+            State::OptionalByteStreamSplit(optional, _) => optional.len(),
         }
     }
 }
@@ -191,6 +195,20 @@ where
                 FilteredOptionalPageValidity::try_new(page)?,
                 Values::try_new::<P>(page)?,
             )),
+            (Encoding::ByteStreamSplit, _, false, false) => {
+                let values = split_buffer(page)?.values;
+                Ok(State::RequiredByteStreamSplit(
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
+            (Encoding::ByteStreamSplit, _, true, false) => {
+                let validity = OptionalPageValidity::try_new(page)?;
+                let values = split_buffer(page)?.values;
+                Ok(State::OptionalByteStreamSplit(
+                    validity,
+                    byte_stream_split::Decoder::try_new(values, std::mem::size_of::<P>())?,
+                ))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -260,6 +278,16 @@ where
                     page_values.values.by_ref().map(decode).map(self.op),
                 );
             },
+            State::RequiredByteStreamSplit(decoder) => {
+                values.extend(decoder.iter_converted(decode).map(self.op).take(remaining));
+            },
+            State::OptionalByteStreamSplit(page_validity, decoder) => utils::extend_from_decoder(
+                validity,
+                page_validity,
+                Some(remaining),
+                values,
+                decoder.iter_converted(decode).map(self.op),
+            ),
         }
         Ok(())
     }

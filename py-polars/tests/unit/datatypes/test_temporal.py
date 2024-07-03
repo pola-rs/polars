@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
@@ -11,23 +10,23 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     PolarsInefficientMapWarning,
-    TimeZoneAwareConstructorWarning,
 )
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
     assert_series_not_equal,
 )
+from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         PolarsTemporalType,
         TimeUnit,
@@ -340,12 +339,9 @@ def test_datetime_consistency() -> None:
         datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
-        ddf = pl.DataFrame({"dtm": test_data}).with_columns(
-            pl.col("dtm").dt.nanosecond().alias("ns")
-        )
+    ddf = pl.DataFrame({"dtm": test_data}).with_columns(
+        pl.col("dtm").dt.nanosecond().alias("ns")
+    )
     assert ddf.rows() == [
         (test_data[0], 555555000),
         (test_data[1], 986754000),
@@ -359,12 +355,9 @@ def test_datetime_consistency() -> None:
         datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
     ]
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
-        ddf = pl.DataFrame({"dtm": test_data}).select(
-            pl.col("dtm").dt.convert_time_zone("US/Central")
-        )
+    ddf = pl.DataFrame({"dtm": test_data}).select(
+        pl.col("dtm").dt.convert_time_zone("US/Central")
+    )
     assert ddf.rows() == [
         (test_data[0],),
         (test_data[1],),
@@ -579,6 +572,7 @@ def test_asof_join_tolerance_grouper() -> None:
         {
             "date": [date(2020, 1, 5), date(2020, 1, 10)],
             "by": [1, 1],
+            "date_right": [date(2020, 1, 5), None],
             "values": [100, None],
         }
     )
@@ -765,56 +759,56 @@ def test_temporal_dtypes_map_elements(
         PolarsInefficientMapWarning,
         match=r"(?s)Replace this expression.*lambda x:",
     ):
-        assert_frame_equal(
-            df.with_columns(
-                # don't actually do this; native expressions are MUCH faster ;)
-                pl.col("timestamp")
-                .map_elements(
-                    lambda x: const_dtm,
-                    skip_nulls=skip_nulls,
-                    return_dtype=pl.Datetime,
-                )
-                .alias("const_dtm"),
-                # note: the below now trigger a PolarsInefficientMapWarning
-                pl.col("timestamp")
-                .map_elements(
-                    lambda x: x and x.date(),
-                    skip_nulls=skip_nulls,
-                    return_dtype=pl.Date,
-                )
-                .alias("date"),
-                pl.col("timestamp")
-                .map_elements(
-                    lambda x: x and x.time(),
-                    skip_nulls=skip_nulls,
-                    return_dtype=pl.Time,
-                )
-                .alias("time"),
-            ),
-            pl.DataFrame(
-                [
-                    (
-                        datetime(2010, 9, 12, 10, 19, 54),
-                        datetime(2010, 9, 12, 0, 0),
-                        date(2010, 9, 12),
-                        time(10, 19, 54),
-                    ),
-                    (None, expected_value, None, None),
-                    (
-                        datetime(2009, 2, 13, 23, 31, 30),
-                        datetime(2010, 9, 12, 0, 0),
-                        date(2009, 2, 13),
-                        time(23, 31, 30),
-                    ),
-                ],
-                schema={
-                    "timestamp": pl.Datetime("ms"),
-                    "const_dtm": pl.Datetime("us"),
-                    "date": pl.Date,
-                    "time": pl.Time,
-                },
-            ),
+        result = df.with_columns(
+            # don't actually do this; native expressions are MUCH faster ;)
+            pl.col("timestamp")
+            .map_elements(
+                lambda x: const_dtm,
+                skip_nulls=skip_nulls,
+                return_dtype=pl.Datetime,
+            )
+            .alias("const_dtm"),
+            # note: the below now trigger a PolarsInefficientMapWarning
+            pl.col("timestamp")
+            .map_elements(
+                lambda x: x and x.date(),
+                skip_nulls=skip_nulls,
+                return_dtype=pl.Date,
+            )
+            .alias("date"),
+            pl.col("timestamp")
+            .map_elements(
+                lambda x: x and x.time(),
+                skip_nulls=skip_nulls,
+                return_dtype=pl.Time,
+            )
+            .alias("time"),
         )
+    expected = pl.DataFrame(
+        [
+            (
+                datetime(2010, 9, 12, 10, 19, 54),
+                datetime(2010, 9, 12, 0, 0),
+                date(2010, 9, 12),
+                time(10, 19, 54),
+            ),
+            (None, expected_value, None, None),
+            (
+                datetime(2009, 2, 13, 23, 31, 30),
+                datetime(2010, 9, 12, 0, 0),
+                date(2009, 2, 13),
+                time(23, 31, 30),
+            ),
+        ],
+        schema={
+            "timestamp": pl.Datetime("ms"),
+            "const_dtm": pl.Datetime("us"),
+            "date": pl.Date,
+            "time": pl.Time,
+        },
+        orient="row",
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_timelike_init() -> None:
@@ -1002,7 +996,7 @@ def test_datetime_instance_selection() -> None:
         assert res == [pl.Datetime(time_unit)]
         assert len(df.filter(pl.col(time_unit) == test_data[time_unit][0])) == 1
 
-    assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
+    assert list(df.select(pl.exclude(DATETIME_DTYPES))) == []
 
 
 def test_sum_duration() -> None:
@@ -1135,8 +1129,8 @@ def test_replace_time_zone_non_existent_null() -> None:
         .str.to_datetime()
         .dt.replace_time_zone("Europe/Warsaw", non_existent="null")
     )
-    expected = pl.Series(
-        [None, datetime(2021, 3, 28, 3, 30)], dtype=pl.Datetime("us", "Europe/Warsaw")
+    expected = pl.Series([None, datetime(2021, 3, 28, 3, 30)]).dt.replace_time_zone(
+        "Europe/Warsaw"
     )
     assert_series_equal(result, expected)
 
@@ -1205,7 +1199,7 @@ def test_strptime_with_invalid_tz() -> None:
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
-        match="Please either drop the time zone from the function call, or set it to UTC",
+        match="unable to parse time zone: 'foo'",
     ):
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z"
@@ -1233,7 +1227,7 @@ def test_convert_time_zone_lazy_schema() -> None:
     result = ldf.with_columns(
         pl.col("ts_us").dt.convert_time_zone("America/New_York").alias("ts_us_ny"),
         pl.col("ts_ms").dt.convert_time_zone("America/New_York").alias("ts_us_kt"),
-    ).schema
+    ).collect_schema()
     expected = {
         "ts_us": pl.Datetime("us", "UTC"),
         "ts_ms": pl.Datetime("ms", "UTC"),
@@ -1281,10 +1275,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
 
 def test_auto_infer_time_zone() -> None:
     dt = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
-    ):
-        s = pl.Series([dt])
+    s = pl.Series([dt])
     assert s.dtype == pl.Datetime("us", "UTC")
     assert s[0] == dt
 
@@ -1362,7 +1353,7 @@ def test_replace_time_zone_ambiguous_with_ambiguous(
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="Please use `ambiguous` to tell how it should be localized",
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
@@ -2320,57 +2311,47 @@ def test_year_null_backed_by_out_of_range_15313() -> None:
     assert_series_equal(result, expected)
 
 
-def test_series_is_temporal() -> None:
-    for tp in TEMPORAL_DTYPES | {
-        pl.Datetime("ms", "UTC"),
-        pl.Datetime("ns", "Europe/Amsterdam"),
-    }:
-        s = pl.Series([None], dtype=tp)
-        assert s.dtype.is_temporal() is True
+@pytest.mark.parametrize(
+    "dtype",
+    [*TEMPORAL_DTYPES, pl.Datetime("ms", "UTC"), pl.Datetime("ns", "Europe/Amsterdam")],
+)
+def test_series_is_temporal(dtype: pl.DataType) -> None:
+    s = pl.Series([None], dtype=dtype)
+    assert s.dtype.is_temporal() is True
 
 
 @pytest.mark.parametrize(
-    ("time_zone", "warn"),
+    "time_zone",
     [
-        (None, False),
-        (timezone.utc, False),
-        ("America/Caracas", True),
-        ("Asia/Kathmandu", True),
-        ("Asia/Taipei", True),
-        ("Europe/Amsterdam", True),
-        ("Europe/Lisbon", True),
-        ("Indian/Maldives", True),
-        ("Pacific/Norfolk", True),
-        ("Pacific/Samoa", True),
-        ("Turkey", True),
-        ("US/Eastern", True),
-        ("UTC", False),
-        ("Zulu", True),
+        None,
+        timezone.utc,
+        "America/Caracas",
+        "Asia/Kathmandu",
+        "Asia/Taipei",
+        "Europe/Amsterdam",
+        "Europe/Lisbon",
+        "Indian/Maldives",
+        "Pacific/Norfolk",
+        "Pacific/Samoa",
+        "Turkey",
+        "US/Eastern",
+        "UTC",
+        "Zulu",
     ],
 )
-def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None:
-    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
-    msg = r"UTC time zone"
-    if warn:
-        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
-    else:
-        context_manager = contextlib.nullcontext()
-
+def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
     tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
     # default precision (μs)
     dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=tz)
-    with context_manager:
-        assert pl.Series([dt]).to_list() == [dt]
+    assert pl.Series([dt]).to_list() == [dt]
 
     # ms precision
     dt = datetime(2243, 1, 1, 0, 0, 0, 1000, tzinfo=tz)
-    with context_manager:
-        assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
+    assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
 
     # ns precision
     dt = datetime(2256, 1, 1, 0, 0, 0, 1, tzinfo=tz)
-    with context_manager:
-        assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
+    assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
 
 
 @pytest.mark.parametrize(

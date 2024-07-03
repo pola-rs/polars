@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
@@ -133,7 +134,7 @@ def test_in_subquery() -> None:
     )
 
     with pytest.raises(
-        pl.SQLSyntaxError,
+        SQLSyntaxError,
         match="SQL subquery returns more than one column",
     ):
         sql.execute(

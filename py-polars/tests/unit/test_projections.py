@@ -23,12 +23,12 @@ def test_projection_on_semi_join_4789() -> None:
     assert q.collect().to_dict(as_series=False) == {"a": [1], "p": [1], "seq": [[1]]}
 
 
-def test_melt_projection_pd_block_4997() -> None:
+def test_unpivot_projection_pd_block_4997() -> None:
     assert (
         pl.DataFrame({"col1": ["a"], "col2": ["b"]})
         .with_row_index()
         .lazy()
-        .melt(id_vars="index")
+        .unpivot(index="index")
         .group_by("index")
         .agg(pl.col("variable").alias("result"))
         .collect()
@@ -69,7 +69,7 @@ def test_unnest_projection_pushdown() -> None:
     lf = pl.DataFrame({"x|y|z": [1, 2], "a|b|c": [2, 3]}).lazy()
 
     mlf = (
-        lf.melt()
+        lf.unpivot()
         .with_columns(pl.col("variable").str.split_exact("|", 2))
         .unnest("variable")
     )
@@ -315,21 +315,21 @@ def test_join_suffix_collision_9562() -> None:
 
 
 def test_projection_join_names_9955() -> None:
-    batting = pl.DataFrame(
+    batting = pl.LazyFrame(
         {
             "playerID": ["abercda01"],
             "yearID": [1871],
             "lgID": ["NA"],
         }
-    ).lazy()
+    )
 
-    awards_players = pl.DataFrame(
+    awards_players = pl.LazyFrame(
         {
             "playerID": ["bondto01"],
             "yearID": [1877],
             "lgID": ["NL"],
         }
-    ).lazy()
+    )
 
     right = awards_players.filter(pl.col("lgID") == "NL").select("playerID")
 
@@ -340,7 +340,7 @@ def test_projection_join_names_9955() -> None:
         how="inner",
     )
 
-    q = q.select(batting.columns)
+    q = q.select(batting.collect_schema())
 
     assert q.collect().schema == {
         "playerID": pl.String,
@@ -419,7 +419,7 @@ def test_cached_schema_15651() -> None:
     _ = q.select(pl.len()).collect(projection_pushdown=True)
 
     # ensure that q's "cached" columns are still correct
-    assert q.columns == q.collect().columns
+    assert q.collect_schema().names() == q.collect().columns
 
 
 def test_double_projection_pushdown_15895() -> None:
@@ -511,3 +511,14 @@ def test_projection_pushdown_semi_anti_no_selection(
     assert "PROJECT 1/2" in (
         q_a.join(q_b, left_on="a", right_on="b", how=how).explain()
     )
+
+
+def test_projection_empty_frame_len_16904() -> None:
+    df = pl.LazyFrame({})
+
+    q = df.select(pl.len())
+
+    assert "PROJECT */0" in q.explain()
+
+    expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
+    assert_frame_equal(q.collect(), expect)

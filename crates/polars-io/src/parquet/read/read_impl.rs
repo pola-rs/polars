@@ -158,12 +158,32 @@ pub(super) fn array_iter_to_series(
 /// num_rows equals the height of the df when the df height is non-zero.
 pub(crate) fn materialize_hive_partitions(
     df: &mut DataFrame,
+    reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
     num_rows: usize,
 ) {
     if let Some(hive_columns) = hive_partition_columns {
-        for s in hive_columns {
-            unsafe { df.with_column_unchecked(s.new_from_index(0, num_rows)) };
+        let Some(first) = hive_columns.first() else {
+            return;
+        };
+
+        if reader_schema.index_of(first.name()).is_some() {
+            // Insert these hive columns in the order they are stored in the file.
+            for s in hive_columns {
+                let i = match df.get_columns().binary_search_by_key(
+                    &reader_schema.index_of(s.name()).unwrap_or(usize::MAX),
+                    |s| reader_schema.index_of(s.name()).unwrap_or(usize::MIN),
+                ) {
+                    Ok(i) => i,
+                    Err(i) => i,
+                };
+
+                df.insert_column(i, s.new_from_index(0, num_rows)).unwrap();
+            }
+        } else {
+            for s in hive_columns {
+                unsafe { df.with_column_unchecked(s.new_from_index(0, num_rows)) };
+            }
         }
     }
 }
@@ -294,7 +314,12 @@ fn rg_to_dfs_optionally_par_over_columns(
             df.with_row_index_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
 
-        materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
+        materialize_hive_partitions(
+            &mut df,
+            schema.as_ref(),
+            hive_partition_columns,
+            projection_height,
+        );
         apply_predicate(&mut df, predicate, true)?;
 
         *previous_row_count += current_row_count;
@@ -382,7 +407,12 @@ fn rg_to_dfs_par_over_rg(
                     df.with_row_index_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
                 }
 
-                materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
+                materialize_hive_partitions(
+                    &mut df,
+                    schema.as_ref(),
+                    hive_partition_columns,
+                    projection_height,
+                );
                 apply_predicate(&mut df, predicate, false)?;
 
                 Ok(Some(df))
@@ -453,7 +483,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         parallel = ParallelStrategy::None;
     }
 
-    let reader = ReaderBytes::from(&reader);
+    let reader = ReaderBytes::from(&mut reader);
     let bytes = reader.deref();
     let store = mmap::ColumnStore::Local(bytes);
 

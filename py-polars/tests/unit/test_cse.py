@@ -23,9 +23,9 @@ def test_cse_rename_cross_join_5405() -> None:
     right = pl.DataFrame({"A": [1, 2], "B": [3, 4], "D": [5, 6]}).lazy()
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
-    result = left.join(
-        right.rename({"B": "C"}), on=["A", "C"], how="left", coalesce=True
-    ).collect(comm_subplan_elim=True)
+    result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
+        comm_subplan_elim=True
+    )
 
     expected = pl.DataFrame(
         {
@@ -52,8 +52,9 @@ def test_union_duplicates() -> None:
     assert result
 
 
-# https://github.com/pola-rs/polars/issues/11116
 def test_cse_with_struct_expr_11116() -> None:
+    # https://github.com/pola-rs/polars/issues/11116
+
     df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
 
     result = df.with_columns(
@@ -94,9 +95,9 @@ def test_cse_schema_6081() -> None:
         pl.col("value").min().alias("min_value")
     )
 
-    result = df.join(
-        min_value_by_group, on=["date", "id"], how="left", coalesce=True
-    ).collect(comm_subplan_elim=True, projection_pushdown=True)
+    result = df.join(min_value_by_group, on=["date", "id"], how="left").collect(
+        comm_subplan_elim=True, projection_pushdown=True
+    )
     expected = pl.DataFrame(
         {
             "date": [date(2022, 12, 12), date(2022, 12, 12), date(2022, 12, 13)],
@@ -128,9 +129,9 @@ def test_cse_9630() -> None:
     intersected_df1 = all_subsections.join(lf1, on="key")
     intersected_df2 = all_subsections.join(lf2, on="key")
 
-    result = intersected_df1.join(
-        intersected_df2, on=["key"], how="left", coalesce=True
-    ).collect(comm_subplan_elim=True)
+    result = intersected_df1.join(intersected_df2, on=["key"], how="left").collect(
+        comm_subplan_elim=True
+    )
 
     expected = pl.DataFrame(
         {
@@ -242,6 +243,7 @@ def test_windows_cse_excluded() -> None:
             ("b", "qqq", 0),
         ],
         schema=["a", "b", "c"],
+        orient="row",
     )
 
     result = lf.select(
@@ -486,49 +488,6 @@ def test_cse_count_in_group_by() -> None:
         "a": [1, 2],
         "b": [[1], []],
         "c": [[40], []],
-    }
-
-
-def test_no_cse_in_with_context() -> None:
-    df1 = pl.DataFrame(
-        {
-            "timestamp": [
-                datetime(2023, 1, 1, 0, 0),
-                datetime(2023, 5, 1, 0, 0),
-                datetime(2023, 10, 1, 0, 0),
-            ],
-            "value": [2, 5, 9],
-        }
-    )
-    df2 = pl.DataFrame(
-        {
-            "date_start": [
-                datetime(2022, 12, 31, 0, 0),
-                datetime(2023, 1, 2, 0, 0),
-            ],
-            "date_end": [
-                datetime(2023, 4, 30, 0, 0),
-                datetime(2023, 5, 5, 0, 0),
-            ],
-            "label": [0, 1],
-        }
-    )
-
-    assert (
-        df1.lazy()
-        .with_context(df2.lazy())
-        .select(
-            pl.col("date_start", "label").gather(
-                pl.col("date_start").search_sorted(pl.col("timestamp")) - 1
-            ),
-        )
-    ).collect().to_dict(as_series=False) == {
-        "date_start": [
-            datetime(2022, 12, 31, 0, 0),
-            datetime(2023, 1, 2, 0, 0),
-            datetime(2023, 1, 2, 0, 0),
-        ],
-        "label": [0, 1, 1],
     }
 
 

@@ -13,8 +13,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
-from polars.datatypes import N_INFER_DEFAULT, String
-from polars.datatypes.convert import py_type_to_dtype
+from polars.datatypes import N_INFER_DEFAULT, String, parse_into_dtype
 from polars.io._utils import (
     is_glob_pattern,
     parse_columns_arg,
@@ -29,7 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
-    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -487,7 +486,7 @@ def _read_csv_impl(
 ) -> DataFrame:
     path: str | None
     if isinstance(source, (str, Path)):
-        path = normalize_filepath(source)
+        path = normalize_filepath(source, check_not_directory=False)
     else:
         path = None
         if isinstance(source, BytesIO):
@@ -501,7 +500,7 @@ def _read_csv_impl(
         if isinstance(schema_overrides, dict):
             dtype_list = []
             for k, v in schema_overrides.items():
-                dtype_list.append((k, py_type_to_dtype(v)))
+                dtype_list.append((k, parse_into_dtype(v)))
         elif isinstance(schema_overrides, Sequence):
             dtype_slice = schema_overrides
         else:
@@ -936,6 +935,7 @@ def scan_csv(
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     retries: int = 0,
+    file_cache_ttl: int | None = None,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -1048,6 +1048,10 @@ def scan_csv(
         from environment variables.
     retries
         Number of retries if accessing a cloud instance fails.
+    file_cache_ttl
+        Amount of time to keep downloaded cloud files since their last access time,
+        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
+        (which defaults to 1 hour) if not given.
 
     Returns
     -------
@@ -1069,7 +1073,7 @@ def scan_csv(
     ...     .filter(
     ...         pl.col("a") > 10
     ...     )  # the filter is pushed down the scan, so less data is read into memory
-    ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
+    ...     .head(100)  # constrain number of returned results to 100
     ... )  # doctest: +SKIP
 
     We can use `with_column_names` to modify the header before scanning:
@@ -1136,9 +1140,11 @@ def scan_csv(
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
     if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
+        source = normalize_filepath(source, check_not_directory=False)
     else:
-        source = [normalize_filepath(source) for source in source]
+        source = [
+            normalize_filepath(source, check_not_directory=False) for source in source
+        ]
 
     return _scan_csv_impl(
         source,
@@ -1170,6 +1176,7 @@ def scan_csv(
         glob=glob,
         retries=retries,
         storage_options=storage_options,
+        file_cache_ttl=file_cache_ttl,
     )
 
 
@@ -1204,12 +1211,13 @@ def _scan_csv_impl(
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
     retries: int = 0,
+    file_cache_ttl: int | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
         dtype_list = []
         for k, v in schema_overrides.items():
-            dtype_list.append((k, py_type_to_dtype(v)))
+            dtype_list.append((k, parse_into_dtype(v)))
     processed_null_values = _process_null_values(null_values)
 
     if isinstance(source, list):
@@ -1254,5 +1262,6 @@ def _scan_csv_impl(
         glob=glob,
         retries=retries,
         cloud_options=storage_options,
+        file_cache_ttl=file_cache_ttl,
     )
     return wrap_ldf(pylf)

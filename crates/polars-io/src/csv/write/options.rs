@@ -40,6 +40,7 @@ pub struct SerializeOptions {
     pub datetime_format: Option<String>,
     /// Used for [`DataType::Float64`](polars_core::datatypes::DataType::Float64)
     /// and [`DataType::Float32`](polars_core::datatypes::DataType::Float32).
+    pub float_scientific: Option<bool>,
     pub float_precision: Option<usize>,
     /// Used as separator.
     pub separator: u8,
@@ -59,6 +60,7 @@ impl Default for SerializeOptions {
             date_format: None,
             time_format: None,
             datetime_format: None,
+            float_scientific: None,
             float_precision: None,
             separator: b',',
             quote_char: b'"',

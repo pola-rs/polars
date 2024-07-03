@@ -12,7 +12,7 @@ pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
         function,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             returns_scalar: true,
             ..Default::default()
         },
@@ -35,7 +35,7 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
         function,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             returns_scalar: true,
             ..Default::default()
         },
@@ -63,7 +63,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         function,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             returns_scalar: true,
             ..Default::default()
         },

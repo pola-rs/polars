@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -8,12 +9,21 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ComputeError, InvalidOperationError
+from polars.testing import assert_series_equal
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
 
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
 
 
 DATE_FORMATS = ["%Y{}%m{}%d", "%d{}%m{}%Y"]
@@ -105,26 +115,23 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
     expected = datetime.strptime(input, fmt)
     try:
         result = pl.Series([input]).str.to_datetime(format=fmt).item()
+    # If there's an exception, check that it's either:
+    # - something which polars can't parse at all: missing day or month
+    # - something on which polars intentionally raises
+    except InvalidOperationError as exc:
+        assert "failed in column" in str(exc)  # noqa: PT017
+        assert not any(day in fmt for day in ("%d", "%j")) or not any(
+            month in fmt for month in ("%b", "%B", "%m")
+        )
     except ComputeError as exc:
-        # If there's an exception, check that it's either:
-        # - something which polars can't parse at all: missing day or month
-        # - something on which polars intentionally raises
-        assert (  # noqa: PT017
-            (
-                (("%H" in fmt) ^ ("%M" in fmt))
-                or (("%I" in fmt) ^ ("%M" in fmt))
-                or ("%S" in fmt and "%H" not in fmt)
-                or ("%S" in fmt and "%I" not in fmt)
-                or (("%I" in fmt) ^ ("%p" in fmt))
-                or (("%H" in fmt) ^ ("%p" in fmt))
-            )
-            and "Invalid format string" in str(exc)
-        ) or (
-            (
-                not any(day in fmt for day in ("%d", "%j"))
-                or not any(month in fmt for month in ("%b", "%B", "%m"))
-            )
-            and "failed in column" in str(exc)
+        assert "Invalid format string" in str(exc)  # noqa: PT017
+        assert (
+            (("%H" in fmt) ^ ("%M" in fmt))
+            or (("%I" in fmt) ^ ("%M" in fmt))
+            or ("%S" in fmt and "%H" not in fmt)
+            or ("%S" in fmt and "%I" not in fmt)
+            or (("%I" in fmt) ^ ("%p" in fmt))
+            or (("%H" in fmt) ^ ("%p" in fmt))
         )
     else:
         assert result == expected
@@ -152,3 +159,31 @@ def test_cast_to_time_and_combine(d: datetime, tu: TimeUnit) -> None:
     assert [d.date() for d in datetimes] == res["dt"].to_list()
     assert [d.time() for d in datetimes] == res["tm"].to_list()
     assert datetimes == res["dtm"].to_list()
+
+
+def test_to_datetime_aware_values_aware_dtype() -> None:
+    s = pl.Series(["2020-01-01T01:12:34+01:00"])
+    expected = pl.Series([datetime(2020, 1, 1, 5, 57, 34)]).dt.replace_time_zone(
+        "Asia/Kathmandu"
+    )
+
+    # When Polars infers the format
+    result = s.str.to_datetime(time_zone="Asia/Kathmandu")
+    assert_series_equal(result, expected)
+
+    # When the format is provided
+    result = s.str.to_datetime(format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu")
+    assert_series_equal(result, expected)
+
+    # With `exact=False`
+    result = s.str.to_datetime(
+        format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu", exact=False
+    )
+    assert_series_equal(result, expected)
+
+    # Check consistency with Series constructor
+    result = pl.Series(
+        [datetime(2020, 1, 1, 5, 57, 34, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        dtype=pl.Datetime("us", "Asia/Kathmandu"),
+    )
+    assert_series_equal(result, expected)

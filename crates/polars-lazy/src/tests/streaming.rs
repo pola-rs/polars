@@ -327,7 +327,7 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
     let q = q.clone().left_join(q, col("sugars_g"), col("sugars_g"));
     let q1 = q.with_streaming(true);
     let out_streaming = q1.collect()?;
-    assert_eq!(out_streaming.shape(), (3, 4));
+    assert_eq!(out_streaming.shape(), (3, 3));
     Ok(())
 }
 

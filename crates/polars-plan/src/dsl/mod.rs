@@ -69,7 +69,7 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 
 use crate::constants::MAP_LIST_NAME;
-pub use crate::logical_plan::lit;
+pub use crate::plans::lit;
 use crate::prelude::*;
 
 impl Expr {
@@ -368,7 +368,7 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 returns_scalar: true,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: true,
+                cast_to_supertypes: Some(Default::default()),
                 ..Default::default()
             },
         }
@@ -685,6 +685,12 @@ impl Expr {
         input.push(self);
         input.extend_from_slice(arguments);
 
+        let cast_to_supertypes = if cast_to_supertypes {
+            Some(Default::default())
+        } else {
+            None
+        };
+
         Expr::Function {
             input,
             function: function_expr,
@@ -707,6 +713,12 @@ impl Expr {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
         input.extend_from_slice(arguments);
+
+        let cast_to_supertypes = if cast_to_supertypes {
+            Some(Default::default())
+        } else {
+            None
+        };
 
         Expr::Function {
             input,
@@ -799,13 +811,13 @@ impl Expr {
         self.function_with_options(
             move |s: Series| Some(s.product().map(|sc| sc.into_series(s.name()))).transpose(),
             GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Float32 => Float32,
-                    Float64 => Float64,
-                    UInt64 => UInt64,
-                    _ => Int64,
-                }
+                use DataType as T;
+                Ok(match dt {
+                    T::Float32 => T::Float32,
+                    T::Float64 => T::Float64,
+                    T::UInt64 => T::UInt64,
+                    _ => T::Int64,
+                })
             }),
             options,
         )
@@ -1007,7 +1019,7 @@ impl Expr {
             function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: true,
+                cast_to_supertypes: Some(Default::default()),
                 ..Default::default()
             },
         }
@@ -1468,10 +1480,12 @@ impl Expr {
                     Ok(Some(out))
                 }
             },
-            GetOutput::map_field(|field| match field.data_type() {
-                DataType::Float64 => field.clone(),
-                DataType::Float32 => Field::new(field.name(), DataType::Float32),
-                _ => Field::new(field.name(), DataType::Float64),
+            GetOutput::map_field(|field| {
+                Ok(match field.data_type() {
+                    DataType::Float64 => field.clone(),
+                    DataType::Float32 => Field::new(field.name(), DataType::Float32),
+                    _ => Field::new(field.name(), DataType::Float64),
+                })
             }),
         )
         .with_fmt("rolling_map_float")
@@ -1495,7 +1509,25 @@ impl Expr {
 
     #[cfg(feature = "replace")]
     /// Replace the given values with other values.
-    pub fn replace<E: Into<Expr>>(
+    pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
+        let old = old.into();
+        let new = new.into();
+
+        // If we search and replace by literals, we can run on batches.
+        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
+
+        let args = [old, new];
+
+        if literal_searchers {
+            self.map_many_private(FunctionExpr::Replace, &args, false, false)
+        } else {
+            self.apply_many_private(FunctionExpr::Replace, &args, false, false)
+        }
+    }
+
+    #[cfg(feature = "replace")]
+    /// Replace the given values with other values.
+    pub fn replace_strict<E: Into<Expr>>(
         self,
         old: E,
         new: E,
@@ -1504,7 +1536,8 @@ impl Expr {
     ) -> Expr {
         let old = old.into();
         let new = new.into();
-        // If we search and replace by literals, we can run on batches.
+
+        // If we replace by literals, we can run on batches.
         let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
 
         let mut args = vec![old, new];
@@ -1513,9 +1546,19 @@ impl Expr {
         }
 
         if literal_searchers {
-            self.map_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+            self.map_many_private(
+                FunctionExpr::ReplaceStrict { return_dtype },
+                &args,
+                false,
+                false,
+            )
         } else {
-            self.apply_many_private(FunctionExpr::Replace { return_dtype }, &args, false, false)
+            self.apply_many_private(
+                FunctionExpr::ReplaceStrict { return_dtype },
+                &args,
+                false,
+                false,
+            )
         }
     }
 
@@ -1729,11 +1772,12 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
-    pub fn value_counts(self, sort: bool, parallel: bool, name: String) -> Self {
+    pub fn value_counts(self, sort: bool, parallel: bool, name: String, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::ValueCounts {
             sort,
             parallel,
             name,
+            normalize,
         })
         .with_function_options(|mut opts| {
             opts.pass_name_to_apply = true;

@@ -15,12 +15,7 @@ impl CategoricalChunked {
                 .zip(self.iter_str())
                 .collect_trusted::<Vec<_>>();
 
-            sort_unstable_by_branch(
-                vals.as_mut_slice(),
-                options.descending,
-                |a, b| a.1.cmp(&b.1),
-                options.multithreaded,
-            );
+            sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
             let cats: UInt32Chunked = vals
                 .into_iter()
                 .map(|(idx, _v)| idx)

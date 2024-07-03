@@ -156,8 +156,8 @@ impl ListChunked {
         self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
-        if !other._can_fast_explode() {
-            self.unset_fast_explode()
+        if !other.get_fast_explode_list() {
+            self.unset_fast_explode_list()
         }
         Ok(())
     }

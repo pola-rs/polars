@@ -10,18 +10,26 @@ from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_div() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [20.5, None, 10.0, 5.0, 2.5],
-            "b": [6, 12, 24, None, 5],
-        },
-    )
-    res = df.sql("SELECT DIV(a, b) AS a_div_b, DIV(b, a) AS b_div_a FROM self")
+    res = pl.sql(
+        """
+        SELECT label, DIV(a, b) AS a_div_b, DIV(tbl.b, tbl.a) AS b_div_a
+        FROM (
+          VALUES
+            ('a', 20.5, 6),
+            ('b', NULL, 12),
+            ('c', 10.0, 24),
+            ('d', 5.0, NULL),
+            ('e', 2.5, 5)
+        ) AS tbl(label, a, b)
+        """
+    ).collect()
+
     assert res.to_dict(as_series=False) == {
+        "label": ["a", "b", "c", "d", "e"],
         "a_div_b": [3, None, 0, None, 0],
         "b_div_a": [0, None, 2, None, 2],
     }
@@ -118,13 +126,19 @@ def test_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager=True) as ctx:
         with pytest.raises(
-            SQLSyntaxError, match=r"invalid decimals value for ROUND \('!!'\)"
+            SQLSyntaxError, match=r"invalid value for ROUND decimals \('!!'\)"
         ):
             ctx.execute("SELECT ROUND(n,'!!') AS n FROM df")
+
         with pytest.raises(
             SQLInterfaceError, match=r"ROUND .* negative decimals value \(-1\)"
         ):
             ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError, match=r"ROUND expects 1-2 arguments \(found 4\)"
+        ):
+            ctx.execute("SELECT ROUND(1.2345,6,7,8) AS n FROM df")
 
 
 def test_stddev_variance() -> None:

@@ -3,7 +3,7 @@ use parquet_format_safe::ColumnOrder as TColumnOrder;
 use super::column_order::ColumnOrder;
 use super::schema_descriptor::SchemaDescriptor;
 use super::RowGroupMetaData;
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 use crate::parquet::metadata::get_sort_order;
 pub use crate::parquet::thrift_format::KeyValue;
 
@@ -62,14 +62,16 @@ impl FileMetaData {
     }
 
     /// Deserializes [`crate::parquet::thrift_format::FileMetaData`] into this struct
-    pub fn try_from_thrift(metadata: parquet_format_safe::FileMetaData) -> Result<Self, Error> {
+    pub fn try_from_thrift(
+        metadata: parquet_format_safe::FileMetaData,
+    ) -> Result<Self, ParquetError> {
         let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
 
         let row_groups = metadata
             .row_groups
             .into_iter()
             .map(|rg| RowGroupMetaData::try_from_thrift(&schema_descr, rg))
-            .collect::<Result<_, Error>>()?;
+            .collect::<Result<_, ParquetError>>()?;
 
         let column_orders = metadata
             .column_orders

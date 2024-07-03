@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -10,10 +11,19 @@ import pytest
 from hypothesis import assume, given
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import Roll, TimeUnit
+    from polars._typing import Roll, TimeUnit
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_add_business_days() -> None:
@@ -82,7 +92,7 @@ def test_add_business_day_w_week_mask_invalid() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError, match="`week_mask` must have at least one business day"
+        ComputeError, match="`week_mask` must have at least one business day"
     ):
         df.select(pl.col("start").dt.add_business_days("n", week_mask=[False] * 7))
 
@@ -97,7 +107,7 @@ def test_add_business_days_schema() -> None:
     result = lf.select(
         result=pl.col("start").dt.add_business_days("n"),
     )
-    assert result.schema["result"] == pl.Date
+    assert result.collect_schema()["result"] == pl.Date
     assert result.collect().schema["result"] == pl.Date
     assert 'col("start").add_business_days([col("n")])' in result.explain()
 
@@ -152,7 +162,7 @@ def test_add_business_days_w_roll() -> None:
             "n": [1, 5, 7],
         }
     )
-    with pytest.raises(pl.ComputeError, match="is not a business date"):
+    with pytest.raises(ComputeError, match="is not a business date"):
         df.select(result=pl.col("start").dt.add_business_days("n"))
     result = df.select(
         result=pl.col("start").dt.add_business_days("n", roll="forward")
@@ -173,8 +183,14 @@ def test_add_business_days_w_roll() -> None:
 @pytest.mark.parametrize("time_zone", [None, "Europe/London", "Asia/Kathmandu"])
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_add_business_days_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
+    tzinfo = ZoneInfo(time_zone) if time_zone is not None else None
     df = pl.DataFrame(
-        {"start": [datetime(2020, 3, 28, 1), datetime(2020, 1, 10, 4)]},
+        {
+            "start": [
+                datetime(2020, 3, 28, 1, tzinfo=tzinfo),
+                datetime(2020, 1, 10, 4, tzinfo=tzinfo),
+            ]
+        },
         schema={"start": pl.Datetime(time_unit, time_zone)},
     )
     result = df.select(
@@ -183,21 +199,21 @@ def test_add_business_days_datetime(time_zone: str | None, time_unit: TimeUnit) 
     expected = pl.Series(
         "result",
         [datetime(2020, 3, 30, 1), datetime(2020, 1, 12, 4)],
-        pl.Datetime(time_unit, time_zone),
-    )
+        pl.Datetime(time_unit),
+    ).dt.replace_time_zone(time_zone)
     assert_series_equal(result, expected)
 
-    with pytest.raises(pl.ComputeError, match="is not a business date"):
+    with pytest.raises(ComputeError, match="is not a business date"):
         df.select(result=pl.col("start").dt.add_business_days(2))
 
 
 def test_add_business_days_invalid() -> None:
     df = pl.DataFrame({"start": [timedelta(1)]})
-    with pytest.raises(pl.InvalidOperationError, match="expected date or datetime"):
+    with pytest.raises(InvalidOperationError, match="expected date or datetime"):
         df.select(result=pl.col("start").dt.add_business_days(2, week_mask=[True] * 7))
     df = pl.DataFrame({"start": [date(2020, 1, 1)]})
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="expected Int64, Int32, UInt64, or UInt32, got f64",
     ):
         df.select(

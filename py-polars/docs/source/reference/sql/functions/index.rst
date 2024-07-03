@@ -85,3 +85,11 @@ SQL Functions
            trigonometry
 
     .. grid-item-card::
+
+        **Types**
+        ^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           types

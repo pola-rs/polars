@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsIntegerType, TimeUnit
+    from polars._typing import PolarsIntegerType, TimeUnit
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 @pytest.mark.parametrize("sort", [True, False])
@@ -35,7 +45,7 @@ def test_ewma_by_date(sort: bool) -> None:
         {"values": [None, 1.0, 1.9116116523516815, None, 3.815410804703363]}
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float64
+    assert result.collect_schema()["values"] == pl.Float64
     assert result.collect().schema["values"] == pl.Float64
 
 
@@ -79,7 +89,7 @@ def test_ewma_f32() -> None:
         schema_overrides={"values": pl.Float32},
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float32
+    assert result.collect_schema()["values"] == pl.Float32
     assert result.collect().schema["values"] == pl.Float32
 
 
@@ -110,21 +120,22 @@ def test_ewma_by_datetime(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_ewma_by_datetime_tz_aware(time_unit: TimeUnit) -> None:
+    tzinfo = ZoneInfo("Asia/Kathmandu")
     df = pl.DataFrame(
         {
             "values": [3.0, 1.0, 2.0, None, 4.0],
             "times": [
                 None,
-                datetime(2020, 1, 4),
-                datetime(2020, 1, 11),
-                datetime(2020, 1, 16),
-                datetime(2020, 1, 18),
+                datetime(2020, 1, 4, tzinfo=tzinfo),
+                datetime(2020, 1, 11, tzinfo=tzinfo),
+                datetime(2020, 1, 16, tzinfo=tzinfo),
+                datetime(2020, 1, 18, tzinfo=tzinfo),
             ],
         },
         schema_overrides={"times": pl.Datetime(time_unit, "Asia/Kathmandu")},
     )
     msg = "expected `half_life` to be a constant duration"
-    with pytest.raises(pl.InvalidOperationError, match=msg):
+    with pytest.raises(InvalidOperationError, match=msg):
         df.select(
             pl.col("values").ewm_mean_by("times", half_life="2d"),
         )
@@ -160,7 +171,7 @@ def test_ewma_by_index(data_type: PolarsIntegerType) -> None:
         {"values": [None, 1.0, 1.9116116523516815, None, 3.815410804703363]}
     )
     assert_frame_equal(result.collect(), expected)
-    assert result.schema["values"] == pl.Float64
+    assert result.collect_schema()["values"] == pl.Float64
     assert result.collect().schema["values"] == pl.Float64
 
 
@@ -194,13 +205,13 @@ def test_ewma_by_if_unsorted() -> None:
 
 def test_ewma_by_invalid() -> None:
     df = pl.DataFrame({"values": [1, 2]})
-    with pytest.raises(pl.InvalidOperationError, match="half_life cannot be negative"):
+    with pytest.raises(InvalidOperationError, match="half_life cannot be negative"):
         df.with_row_index().select(
             pl.col("values").ewm_mean_by("index", half_life="-2i"),
         )
     df = pl.DataFrame({"values": [[1, 2], [3, 4]]})
     with pytest.raises(
-        pl.InvalidOperationError, match=r"expected series to be Float64, Float32, .*"
+        InvalidOperationError, match=r"expected series to be Float64, Float32, .*"
     ):
         df.with_row_index().select(
             pl.col("values").ewm_mean_by("index", half_life="2i"),

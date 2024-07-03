@@ -44,7 +44,7 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub async fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let iter = df.iter_chunks(false);
+        let iter = df.iter_chunks(false, true);
         for batch in iter {
             self.writer.feed(batch.into()).await?;
         }

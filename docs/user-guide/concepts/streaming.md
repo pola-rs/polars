@@ -18,7 +18,7 @@ Streaming is supported for many operations including:
 - `join`
 - `unique`
 - `sort`
-- `explode`,`melt`
+- `explode`,`unpivot`
 - `scan_csv`,`scan_parquet`,`scan_ipc`
 
 This list is not exhaustive. Polars is in active development, and more operations can be added without explicit notice.

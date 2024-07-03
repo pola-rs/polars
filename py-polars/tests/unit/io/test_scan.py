@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from math import ceil
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -12,7 +13,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import SchemaDict
+    from polars._typing import SchemaDict
 
 
 @dataclass
@@ -191,9 +192,6 @@ def data_file(
 def test_scan(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -209,9 +207,6 @@ def test_scan(
 def test_scan_with_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -234,9 +229,6 @@ def test_scan_with_limit(
 def test_scan_with_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -263,9 +255,6 @@ def test_scan_with_filter(
 def test_scan_with_filter_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -293,9 +282,6 @@ def test_scan_with_filter_and_limit(
 def test_scan_with_limit_and_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -323,9 +309,6 @@ def test_scan_with_limit_and_filter(
 def test_scan_with_row_index_and_limit(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -354,9 +337,6 @@ def test_scan_with_row_index_and_limit(
 def test_scan_with_row_index_and_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -385,9 +365,6 @@ def test_scan_with_row_index_and_filter(
 def test_scan_with_row_index_limit_and_filter(
     capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
 ) -> None:
-    if data_file.path.suffix == ".csv" and force_async:
-        pytest.skip(reason="async reading of .csv not yet implemented")
-
     if force_async:
         _enable_force_async(monkeypatch)
 
@@ -411,6 +388,29 @@ def test_scan_with_row_index_limit_and_filter(
             schema_overrides={"index": pl.UInt32},
         ),
     )
+
+
+@pytest.mark.write_disk()
+def test_scan_with_row_index_projected_out(
+    capfd: Any, monkeypatch: pytest.MonkeyPatch, data_file: _DataFile, force_async: bool
+) -> None:
+    if data_file.path.suffix == ".csv" and force_async:
+        pytest.skip(reason="async reading of .csv not yet implemented")
+
+    if force_async:
+        _enable_force_async(monkeypatch)
+
+    subset = next(iter(data_file.df.schema.keys()))
+    df = (
+        _scan(data_file.path, data_file.df.schema, row_index=_RowIndex())
+        .select(subset)
+        .collect()
+    )
+
+    if force_async:
+        _assert_force_async(capfd)
+
+    assert_frame_equal(df, data_file.df.select(subset))
 
 
 @pytest.mark.write_disk()
@@ -443,3 +443,89 @@ def test_scan_with_row_index_filter_and_limit(
             schema_overrides={"index": pl.UInt32},
         ),
     )
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+    ],
+)
+@pytest.mark.parametrize(
+    "glob",
+    [True, False],
+)
+def test_scan_directory(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    glob: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    dfs: list[pl.DataFrame] = [
+        pl.DataFrame({"a": [0, 0, 0, 0, 0]}),
+        pl.DataFrame({"a": [1, 1, 1, 1, 1]}),
+        pl.DataFrame({"a": [2, 2, 2, 2, 2]}),
+    ]
+
+    paths = [
+        tmp_path / "0.bin",
+        tmp_path / "1.bin",
+        tmp_path / "dir/data.bin",
+    ]
+
+    for df, path in zip(dfs, paths):
+        path.parent.mkdir(exist_ok=True)
+        write_func(df, path)
+
+    df = pl.concat(dfs)
+
+    scan = scan_func
+
+    if scan_func is pl.scan_csv:
+        scan = partial(scan, schema=df.schema)
+
+    if scan_func is pl.scan_parquet:
+        scan = partial(scan, glob=glob)
+
+    out = scan(tmp_path).collect()
+    assert_frame_equal(out, df)
+
+
+def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
+    for dir in ["dir1", "dir2", "dir3"]:
+        (tmp_path / dir).mkdir()
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df.write_parquet(tmp_path / "dir1/data.bin")
+    df.write_parquet(tmp_path / "dir2/data.parquet")
+    df.write_parquet(tmp_path / "data.parquet")
+
+    assert_frame_equal(pl.scan_parquet(tmp_path / "**/*.bin").collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "**/data*.bin").collect(), df)
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path / "**/*").collect(), pl.concat(3 * [df])
+    )
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+
+
+@pytest.mark.parametrize("file_name", ["a b", "a %25 b"])
+def test_scan_async_whitespace_in_path(
+    tmp_path: Path, monkeypatch: Any, file_name: str
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    tmp_path.mkdir(exist_ok=True)
+
+    path = tmp_path / f"{file_name}.parquet"
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(path)
+    assert_frame_equal(pl.scan_parquet(path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*.parquet").collect(), df)
+    path.unlink()

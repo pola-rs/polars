@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -95,7 +96,7 @@ def test_sample_empty_df() -> None:
     assert df.sample(fraction=0.4, with_replacement=True).shape == (0, 1)
 
     # // If without replacement, then expect shape mismatch on sample_n not sample_frac
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df.sample(n=3, with_replacement=False)
     assert df.sample(fraction=0.4, with_replacement=False).shape == (0, 1)
 
@@ -109,7 +110,7 @@ def test_sample_series() -> None:
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
     # on a series of length 5, you cannot sample more than 5 items
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         s.sample(n=10, with_replacement=False, seed=0)
     # unless you use with_replacement=True
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10

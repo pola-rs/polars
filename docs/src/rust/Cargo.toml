@@ -132,8 +132,8 @@ name = "user-guide-transformations-joins"
 path = "user-guide/transformations/joins.rs"
 required-features = ["polars/lazy"]
 [[bin]]
-name = "user-guide-transformations-melt"
-path = "user-guide/transformations/melt.rs"
+name = "user-guide-transformations-unpivot"
+path = "user-guide/transformations/unpivot.rs"
 [[bin]]
 name = "user-guide-transformations-pivot"
 path = "user-guide/transformations/pivot.rs"

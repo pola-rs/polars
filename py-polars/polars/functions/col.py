@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Iterable, Protocol, cast
+from typing import TYPE_CHECKING, Iterable
 
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import is_polars_dtype
 
-plr: Any = None
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr  # type: ignore[no-redef]
+    import polars.polars as plr
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from polars.expr.expr import Expr
-    from polars.type_aliases import PolarsDataType
 
 __all__ = ["col"]
 
@@ -67,25 +66,7 @@ def _create_col(
         raise TypeError(msg)
 
 
-# appease lint by casting `col` with a protocol that conforms to the factory interface
-class Column(Protocol):
-    def __call__(
-        self,
-        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-        *more_names: str | PolarsDataType,
-    ) -> Expr: ...
-
-    def __getattr__(self, name: str) -> Expr: ...
-
-
-# handle attribute lookup on the metaclass (we use the factory uninstantiated)
-class ColumnFactoryMeta(type):
-    def __getattr__(self, name: str) -> Expr:
-        return _create_col(name)
-
-
-# factory that creates columns using `col("name")` or `col.name` syntax
-class ColumnFactory(metaclass=ColumnFactoryMeta):
+class Col:
     """
     Create Polars column expressions.
 
@@ -142,8 +123,8 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
     └─────┴─────┴─────┘
     """
 
-    def __new__(  # type: ignore[misc]
-        cls,
+    def __call__(
+        self,
         name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
         *more_names: str | PolarsDataType,
     ) -> Expr:
@@ -291,14 +272,6 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         """
         return _create_col(name, *more_names)
 
-    # appease sphinx; we actually use '__new__'
-    def __call__(
-        self,
-        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-        *more_names: str | PolarsDataType,
-    ) -> Expr:
-        return _create_col(name, *more_names)
-
     def __getattr__(self, name: str) -> Expr:
         """
         Create a column expression using attribute syntax.
@@ -331,7 +304,11 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 6   │
         └─────┘
         """
-        return getattr(type(self), name)
+        # For autocomplete to work with IPython
+        if name.startswith("__wrapped__"):
+            return getattr(type(self), name)
+
+        return _create_col(name)
 
 
-col = cast(Column, ColumnFactory)
+col: Col = Col()

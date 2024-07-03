@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import enum
 from datetime import datetime, timedelta
-from typing import Any
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -9,7 +11,11 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import series
 from polars.testing.parametric.strategies.data import datetimes
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -87,7 +93,7 @@ def test_list_datetime_11571() -> None:
         pytest.param(2**63, pl.UInt64, id="above i64 max"),
     ],
 )
-def test_lit_int_return_type(input: int, dtype: pl.PolarsDataType) -> None:
+def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
     assert pl.select(pl.lit(input)).to_series().dtype == dtype
 
 
@@ -97,6 +103,42 @@ def test_lit_unsupported_type() -> None:
         match="cannot create expression literal for value of type LazyFrame: ",
     ):
         pl.lit(pl.LazyFrame({"a": [1, 2, 3]}))
+
+
+def test_lit_enum_input_16668() -> None:
+    # https://github.com/pola-rs/polars/issues/16668
+
+    class State(str, enum.Enum):
+        VIC = "victoria"
+        NSW = "new south wales"
+
+    value = State.VIC
+
+    result = pl.lit(value)
+    assert pl.select(result).dtypes[0] == pl.Enum(["victoria", "new south wales"])
+    assert pl.select(result).item() == "victoria"
+
+    result = pl.lit(value, dtype=pl.String)
+    assert pl.select(result).dtypes[0] == pl.String
+    assert pl.select(result).item() == "victoria"
+
+
+def test_lit_enum_input_non_string() -> None:
+    # https://github.com/pola-rs/polars/issues/16668
+
+    class State(int, enum.Enum):
+        ONE = 1
+        TWO = 2
+
+    value = State.ONE
+
+    result = pl.lit(value)
+    assert pl.select(result).dtypes[0] == pl.Int32
+    assert pl.select(result).item() == 1
+
+    result = pl.lit(value, dtype=pl.Int8)
+    assert pl.select(result).dtypes[0] == pl.Int8
+    assert pl.select(result).item() == 1
 
 
 @given(value=datetimes("ns"))
@@ -118,3 +160,27 @@ def test_datetime_ms(value: datetime) -> None:
     result = pl.select(pl.lit(value, dtype=pl.Datetime("ms")))["literal"][0]
     expected_microsecond = value.microsecond // 1000 * 1000
     assert result == value.replace(microsecond=expected_microsecond)
+
+
+def test_lit_decimal() -> None:
+    value = Decimal("0.1")
+
+    expr = pl.lit(value)
+    df = pl.select(expr)
+    result = df.item()
+
+    assert df.dtypes[0] == pl.Decimal(None, 1)
+    assert result == value
+
+
+@given(s=series(min_size=1, max_size=1, allow_null=False, allowed_dtypes=pl.Decimal))
+def test_lit_decimal_parametric(s: pl.Series) -> None:
+    scale = s.dtype.scale  # type: ignore[attr-defined]
+    value = s.item()
+
+    expr = pl.lit(value)
+    df = pl.select(expr)
+    result = df.item()
+
+    assert df.dtypes[0] == pl.Decimal(None, scale)
+    assert result == value

@@ -409,6 +409,7 @@ pub fn list_set_operation(
     set_op: SetOperation,
 ) -> PolarsResult<ListChunked> {
     polars_ensure!(a.len() == b.len() || b.len() == 1 || a.len() == 1, ShapeMismatch: "column lengths don't match");
+    polars_ensure!(a.dtype() == b.dtype(), InvalidOperation: "cannot do 'set' operation on dtypes: {} and {}", a.dtype(), b.dtype());
     let mut a = a.clone();
     let mut b = b.clone();
     if a.len() != b.len() {

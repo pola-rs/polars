@@ -13,7 +13,7 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_from_pandas() -> None:
@@ -708,7 +708,9 @@ def test_dataframe_from_repr() -> None:
     )
     assert_frame_equal(
         df,
-        pl.DataFrame(data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}),
+        pl.DataFrame(
+            data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}, orient="row"
+        ),
     )
 
     df = cast(

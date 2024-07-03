@@ -10,8 +10,8 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Series
+    from polars._typing import IntoExpr, IntoExprColumn
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExpr, IntoExprColumn
 
 
 @expr_dispatch
@@ -338,7 +338,7 @@ class ArrayNameSpace:
 
         """
 
-    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = True) -> Series:
+    def get(self, index: int | IntoExprColumn, *, null_on_oob: bool = False) -> Series:
         """
         Get the value by index in the sub-arrays.
 

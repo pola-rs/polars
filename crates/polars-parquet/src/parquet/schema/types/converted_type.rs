@@ -2,7 +2,7 @@ use parquet_format_safe::ConvertedType;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
-use crate::parquet::error::Error;
+use crate::parquet::error::ParquetError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
@@ -105,7 +105,7 @@ pub enum GroupConvertedType {
 }
 
 impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(
         (ty, maybe_decimal): (ConvertedType, Option<(i32, i32)>),
@@ -118,7 +118,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
                 if let Some((precision, scale)) = maybe_decimal {
                     Decimal(precision.try_into()?, scale.try_into()?)
                 } else {
-                    return Err(Error::oos("Decimal requires a precision and scale"));
+                    return Err(ParquetError::oos("Decimal requires a precision and scale"));
                 }
             },
             ConvertedType::DATE => Date,
@@ -138,7 +138,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
             ConvertedType::BSON => Bson,
             ConvertedType::INTERVAL => Interval,
             _ => {
-                return Err(Error::oos(format!(
+                return Err(ParquetError::oos(format!(
                     "Converted type \"{:?}\" cannot be applied to a primitive type",
                     ty
                 )))
@@ -148,14 +148,14 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
 }
 
 impl TryFrom<ConvertedType> for GroupConvertedType {
-    type Error = Error;
+    type Error = ParquetError;
 
     fn try_from(type_: ConvertedType) -> Result<Self, Self::Error> {
         Ok(match type_ {
             ConvertedType::LIST => GroupConvertedType::List,
             ConvertedType::MAP => GroupConvertedType::Map,
             ConvertedType::MAP_KEY_VALUE => GroupConvertedType::MapKeyValue,
-            _ => return Err(Error::oos("LogicalType value out of range")),
+            _ => return Err(ParquetError::oos("LogicalType value out of range")),
         })
     }
 }
@@ -205,7 +205,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trip() -> Result<(), Error> {
+    fn round_trip() -> Result<(), ParquetError> {
         use PrimitiveConvertedType::*;
         let a = vec![
             Utf8,

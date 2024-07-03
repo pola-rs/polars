@@ -35,7 +35,9 @@ pub trait RoundSeries: SeriesSealed {
                 Ok(s)
             };
         }
-        polars_bail!(opq = round, s.dtype());
+
+        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round can only be used on numeric types" );
+        Ok(s.clone())
     }
 
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
@@ -68,7 +70,9 @@ pub trait RoundSeries: SeriesSealed {
             let s = ca.apply_values(|val| val.floor()).into_series();
             return Ok(s);
         }
-        polars_bail!(opq = floor, s.dtype());
+
+        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "floor can only be used on numeric types" );
+        Ok(s.clone())
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
@@ -83,7 +87,9 @@ pub trait RoundSeries: SeriesSealed {
             let s = ca.apply_values(|val| val.ceil()).into_series();
             return Ok(s);
         }
-        polars_bail!(opq = ceil, s.dtype());
+
+        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "ceil can only be used on numeric types" );
+        Ok(s.clone())
     }
 }
 

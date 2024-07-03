@@ -14,7 +14,7 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import JoinStrategy
+    from polars._typing import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -279,19 +279,9 @@ def test_boolean_agg_schema() -> None:
     for streaming in [True, False]:
         assert (
             agg_df.collect(streaming=streaming).schema
-            == agg_df.schema
+            == agg_df.collect_schema()
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
-
-
-def test_streaming_11219() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
-
-    assert lf.with_context([lf_other, lf_other2]).select(
-        pl.col("b") + pl.col("c").first()
-    ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
 
 @pytest.mark.write_disk()

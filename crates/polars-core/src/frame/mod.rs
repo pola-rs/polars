@@ -9,7 +9,9 @@ use rayon::prelude::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{slice_offsets, split_ca, split_df, try_get_supertype, NoNull};
+#[cfg(feature = "row_hash")]
+use crate::utils::split_df;
+use crate::utils::{slice_offsets, try_get_supertype, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -316,6 +318,25 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(Vec::new()) }
     }
 
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_schema(schema: &Schema) -> Self {
+        let cols = schema
+            .iter()
+            .map(|(name, dtype)| Series::new_empty(name, dtype))
+            .collect();
+        unsafe { DataFrame::new_no_checks(cols) }
+    }
+
+    /// Create an empty `DataFrame` with empty columns as per the `schema`.
+    pub fn empty_with_arrow_schema(schema: &ArrowSchema) -> Self {
+        let cols = schema
+            .fields
+            .iter()
+            .map(|fld| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
+            .collect();
+        unsafe { DataFrame::new_no_checks(cols) }
+    }
+
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
     ///
     /// # Example
@@ -462,6 +483,13 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
+        // Fast check. It is also needed for correctness, as code below doesn't check if the number
+        // of chunks is equal.
+        if !self.get_columns().iter().map(|s| s.n_chunks()).all_equal() {
+            return true;
+        }
+
+        // From here we check chunk lengths.
         let mut chunk_lengths = self.columns.iter().map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
@@ -978,7 +1006,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(left, right)?;
-                left.extend(right).unwrap();
+                left.extend(right)?;
                 Ok(())
             })
     }
@@ -1112,7 +1140,7 @@ impl DataFrame {
         series: Series,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
-            series.len() == self.height(),
+            self.width() == 0 || series.len() == self.height(),
             ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
             series.len(), self.height(),
         );
@@ -1623,36 +1651,6 @@ impl DataFrame {
         opt_idx.and_then(|idx| self.select_at_idx_mut(idx))
     }
 
-    /// Does a filter but splits thread chunks vertically instead of horizontally
-    /// This yields a DataFrame with `n_chunks == n_threads`.
-    fn filter_vertical(&mut self, mask: &BooleanChunked) -> PolarsResult<Self> {
-        let n_threads = POOL.current_num_threads();
-
-        let masks = split_ca(mask, n_threads).unwrap();
-        let dfs = split_df(self, n_threads, false);
-        let dfs: PolarsResult<Vec<_>> = POOL.install(|| {
-            masks
-                .par_iter()
-                .zip(dfs)
-                .map(|(mask, df)| {
-                    let cols = df
-                        .columns
-                        .iter()
-                        .map(|s| s.filter(mask))
-                        .collect::<PolarsResult<_>>()?;
-                    Ok(unsafe { DataFrame::new_no_checks(cols) })
-                })
-                .collect()
-        });
-
-        let mut iter = dfs?.into_iter();
-        let first = iter.next().unwrap();
-        Ok(iter.fold(first, |mut acc, df| {
-            acc.vstack_mut(&df).unwrap();
-            acc
-        }))
-    }
-
     /// Take the [`DataFrame`] rows by a boolean mask.
     ///
     /// # Example
@@ -1665,9 +1663,6 @@ impl DataFrame {
     /// }
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> PolarsResult<Self> {
-        if std::env::var("POLARS_VERT_PAR").is_ok() {
-            return self.clone().filter_vertical(mask);
-        }
         let new_col = self.try_apply_columns_par(&|s| s.filter(mask))?;
         Ok(unsafe { DataFrame::new_no_checks(new_col) })
     }
@@ -2257,6 +2252,14 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(col) }
     }
 
+    /// Split [`DataFrame`] at the given `offset`.
+    pub fn split_at(&self, offset: i64) -> (Self, Self) {
+        let (a, b) = self.columns.iter().map(|s| s.split_at(offset)).unzip();
+        let a = unsafe { DataFrame::new_no_checks(a) };
+        let b = unsafe { DataFrame::new_no_checks(b) };
+        (a, b)
+    }
+
     pub fn clear(&self) -> Self {
         let col = self.columns.iter().map(|s| s.clear()).collect::<Vec<_>>();
         unsafe { DataFrame::new_no_checks(col) }
@@ -2376,12 +2379,25 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self, pl_flavor: bool) -> RecordBatchIter {
+    pub fn iter_chunks(&self, pl_flavor: bool, parallel: bool) -> RecordBatchIter {
+        // If any of the columns is binview and we don't convert `pl_flavor` we allow parallelism
+        // as we must allocate arrow strings/binaries.
+        let parallel = if parallel && !pl_flavor {
+            self.columns.len() > 1
+                && self
+                    .columns
+                    .iter()
+                    .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary))
+        } else {
+            false
+        };
+
         RecordBatchIter {
             columns: &self.columns,
             idx: 0,
             n_chunks: self.n_chunks(),
             pl_flavor,
+            parallel,
         }
     }
 
@@ -2502,7 +2518,7 @@ impl DataFrame {
                 let acc: Series = apply_null_strategy(acc, null_strategy)?;
                 let s = apply_null_strategy(s, null_strategy)?;
                 // This will do owned arithmetic and can be mutable
-                Ok(acc + s)
+                std::ops::Add::add(acc, s)
             };
 
         let non_null_cols = self
@@ -2582,9 +2598,13 @@ impl DataFrame {
                         .map(|s| {
                             s.is_null()
                                 .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)
-                                .unwrap()
                         })
-                        .reduce_with(|l, r| &l + &r)
+                        .reduce_with(|l, r| {
+                            let l = l?;
+                            let r = r?;
+                            let result = std::ops::Add::add(&l, &r)?;
+                            PolarsResult::Ok(result)
+                        })
                         // we can unwrap the option, because we are certain there is a column
                         // we started this operation on 2 columns
                         .unwrap()
@@ -2592,6 +2612,7 @@ impl DataFrame {
 
                 let (sum, null_count) = POOL.install(|| rayon::join(sum, null_count));
                 let sum = sum?;
+                let null_count = null_count?;
 
                 // value lengths: len - null_count
                 let value_length: UInt32Chunked =
@@ -2604,7 +2625,8 @@ impl DataFrame {
                     .into_series()
                     .cast(&DataType::Float64)?;
 
-                Ok(sum.map(|sum| &sum / &value_length))
+                sum.map(|sum| std::ops::Div::div(&sum, &value_length))
+                    .transpose()
             },
         }
     }
@@ -2994,6 +3016,7 @@ pub struct RecordBatchIter<'a> {
     idx: usize,
     n_chunks: usize,
     pl_flavor: bool,
+    parallel: bool,
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
@@ -3003,12 +3026,19 @@ impl<'a> Iterator for RecordBatchIter<'a> {
         if self.idx >= self.n_chunks {
             None
         } else {
-            // create a batch of the columns with the same chunk no.
-            let batch_cols = self
-                .columns
-                .iter()
-                .map(|s| s.to_arrow(self.idx, self.pl_flavor))
-                .collect();
+            // Create a batch of the columns with the same chunk no.
+            let batch_cols = if self.parallel {
+                let iter = self
+                    .columns
+                    .par_iter()
+                    .map(|s| s.to_arrow(self.idx, self.pl_flavor));
+                POOL.install(|| iter.collect())
+            } else {
+                self.columns
+                    .iter()
+                    .map(|s| s.to_arrow(self.idx, self.pl_flavor))
+                    .collect()
+            };
             self.idx += 1;
 
             Some(RecordBatch::new(batch_cols))
@@ -3084,7 +3114,7 @@ mod test {
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_chunks(true);
+        let mut iter = df.iter_chunks(true, false);
         assert_eq!(5, iter.next().unwrap().len());
         assert!(iter.next().is_none());
     }

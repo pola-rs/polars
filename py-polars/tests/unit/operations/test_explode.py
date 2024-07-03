@@ -5,6 +5,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -196,7 +197,7 @@ def test_explode_invalid_element_count() -> None:
         }
     ).with_row_index()
     with pytest.raises(
-        pl.ShapeError, match=r"exploded columns must have matching element counts"
+        ShapeError, match=r"exploded columns must have matching element counts"
     ):
         df.explode(["col1", "col2"])
 
@@ -375,6 +376,32 @@ def test_group_by_flatten_string() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_fast_explode_merge_right_16923() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"foo": [["a", "b"], ["c"]]}),
+            pl.DataFrame({"foo": [None]}, schema={"foo": pl.List(pl.Utf8)}),
+        ],
+        how="diagonal",
+        rechunk=True,
+    ).explode("foo")
+
+    assert len(df) == 4
+
+
+def test_fast_explode_merge_left_16923() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"foo": [None]}, schema={"foo": pl.List(pl.Utf8)}),
+            pl.DataFrame({"foo": [["a", "b"], ["c"]]}),
+        ],
+        how="diagonal",
+        rechunk=True,
+    ).explode("foo")
+
+    assert len(df) == 4
+
+
 @pytest.mark.parametrize(
     ("values", "exploded"),
     [
@@ -404,3 +431,10 @@ def test_expr_str_explode_deprecated() -> None:
 
     expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
     assert_series_equal(result, expected)
+
+
+def test_undefined_col_15852() -> None:
+    lf = pl.LazyFrame({"foo": [1]})
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        lf.explode("bar").join(lf, on="foo").collect()

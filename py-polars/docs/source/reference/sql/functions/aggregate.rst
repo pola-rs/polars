@@ -204,6 +204,10 @@ STDDEV
 ------
 Returns the standard deviation of all the elements in the grouping.
 
+.. admonition:: Aliases
+
+   `STDEV`, `STDEV_SAMP`, `STDDEV_SAMP`
+
 **Example:**
 
 .. code-block:: python
@@ -260,6 +264,10 @@ Returns the sum of all the elements in the grouping.
 VARIANCE
 --------
 Returns the variance of all the elements in the grouping.
+
+.. admonition:: Aliases
+
+   `VAR`, `VAR_SAMP`
 
 **Example:**
 

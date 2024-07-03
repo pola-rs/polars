@@ -95,9 +95,13 @@ Returns the cube root (∛) of a number.
 
 .. _ceil:
 
-CEIL 
+CEIL
 ----
 Returns the nearest integer closest from zero.
+
+.. admonition:: Aliases
+
+   `CEILING`
 
 **Example:**
 
@@ -145,7 +149,7 @@ Returns the integer quotient of the division.
 
 .. _exp:
 
-EXP 
+EXP
 ---
 Computes the exponential of the given value.
 
@@ -170,7 +174,7 @@ Computes the exponential of the given value.
 
 .. _floor_function:
 
-FLOOR 
+FLOOR
 -----
 Returns the nearest integer away from zero.
 
@@ -245,7 +249,7 @@ Computes the `base` logarithm of the given value.
 
 .. _log2:
 
-LOG2 
+LOG2
 ----
 Computes the logarithm of the given value in base 2.
 
@@ -372,6 +376,10 @@ Returns a (good) approximation of 𝜋.
 POW
 ---
 Returns the value to the power of the given exponent.
+
+.. admonition:: Aliases
+
+   `POWER`
 
 **Example:**
 

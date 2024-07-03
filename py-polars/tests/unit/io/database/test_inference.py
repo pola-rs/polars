@@ -12,7 +12,7 @@ from polars.io.database._inference import _infer_dtype_from_database_typename
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.datatypes import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(

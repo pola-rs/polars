@@ -235,7 +235,7 @@ def test_to_dataset_half_precision(df: pl.DataFrame) -> None:
     [
         ("x", None),
         ("x", ["y", "z"]),
-        (cs.by_dtype(pl.INTEGER_DTYPES), ~cs.by_dtype(pl.INTEGER_DTYPES)),
+        (cs.integer(), ~cs.integer()),
     ],
 )
 def test_to_torch_labelled_dataset(label: Any, features: Any, df: pl.DataFrame) -> None:

@@ -7,7 +7,11 @@ unsafe impl IntoSeries for DecimalChunked {
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {
+    fn bit_repr(&self) -> Option<BitRepr> {
+        None
+    }
+}
 
 impl SeriesWrap<DecimalChunked> {
     fn apply_physical_to_s<F: Fn(&Int128Chunked) -> Int128Chunked>(&self, f: F) -> Series {
@@ -192,6 +196,17 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.apply_physical_to_s(|ca| ca.slice(offset, length))
+    }
+
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        let a = a
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series();
+        let b = b
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series();
+        (a, b)
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {

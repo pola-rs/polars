@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
@@ -35,8 +39,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 def test_repeat(
     value: Any,
     n: int,
-    dtype: pl.PolarsDataType,
-    expected_dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
+    expected_dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("repeat", [value] * n).cast(expected_dtype)
 
@@ -72,18 +76,18 @@ def test_repeat_n_zero() -> None:
     [1.5, 2.0, date(1971, 1, 2), "hello"],
 )
 def test_repeat_n_non_integer(n: Any) -> None:
-    with pytest.raises(pl.SchemaError, match="expected expression of dtype 'integer'"):
+    with pytest.raises(SchemaError, match="expected expression of dtype 'integer'"):
         pl.repeat(1, n=pl.lit(n), eager=True)
 
 
 def test_repeat_n_empty() -> None:
     df = pl.DataFrame(schema={"a": pl.Int32})
-    with pytest.raises(pl.OutOfBoundsError, match="index 0 is out of bounds"):
+    with pytest.raises(OutOfBoundsError, match="index 0 is out of bounds"):
         df.select(pl.repeat(1, n=pl.col("a")))
 
 
 def test_repeat_n_negative() -> None:
-    with pytest.raises(pl.ComputeError, match="could not parse value '-1' as a size"):
+    with pytest.raises(ComputeError, match="could not parse value '-1' as a size"):
         pl.repeat(1, n=-1, eager=True)
 
 
@@ -105,7 +109,7 @@ def test_repeat_n_negative() -> None:
 def test_ones(
     n: int,
     value: Any,
-    dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("ones", [value] * n, dtype=dtype)
 
@@ -134,7 +138,7 @@ def test_ones(
 def test_zeros(
     n: int,
     value: Any,
-    dtype: pl.PolarsDataType,
+    dtype: PolarsDataType,
 ) -> None:
     expected = pl.Series("zeros", [value] * n, dtype=dtype)
 

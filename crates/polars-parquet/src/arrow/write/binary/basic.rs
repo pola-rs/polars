@@ -91,29 +91,19 @@ pub(crate) fn build_statistics<O: Offset>(
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> ParquetStatistics {
+    use polars_compute::min_max::MinMaxKernel;
+
     BinaryStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
         distinct_count: None,
         max_value: options
             .max_value
-            .then(|| {
-                array
-                    .iter()
-                    .flatten()
-                    .max_by(|x, y| ord_binary(x, y))
-                    .map(|x| x.to_vec())
-            })
+            .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
             .flatten(),
         min_value: options
             .min_value
-            .then(|| {
-                array
-                    .iter()
-                    .flatten()
-                    .min_by(|x, y| ord_binary(x, y))
-                    .map(|x| x.to_vec())
-            })
+            .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
             .flatten(),
     }
     .serialize()

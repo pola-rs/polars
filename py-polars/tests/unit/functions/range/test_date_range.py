@@ -7,10 +7,11 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, PanicException
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval
+    from polars._typing import ClosedInterval
 
 
 def test_date_range() -> None:
@@ -20,7 +21,7 @@ def test_date_range() -> None:
 
 
 def test_date_range_invalid_time_unit() -> None:
-    with pytest.raises(pl.PolarsPanicError, match="'x' not supported"):
+    with pytest.raises(PanicException, match="'x' not supported"):
         pl.date_range(
             start=date(2021, 12, 16),
             end=date(2021, 12, 18),
@@ -30,7 +31,7 @@ def test_date_range_invalid_time_unit() -> None:
 
 
 def test_date_range_invalid_time() -> None:
-    with pytest.raises(pl.ComputeError, match="end is an out-of-range time"):
+    with pytest.raises(ComputeError, match="end is an out-of-range time"):
         pl.date_range(pl.date(2024, 1, 1), pl.date(2024, 2, 30), eager=True)
 
 
@@ -206,15 +207,15 @@ def test_date_range_input_shape_empty() -> None:
     single = pl.Series([datetime(2022, 1, 2)])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.date_range(empty, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+        ComputeError, match="`end` must contain exactly one value, got 0 values"
     ):
         pl.date_range(single, empty, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+        ComputeError, match="`start` must contain exactly one value, got 0 values"
     ):
         pl.date_range(empty, empty, eager=True)
 
@@ -224,15 +225,15 @@ def test_date_range_input_shape_multiple_values() -> None:
     multiple = pl.Series([datetime(2022, 1, 3), datetime(2022, 1, 4)])
 
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.date_range(multiple, single, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+        ComputeError, match="`end` must contain exactly one value, got 2 values"
     ):
         pl.date_range(single, multiple, eager=True)
     with pytest.raises(
-        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+        ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.date_range(multiple, multiple, eager=True)
 
@@ -245,7 +246,7 @@ def test_date_range_start_later_than_end() -> None:
 
 def test_date_range_24h_interval_raises() -> None:
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="`interval` input for `date_range` must consist of full days",
     ):
         pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h", eager=True)
@@ -286,7 +287,7 @@ def test_date_ranges_broadcasting_fail() -> None:
     end = pl.Series([date(2021, 1, 2), date(2021, 1, 3)])
 
     with pytest.raises(
-        pl.ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
+        ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
     ):
         pl.date_ranges(start, end, eager=True)
 

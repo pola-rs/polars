@@ -3,6 +3,7 @@ from hypothesis import given
 from hypothesis.strategies import booleans
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -56,21 +57,19 @@ def test_top_k() -> None:
         check_row_order=False,
     )
 
-    with pytest.raises(pl.ComputeError, match="`k` must be set for `top_k`"):
+    with pytest.raises(ComputeError, match="`k` must be set for `top_k`"):
         df.select(
             pl.col("bool_val").top_k(pl.lit(None)),
         )
 
-    with pytest.raises(
-        pl.ComputeError, match="`k` must be a single value for `top_k`."
-    ):
+    with pytest.raises(ComputeError, match="`k` must be a single value for `top_k`."):
         df.select(pl.col("test").top_k(pl.lit(pl.Series("s", [1, 2]))))
 
     # dataframe
     df = pl.DataFrame(
         {
-            "a": [1, 2, 3, 4, 2, 2],
-            "b": [3, 2, 1, 4, 3, 2],
+            "a": [1, 2, 3, 4, 2, 2, None],
+            "b": [None, 2, 1, 4, 3, 2, None],
         }
     )
 
@@ -82,7 +81,7 @@ def test_top_k() -> None:
 
     assert_frame_equal(
         df.top_k(3, by=["a", "b"], reverse=True),
-        pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
+        pl.DataFrame({"a": [1, 2, 2], "b": [None, 2, 2]}),
         check_row_order=False,
     )
     assert_frame_equal(

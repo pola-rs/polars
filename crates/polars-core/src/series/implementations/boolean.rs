@@ -101,6 +101,10 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
+    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+        self.metadata_dyn()
+    }
+
     fn bitxor(&self, other: &Series) -> PolarsResult<Series> {
         let other = self.0.unpack_series_matching_type(other)?;
         Ok((&self.0).bitxor(other).into_series())
@@ -139,6 +143,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
+    }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (a.into_series(), b.into_series())
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {

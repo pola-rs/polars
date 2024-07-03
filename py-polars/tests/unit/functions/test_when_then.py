@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -249,7 +250,7 @@ def test_comp_incompatible_enum_dtype() -> None:
     df = pl.DataFrame({"a": pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"]))})
 
     with pytest.raises(
-        pl.ComputeError,
+        InvalidOperationError,
         match="conversion from `str` to `enum` failed in column 'literal'",
     ):
         df.with_columns(
@@ -351,10 +352,10 @@ def test_single_element_broadcast(
 def test_mismatched_height_should_raise(
     df: pl.DataFrame, ternary_expr: pl.Expr
 ) -> None:
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df.select(ternary_expr)
 
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(ShapeError):
         df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
@@ -621,3 +622,11 @@ def test_when_then_supertype_15975_comment() -> None:
     )
 
     assert q.collect()["val"].to_list() == [1.0, 1.5, 16.0]
+
+
+def test_chained_when_no_subclass_17142() -> None:
+    # https://github.com/pola-rs/polars/pull/17142
+    when = pl.when(True).then(1).when(True)
+
+    assert not isinstance(when, pl.Expr)
+    assert "<polars.expr.whenthen.ChainedWhen object at" in str(when)

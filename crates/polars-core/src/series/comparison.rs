@@ -39,7 +39,7 @@ macro_rules! impl_compare {
             _ => (),
         };
 
-        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_| polars_err!(SchemaMismatch: "could not evalulate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
+        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_| polars_err!(SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
         lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()))?;
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
@@ -77,7 +77,7 @@ macro_rules! impl_compare {
                 lhs.0.$method(&rhs.0)
             },
 
-            dt => polars_bail!(InvalidOperation: "could apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
+            dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
         out.rename(lhs.name());
         PolarsResult::Ok(out)

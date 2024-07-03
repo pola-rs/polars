@@ -57,7 +57,7 @@ pub(super) fn finalize_group_by(
     ooc_payload: Option<(IOThread, Box<dyn Sink>)>,
 ) -> PolarsResult<FinalizedSink> {
     let df = if dfs.is_empty() {
-        DataFrame::from(output_schema)
+        DataFrame::empty_with_schema(output_schema)
     } else {
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
         // re init to check duplicates

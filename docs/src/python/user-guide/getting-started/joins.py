@@ -9,7 +9,7 @@ df = pl.DataFrame(
     {
         "a": range(8),
         "b": np.random.rand(8),
-        "d": [1, 2.0, float("nan"), float("nan"), 0, -5, -42, None],
+        "d": [1.0, 2.0, float("nan"), float("nan"), 0.0, -5.0, -42.0, None],
     }
 )
 

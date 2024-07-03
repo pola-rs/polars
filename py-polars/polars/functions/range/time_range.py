@@ -5,7 +5,7 @@ from datetime import time
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
-from polars._utils.parse_expr_input import parse_as_expression
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 from polars.functions.range._utils import parse_interval_argument
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, IntoExprColumn
+    from polars._typing import ClosedInterval, IntoExprColumn
 
 
 @overload
@@ -141,8 +141,8 @@ def time_range(
     if end is None:
         end = time(23, 59, 59, 999999)
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
 
     result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
 
@@ -276,8 +276,8 @@ def time_ranges(
     if end is None:
         end = time(23, 59, 59, 999999)
 
-    start_pyexpr = parse_as_expression(start)
-    end_pyexpr = parse_as_expression(end)
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
 
     result = wrap_expr(plr.time_ranges(start_pyexpr, end_pyexpr, interval, closed))
 

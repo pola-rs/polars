@@ -4,13 +4,13 @@ from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_function
-from polars._utils.parse_expr_input import parse_as_list_of_expressions
+from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_ldf
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
+    from polars._typing import IntoExpr, RollingInterpolationMethod, SchemaDict
     from polars.polars import PyLazyGroupBy
-    from polars.type_aliases import IntoExpr, RollingInterpolationMethod, SchemaDict
 
 
 class LazyGroupBy:
@@ -142,7 +142,7 @@ class LazyGroupBy:
             )
             raise TypeError(msg)
 
-        pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
+        pyexprs = parse_into_list_of_expressions(*aggs, **named_aggs)
         return wrap_ldf(self.lgb.agg(pyexprs))
 
     def map_groups(

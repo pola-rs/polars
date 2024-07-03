@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterable, NoReturn, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.constants import U32_MAX
+from polars._utils.slice import PolarsSlice
 from polars._utils.various import range_to_slice
 from polars.datatypes.classes import (
     Boolean,
@@ -19,11 +20,10 @@ from polars.datatypes.classes import (
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.meta.index_type import get_index_type
-from polars.slice import PolarsSlice
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
-    from polars.type_aliases import (
+    from polars._typing import (
         MultiColSelector,
         MultiIndexSelector,
         SingleColSelector,

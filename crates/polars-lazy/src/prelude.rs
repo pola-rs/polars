@@ -10,7 +10,7 @@ pub use polars_io::parquet::write::ParquetWriteOptions;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
 #[cfg(feature = "rank")]
 pub use polars_ops::prelude::{RankMethod, RankOptions};
-pub use polars_plan::logical_plan::{
+pub use polars_plan::plans::{
     AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
     NULL,
 };

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars import StringCache
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_struct_logical_is_in() -> None:
@@ -84,7 +89,7 @@ def test_is_in_null_prop() -> None:
         is None
     )
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`is_in` cannot check for Int64 values in Boolean data",
     ):
         _res = pl.Series([None], dtype=pl.Boolean).is_in(pl.Series([42])).item()
@@ -140,7 +145,7 @@ def test_is_in_series() -> None:
     assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False] * df.height
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"`is_in` cannot check for String values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
@@ -161,12 +166,12 @@ def test_is_in_null() -> None:
 
 
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-def test_is_in_float(dtype: pl.PolarsDataType) -> None:
+def test_is_in_float(dtype: PolarsDataType) -> None:
     s = pl.Series([float("nan"), 0.0], dtype=dtype)
     result = s.is_in([-0.0, -float("nan")])
     expected = pl.Series([True, True], dtype=pl.Boolean)
@@ -213,7 +218,7 @@ def test_is_in_expr_list_series(
     if matches:
         assert df.select(expr_is_in).to_series().to_list() == matches
     else:
-        with pytest.raises(pl.InvalidOperationError, match=expected_error):
+        with pytest.raises(InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
 
 
@@ -336,6 +341,7 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
             (["a"], "d"),
         ],
         schema={"li": pl.List(dtype), "x": dtype},
+        orient="row",
     )
     res = df.select(pl.col("li").list.contains(pl.col("x")))
     expected_df = pl.DataFrame({"li": [False, True, True, False, False]})
@@ -371,6 +377,7 @@ def test_cat_list_is_in_from_str() -> None:
             (["a"], "d"),
         ],
         schema={"li": pl.List(pl.Categorical), "x": pl.String},
+        orient="row",
     )
     res = df.select(pl.col("li").list.contains(pl.col("x")))
     expected_df = pl.DataFrame({"li": [False, True, True, False, False]})

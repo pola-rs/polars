@@ -27,7 +27,7 @@ pub use schema::{infer_schema, FileMetaData};
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
-    error::Error as ParquetError,
+    error::ParquetError,
     fallible_streaming_iterator,
     metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},
     page::{CompressedDataPage, DataPageHeader, Page},

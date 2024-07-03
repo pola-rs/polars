@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::pushable::Pushable;
-use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{polars_err, PolarsError, PolarsResult};
 
 use super::super::PagesIter;
 use crate::parquet::deserialize::{
@@ -41,7 +41,7 @@ pub struct FilteredOptionalPageValidity<'a> {
 
 impl<'a> FilteredOptionalPageValidity<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, validity, _) = split_buffer(page)?;
+        let validity = split_buffer(page)?.def;
 
         let iter = hybrid_rle::Decoder::new(validity, 1);
         let iter = HybridDecoderBitmapIter::new(iter, page.num_values());
@@ -156,7 +156,7 @@ pub struct OptionalPageValidity<'a> {
 
 impl<'a> OptionalPageValidity<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let (_, validity, _) = split_buffer(page)?;
+        let validity = split_buffer(page)?.def;
 
         let iter = hybrid_rle::Decoder::new(validity, 1);
         let iter = HybridDecoderBitmapIter::new(iter, page.num_values());
@@ -424,8 +424,8 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
         Err(e) => MaybeNext::Some(Err(e.into())),
         Ok(Some(page)) => {
             let page = match page {
-                Page::Data(page) => page,
-                Page::Dict(dict_page) => {
+                Page::Data(ref page) => page,
+                Page::Dict(ref dict_page) => {
                     *dict = Some(decoder.deserialize_dict(dict_page));
                     return MaybeNext::More;
                 },
@@ -465,15 +465,18 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
 
 #[inline]
 pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::HybridRleDecoder> {
-    let (_, _, indices_buffer) = split_buffer(page)?;
+    let indices_buffer = split_buffer(page)?.values;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),
     // SPEC: followed by the values encoded using RLE/Bit packed described above (with the given bit width).
     let bit_width = indices_buffer[0];
     let indices_buffer = &indices_buffer[1..];
 
-    hybrid_rle::HybridRleDecoder::try_new(indices_buffer, bit_width as u32, page.num_values())
-        .map_err(to_compute_err)
+    Ok(hybrid_rle::HybridRleDecoder::new(
+        indices_buffer,
+        bit_width as u32,
+        page.num_values(),
+    ))
 }
 
 pub(super) fn page_is_optional(page: &DataPage) -> bool {

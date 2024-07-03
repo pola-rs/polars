@@ -5,12 +5,13 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal as D
 from typing import Any
 
+import hypothesis.strategies as st
 import pytest
 from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_series_equal, assert_series_not_equal
-from polars.testing.parametric import series
+from polars.testing.parametric import dtypes, series
 
 nan = float("nan")
 pytest_plugins = ["pytester"]
@@ -18,6 +19,16 @@ pytest_plugins = ["pytester"]
 
 @given(s=series())
 def test_assert_series_equal_parametric(s: pl.Series) -> None:
+    assert_series_equal(s, s)
+
+
+@given(data=st.data())
+def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
+    inner = data.draw(dtypes(excluded_dtypes=[pl.Categorical]))
+    shape = data.draw(st.integers(min_value=1, max_value=3))
+    dtype = pl.Array(inner, shape=shape)
+    s = data.draw(series(dtype=dtype))
+
     assert_series_equal(s, s)
 
 
@@ -48,6 +59,13 @@ def test_assert_series_equal_check_order() -> None:
     assert_series_equal(srs1, srs2, check_order=False)
     with pytest.raises(AssertionError):
         assert_series_not_equal(srs1, srs2, check_order=False)
+
+
+def test_assert_series_equal_check_order_unsortable_type() -> None:
+    s = pl.Series([object(), object()])
+
+    with pytest.raises(TypeError):
+        assert_series_equal(s, s, check_order=False)
 
 
 def test_compare_series_nans_assert_equal() -> None:
@@ -559,13 +577,6 @@ def test_assert_series_equal_full_null_incompatible_dtypes_raises() -> None:
 def test_assert_series_equal_full_null_nested_list() -> None:
     s = pl.Series([None, None], dtype=pl.List(pl.Float64))
     assert_series_equal(s, s)
-
-
-def test_assert_series_equal_full_null_nested_not_nested() -> None:
-    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
-    s2 = pl.Series([None, None], dtype=pl.Float64)
-
-    assert_series_equal(s1, s2, check_dtypes=False)
 
 
 def test_assert_series_equal_nested_list_nan() -> None:

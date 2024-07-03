@@ -5,12 +5,16 @@ String
    :header-rows: 1
    :widths: 20 60
 
+   * - Function
+     - Description
    * - :ref:`BIT_LENGTH <bit_length>`
      - Returns the length of the input string in bits.
    * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
    * - :ref:`CONCAT_WS <concat_ws>`
      - Returns all input expressions concatenated together (and interleaved with a separator) as a string.
+   * - :ref:`DATE <date>`
+     - Converts a formatted date string to an actual Date value.
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
    * - :ref:`INITCAP <initcap>`
@@ -39,8 +43,12 @@ String
      - Returns True if the value starts with the second argument.
    * - :ref:`STRPOST <strpos>`
      - Returns the index of the given substring in the target string.
+   * - :ref:`STRPTIME <strptime>`
+     - Converts a string to a Datetime using a strftime-compatible formatting string.
    * - :ref:`SUBSTRING <substring>`
      - Returns a portion of the data (first character = 0) in the range [start, start + length].
+   * - :ref:`TIMESTAMP <timestamp>`
+     - Converts a formatted timestamp/datetime string to an actual Datetime value.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -131,6 +139,48 @@ Returns all input expressions concatenated together (and interleaved with a sepa
     # │ c:xx   │
     # │ dd:ww  │
     # └────────┘
+
+.. _date:
+
+DATE
+----
+Converts a formatted string date to an actual Date type; ISO-8601 format is assumed
+unless a strftime-compatible formatting string is provided as the second parameter.
+
+.. tip::
+
+  `DATE` is also supported as a typed literal (this form does not allow a format string).
+
+  .. code-block:: sql
+
+    SELECT DATE '2021-01-01' AS dt
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "s_dt1": ["1969-10-30", "2024-07-05", "2077-02-28"],
+        "s_dt2": ["10 February 1920", "5 July 2077", "28 April 2000"],
+      }
+    )
+    df.sql("""
+      SELECT
+        DATE(s_dt1) AS dt1,
+        DATE(s_dt2, '%d %B %Y') AS dt2
+      FROM self
+    """)
+    # shape: (3, 2)
+    # ┌────────────┬────────────┐
+    # │ dt1        ┆ dt2        │
+    # │ ---        ┆ ---        │
+    # │ date       ┆ date       │
+    # ╞════════════╪════════════╡
+    # │ 1969-10-30 ┆ 1920-02-10 │
+    # │ 2024-07-05 ┆ 2077-07-05 │
+    # │ 2077-02-28 ┆ 2000-04-28 │
+    # └────────────┴────────────┘
 
 .. _ends_with:
 
@@ -230,6 +280,10 @@ LENGTH
 ------
 Returns the character length of the string.
 
+.. admonition:: Aliases
+
+   `CHAR_LENGTH`, `CHARACTER_LENGTH`
+
 **Example:**
 
 .. code-block:: python
@@ -248,6 +302,7 @@ Returns the character length of the string.
         OCTET_LENGTH(color) AS n_bytes
       FROM self
     """)
+
     # shape: (3, 4)
     # ┌──────────┬──────────┬─────────┬─────────┐
     # │ iso_lang ┆ color    ┆ n_chars ┆ n_bytes │
@@ -527,6 +582,41 @@ Returns the index of the given substring in the target string.
     # │ grape  ┆ 3     │
     # └────────┴───────┘
 
+
+.. _strptime:
+
+STRPTIME
+--------
+Converts a string to a Datetime using a `chrono strftime <https://docs.rs/chrono/latest/chrono/format/strftime/>`_-compatible formatting string.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "s_dt": ["1969 Oct 30", "2024 Jul 05", "2077 Feb 28"],
+        "s_tm": ["00.30.55", "12.40.15", "10.45.00"],
+      }
+    )
+    df.sql("""
+      SELECT
+        s_dt,
+        s_tm,
+        STRPTIME(s_dt || ' ' || s_tm, '%Y %b %d %H.%M.%S') AS dtm
+      FROM self
+    """)
+    # shape: (3, 3)
+    # ┌─────────────┬──────────┬─────────────────────┐
+    # │ s_dt        ┆ s_tm     ┆ dtm                 │
+    # │ ---         ┆ ---      ┆ ---                 │
+    # │ str         ┆ str      ┆ datetime[μs]        │
+    # ╞═════════════╪══════════╪═════════════════════╡
+    # │ 1969 Oct 30 ┆ 00.30.55 ┆ 1969-10-30 00:30:55 │
+    # │ 2024 Jul 05 ┆ 12.40.15 ┆ 2024-07-05 12:40:15 │
+    # │ 2077 Feb 28 ┆ 10.45.00 ┆ 2077-02-28 10:45:00 │
+    # └─────────────┴──────────┴─────────────────────┘
+
 .. _substring:
 
 SUBSTRING
@@ -552,6 +642,54 @@ Returns a slice of the string data (1-indexed) in the range [start, start + leng
     # │ orange ┆ ange    │
     # │ grape  ┆ ape     │
     # └────────┴─────────┘
+
+
+.. _timestamp:
+
+TIMESTAMP
+---------
+Converts a formatted string date to an actual Datetime type; ISO-8601 format is assumed
+unless a strftime-compatible formatting string is provided as the second parameter.
+
+.. admonition:: Aliases
+
+   `DATETIME`
+
+.. tip::
+
+  `TIMESTAMP` is also supported as a typed literal (this form does not allow a format string).
+
+  .. code-block:: sql
+
+    SELECT TIMESTAMP '2077-12-10 22:30:45' AS ts
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {
+        "str_timestamp": [
+          "1969 July 30, 00:30:55",
+          "2030-October-08, 12:40:15",
+          "2077 February 28, 10:45:00",
+        ]
+      }
+    )
+    df.sql("""
+      SELECT str_timestamp, TIMESTAMP(str_date, '%Y.%m.%d') AS date FROM self
+    """)
+    # shape: (3, 2)
+    # ┌────────────┬────────────┐
+    # │ str_date   ┆ date       │
+    # │ ---        ┆ ---        │
+    # │ str        ┆ date       │
+    # ╞════════════╪════════════╡
+    # │ 1969.10.30 ┆ 1969-10-30 │
+    # │ 2024.07.05 ┆ 2024-07-05 │
+    # │ 2077.02.28 ┆ 2077-02-28 │
+    # └────────────┴────────────┘
+
 
 .. _upper:
 

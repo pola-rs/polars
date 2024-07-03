@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import sys
 import typing
 from collections import OrderedDict
@@ -17,18 +16,25 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
-from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    OutOfBoundsError,
+)
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
     assert_series_equal,
 )
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, UniqueKeepStrategy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -78,7 +84,7 @@ def test_comparisons() -> None:
     assert_frame_equal(df >= 2, pl.DataFrame({"a": [False, True], "b": [True, True]}))
     assert_frame_equal(df <= 2, pl.DataFrame({"a": [True, True], "b": [False, False]}))
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df > "2"  # noqa: B015
 
     # Series
@@ -117,15 +123,25 @@ def test_comparisons() -> None:
         df == pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})  # noqa: B015
 
     # Type mismatch
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         df == pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})  # noqa: B015
 
 
-def test_selection() -> None:
+def test_column_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
     # get column by name
-    assert_series_equal(df.get_column("b"), pl.Series("b", [1.0, 2.0, 3.0]))
+    b = pl.Series("b", [1.0, 2.0, 3.0])
+    assert_series_equal(df["b"], b)
+    assert_series_equal(df.get_column("b"), b)
+
+    with pytest.raises(ColumnNotFoundError, match="x"):
+        df.get_column("x")
+
+    default_series = pl.Series("x", ["?", "?", "?"])
+    assert_series_equal(df.get_column("x", default=default_series), default_series)
+
+    assert df.get_column("x", default=None) is None
 
     # get column by index
     assert_series_equal(df.to_series(1), pl.Series("b", [1.0, 2.0, 3.0]))
@@ -387,7 +403,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # Out of bounds error.
-    with pytest.raises(pl.OutOfBoundsError):
+    with pytest.raises(OutOfBoundsError):
         df.sort("fruits").select(
             pl.col("B").reverse().gather([1, 2]).implode().over("fruits"),
             "fruits",
@@ -492,7 +508,7 @@ def test_file_buffer() -> None:
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.read_parquet(f)
 
 
@@ -1000,6 +1016,7 @@ def test_literal_series() -> None:
                 (21.0, 2, "reg3", datetime(2022, 8, 18, 0), 3),
             ],
             schema=expected_schema,  # type: ignore[arg-type]
+            orient="row",
         ),
         out,
         atol=0.00001,
@@ -1109,7 +1126,7 @@ def test_from_generator_or_iterable() -> None:
 
 
 def test_from_rows() -> None:
-    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]])
+    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -1125,7 +1142,7 @@ def test_from_rows() -> None:
 
     # auto-inference with same num rows/cols
     data = [(1, 2, "foo"), (2, 3, "bar"), (3, 4, "baz")]
-    df = pl.from_records(data)
+    df = pl.from_records(data, orient="row")
     assert data == df.rows()
 
 
@@ -1202,7 +1219,7 @@ def test_repeat_by_unequal_lengths_panic() -> None:
         }
     )
     with pytest.raises(
-        pl.ComputeError,
+        ComputeError,
         match="repeat_by argument and the Series should have equal length, "
         "or at least one of them should have length 1",
     ):
@@ -1359,12 +1376,12 @@ def test_dot_product() -> None:
     assert result == 32.0
 
     with pytest.raises(
-        pl.InvalidOperationError, match="`dot` operation not supported for dtype `bool`"
+        InvalidOperationError, match="`dot` operation not supported for dtype `bool`"
     ):
         pl.Series([True, False, False, True]) @ pl.Series([4, 5, 6, 7])
 
     with pytest.raises(
-        pl.InvalidOperationError, match="`dot` operation not supported for dtype `str`"
+        InvalidOperationError, match="`dot` operation not supported for dtype `str`"
     ):
         pl.Series([1, 2, 3, 4]) @ pl.Series(["True", "False", "False", "True"])
 
@@ -1710,16 +1727,16 @@ def test_schema_equality() -> None:
     lf = pl.LazyFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
     lf_rev = lf.select("bar", "foo")
 
-    assert lf.schema != lf_rev.schema
+    assert lf.collect_schema() != lf_rev.collect_schema()
     assert lf.collect().schema != lf_rev.collect().schema
 
 
 def test_df_schema_unique() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         df.columns = ["a", "a"]
 
-    with pytest.raises(pl.DuplicateError):
+    with pytest.raises(DuplicateError):
         df.rename({"b": "a"})
 
 
@@ -1978,7 +1995,7 @@ def test_group_by_slice_expression_args() -> None:
 
     out = (
         df.group_by("groups", maintain_order=True)
-        .agg([pl.col("vals").slice(pl.len() * 0.1, (pl.len() // 5))])
+        .agg([pl.col("vals").slice((pl.len() * 0.1).cast(int), (pl.len() // 5))])
         .explode("vals")
     )
 
@@ -2109,7 +2126,7 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select(pl.col("B").upper_bound())
     assert res_expr.item() == 9223372036854775807
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         fruits_cars.select(pl.col("fruits").upper_bound())
 
 
@@ -2427,7 +2444,10 @@ def test_init_datetimes_with_timezone() -> None:
             },
         ):
             result = pl.DataFrame(  # type: ignore[arg-type]
-                data={"d1": [dtm], "d2": [dtm]},
+                data={
+                    "d1": [dtm.replace(tzinfo=ZoneInfo(tz_us))],
+                    "d2": [dtm.replace(tzinfo=ZoneInfo(tz_europe))],
+                },
                 **type_overrides,
             )
             expected = pl.DataFrame(
@@ -2446,17 +2466,15 @@ def test_init_datetimes_with_timezone() -> None:
         "dtype_time_zone",
         "expected_time_zone",
         "expected_item",
-        "warn",
     ),
     [
-        (None, "", None, None, datetime(2020, 1, 1), False),
+        (None, "", None, None, datetime(2020, 1, 1)),
         (
             timezone(timedelta(hours=-8)),
             "-08:00",
             "UTC",
             "UTC",
             datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
-            False,
         ),
         (
             timezone(timedelta(hours=-8)),
@@ -2464,7 +2482,6 @@ def test_init_datetimes_with_timezone() -> None:
             None,
             "UTC",
             datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
-            True,
         ),
     ],
 )
@@ -2474,19 +2491,11 @@ def test_init_vs_strptime_consistency(
     dtype_time_zone: str | None,
     expected_time_zone: str,
     expected_item: datetime,
-    warn: bool,
 ) -> None:
-    msg = r"UTC time zone"
-    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
-    if warn:
-        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
-    else:
-        context_manager = contextlib.nullcontext()
-    with context_manager:
-        result_init = pl.Series(
-            [datetime(2020, 1, 1, tzinfo=tzinfo)],
-            dtype=pl.Datetime("us", dtype_time_zone),
-        )
+    result_init = pl.Series(
+        [datetime(2020, 1, 1, tzinfo=tzinfo)],
+        dtype=pl.Datetime("us", dtype_time_zone),
+    )
     result_strptime = pl.Series([f"2020-01-01 00:00{offset}"]).str.strptime(
         pl.Datetime("us", dtype_time_zone)
     )
@@ -2495,17 +2504,18 @@ def test_init_vs_strptime_consistency(
     assert_series_equal(result_init, result_strptime)
 
 
-def test_init_vs_strptime_consistency_raises() -> None:
-    msg = "-aware datetimes are converted to UTC"
-    with pytest.raises(ValueError, match=msg):
-        pl.Series(
-            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
-            dtype=pl.Datetime("us", "US/Pacific"),
-        )
-    with pytest.raises(ComputeError, match=msg):
-        pl.Series(["2020-01-01 00:00-08:00"]).str.strptime(
-            pl.Datetime("us", "US/Pacific")
-        )
+def test_init_vs_strptime_consistency_converts() -> None:
+    result = pl.Series(
+        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
+        dtype=pl.Datetime("us", "US/Pacific"),
+    ).item()
+    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    result = (
+        pl.Series(["2020-01-01 00:00-08:00"])
+        .str.strptime(pl.Datetime("us", "US/Pacific"))
+        .item()
+    )
+    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
 
 
 def test_init_physical_with_timezone() -> None:

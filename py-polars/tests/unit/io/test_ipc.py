@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+import re
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -8,12 +10,13 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import IpcCompression
+    from polars._typing import IpcCompression
     from tests.unit.conftest import MemoryUsage
 
 COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
@@ -130,7 +133,7 @@ def test_compressed_simple(compression: IpcCompression, stream: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    write_ipc(df, stream, f, compression)
+    write_ipc(df, stream, f, compression=compression)
     f.seek(0)
 
     df_read = read_ipc(stream, f, use_pyarrow=False)
@@ -347,7 +350,17 @@ def test_ipc_raise_on_writing_mmap(tmp_path: Path) -> None:
     # now open as memory mapped
     df = pl.read_ipc(p, memory_map=True)
 
-    with pytest.raises(
-        pl.ComputeError, match="cannot write to file: already memory mapped"
-    ):
-        df.write_ipc(p)
+    if os.name == "nt":
+        # In Windows, it's the duty of the system to ensure exclusive access
+        with pytest.raises(
+            OSError,
+            match=re.escape(
+                "The requested operation cannot be performed on a file with a user-mapped section open. (os error 1224)"
+            ),
+        ):
+            df.write_ipc(p)
+    else:
+        with pytest.raises(
+            ComputeError, match="cannot write to file: already memory mapped"
+        ):
+            df.write_ipc(p)

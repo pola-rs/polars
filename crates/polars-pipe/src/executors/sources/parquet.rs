@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
 use polars_core::config::{self, get_file_prefetch_size};
 use polars_core::error::*;
 use polars_core::prelude::Series;
@@ -16,9 +15,10 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
-use polars_io::utils::{check_projected_arrow_schema, is_cloud_url};
+use polars_io::utils::is_cloud_url;
 use polars_io::SerReader;
-use polars_plan::logical_plan::FileInfo;
+use polars_plan::plans::FileInfo;
+use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::IdxSize;
@@ -39,6 +39,7 @@ pub struct ParquetSource {
     cloud_options: Option<CloudOptions>,
     metadata: Option<FileMetaDataRef>,
     file_info: FileInfo,
+    hive_parts: Option<Arc<[HivePartitions]>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -70,7 +71,6 @@ impl ParquetSource {
         FileScanOptions,
         Option<Vec<usize>>,
         usize,
-        Option<ArrowSchemaRef>,
         Option<Vec<Series>>,
     )> {
         let path = &self.paths[index];
@@ -78,18 +78,13 @@ impl ParquetSource {
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
-        let mut file_info = self.file_info.clone();
-        file_info.update_hive_partitions(path)?;
-        let hive_partitions = file_info
+        let hive_partitions = self
             .hive_parts
             .as_ref()
-            .map(|hive| hive.materialize_partition_columns());
+            .map(|x| x[index].materialize_partition_columns());
 
         let projection = materialize_projection(
-            file_options
-                .with_columns
-                .as_deref()
-                .map(|cols| cols.deref()),
+            file_options.with_columns.as_deref(),
             &schema,
             hive_partitions.as_deref(),
             false,
@@ -102,18 +97,12 @@ impl ParquetSource {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
         }
 
-        let reader_schema = if self.processed_paths == 0 {
-            self.file_info.reader_schema.clone()
-        } else {
-            None
-        };
         Ok((
             path,
             options,
             file_options,
             projection,
             chunk_size,
-            reader_schema.map(|either| either.unwrap_left()),
             hive_partitions,
         ))
     }
@@ -123,17 +112,24 @@ impl ParquetSource {
             return Ok(());
         };
         let predicate = self.predicate.clone();
-        let (path, options, file_options, projection, chunk_size, reader_schema, hive_partitions) =
+        let (path, options, file_options, projection, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
         let batched_reader = {
             let file = std::fs::File::open(path).unwrap();
             ParquetReader::new(file)
-                .with_schema(reader_schema)
+                .with_projection(projection)
+                .check_schema(
+                    self.file_info
+                        .reader_schema
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap_left(),
+                )?
                 .with_n_rows(file_options.n_rows)
                 .with_row_index(file_options.row_index)
                 .with_predicate(predicate.clone())
-                .with_projection(projection)
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
                 .batched(chunk_size)?
@@ -143,24 +139,6 @@ impl ParquetSource {
     }
 
     fn finish_init_reader(&mut self, batched_reader: BatchedParquetReader) -> PolarsResult<()> {
-        if self.processed_paths >= 1 {
-            let with_columns = self
-                .file_options
-                .with_columns
-                .as_ref()
-                .map(|v| v.as_slice());
-            check_projected_arrow_schema(
-                batched_reader.schema().as_ref(),
-                self.file_info
-                    .reader_schema
-                    .as_ref()
-                    .unwrap()
-                    .as_ref()
-                    .unwrap_left(),
-                with_columns,
-                "schema of all files in a single scan_parquet must be equal",
-            )?;
-        }
         self.batched_readers.push_back(batched_reader);
         self.processed_paths += 1;
         Ok(())
@@ -171,16 +149,25 @@ impl ParquetSource {
         let metadata = self.metadata.clone();
         let predicate = self.predicate.clone();
         let cloud_options = self.cloud_options.clone();
-        let (path, options, file_options, projection, chunk_size, reader_schema, hive_partitions) =
+        let (path, options, file_options, projection, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
         let batched_reader = {
             let uri = path.to_string_lossy();
-            ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), reader_schema, metadata)
+            ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                 .await?
                 .with_n_rows(file_options.n_rows)
                 .with_row_index(file_options.row_index)
                 .with_projection(projection)
+                .check_schema(
+                    self.file_info
+                        .reader_schema
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap_left(),
+                )
+                .await?
                 .with_predicate(predicate.clone())
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
@@ -199,6 +186,7 @@ impl ParquetSource {
         metadata: Option<FileMetaDataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
+        hive_parts: Option<Arc<[HivePartitions]>>,
         verbose: bool,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
@@ -223,6 +211,7 @@ impl ParquetSource {
             cloud_options,
             metadata,
             file_info,
+            hive_parts,
             verbose,
             run_async,
             prefetch_size,

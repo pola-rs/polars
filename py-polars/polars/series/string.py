@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
+from polars._utils.unstable import unstable
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Expr, Series
-    from polars.polars import PySeries
-    from polars.type_aliases import (
+    from polars._typing import (
         Ambiguous,
         IntoExpr,
         IntoExprColumn,
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
+    from polars.polars import PySeries
 
 
 @expr_dispatch
@@ -99,7 +100,17 @@ class StringNameSpace:
             `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
             found, the default is `"us"`.
         time_zone
-            Time zone for the resulting Datetime column.
+            Time zone for the resulting Datetime column. Rules are:
+
+            - If inputs are tz-naive and `time_zone` is None, the result time zone is
+              `None`.
+            - If inputs are offset-aware and `time_zone` is None, inputs are converted
+              to `'UTC'` and the result time zone is `'UTC'`.
+            - If inputs are offset-aware and `time_zone` is given, inputs are converted
+              to `time_zone` and the result time zone is `time_zone`.
+            - If inputs are tz-naive and `time_zone` is given, input time zones are
+              replaced with (not converted to!) `time_zone`, and the result time zone
+              is `time_zone`.
         strict
             Raise an error if any conversion fails.
         exact
@@ -1870,6 +1881,41 @@ class StringNameSpace:
         ]
         """
 
+    @unstable()
+    def extract_many(
+        self,
+        patterns: Series | list[str],
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to extract many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", ["discontent"])
+        >>> patterns = ["winter", "disco", "onte", "discontent"]
+        >>> s.str.extract_many(patterns, overlapping=True)
+        shape: (1,)
+        Series: 'values' [list[str]]
+        [
+            ["disco", "onte", "discontent"]
+        ]
+
+        """
+
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
         """
         Vertically concatenate the string values in the column to a single string value.
@@ -1915,6 +1961,10 @@ class StringNameSpace:
     ) -> Series:
         """
         Vertically concatenate the string values in the column to a single string value.
+
+        .. deprecated:: 1.0.0
+            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
+            is an empty string instead of a hyphen.
 
         Parameters
         ----------

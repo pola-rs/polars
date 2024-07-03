@@ -2,13 +2,15 @@ use polars::prelude::*;
 use polars::series::*;
 
 #[test]
-fn test_series_arithmetic() {
+fn test_series_arithmetic() -> PolarsResult<()> {
     let a = &Series::new("a", &[1, 100, 6, 40]);
     let b = &Series::new("b", &[-1, 2, 3, 4]);
-    assert_eq!(a + b, Series::new("a", &[0, 102, 9, 44]));
-    assert_eq!(a - b, Series::new("a", &[2, 98, 3, 36]));
-    assert_eq!(a * b, Series::new("a", &[-1, 200, 18, 160]));
-    assert_eq!(a / b, Series::new("a", &[-1, 50, 2, 10]));
+    assert_eq!((a + b)?, Series::new("a", &[0, 102, 9, 44]));
+    assert_eq!((a - b)?, Series::new("a", &[2, 98, 3, 36]));
+    assert_eq!((a * b)?, Series::new("a", &[-1, 200, 18, 160]));
+    assert_eq!((a / b)?, Series::new("a", &[-1, 50, 2, 10]));
+
+    Ok(())
 }
 
 #[test]

@@ -2,18 +2,23 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal as D
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 @pytest.mark.parametrize(
     "dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.Float32, pl.Float64]
 )
-def test_neg_operator(dtype: pl.PolarsDataType) -> None:
+def test_neg_operator(dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"a": [-1, 0, 1, None]}, schema={"a": dtype})
     result = lf.select(-pl.col("a"))
     expected = pl.LazyFrame({"a": [1, 0, -1, None]}, schema={"a": dtype})
@@ -50,7 +55,7 @@ def test_neg_overflow_wrapping() -> None:
 def test_neg_unsigned_int() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt8})
     with pytest.raises(
-        pl.InvalidOperationError, match="`neg` operation not supported for dtype `u8`"
+        InvalidOperationError, match="`neg` operation not supported for dtype `u8`"
     ):
         df.select(-pl.col("a"))
 
@@ -58,7 +63,7 @@ def test_neg_unsigned_int() -> None:
 def test_neg_non_numeric() -> None:
     df = pl.DataFrame({"a": ["p", "q", "r"]})
     with pytest.raises(
-        pl.InvalidOperationError, match="`neg` operation not supported for dtype `str`"
+        InvalidOperationError, match="`neg` operation not supported for dtype `str`"
     ):
         df.select(-pl.col("a"))
 

@@ -48,8 +48,8 @@ impl Sink for OrderedSink {
     }
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         if self.chunks.is_empty() {
-            return Ok(FinalizedSink::Finished(DataFrame::from(
-                self.schema.as_ref(),
+            return Ok(FinalizedSink::Finished(DataFrame::empty_with_schema(
+                &self.schema,
             )));
         }
         self.sort();

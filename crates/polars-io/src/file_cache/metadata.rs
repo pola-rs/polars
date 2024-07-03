@@ -19,6 +19,8 @@ pub(super) struct EntryMetadata {
     pub(super) local_last_modified: u64,
     pub(super) local_size: u64,
     pub(super) remote_last_modified: u64,
+    /// TTL since last access, in seconds.
+    pub(super) ttl: u64,
 }
 
 impl std::fmt::Display for LocalCompareError {
@@ -40,12 +42,13 @@ impl std::fmt::Display for LocalCompareError {
 }
 
 impl EntryMetadata {
-    pub(super) fn new_with_uri(uri: Arc<str>) -> Self {
+    pub(super) fn new(uri: Arc<str>, ttl: u64) -> Self {
         Self {
             uri,
             local_last_modified: 0,
             local_size: 0,
             remote_last_modified: 0,
+            ttl,
         }
     }
 

@@ -10,11 +10,8 @@ unsafe impl IntoSeries for DatetimeChunked {
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DatetimeChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        true
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
+    fn bit_repr(&self) -> Option<BitRepr> {
+        Some(self.0.to_bit_repr())
     }
 }
 
@@ -171,6 +168,15 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .slice(offset, length)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
+    }
+    fn split_at(&self, offset: i64) -> (Series, Series) {
+        let (a, b) = self.0.split_at(offset);
+        (
+            a.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+                .into_series(),
+            b.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+                .into_series(),
+        )
     }
 
     fn mean(&self) -> Option<f64> {

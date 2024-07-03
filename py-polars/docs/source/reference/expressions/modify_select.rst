@@ -41,6 +41,7 @@ Manipulation/selection
     Expr.reinterpret
     Expr.repeat_by
     Expr.replace
+    Expr.replace_strict
     Expr.reshape
     Expr.reverse
     Expr.rle

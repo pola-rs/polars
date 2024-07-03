@@ -35,7 +35,7 @@ def test_series_from_pydecimal_and_ints(
 ) -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
     for data in permutations_int_dec_none:
-        s = pl.Series("name", data)
+        s = pl.Series("name", data, strict=False)
         assert s.dtype == pl.Decimal(scale=7)  # inferred scale = 7, precision = None
         assert s.dtype.is_decimal()
         assert s.name == "name"
@@ -98,11 +98,15 @@ def test_decimal_format(input: str, trim_zeros: bool, expected: str) -> None:
 
 
 def test_init_decimal_dtype() -> None:
-    s = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
+    s = pl.Series(
+        "a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal, strict=False
+    )
     assert s.dtype.is_numeric()
 
     df = pl.DataFrame(
-        {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
+        {"a": [D("-0.01"), D("1.2345678"), D("500")]},
+        schema={"a": pl.Decimal},
+        strict=False,
     )
     assert df["a"].dtype.is_numeric()
 
@@ -124,7 +128,9 @@ def test_decimal_convert_to_float_by_schema() -> None:
 
 
 def test_df_constructor_convert_decimal_to_float_9873() -> None:
-    result = pl.DataFrame([[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64})
+    result = pl.DataFrame(
+        [[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64}, orient="row"
+    )
     expected = pl.DataFrame({"a": [45.0, 45.0]})
     assert_frame_equal(result, expected)
 
@@ -133,7 +139,8 @@ def test_decimal_cast() -> None:
     df = pl.DataFrame(
         {
             "decimals": [D("2"), D("2"), D("-1.5")],
-        }
+        },
+        strict=False,
     )
 
     result = df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2"))
@@ -196,7 +203,7 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
 
 
 def test_decimal_eq_number() -> None:
-    a = pl.Series([D("1.5"), D("22.25"), D("10.0")], dtype=pl.Decimal)
+    a = pl.Series([D("1.5"), D("22.25"), D("10.0")], dtype=pl.Decimal, strict=False)
     assert_series_equal(a == 1, pl.Series([False, False, False]))
     assert_series_equal(a == 1.5, pl.Series([True, False, False]))
     assert_series_equal(a == D("1.5"), pl.Series([True, False, False]))
@@ -216,9 +223,13 @@ def test_decimal_compare(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
     s = pl.Series(
-        [None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")], dtype=pl.Decimal
+        [None, D("1.2"), D("2.13"), D("4.99"), D("2.13"), D("1.2")],
+        dtype=pl.Decimal,
+        strict=False,
     )
-    s2 = pl.Series([None, D("1.200"), D("2.13"), D("4.99"), D("4.99"), D("2.13")])
+    s2 = pl.Series(
+        [None, D("1.200"), D("2.13"), D("4.99"), D("4.99"), D("2.13")], strict=False
+    )
 
     assert_series_equal(op(s, s2), expected)
 
@@ -228,7 +239,8 @@ def test_decimal_arithmetic() -> None:
         {
             "a": [D("0.1"), D("10.1"), D("100.01")],
             "b": [D("20.1"), D("10.19"), D("39.21")],
-        }
+        },
+        strict=False,
     )
     dt = pl.Decimal(20, 10)
 
@@ -290,7 +302,8 @@ def test_decimal_aggregations() -> None:
         {
             "g": [1, 1, 2, 2],
             "a": [D("0.1"), D("10.1"), D("100.01"), D("9000.12")],
-        }
+        },
+        strict=False,
     )
 
     assert df.group_by("g").agg("a").sort("g").to_dict(as_series=False) == {
@@ -393,8 +406,8 @@ def test_decimal_write_parquet_12375() -> None:
     df = pl.DataFrame(
         {
             "hi": [True, False, True, False],
-            "bye": [1, 2, 3, D(47283957238957239875)],
-        }
+            "bye": [D(1), D(2), D(3), D(47283957238957239875)],
+        },
     )
     assert df["bye"].dtype == pl.Decimal
 

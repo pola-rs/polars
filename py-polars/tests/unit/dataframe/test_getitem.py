@@ -205,7 +205,7 @@ def test_df_getitem_col_mixed_inputs(input: list[Any], match: str) -> None:
 @pytest.mark.parametrize(
     ("input", "match"),
     [
-        ([0.0, 1.0], "'float' object cannot be interpreted as an integer"),
+        ([0.0, 1.0], "unexpected value while building Series of type Int64"),
         (
             pl.Series([[1, 2], [3, 4]]),
             "cannot treat Series of type List\\(Int64\\) as indices",

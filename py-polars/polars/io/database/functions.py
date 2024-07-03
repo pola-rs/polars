@@ -17,7 +17,7 @@ if TYPE_CHECKING:
         from typing_extensions import TypeAlias
 
     from polars import DataFrame
-    from polars.type_aliases import ConnectionOrCursor, DbReadEngine, SchemaDict
+    from polars._typing import ConnectionOrCursor, DbReadEngine, SchemaDict
 
     try:
         from sqlalchemy.sql.expression import Selectable

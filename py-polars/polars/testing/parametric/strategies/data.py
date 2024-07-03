@@ -64,8 +64,8 @@ if TYPE_CHECKING:
 
     from hypothesis.strategies import SearchStrategy
 
+    from polars._typing import PolarsDataType, SchemaDict, TimeUnit
     from polars.datatypes import DataType, DataTypeClass
-    from polars.type_aliases import PolarsDataType, SchemaDict, TimeUnit
 
 _DEFAULT_LIST_LEN_LIMIT = 3
 _DEFAULT_N_CATEGORIES = 10
@@ -255,6 +255,10 @@ def lists(
 ) -> SearchStrategy[list[Any]]:
     """
     Create a strategy for generating lists of the given data type.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
 
     Parameters
     ----------

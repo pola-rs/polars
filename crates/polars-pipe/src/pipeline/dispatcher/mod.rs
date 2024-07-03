@@ -62,7 +62,7 @@ impl ThreadedSink {
 ///         succeed.
 ///         Think for example on multiply a few columns, or applying a predicate.
 ///         Operators can shrink the batches: filter
-///         Grow the batches: explode/ melt
+///         Grow the batches: explode/ unpivot
 ///         Keep them the same size: element-wise operations
 ///         The probe side of join operations is also an operator.
 ///
@@ -304,7 +304,9 @@ impl PipeLine {
     ) -> PolarsResult<Option<FinalizedSink>> {
         let (sink_shared_count, mut reduced_sink) = self.run_pipeline_no_finalize(ec, pipelines)?;
         assert_eq!(sink_shared_count, 0);
-        Ok(reduced_sink.finalize(ec).ok())
+
+        let finalized_reduced_sink = reduced_sink.finalize(ec)?;
+        Ok(Some(finalized_reduced_sink))
     }
 }
 

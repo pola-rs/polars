@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsTemporalType
+    from polars._typing import PolarsTemporalType
 
 
 def test_from_numpy() -> None:

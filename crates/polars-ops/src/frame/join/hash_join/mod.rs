@@ -7,7 +7,7 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-use polars_core::utils::{_set_partition_size, split_ca};
+use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
@@ -237,7 +237,7 @@ pub trait JoinDispatch: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let idx = s_left.hash_join_semi_anti(s_right, anti, join_nulls);
+        let idx = s_left.hash_join_semi_anti(s_right, anti, join_nulls)?;
         // SAFETY:
         // indices are in bounds
         Ok(unsafe { ca_self._finish_anti_semi_join(&idx, slice) })

@@ -95,7 +95,7 @@ pub trait LogSeries: SeriesSealed {
                     let sum = pk.sum_reduce().unwrap().into_series("");
 
                     if sum.get(0).unwrap().extract::<f64>().unwrap() != 1.0 {
-                        pk / &sum
+                        (pk / &sum)?
                     } else {
                         pk.clone()
                     }
@@ -104,7 +104,7 @@ pub trait LogSeries: SeriesSealed {
                 };
 
                 let log_pk = pk.log(base);
-                (&pk * &log_pk).sum::<f64>().map(|v| -v)
+                (&pk * &log_pk)?.sum::<f64>().map(|v| -v)
             },
             _ => s
                 .cast(&DataType::Float64)

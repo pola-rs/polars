@@ -1,4 +1,5 @@
 import operator
+from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -18,8 +19,9 @@ from polars import (
     UInt32,
     UInt64,
 )
-from polars.datatypes import FLOAT_DTYPES, INTEGER_DTYPES
+from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 
 def test_sqrt_neg_inf() -> None:
@@ -264,24 +266,24 @@ def test_arithmetic_null_count() -> None:
         operator.sub,
     ],
 )
-def test_operator_arithmetic_with_nulls(op: Any) -> None:
-    for dtype in FLOAT_DTYPES | INTEGER_DTYPES:
-        df = pl.DataFrame({"n": [2, 3]}, schema={"n": dtype})
-        s = df.to_series()
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_operator_arithmetic_with_nulls(op: Any, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"n": [2, 3]}, schema={"n": dtype})
+    s = df.to_series()
 
-        df_expected = pl.DataFrame({"n": [None, None]}, schema={"n": dtype})
-        s_expected = df_expected.to_series()
+    df_expected = pl.DataFrame({"n": [None, None]}, schema={"n": dtype})
+    s_expected = df_expected.to_series()
 
-        # validate expr, frame, and series behaviour with null value arithmetic
-        op_name = op.__name__
-        for null_expr in (None, pl.lit(None)):
-            assert_frame_equal(df_expected, df.select(op(pl.col("n"), null_expr)))
-            assert_frame_equal(
-                df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
-            )
+    # validate expr, frame, and series behaviour with null value arithmetic
+    op_name = op.__name__
+    for null_expr in (None, pl.lit(None)):
+        assert_frame_equal(df_expected, df.select(op(pl.col("n"), null_expr)))
+        assert_frame_equal(
+            df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
+        )
 
-        assert_frame_equal(df_expected, op(df, None))
-        assert_series_equal(s_expected, op(s, None))
+    assert_frame_equal(df_expected, op(df, None))
+    assert_series_equal(s_expected, op(s, None))
 
 
 @pytest.mark.parametrize(
@@ -311,7 +313,7 @@ def test_bool_floordiv() -> None:
     df = pl.DataFrame({"x": [True]})
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="floor_div operation not supported for dtype `bool`",
     ):
         df.with_columns(pl.col("x").floordiv(2))
@@ -470,7 +472,7 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         a % 2
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
     ):
         a**2
     with pytest.raises(TypeError):
@@ -482,7 +484,7 @@ def test_arithmetic_datetime() -> None:
     with pytest.raises(TypeError):
         2 % a
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
     ):
         2**a
 
@@ -517,28 +519,28 @@ def test_power_series() -> None:
     assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`pow` operation not supported for dtype `null` as exponent",
     ):
         a ** pl.lit(None)
 
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`pow` operation not supported for dtype `date` as base",
     ):
         c**2
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="`pow` operation not supported for dtype `date` as exponent",
     ):
         2**c
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
 
     # Raising to UInt64: raises if can't be downcast safely to UInt32...
     with pytest.raises(
-        pl.InvalidOperationError, match="conversion from `u64` to `u32` failed"
+        InvalidOperationError, match="conversion from `u64` to `u32` failed"
     ):
         a**m
     # ... but succeeds otherwise.
@@ -548,7 +550,7 @@ def test_power_series() -> None:
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
     assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
 
-    with pytest.raises(pl.ColumnNotFoundError):
+    with pytest.raises(ColumnNotFoundError):
         "hi" ** a
 
     # Series.pow() method
@@ -583,3 +585,183 @@ def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
         df.select(expr),
         pl.Series("a", expected).to_frame(),
     )
+
+
+def test_schema_owned_arithmetic_5669() -> None:
+    df = (
+        pl.LazyFrame({"A": [1, 2, 3]})
+        .filter(pl.col("A") >= 3)
+        .with_columns(-pl.col("A").alias("B"))
+        .collect()
+    )
+    assert df.columns == ["A", "B"]
+    assert df.rows() == [(3, -3)]
+
+
+def test_schema_true_divide_6643() -> None:
+    df = pl.DataFrame({"a": [1]})
+    a = pl.col("a")
+    assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
+
+
+def test_literal_subtract_schema_13284() -> None:
+    assert (
+        pl.LazyFrame({"a": [23, 30]}, schema={"a": pl.UInt8})
+        .with_columns(pl.col("a") - pl.lit(1))
+        .group_by("a")
+        .len()
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_int_operator_stability(dtype: pl.DataType) -> None:
+    s = pl.Series(values=[10], dtype=dtype)
+    assert pl.select(pl.lit(s) // 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) + 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) - 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) * 2).dtypes == [dtype]
+    assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+
+
+def test_duration_division_schema() -> None:
+    df = pl.DataFrame({"a": [1]})
+    q = (
+        df.lazy()
+        .with_columns(pl.col("a").cast(pl.Duration))
+        .select(pl.col("a") / pl.col("a"))
+    )
+
+    assert q.collect_schema() == {"a": pl.Float64}
+    assert q.collect().to_dict(as_series=False) == {"a": [1.0]}
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "op"),
+    [
+        (pl.Duration, pl.Int32, "+"),
+        (pl.Int32, pl.Duration, "+"),
+        (pl.Time, pl.Int32, "+"),
+        (pl.Int32, pl.Time, "+"),
+        (pl.Date, pl.Int32, "+"),
+        (pl.Int32, pl.Date, "+"),
+        (pl.Datetime, pl.Duration, "*"),
+        (pl.Duration, pl.Datetime, "*"),
+        (pl.Date, pl.Duration, "*"),
+        (pl.Duration, pl.Date, "*"),
+        (pl.Time, pl.Duration, "*"),
+        (pl.Duration, pl.Time, "*"),
+    ],
+)
+def test_raise_invalid_temporal(a: pl.DataType, b: pl.DataType, op: str) -> None:
+    a = pl.Series("a", [], dtype=a)  # type: ignore[assignment]
+    b = pl.Series("b", [], dtype=b)  # type: ignore[assignment]
+    _df = pl.DataFrame([a, b])
+
+    with pytest.raises(InvalidOperationError):
+        eval(f"_df.select(pl.col('a') {op} pl.col('b'))")
+
+
+def test_arithmetic_duration_div_multiply() -> None:
+    df = pl.DataFrame([pl.Series("a", [100, 200, 3000], dtype=pl.Duration)])
+
+    q = df.lazy().with_columns(
+        b=pl.col("a") / 2,
+        c=pl.col("a") / 2.5,
+        d=pl.col("a") * 2,
+        e=pl.col("a") * 2.5,
+        f=pl.col("a") / pl.col("a"),  # a constant float
+    )
+    assert q.collect_schema() == pl.Schema(
+        [
+            ("a", pl.Duration(time_unit="us")),
+            ("b", pl.Duration(time_unit="us")),
+            ("c", pl.Duration(time_unit="us")),
+            ("d", pl.Unknown()),
+            ("e", pl.Unknown()),
+            ("f", pl.Float64()),
+        ]
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [
+            timedelta(microseconds=100),
+            timedelta(microseconds=200),
+            timedelta(microseconds=3000),
+        ],
+        "b": [
+            timedelta(microseconds=50),
+            timedelta(microseconds=100),
+            timedelta(microseconds=1500),
+        ],
+        "c": [
+            timedelta(microseconds=40),
+            timedelta(microseconds=80),
+            timedelta(microseconds=1200),
+        ],
+        "d": [
+            timedelta(microseconds=200),
+            timedelta(microseconds=400),
+            timedelta(microseconds=6000),
+        ],
+        "e": [
+            timedelta(microseconds=250),
+            timedelta(microseconds=500),
+            timedelta(microseconds=7500),
+        ],
+        "f": [1.0, 1.0, 1.0],
+    }
+
+    # rhs
+
+    q = df.lazy().with_columns(
+        b=2 * pl.col("a"),
+        c=2.5 * pl.col("a"),
+    )
+    assert q.collect_schema() == pl.Schema(
+        [
+            ("a", pl.Duration(time_unit="us")),
+            ("b", pl.Duration(time_unit="us")),
+            ("c", pl.Duration(time_unit="us")),
+        ]
+    )
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [
+            timedelta(microseconds=100),
+            timedelta(microseconds=200),
+            timedelta(microseconds=3000),
+        ],
+        "b": [
+            timedelta(microseconds=200),
+            timedelta(microseconds=400),
+            timedelta(microseconds=6000),
+        ],
+        "c": [
+            timedelta(microseconds=250),
+            timedelta(microseconds=500),
+            timedelta(microseconds=7500),
+        ],
+    }
+
+
+def test_invalid_shapes_err() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"cannot do arithmetic operation on series of different lengths: got 2 and 3",
+    ):
+        pl.Series([1, 2]) + pl.Series([1, 2, 3])
+
+
+def test_date_datetime_sub() -> None:
+    df = pl.DataFrame({"foo": [date(2020, 1, 1)], "bar": [datetime(2020, 1, 5)]})
+
+    assert df.select(
+        pl.col("foo") - pl.col("bar"),
+        pl.col("bar") - pl.col("foo"),
+    ).to_dict(as_series=False) == {
+        "foo": [timedelta(days=-4)],
+        "bar": [timedelta(days=4)],
+    }
+
+
+def test_raise_invalid_shape() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame([[1, 2], [3, 4]]) * pl.DataFrame([1, 2, 3])

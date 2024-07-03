@@ -11,12 +11,13 @@ import polars as pl
 from polars import StringCache
 from polars.exceptions import (
     CategoricalRemappingWarning,
+    ComputeError,
     StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 @StringCache()
@@ -472,7 +473,7 @@ def test_cast_inner_categorical() -> None:
     assert out.to_list() == [["a"], ["a", "b"]]
 
     with pytest.raises(
-        pl.ComputeError, match=r"casting to categorical not allowed in `list.eval`"
+        ComputeError, match=r"casting to categorical not allowed in `list.eval`"
     ):
         pl.Series("foo", [["a", "b"], ["a", "b"]]).list.eval(
             pl.element().cast(pl.Categorical)
@@ -831,3 +832,16 @@ def test_cat_append_lexical_sorted_flag() -> None:
     df2 = pl.concat([part.sort("y") for part in df.partition_by("x")])
 
     assert not (df2["y"].is_sorted())
+
+
+def test_get_cat_categories_multiple_chunks() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("e", ["a", "b"], pl.Enum(["a", "b"])),
+        ]
+    )
+    df = pl.concat(
+        [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
+    )
+    df_cat = df.lazy().select(pl.col("e").cat.get_categories()).collect()
+    assert len(df_cat) == 2

@@ -1,8 +1,8 @@
 use polars_core::prelude::*;
+use polars_expr::{create_physical_expr, ExpressionConversionState};
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::prelude::*;
 
 pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
@@ -118,7 +118,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
         this.apply(
             func,
-            GetOutput::map_field(move |f| eval_field_to_dtype(f, &expr2, false)),
+            GetOutput::map_field(move |f| Ok(eval_field_to_dtype(f, &expr2, false))),
         )
         .with_fmt("expanding_eval")
     }

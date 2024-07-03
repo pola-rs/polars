@@ -23,8 +23,6 @@ from typing import (
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
@@ -34,6 +32,7 @@ from polars.datatypes import (
     String,
     Time,
 )
+from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
@@ -41,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Reversible
 
     from polars import DataFrame
-    from polars.type_aliases import PolarsDataType, SizeUnit
+    from polars._typing import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 13):
         from typing import TypeIs
@@ -322,10 +321,7 @@ def _cast_repr_strings_with_schema(
                     .cast(tp)
                 )
             elif tp == Boolean:
-                cast_cols[c] = F.col(c).replace(
-                    {"true": True, "false": False},
-                    default=None,
-                )
+                cast_cols[c] = F.col(c).replace_strict({"true": True, "false": False})
             elif tp in INTEGER_DTYPES:
                 int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
                 cast_cols[c] = (
@@ -429,6 +425,25 @@ def find_stacklevel() -> int:
         # > in a finally clause.
         del frame
     return n
+
+
+def issue_warning(message: str, category: type[Warning], **kwargs: Any) -> None:
+    """
+    Issue a warning.
+
+    Parameters
+    ----------
+    message
+        The message associated with the warning.
+    category
+        The warning category.
+    **kwargs
+        Additional arguments for `warnings.warn`. Note that the `stacklevel` is
+        determined automatically.
+    """
+    warnings.warn(
+        message=message, category=category, stacklevel=find_stacklevel(), **kwargs
+    )
 
 
 def _get_stack_locals(

@@ -53,8 +53,7 @@ where
     match source {
         DataFrameScan {
             df,
-            projection,
-            selection,
+            filter: selection,
             output_schema,
             ..
         } => {
@@ -67,8 +66,9 @@ where
                     operator_objects.push(op)
                 }
                 // projection is free
-                if let Some(projection) = projection {
-                    df = df.select(projection.as_slice())?;
+                if let Some(schema) = output_schema {
+                    let columns = schema.iter_names().cloned().collect::<Vec<_>>();
+                    df = df._select_impl_unchecked(&columns)?;
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
@@ -76,6 +76,7 @@ where
         Scan {
             paths,
             file_info,
+            hive_parts,
             file_options,
             predicate,
             output_schema,
@@ -144,6 +145,7 @@ where
                         metadata,
                         file_options,
                         file_info,
+                        hive_parts,
                         verbose,
                         predicate,
                     )?;

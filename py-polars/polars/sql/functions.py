@@ -7,6 +7,9 @@ if TYPE_CHECKING:
     from polars.lazyframe import LazyFrame
 
 
+__all__ = ["sql"]
+
+
 @overload
 def sql(query: str, *, eager: Literal[False] = False) -> LazyFrame: ...
 
@@ -134,6 +137,3 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
         query=query,
         eager=eager,
     )
-
-
-__all__ = ["sql"]
