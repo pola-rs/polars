@@ -1,19 +1,7 @@
-use smartstring::alias::String as SmartString;
-
 use super::*;
 use crate::prelude::sort::arg_bottom_k::_arg_bottom_k;
 
 impl DataFrame {
-    pub fn top_k(
-        &self,
-        k: usize,
-        by_column: impl IntoVec<SmartString>,
-        sort_options: SortMultipleOptions,
-    ) -> PolarsResult<DataFrame> {
-        let by_column = self.select_series(by_column)?;
-        self.bottom_k_impl(k, by_column, sort_options.with_order_reversed())
-    }
-
     pub(crate) fn bottom_k_impl(
         &self,
         k: usize,

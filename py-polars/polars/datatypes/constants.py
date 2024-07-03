@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
 
 # Number of rows to scan by default when inferring datatypes
 N_INFER_DEFAULT = 100

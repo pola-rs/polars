@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from datetime import date, tzinfo
     from decimal import Decimal
 
-    from polars.type_aliases import TimeUnit
+    from polars._typing import TimeUnit
 
 
 @overload

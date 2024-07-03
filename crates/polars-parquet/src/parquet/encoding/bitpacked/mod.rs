@@ -1,9 +1,63 @@
+macro_rules! seq_macro {
+    ($i:ident in 1..31 $block:block) => {
+        seq_macro!($i in [
+                 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+        ] $block)
+    };
+    ($i:ident in 0..32 $block:block) => {
+        seq_macro!($i in [
+             0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+        ] $block)
+    };
+    ($i:ident in 0..=32 $block:block) => {
+        seq_macro!($i in [
+             0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            32,
+        ] $block)
+    };
+    ($i:ident in 1..63 $block:block) => {
+        seq_macro!($i in [
+                 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+            48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62,
+        ] $block)
+    };
+    ($i:ident in 0..64 $block:block) => {
+        seq_macro!($i in [
+             0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+            48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+        ] $block)
+    };
+    ($i:ident in 0..=64 $block:block) => {
+        seq_macro!($i in [
+             0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+            48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+            64,
+        ] $block)
+    };
+    ($i:ident in [$($value:literal),+ $(,)?] $block:block) => {
+        $({
+            #[allow(non_upper_case_globals)]
+            const $i: usize = $value;
+            { $block }
+        })+
+    };
+}
+
 mod decode;
 mod encode;
 mod pack;
 mod unpack;
 
-pub use decode::Decoder;
+pub use decode::{Decoder, DecoderIter};
 pub use encode::{encode, encode_pack};
 
 /// A byte slice (e.g. `[u8; 8]`) denoting types that represent complete packs.
@@ -103,36 +157,6 @@ pub trait Unpackable: Copy + Sized + Default {
     type Unpacked: Unpacked<Self>;
     fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked);
     fn pack(unpacked: &Self::Unpacked, num_bits: usize, packed: &mut [u8]);
-}
-
-impl Unpackable for u8 {
-    type Packed = [u8; 8];
-    type Unpacked = [u8; 8];
-
-    #[inline]
-    fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {
-        unpack::unpack8(packed, unpacked, num_bits)
-    }
-
-    #[inline]
-    fn pack(packed: &Self::Unpacked, num_bits: usize, unpacked: &mut [u8]) {
-        pack::pack8(packed, unpacked, num_bits)
-    }
-}
-
-impl Unpackable for u16 {
-    type Packed = [u8; 16 * 2];
-    type Unpacked = [u16; 16];
-
-    #[inline]
-    fn unpack(packed: &[u8], num_bits: usize, unpacked: &mut Self::Unpacked) {
-        unpack::unpack16(packed, unpacked, num_bits)
-    }
-
-    #[inline]
-    fn pack(packed: &Self::Unpacked, num_bits: usize, unpacked: &mut [u8]) {
-        pack::pack16(packed, unpacked, num_bits)
-    }
 }
 
 impl Unpackable for u32 {

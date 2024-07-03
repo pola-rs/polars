@@ -17,12 +17,14 @@ pin-project-lite = { workspace = true }
 polars-io = { workspace = true, features = ["async"] }
 polars-utils = { workspace = true }
 rand = { workspace = true }
+rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
 
 polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
+polars-mem-engine = { workspace = true }
 polars-plan = { workspace = true }
 
 [build-dependencies]

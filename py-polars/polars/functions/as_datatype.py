@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import Ambiguous, IntoExpr, SchemaDict, TimeUnit
+    from polars._typing import Ambiguous, IntoExpr, SchemaDict, TimeUnit
 
 
 def datetime_(

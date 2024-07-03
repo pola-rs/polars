@@ -122,8 +122,7 @@ async fn count_rows_cloud_parquet(
     let collection = paths.iter().map(|path| {
         with_concurrency_budget(1, || async {
             let mut reader =
-                ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None, None)
-                    .await?;
+                ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
             reader.num_rows().await
         })
     });

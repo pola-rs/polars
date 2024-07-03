@@ -13,8 +13,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
-from polars.datatypes import N_INFER_DEFAULT, String
-from polars.datatypes.convert import py_type_to_dtype
+from polars.datatypes import N_INFER_DEFAULT, String, parse_into_dtype
 from polars.io._utils import (
     is_glob_pattern,
     parse_columns_arg,
@@ -29,7 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
-    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -501,7 +500,7 @@ def _read_csv_impl(
         if isinstance(schema_overrides, dict):
             dtype_list = []
             for k, v in schema_overrides.items():
-                dtype_list.append((k, py_type_to_dtype(v)))
+                dtype_list.append((k, parse_into_dtype(v)))
         elif isinstance(schema_overrides, Sequence):
             dtype_slice = schema_overrides
         else:
@@ -1074,7 +1073,7 @@ def scan_csv(
     ...     .filter(
     ...         pl.col("a") > 10
     ...     )  # the filter is pushed down the scan, so less data is read into memory
-    ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
+    ...     .head(100)  # constrain number of returned results to 100
     ... )  # doctest: +SKIP
 
     We can use `with_column_names` to modify the header before scanning:
@@ -1218,7 +1217,7 @@ def _scan_csv_impl(
     if schema_overrides is not None:
         dtype_list = []
         for k, v in schema_overrides.items():
-            dtype_list.append((k, py_type_to_dtype(v)))
+            dtype_list.append((k, parse_into_dtype(v)))
     processed_null_values = _process_null_values(null_values)
 
     if isinstance(source, list):

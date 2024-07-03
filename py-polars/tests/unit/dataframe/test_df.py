@@ -18,6 +18,7 @@ import polars.selectors as cs
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
+    ColumnNotFoundError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -33,7 +34,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, UniqueKeepStrategy
 else:
     from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
@@ -126,11 +127,21 @@ def test_comparisons() -> None:
         df == pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})  # noqa: B015
 
 
-def test_selection() -> None:
+def test_column_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
     # get column by name
-    assert_series_equal(df.get_column("b"), pl.Series("b", [1.0, 2.0, 3.0]))
+    b = pl.Series("b", [1.0, 2.0, 3.0])
+    assert_series_equal(df["b"], b)
+    assert_series_equal(df.get_column("b"), b)
+
+    with pytest.raises(ColumnNotFoundError, match="x"):
+        df.get_column("x")
+
+    default_series = pl.Series("x", ["?", "?", "?"])
+    assert_series_equal(df.get_column("x", default=default_series), default_series)
+
+    assert df.get_column("x", default=None) is None
 
     # get column by index
     assert_series_equal(df.to_series(1), pl.Series("b", [1.0, 2.0, 3.0]))

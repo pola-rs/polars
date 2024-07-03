@@ -1,99 +1,91 @@
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, VecDeque};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
+use polars_core::schema::Schema;
+use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 
-use super::ComputeNode;
+use super::{ComputeNode, PortState};
 use crate::async_executor::{JoinHandle, TaskScope};
 use crate::async_primitives::pipe::{Receiver, Sender};
 use crate::morsel::Morsel;
+use crate::utils::in_memory_linearize::linearize;
 
-struct KMergeMorsel(Morsel, usize);
+pub struct InMemorySinkNode {
+    morsels_per_pipe: Mutex<Vec<Vec<Morsel>>>,
+    schema: Arc<Schema>,
+    done: bool,
+}
 
-impl Eq for KMergeMorsel {}
-
-impl Ord for KMergeMorsel {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Intentionally reverse order, BinaryHeap is a max-heap but we want the
-        // smallest sequence number.
-        other.0.seq().cmp(&self.0.seq())
+impl InMemorySinkNode {
+    pub fn new(schema: Arc<Schema>) -> Self {
+        Self {
+            morsels_per_pipe: Mutex::default(),
+            schema,
+            done: false,
+        }
     }
 }
 
-impl PartialOrd for KMergeMorsel {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl ComputeNode for InMemorySinkNode {
+    fn name(&self) -> &'static str {
+        "in_memory_sink"
     }
-}
 
-impl PartialEq for KMergeMorsel {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.seq() == other.0.seq()
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+        assert!(send.is_empty());
+        assert!(recv.len() == 1);
+
+        // If a sink is done, it's done, otherwise it will just reflect its
+        // input state.
+        if self.done {
+            recv[0] = PortState::Done;
+        }
     }
-}
 
-#[derive(Default)]
-pub struct InMemorySink {
-    per_pipe_morsels: Mutex<Vec<VecDeque<Morsel>>>,
-}
+    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
+        !self.done
+    }
 
-impl ComputeNode for InMemorySink {
     fn initialize(&mut self, _num_pipelines: usize) {
-        self.per_pipe_morsels.get_mut().clear();
+        self.morsels_per_pipe.get_mut().clear();
     }
 
     fn spawn<'env, 's>(
         &'env self,
         scope: &'s TaskScope<'s, 'env>,
         _pipeline: usize,
-        recv: Vec<Receiver<Morsel>>,
-        send: Vec<Sender<Morsel>>,
+        recv: &mut [Option<Receiver<Morsel>>],
+        send: &mut [Option<Sender<Morsel>>],
         _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
-        assert!(send.is_empty());
-        let [mut recv] = <[_; 1]>::try_from(recv).ok().unwrap();
+        assert!(recv.len() == 1 && send.is_empty());
+        let mut recv = recv[0].take().unwrap();
 
         scope.spawn_task(true, async move {
-            let mut morsels = VecDeque::new();
+            let mut morsels = Vec::new();
             while let Ok(mut morsel) = recv.recv().await {
                 morsel.take_consume_token();
-                morsels.push_back(morsel);
+                morsels.push(morsel);
             }
 
-            self.per_pipe_morsels.lock().push(morsels);
+            self.morsels_per_pipe.lock().push(morsels);
             Ok(())
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
-        // Do a K-way merge on the morsels based on sequence id.
-        let mut per_pipe_morsels = core::mem::take(&mut *self.per_pipe_morsels.get_mut());
-        let mut dataframes = Vec::with_capacity(per_pipe_morsels.iter().map(|p| p.len()).sum());
+        self.done = true;
 
-        let mut kmerge = BinaryHeap::new();
-        for (pipe_idx, pipe) in per_pipe_morsels.iter_mut().enumerate() {
-            if let Some(morsel) = pipe.pop_front() {
-                kmerge.push(KMergeMorsel(morsel, pipe_idx));
-            }
+        let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
+        let dataframes = linearize(morsels_per_pipe);
+        if dataframes.is_empty() {
+            Ok(Some(DataFrame::empty_with_schema(&self.schema)))
+        } else {
+            Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
         }
-
-        while let Some(KMergeMorsel(morsel, pipe_idx)) = kmerge.pop() {
-            let seq = morsel.seq();
-            dataframes.push(morsel.into_df());
-            while let Some(new_morsel) = per_pipe_morsels[pipe_idx].pop_front() {
-                if new_morsel.seq() == seq {
-                    dataframes.push(new_morsel.into_df());
-                } else {
-                    kmerge.push(KMergeMorsel(new_morsel, pipe_idx));
-                    break;
-                }
-            }
-        }
-
-        Ok(Some(accumulate_dataframes_vertical_unchecked(dataframes)))
     }
 }

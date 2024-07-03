@@ -3,12 +3,14 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use once_cell::sync::Lazy;
-use polars_error::{to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult};
 
 use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
-use crate::cloud::{build_object_store, CloudLocation, CloudOptions, PolarsObjectStore};
+use crate::cloud::{
+    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
+};
 use crate::pl_async;
 use crate::prelude::{is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 use crate::utils::ensure_directory_init;
@@ -83,8 +85,7 @@ pub fn init_entries_from_uri_list<A: AsRef<[Arc<str>]>>(
 
                         let cloud_path = {
                             assert!(expansion.is_none(), "path should not contain wildcards");
-                            object_store::path::Path::from_url_path(prefix)
-                                .map_err(to_compute_err)?
+                            object_path_from_string(prefix)
                         };
 
                         let object_store = object_store.clone();

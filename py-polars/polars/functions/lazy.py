@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import (
+    from polars._typing import (
         CorrelationMethod,
         EpochTimeUnit,
         IntoExpr,

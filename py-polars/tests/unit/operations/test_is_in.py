@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_struct_logical_is_in() -> None:

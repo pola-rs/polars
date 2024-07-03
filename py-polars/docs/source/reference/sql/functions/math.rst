@@ -99,7 +99,7 @@ CEIL
 ----
 Returns the nearest integer closest from zero.
 
-.. admonition:: Function aliases
+.. admonition:: Aliases
 
    `CEILING`
 
@@ -377,7 +377,7 @@ POW
 ---
 Returns the value to the power of the given exponent.
 
-.. admonition:: Function aliases
+.. admonition:: Aliases
 
    `POWER`
 

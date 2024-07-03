@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     import numpy.typing as npt
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_quantile_expr_input() -> None:
@@ -658,3 +658,93 @@ def test_filter_aggregation_16642() -> None:
         "datetime": [date(2022, 1, 1), date(2022, 1, 2)],
         "num": [3, 3],
     }
+
+
+def test_sort_by_over_single_nulls_first() -> None:
+    key = [0, 0, 0, 0, 1, 1, 1, 1]
+    df = pl.DataFrame(
+        {
+            "key": key,
+            "value": [2, None, 1, 0, 2, None, 1, 0],
+        }
+    )
+    out = df.select(
+        pl.all().sort_by("value", nulls_last=False, maintain_order=True).over("key")
+    )
+    expected = pl.DataFrame(
+        {
+            "key": key,
+            "value": [None, 0, 1, 2, None, 0, 1, 2],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_over_single_nulls_last() -> None:
+    key = [0, 0, 0, 0, 1, 1, 1, 1]
+    df = pl.DataFrame(
+        {
+            "key": key,
+            "value": [2, None, 1, 0, 2, None, 1, 0],
+        }
+    )
+    out = df.select(
+        pl.all().sort_by("value", nulls_last=True, maintain_order=True).over("key")
+    )
+    expected = pl.DataFrame(
+        {
+            "key": key,
+            "value": [0, 1, 2, None, 0, 1, 2, None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_over_multiple_nulls_first() -> None:
+    key1 = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+    key2 = [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1]
+    df = pl.DataFrame(
+        {
+            "key1": key1,
+            "key2": key2,
+            "value": [1, None, 0, 1, None, 0, 1, None, 0, None, 1, 0],
+        }
+    )
+    out = df.select(
+        pl.all()
+        .sort_by("value", nulls_last=False, maintain_order=True)
+        .over("key1", "key2")
+    )
+    expected = pl.DataFrame(
+        {
+            "key1": key1,
+            "key2": key2,
+            "value": [None, 0, 1, None, 0, 1, None, 0, 1, None, 0, 1],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_over_multiple_nulls_last() -> None:
+    key1 = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+    key2 = [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1]
+    df = pl.DataFrame(
+        {
+            "key1": key1,
+            "key2": key2,
+            "value": [1, None, 0, 1, None, 0, 1, None, 0, None, 1, 0],
+        }
+    )
+    out = df.select(
+        pl.all()
+        .sort_by("value", nulls_last=True, maintain_order=True)
+        .over("key1", "key2")
+    )
+    expected = pl.DataFrame(
+        {
+            "key1": key1,
+            "key2": key2,
+            "value": [0, 1, None, 0, 1, None, 0, 1, None, 0, 1, None],
+        }
+    )
+    assert_frame_equal(out, expected)

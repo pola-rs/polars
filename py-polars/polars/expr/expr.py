@@ -46,11 +46,7 @@ from polars._utils.various import (
     sphinx_accessor,
     warn_null_comparison,
 )
-from polars.datatypes import (
-    Int64,
-    is_polars_dtype,
-    py_type_to_dtype,
-)
+from polars.datatypes import Int64, is_polars_dtype, parse_into_dtype
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
@@ -76,10 +72,7 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from polars import DataFrame, LazyFrame, Series
-    from polars._utils.various import (
-        NoDefault,
-    )
-    from polars.type_aliases import (
+    from polars._typing import (
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
@@ -92,8 +85,12 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        SerializationFormat,
         TemporalLiteral,
         WindowMappingStrategy,
+    )
+    from polars._utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -332,7 +329,9 @@ class Expr:
         return root_expr.map_batches(function, is_elementwise=True).meta.undo_aliases()
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> Expr:
+    def deserialize(
+        cls, source: str | Path | IOBase, *, format: SerializationFormat = "binary"
+    ) -> Expr:
         """
         Read a serialized expression from a file.
 
@@ -342,10 +341,15 @@ class Expr:
             Path to a file or a file-like object (by file-like object, we refer to
             objects that have a `read()` method, such as a file handler (e.g.
             via builtin `open` function) or `BytesIO`).
+        format
+            The format with which the Expr was serialized. Options:
+
+            - `"binary"`: Deserialize from binary format (bytes). This is the default.
+            - `"json"`: Deserialize from JSON format (string).
 
         Warnings
         --------
-        This function uses :mod:`pickle` when the logical plan contains Python UDFs,
+        This function uses :mod:`pickle` if the logical plan contains Python UDFs,
         and as such inherits the security implications. Deserializing can execute
         arbitrary code, so it should only be attempted on trusted data.
 
@@ -353,12 +357,17 @@ class Expr:
         --------
         Expr.meta.serialize
 
+        Notes
+        -----
+        Serialization is not stable across Polars versions: a LazyFrame serialized
+        in one Polars version may not be deserializable in another Polars version.
+
         Examples
         --------
-        >>> from io import StringIO
+        >>> import io
         >>> expr = pl.col("foo").sum().over("bar")
-        >>> json = expr.meta.serialize()
-        >>> pl.Expr.deserialize(StringIO(json))  # doctest: +ELLIPSIS
+        >>> bytes = expr.meta.serialize()
+        >>> pl.Expr.deserialize(io.BytesIO(bytes))  # doctest: +ELLIPSIS
         <Expr ['col("foo").sum().over([col("ba…'] at ...>
         """
         if isinstance(source, StringIO):
@@ -366,9 +375,15 @@ class Expr:
         elif isinstance(source, (str, Path)):
             source = normalize_filepath(source)
 
-        expr = cls.__new__(cls)
-        expr._pyexpr = PyExpr.deserialize(source)
-        return expr
+        if format == "binary":
+            deserializer = PyExpr.deserialize_binary
+        elif format == "json":
+            deserializer = PyExpr.deserialize_json
+        else:
+            msg = f"`format` must be one of {{'binary', 'json'}}, got {format!r}"
+            raise ValueError(msg)
+
+        return cls._from_pyexpr(deserializer(source))
 
     def to_physical(self) -> Expr:
         """
@@ -1748,7 +1763,7 @@ class Expr:
         │ 3.0 ┆ 6   │
         └─────┴─────┘
         """
-        dtype = py_type_to_dtype(dtype)
+        dtype = parse_into_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict, wrap_numerical))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
@@ -4378,7 +4393,7 @@ class Expr:
 
         """
         if return_dtype is not None:
-            return_dtype = py_type_to_dtype(return_dtype)
+            return_dtype = parse_into_dtype(return_dtype)
 
         return self._from_pyexpr(
             self._pyexpr.map_batches(
@@ -10483,7 +10498,7 @@ class Expr:
             " Enclose your input in `io.StringIO` to keep the same behavior.",
             version="0.20.11",
         )
-        return cls.deserialize(StringIO(value))
+        return cls.deserialize(StringIO(value), format="json")
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

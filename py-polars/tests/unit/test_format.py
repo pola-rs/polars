@@ -10,7 +10,7 @@ import polars as pl
 from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 @pytest.fixture(autouse=True)

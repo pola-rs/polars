@@ -16,7 +16,7 @@ def test_schema_parse_nonpolars_dtypes() -> None:
     s = pl.Schema({"foo": pl.List, "bar": int})  # type: ignore[arg-type]
 
     assert s["foo"] == pl.List
-    assert s["bar"] == int
+    assert s["bar"] is int
     assert s.len() == 2
     assert s.names() == ["foo", "bar"]
     assert s.dtypes() == [pl.List, int]

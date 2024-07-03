@@ -16,7 +16,7 @@
 //! }
 //! ```
 
-mod buffer;
+pub mod buffer;
 mod options;
 mod parser;
 mod read_impl;

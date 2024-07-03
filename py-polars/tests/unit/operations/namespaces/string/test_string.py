@@ -1487,3 +1487,37 @@ def test_replace_lit_n_char_13385(
     res = s.str.replace("a", "b", literal=True)
     expected_s = pl.Series(expected_dat, dtype=pl.String)
     assert_series_equal(res, expected_s)
+
+
+def test_extract_many() -> None:
+    df = pl.DataFrame({"values": ["discontent"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    assert (
+        df.with_columns(
+            pl.col("values")
+            .str.extract_many(patterns, overlapping=False)
+            .alias("matches"),
+            pl.col("values")
+            .str.extract_many(patterns, overlapping=True)
+            .alias("matches_overlapping"),
+        )
+    ).to_dict(as_series=False) == {
+        "values": ["discontent"],
+        "matches": [["disco"]],
+        "matches_overlapping": [["disco", "onte", "discontent"]],
+    }
+
+    # many patterns
+    df = pl.DataFrame(
+        {
+            "values": ["discontent", "rhapsody"],
+            "patterns": [
+                ["winter", "disco", "onte", "discontent"],
+                ["rhap", "ody", "coalesce"],
+            ],
+        }
+    )
+
+    assert df.select(pl.col("values").str.extract_many("patterns")).to_dict(
+        as_series=False
+    ) == {"values": [["disco"], ["rhap", "ody"]]}

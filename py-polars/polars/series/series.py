@@ -81,7 +81,7 @@ from polars.datatypes import (
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
-    py_type_to_dtype,
+    parse_into_dtype,
     supported_numpy_char_code,
 )
 from polars.datatypes._utils import dtype_to_init_repr
@@ -119,10 +119,7 @@ if TYPE_CHECKING:
     from hvplot.plotting.core import hvPlotTabularPolars
 
     from polars import DataFrame, DataType, Expr
-    from polars._utils.various import (
-        NoDefault,
-    )
-    from polars.type_aliases import (
+    from polars._typing import (
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -143,6 +140,9 @@ if TYPE_CHECKING:
         SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
+    )
+    from polars._utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -267,14 +267,7 @@ class Series:
         if dtype == Unknown:
             dtype = None
         elif dtype is not None and not is_polars_dtype(dtype):
-            # Raise early error on invalid dtype
-            if not is_polars_dtype(
-                pl_dtype := py_type_to_dtype(dtype, raise_unmatched=False)
-            ):
-                msg = f"given dtype: {dtype!r} is not a valid Polars data type and cannot be converted into one"
-                raise ValueError(msg)
-            else:
-                dtype = pl_dtype
+            dtype = parse_into_dtype(dtype)
 
         # Handle case where values are passed as the first argument
         original_name: str | None = None
@@ -3953,7 +3946,7 @@ class Series:
         ]
         """
         # Do not dispatch cast as it is expensive and used in other functions.
-        dtype = py_type_to_dtype(dtype)
+        dtype = parse_into_dtype(dtype)
         return self._from_pyseries(self._s.cast(dtype, strict, wrap_numerical))
 
     def to_physical(self) -> Series:
@@ -4349,11 +4342,21 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    def to_arrow(self) -> pa.Array:
+    def to_arrow(self, *, future: bool = False) -> pa.Array:
         """
         Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
+
+        Parameters
+        ----------
+        future
+            Setting this to `True` will write Polars' internal data structures that
+            might not be available by other Arrow implementations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -4367,7 +4370,7 @@ class Series:
           3
         ]
         """
-        return self._s.to_arrow()
+        return self._s.to_arrow(future)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
@@ -5259,7 +5262,7 @@ class Series:
         if return_dtype is None:
             pl_return_dtype = None
         else:
-            pl_return_dtype = py_type_to_dtype(return_dtype)
+            pl_return_dtype = parse_into_dtype(return_dtype)
 
         warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
@@ -7312,9 +7315,14 @@ class Series:
         return StructNameSpace(self)
 
     @property
+    @unstable()
     def plot(self) -> hvPlotTabularPolars:
         """
         Create a plot namespace.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
 
         Polars does not implement plotting logic itself, but instead defers to
         hvplot. Please see the `hvplot reference gallery <https://hvplot.holoviz.org/reference/index.html>`_

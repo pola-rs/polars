@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, LazyFrame
-    from polars.type_aliases import PolarsDataType, SelectorType, TimeUnit
+    from polars._typing import PolarsDataType, SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -1047,8 +1047,11 @@ def by_index(*indices: int | range | Sequence[int | range]) -> SelectorType:
     for idx in indices:
         if isinstance(idx, (range, Sequence)):
             all_indices.extend(idx)  # type: ignore[arg-type]
-        else:
+        elif isinstance(idx, int):
             all_indices.append(idx)
+        else:
+            msg = f"invalid index value: {idx!r}"
+            raise TypeError(msg)
 
     return _selector_proxy_(
         F.nth(*all_indices), name="by_index", parameters={"*indices": indices}

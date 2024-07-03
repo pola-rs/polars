@@ -82,7 +82,7 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            cast_to_supertypes: true,
+            cast_to_supertypes: Some(Default::default()),
             ..Default::default()
         },
     })

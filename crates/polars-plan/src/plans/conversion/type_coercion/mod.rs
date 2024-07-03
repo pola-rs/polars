@@ -6,7 +6,7 @@ use arrow::legacy::utils::CustomIterTools;
 use binary::process_binary;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, materialize_dyn_int};
+use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::{format_list, unitvec};
 
@@ -347,7 +347,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref function,
                 ref input,
                 mut options,
-            } if options.cast_to_supertypes => {
+            } if options.cast_to_supertypes.is_some() => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let mut dtypes = Vec::with_capacity(input.len());
                 for e in input {
@@ -357,7 +357,7 @@ impl OptimizationRule for TypeCoercionRule {
                     // We will raise if we cannot find the supertype later.
                     match dtype {
                         DataType::Unknown(UnknownKind::Any) => {
-                            options.cast_to_supertypes = false;
+                            options.cast_to_supertypes = None;
                             return Ok(None);
                         },
                         _ => dtypes.push(dtype),
@@ -365,7 +365,7 @@ impl OptimizationRule for TypeCoercionRule {
                 }
 
                 if dtypes.iter().all_equal() {
-                    options.cast_to_supertypes = false;
+                    options.cast_to_supertypes = None;
                     return Ok(None);
                 }
 
@@ -379,7 +379,11 @@ impl OptimizationRule for TypeCoercionRule {
                     let (other, type_other) =
                         unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
 
-                    let Some(new_st) = get_supertype(&super_type, &type_other) else {
+                    let Some(new_st) = get_supertype_with_options(
+                        &super_type,
+                        &type_other,
+                        options.cast_to_supertypes.unwrap(),
+                    ) else {
                         polars_bail!(InvalidOperation: "could not determine supertype of: {}", format_list!(dtypes));
                     };
                     if input.len() == 2 {
@@ -432,8 +436,8 @@ impl OptimizationRule for TypeCoercionRule {
                     })
                     .collect::<Vec<_>>();
 
-                // ensure we don't go through this on next iteration
-                options.cast_to_supertypes = false;
+                // Ensure we don't go through this on next iteration.
+                options.cast_to_supertypes = None;
                 Some(AExpr::Function {
                     function,
                     input,
@@ -447,7 +451,7 @@ impl OptimizationRule for TypeCoercionRule {
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice, not {}", offset_dtype);
                 let (_, length_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
-                polars_ensure!(length_dtype.is_integer(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
+                polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice, not {}", length_dtype);
                 None
             },
             _ => None,

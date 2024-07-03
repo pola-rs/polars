@@ -23,6 +23,7 @@ impl CsvSink {
             .with_datetime_format(options.serialize_options.datetime_format)
             .with_date_format(options.serialize_options.date_format)
             .with_time_format(options.serialize_options.time_format)
+            .with_float_scientific(options.serialize_options.float_scientific)
             .with_float_precision(options.serialize_options.float_precision)
             .with_null_value(options.serialize_options.null)
             .with_quote_style(options.serialize_options.quote_style)

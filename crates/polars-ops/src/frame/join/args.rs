@@ -228,7 +228,7 @@ impl JoinValidation {
             ManyToMany | ManyToOne => true,
             OneToMany | OneToOne => probe.n_unique()? == probe.len(),
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
+        polars_ensure!(valid, ComputeError: "join keys did not fulfill {} validation", self);
         Ok(())
     }
 
@@ -247,7 +247,7 @@ impl JoinValidation {
             ManyToMany | OneToMany => true,
             ManyToOne | OneToOne => build_size == expected_size,
         };
-        polars_ensure!(valid, ComputeError: "the join keys did not fulfil {} validation", self);
+        polars_ensure!(valid, ComputeError: "join keys did not fulfill {} validation", self);
         Ok(())
     }
 }

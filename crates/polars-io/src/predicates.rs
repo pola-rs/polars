@@ -44,7 +44,7 @@ pub fn apply_predicate(
 /// - Null count
 /// - Minimum value
 /// - Maximum value
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ColumnStats {
     field: Field,
@@ -89,6 +89,10 @@ impl ColumnStats {
             min_value: Some(s.clone()),
             max_value: Some(s),
         }
+    }
+
+    pub fn field_name(&self) -> &SmartString {
+        self.field.name()
     }
 
     /// Returns the [`DataType`] of the column.
@@ -195,7 +199,7 @@ fn use_min_max(dtype: &DataType) -> bool {
 
 /// A collection of column stats with a known schema.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BatchStats {
     schema: SchemaRef,
     stats: Vec<ColumnStats>,
@@ -237,5 +241,13 @@ impl BatchStats {
     /// Returns `None` if the number of rows is unknown.
     pub fn num_rows(&self) -> Option<usize> {
         self.num_rows
+    }
+
+    pub fn with_schema(&mut self, schema: SchemaRef) {
+        self.schema = schema;
+    }
+
+    pub fn take_indices(&mut self, indices: &[usize]) {
+        self.stats = indices.iter().map(|&i| self.stats[i].clone()).collect();
     }
 }

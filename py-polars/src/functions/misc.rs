@@ -34,6 +34,12 @@ pub fn register_plugin_function(
         ApplyOptions::GroupWise
     };
 
+    let cast_to_supertypes = if cast_to_supertype {
+        Some(Default::default())
+    } else {
+        None
+    };
+
     Ok(Expr::Function {
         input: args.to_exprs(),
         function: FunctionExpr::FfiPlugin {
@@ -45,7 +51,7 @@ pub fn register_plugin_function(
             collect_groups,
             input_wildcard_expansion,
             returns_scalar,
-            cast_to_supertypes: cast_to_supertype,
+            cast_to_supertypes,
             pass_name_to_apply,
             changes_length,
             ..Default::default()

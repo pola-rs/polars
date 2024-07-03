@@ -1,7 +1,7 @@
 """Utility functions for handling and processing of datatypes."""
 
+from polars._typing import PolarsDataType
 from polars.datatypes.classes import Array, List, Struct
-from polars.type_aliases import PolarsDataType
 
 
 def dtype_to_init_repr(dtype: PolarsDataType, prefix: str = "pl.") -> str:

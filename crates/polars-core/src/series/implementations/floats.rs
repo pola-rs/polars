@@ -165,8 +165,8 @@ macro_rules! impl_dyn_series {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
-            fn get_metadata(&self) -> Option<&dyn MetadataTrait> {
-                self.metadata().map(|v| v as &dyn MetadataTrait)
+            fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
+                self.metadata_dyn()
             }
 
             fn rename(&mut self, name: &str) {

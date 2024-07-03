@@ -23,7 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import PolarsDataType, TimeUnit
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def lit(
@@ -130,7 +130,7 @@ def lit(
     elif isinstance(value, enum.Enum):
         lit_value = value.value
         if dtype is None and isinstance(value, str):
-            dtype = Enum(value.__class__.__members__.values())
+            dtype = Enum(m.value for m in type(value))
         return lit(lit_value, dtype=dtype)
 
     if dtype:

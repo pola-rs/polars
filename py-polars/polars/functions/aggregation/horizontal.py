@@ -13,7 +13,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import IntoExpr
+    from polars._typing import IntoExpr
 
 
 def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:

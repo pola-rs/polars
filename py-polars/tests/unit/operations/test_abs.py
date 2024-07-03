@@ -12,7 +12,7 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
 
 
 def test_abs() -> None:

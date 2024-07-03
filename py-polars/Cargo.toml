@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.0.0-rc.1"
+version = "1.0.0"
 edition = "2021"
 
 [lib]
@@ -18,6 +18,9 @@ polars-plan = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
+# TODO! remove this once truly activated. This is required to make sdist building work
+polars-stream = { workspace = true }
+
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 ciborium = { workspace = true }
@@ -26,7 +29,9 @@ itoa = { workspace = true }
 libc = "0.2"
 ndarray = { workspace = true }
 num-traits = { workspace = true }
-numpy = { version = "0.21", default-features = false }
+# TODO: Pin to released version once NumPy 2.0 support is merged
+# https://github.com/PyO3/rust-numpy/issues/409
+numpy = { git = "https://github.com/stinodego/rust-numpy.git", rev = "9ba9962ae57ba26e35babdce6f179edf5fe5b9c8", default-features = false }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py38", "chrono", "extension-module", "multiple-pymethods"] }
 recursive = { workspace = true }
@@ -237,6 +242,7 @@ all = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
+  # "new_streaming",
 ]
 
 # we cannot conditionally activate simd

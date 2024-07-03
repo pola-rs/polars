@@ -11,8 +11,8 @@ from polars._utils.wrap import wrap_expr
 from polars.expr.expr import Expr
 
 if TYPE_CHECKING:
+    from polars._typing import IntoExpr
     from polars.polars import PyExpr
-    from polars.type_aliases import IntoExpr
 
 
 class When:
@@ -99,7 +99,7 @@ class Then(Expr):
         return wrap_expr(self._then.otherwise(statement_pyexpr))
 
 
-class ChainedWhen(Expr):
+class ChainedWhen:
     """
     Utility class for the `when-then-otherwise` expression.
 

@@ -9,8 +9,8 @@ from polars._utils.wrap import wrap_ldf
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
+    from polars._typing import IntoExpr, RollingInterpolationMethod, SchemaDict
     from polars.polars import PyLazyGroupBy
-    from polars.type_aliases import IntoExpr, RollingInterpolationMethod, SchemaDict
 
 
 class LazyGroupBy:

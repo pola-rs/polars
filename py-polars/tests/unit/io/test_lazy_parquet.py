@@ -12,7 +12,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ParallelStrategy
+    from polars._typing import ParallelStrategy
 
 
 @pytest.fixture()
@@ -392,7 +392,8 @@ def test_io_struct_async_12500(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_parquet_different_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     # Schema is different but the projected columns are same dtype.
     f1 = tmp_path / "a.parquet"
     f2 = tmp_path / "b.parquet"
@@ -402,7 +403,9 @@ def test_parquet_different_schema(tmp_path: Path) -> None:
 
     a.write_parquet(f1)
     b.write_parquet(f2)
-    assert pl.scan_parquet([f1, f2]).select("b").collect().columns == ["b"]
+    assert pl.scan_parquet([f1, f2]).select("b").collect(
+        streaming=streaming
+    ).columns == ["b"]
 
 
 @pytest.mark.write_disk()
@@ -437,3 +440,13 @@ def test_scan_deadlock_rayon_spawn_from_async_15172(
     t.join(5)
 
     assert results[0].equals(df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("streaming", [True, False])
+def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) -> None:
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(tmp_path / "1.parquet")
+    pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.scan_parquet(tmp_path).collect(streaming=streaming)

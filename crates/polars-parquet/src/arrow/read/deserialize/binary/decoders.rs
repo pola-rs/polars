@@ -179,13 +179,13 @@ impl<'a> FilteredDelta<'a> {
 
 #[derive(Debug)]
 pub(crate) struct RequiredDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
     pub dict: &'a BinaryDict,
 }
 
 impl<'a> RequiredDictionary<'a> {
     pub fn try_new(page: &'a DataPage, dict: &'a BinaryDict) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?;
+        let values = utils::dict_indices_decoder(page)?.into_iter();
 
         Ok(Self { dict, values })
     }
@@ -198,13 +198,13 @@ impl<'a> RequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(crate) struct FilteredRequiredDictionary<'a> {
-    pub values: SliceFilteredIter<hybrid_rle::HybridRleDecoder<'a>>,
+    pub values: SliceFilteredIter<hybrid_rle::BufferedHybridRleDecoderIter<'a>>,
     pub dict: &'a BinaryDict,
 }
 
 impl<'a> FilteredRequiredDictionary<'a> {
     pub fn try_new(page: &'a DataPage, dict: &'a BinaryDict) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?;
+        let values = utils::dict_indices_decoder(page)?.into_iter();
 
         let rows = get_selected_rows(page);
         let values = SliceFilteredIter::new(values, rows);
@@ -220,20 +220,20 @@ impl<'a> FilteredRequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(crate) struct ValuesDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
     pub dict: &'a BinaryDict,
 }
 
 impl<'a> ValuesDictionary<'a> {
     pub fn try_new(page: &'a DataPage, dict: &'a BinaryDict) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?;
+        let values = utils::dict_indices_decoder(page)?.into_iter();
 
         Ok(Self { dict, values })
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.values.size_hint().0
+        self.values.len()
     }
 }
 

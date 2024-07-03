@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import AvroCompression
+    from polars._typing import AvroCompression
 
 
 COMPRESSIONS = ["uncompressed", "snappy", "deflate"]

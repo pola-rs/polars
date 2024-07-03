@@ -8,7 +8,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df
-from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
+from polars.datatypes import N_INFER_DEFAULT, parse_into_dtype
 from polars.io._utils import parse_columns_arg, parse_row_index_args
 from polars.io.csv._utils import _update_columns
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars import DataFrame
-    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
+    from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
 
 
 class BatchedCsvReader:
@@ -65,7 +65,7 @@ class BatchedCsvReader:
             if isinstance(schema_overrides, dict):
                 dtype_list = []
                 for k, v in schema_overrides.items():
-                    dtype_list.append((k, py_type_to_dtype(v)))
+                    dtype_list.append((k, parse_into_dtype(v)))
             elif isinstance(schema_overrides, Sequence):
                 dtype_slice = schema_overrides
             else:

@@ -148,6 +148,7 @@ def test_sink_csv_with_options() -> None:
             datetime_format="%Y",
             date_format="%d",
             time_format="%H",
+            float_scientific=True,
             float_precision=42,
             null_value="BOOM",
             quote_style="always",
@@ -165,6 +166,7 @@ def test_sink_csv_with_options() -> None:
             datetime_format="%Y",
             date_format="%d",
             time_format="%H",
+            float_scientific=True,
             float_precision=42,
             null_value="BOOM",
             quote_style="always",
@@ -190,6 +192,18 @@ def test_sink_csv_batch_size_zero() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     with pytest.raises(ValueError, match="invalid zero value"):
         lf.sink_csv("test.csv", batch_size=0)
+
+
+@pytest.mark.write_disk()
+def test_sink_csv_nested_data(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "data.csv"
+
+    lf = pl.LazyFrame({"list": [[1, 2, 3, 4, 5]]})
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="CSV format does not support nested data"
+    ):
+        lf.sink_csv(path)
 
 
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:

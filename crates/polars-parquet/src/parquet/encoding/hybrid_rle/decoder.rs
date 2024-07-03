@@ -77,7 +77,7 @@ mod tests {
             assert_eq!(values, &[0b00001011]);
             let result = bitpacked::Decoder::<u32>::try_new(values, bit_width, length)
                 .unwrap()
-                .collect::<Vec<_>>();
+                .collect();
             assert_eq!(result, &[1, 1, 0, 1, 0]);
         } else {
             panic!()
@@ -103,7 +103,7 @@ mod tests {
             assert_eq!(values, &[0b11101011, 0b00000010]);
             let result = bitpacked::Decoder::<u32>::try_new(values, bit_width, 10)
                 .unwrap()
-                .collect::<Vec<_>>();
+                .collect();
             assert_eq!(result, expected);
         } else {
             panic!()

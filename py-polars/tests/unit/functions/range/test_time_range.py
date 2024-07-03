@@ -10,7 +10,7 @@ from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval
+    from polars._typing import ClosedInterval
 
 
 def test_time_range_schema() -> None:

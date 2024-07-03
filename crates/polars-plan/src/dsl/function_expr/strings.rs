@@ -8,6 +8,7 @@ use polars_core::chunked_array::temporal::validate_time_zone;
 use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_smartstring;
+#[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::*;
 use crate::{map, map_as_slice};
 
-#[cfg(feature = "timezones")]
+#[cfg(all(feature = "regex", feature = "timezones"))]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
@@ -124,6 +125,11 @@ pub enum StringFunction {
     ReplaceMany {
         ascii_case_insensitive: bool,
     },
+    #[cfg(feature = "find_many")]
+    ExtractMany {
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+    },
 }
 
 impl StringFunction {
@@ -189,6 +195,8 @@ impl StringFunction {
             ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "find_many")]
+            ExtractMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
         }
     }
 }
@@ -275,6 +283,8 @@ impl Display for StringFunction {
             ContainsMany { .. } => "contains_many",
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => "replace_many",
+            #[cfg(feature = "find_many")]
+            ExtractMany { .. } => "extract_many",
         };
         write!(f, "str.{s}")
     }
@@ -383,6 +393,13 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             } => {
                 map_as_slice!(replace_many, ascii_case_insensitive)
             },
+            #[cfg(feature = "find_many")]
+            ExtractMany {
+                ascii_case_insensitive,
+                overlapping,
+            } => {
+                map_as_slice!(extract_many, ascii_case_insensitive, overlapping)
+            },
         }
     }
 }
@@ -405,6 +422,24 @@ fn replace_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Seri
         patterns,
         replace_with,
         ascii_case_insensitive,
+    )
+    .map(|out| out.into_series())
+}
+
+#[cfg(feature = "find_many")]
+fn extract_many(
+    s: &[Series],
+    ascii_case_insensitive: bool,
+    overlapping: bool,
+) -> PolarsResult<Series> {
+    let ca = s[0].str()?;
+    let patterns = &s[1];
+
+    polars_ops::chunked_array::strings::extract_many(
+        ca,
+        patterns,
+        ascii_case_insensitive,
+        overlapping,
     )
     .map(|out| out.into_series())
 }
@@ -648,7 +683,7 @@ fn to_datetime(
     let datetime_strings = &s[0].str()?;
     let ambiguous = &s[1].str()?;
     let tz_aware = match &options.format {
-        #[cfg(feature = "timezones")]
+        #[cfg(all(feature = "regex", feature = "timezones"))]
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };

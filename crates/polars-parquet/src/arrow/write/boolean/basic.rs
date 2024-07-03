@@ -84,14 +84,14 @@ pub(super) fn build_statistics(
     array: &BooleanArray,
     options: &StatisticsOptions,
 ) -> ParquetStatistics {
-    use polars_compute::distinct_count::DistinctCountKernel;
     use polars_compute::min_max::MinMaxKernel;
+    use polars_compute::unique::GenericUniqueKernel;
 
     BooleanStatistics {
         null_count: options.null_count.then(|| array.null_count() as i64),
         distinct_count: options
             .distinct_count
-            .then(|| array.distinct_non_null_count().try_into().ok())
+            .then(|| array.n_unique_non_null().try_into().ok())
             .flatten(),
         max_value: options
             .max_value

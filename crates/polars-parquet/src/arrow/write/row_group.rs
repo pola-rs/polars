@@ -42,7 +42,7 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
                         let pages = DynIter::new(
                             pages
                                 .into_iter()
-                                .map(|x| x.map_err(|e| ParquetError::OutOfSpec(e.to_string()))),
+                                .map(|x| x.map_err(|e| ParquetError::oos(e.to_string()))),
                         );
 
                         let compressed_pages = Compressor::new(pages, options.compression, vec![])

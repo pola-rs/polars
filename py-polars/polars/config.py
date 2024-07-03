@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import sys
     from types import TracebackType
 
-    from polars.type_aliases import FloatFmt
+    from polars._typing import FloatFmt
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias

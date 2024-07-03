@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import pytest
 
@@ -17,7 +17,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
 pytestmark = pytest.mark.slow()
 
@@ -86,10 +86,8 @@ def path_ods_mixed(io_files_path: Path) -> Path:
     [
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
-        (pl.read_excel, "path_xls", {"engine": None}),  # << autodetect
         # xlsx file
         (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": None}),  # << autodetect
         (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
         # xlsb file (binary)
@@ -392,6 +390,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df2 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
+        engine="xlsx2csv",
         read_options={"schema_overrides": {"cardinality": pl.UInt16}},
     ).drop_nulls()
 
@@ -402,6 +401,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     df3 = pl.read_excel(
         path_xlsx,
         sheet_name="test4",
+        engine="xlsx2csv",
         schema_overrides={"cardinality": pl.UInt16},
         read_options={
             "schema_overrides": {
@@ -444,6 +444,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         pl.read_excel(
             path_xlsx,
             sheet_name="test4",
+            engine="xlsx2csv",
             schema_overrides={"cardinality": pl.UInt16},
             read_options={"schema_overrides": {"cardinality": pl.Int32}},
         )
@@ -473,7 +474,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
         ("calamine", "schema_sample_rows"),
     ],
 )
-def test_invalid_parameter_combinations(
+def test_invalid_parameter_combinations_infer_schema_len(
     path_xlsx: Path, engine: str, read_opts_param: str
 ) -> None:
     with pytest.raises(
@@ -486,6 +487,29 @@ def test_invalid_parameter_combinations(
             engine=engine,
             read_options={read_opts_param: 512},
             infer_schema_length=1024,
+        )
+
+
+@pytest.mark.parametrize(
+    ("engine", "read_opts_param"),
+    [
+        ("xlsx2csv", "columns"),
+        ("calamine", "use_columns"),
+    ],
+)
+def test_invalid_parameter_combinations_columns(
+    path_xlsx: Path, engine: str, read_opts_param: str
+) -> None:
+    with pytest.raises(
+        ParameterCollisionError,
+        match=f"cannot specify both `columns`.*{read_opts_param}",
+    ):
+        pl.read_excel(  # type: ignore[call-overload]
+            path_xlsx,
+            sheet_id=1,
+            engine=engine,
+            read_options={read_opts_param: ["B", "C", "D"]},
+            columns=["A", "B", "C"],
         )
 
 
@@ -648,8 +672,10 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             engine=engine,
             read_options=read_options,
         )[:3].select(df.columns[:3])
+
         if engine == "xlsx2csv":
             xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
+
         assert_frame_equal(df, xldf)
 
 
@@ -834,9 +860,9 @@ def test_excel_empty_sheet(
     with pytest.raises(NoDataError, match="empty Excel sheet"):
         read_spreadsheet(empty_spreadsheet_path)
 
-    engine_params = [{}] if ods else [{"engine": None}, {"engine": "calamine"}]
+    engine_params = [{}] if ods else [{"engine": "calamine"}]
     for params in engine_params:
-        df = read_spreadsheet(  # type: ignore[arg-type]
+        df = read_spreadsheet(
             empty_spreadsheet_path,
             sheet_name="no_data",
             raise_if_empty=False,
@@ -845,7 +871,7 @@ def test_excel_empty_sheet(
         expected = pl.DataFrame()
         assert_frame_equal(df, expected)
 
-        df = read_spreadsheet(  # type: ignore[arg-type]
+        df = read_spreadsheet(
             empty_spreadsheet_path,
             sheet_name="no_rows",
             raise_if_empty=False,
@@ -906,15 +932,22 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
     xls = BytesIO()
     df.write_excel(xls)
 
-    read_df = pl.read_excel(
-        xls,
-        engine=engine,
-        schema_overrides={
-            "e": pl.Date,
-            "f": pl.Datetime("us"),
-        },
-    )
-    assert_frame_equal(df, read_df)
+    reversed_cols = list(reversed(df.columns))
+    read_cols: Sequence[str] | Sequence[int]
+    for read_cols in (  # type: ignore[assignment]
+        reversed_cols,
+        [5, 4, 3, 2, 1, 0],
+    ):
+        read_df = pl.read_excel(
+            xls,
+            engine=engine,
+            columns=read_cols,
+            schema_overrides={
+                "e": pl.Date,
+                "f": pl.Datetime("us"),
+            },
+        )
+        assert_frame_equal(df.select(reversed_cols), read_df)
 
 
 @pytest.mark.parametrize(

@@ -24,7 +24,7 @@ from polars.testing.parametric import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.type_aliases import ParquetCompression
+    from polars._typing import ParquetCompression
     from tests.unit.conftest import MemoryUsage
 
 
@@ -437,8 +437,8 @@ def test_fetch_union(tmp_path: Path) -> None:
     df1.write_parquet(file_path_1)
     df2.write_parquet(file_path_2)
 
-    result_one = pl.scan_parquet(file_path_1).fetch(1)
-    result_glob = pl.scan_parquet(file_path_glob).fetch(1)
+    result_one = pl.scan_parquet(file_path_1)._fetch(1)
+    result_glob = pl.scan_parquet(file_path_glob)._fetch(1)
 
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
@@ -1115,3 +1115,118 @@ def test_parquet_statistics_uint64_16683() -> None:
 
     assert statistics.min == 0
     assert statistics.max == u64_max
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("nullable", [True, False])
+def test_read_byte_stream_split(nullable: bool) -> None:
+    rng = np.random.default_rng(123)
+    num_rows = 1_000
+    values = rng.uniform(-1.0e6, 1.0e6, num_rows)
+    if nullable:
+        validity_mask = rng.integers(0, 2, num_rows).astype(np.bool_)
+    else:
+        validity_mask = None
+
+    schema = pa.schema(
+        [
+            pa.field("floats", type=pa.float32(), nullable=nullable),
+            pa.field("doubles", type=pa.float64(), nullable=nullable),
+        ]
+    )
+    arrays = [pa.array(values, type=field.type, mask=validity_mask) for field in schema]
+    table = pa.Table.from_arrays(arrays, schema=schema)
+    df = cast(pl.DataFrame, pl.from_arrow(table))
+
+    f = io.BytesIO()
+    pq.write_table(
+        table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True
+    )
+
+    f.seek(0)
+    read = pl.read_parquet(f)
+
+    assert_frame_equal(read, df)
+
+
+@pytest.mark.slow()
+@pytest.mark.parametrize("rows_nullable", [True, False])
+@pytest.mark.parametrize("item_nullable", [True, False])
+def test_read_byte_stream_split_arrays(
+    item_nullable: bool, rows_nullable: bool
+) -> None:
+    rng = np.random.default_rng(123)
+    num_rows = 1_000
+    max_array_len = 10
+    array_lengths = rng.integers(0, max_array_len + 1, num_rows)
+    if rows_nullable:
+        row_validity_mask = rng.integers(0, 2, num_rows).astype(np.bool_)
+        array_lengths[row_validity_mask] = 0
+        row_validity_mask = pa.array(row_validity_mask)
+    else:
+        row_validity_mask = None
+
+    offsets = np.zeros(num_rows + 1, dtype=np.int64)
+    np.cumsum(array_lengths, out=offsets[1:])
+    num_values = offsets[-1]
+    values = rng.uniform(-1.0e6, 1.0e6, num_values)
+
+    if item_nullable:
+        element_validity_mask = rng.integers(0, 2, num_values).astype(np.bool_)
+    else:
+        element_validity_mask = None
+
+    schema = pa.schema(
+        [
+            pa.field(
+                "floats",
+                type=pa.list_(pa.field("", pa.float32(), nullable=item_nullable)),
+                nullable=rows_nullable,
+            ),
+            pa.field(
+                "doubles",
+                type=pa.list_(pa.field("", pa.float64(), nullable=item_nullable)),
+                nullable=rows_nullable,
+            ),
+        ]
+    )
+    arrays = [
+        pa.ListArray.from_arrays(
+            pa.array(offsets),
+            pa.array(values, type=field.type.field(0).type, mask=element_validity_mask),
+            mask=row_validity_mask,
+        )
+        for field in schema
+    ]
+    table = pa.Table.from_arrays(arrays, schema=schema)
+    df = cast(pl.DataFrame, pl.from_arrow(table))
+
+    f = io.BytesIO()
+    pq.write_table(
+        table, f, compression="snappy", use_dictionary=False, use_byte_stream_split=True
+    )
+
+    f.seek(0)
+    read = pl.read_parquet(f)
+
+    assert_frame_equal(read, df)
+
+
+@pytest.mark.write_disk()
+def test_parquet_record_batches_pyarrow_fixed_size_list_16614(tmp_path: Path) -> None:
+    filename = tmp_path / "a.parquet"
+
+    # @NOTE:
+    # The minimum that I could get it to crash which was ~132000, but let's
+    # just do 150000 to be sure.
+    n = 150000
+    x = pl.DataFrame(
+        {"x": np.linspace((1, 2), (2 * n, 2 * n * 1), n, dtype=np.float32)},
+        schema={"x": pl.Array(pl.Float32, 2)},
+    )
+
+    x.write_parquet(filename)
+    b = pl.read_parquet(filename, use_pyarrow=True)
+
+    assert b["x"].shape[0] == n
+    assert_frame_equal(b, x)

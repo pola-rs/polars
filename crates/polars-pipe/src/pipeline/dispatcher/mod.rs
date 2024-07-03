@@ -304,7 +304,9 @@ impl PipeLine {
     ) -> PolarsResult<Option<FinalizedSink>> {
         let (sink_shared_count, mut reduced_sink) = self.run_pipeline_no_finalize(ec, pipelines)?;
         assert_eq!(sink_shared_count, 0);
-        Ok(reduced_sink.finalize(ec).ok())
+
+        let finalized_reduced_sink = reduced_sink.finalize(ec)?;
+        Ok(Some(finalized_reduced_sink))
     }
 }
 

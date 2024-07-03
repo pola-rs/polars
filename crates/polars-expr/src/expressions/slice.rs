@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_core::utils::{slice_offsets, CustomIterTools};
+use polars_core::utils::{slice_offsets, Container, CustomIterTools};
 use polars_core::POOL;
 use rayon::prelude::*;
 use AnyValue::Null;
@@ -106,12 +106,17 @@ impl PhysicalExpr for SliceExpr {
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 
-        let groups = ac.groups();
-
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
             (Literal(offset), Literal(length)) => {
                 let (offset, length) = extract_args(offset, length, &self.expr)?;
+
+                if let Literal(s) = ac.agg_state() {
+                    let s1 = s.slice(offset, length);
+                    ac.with_literal(s1);
+                    return Ok(ac);
+                }
+                let groups = ac.groups();
 
                 match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
@@ -134,6 +139,7 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             (Literal(offset), _) => {
+                let groups = ac.groups();
                 let offset = extract_offset(offset, &self.expr)?;
                 let length = ac_length.aggregated();
                 check_argument(&length, groups, "length", &self.expr)?;
@@ -168,6 +174,7 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             (_, Literal(length)) => {
+                let groups = ac.groups();
                 let length = extract_length(length, &self.expr)?;
                 let offset = ac_offset.aggregated();
                 check_argument(&offset, groups, "offset", &self.expr)?;
@@ -202,6 +209,7 @@ impl PhysicalExpr for SliceExpr {
                 }
             },
             _ => {
+                let groups = ac.groups();
                 let length = ac_length.aggregated();
                 let offset = ac_offset.aggregated();
                 check_argument(&length, groups, "length", &self.expr)?;

@@ -2,6 +2,7 @@ pub mod infer;
 use chrono::DateTime;
 mod patterns;
 mod strptime;
+use chrono::format::ParseErrorKind;
 use chrono::ParseError;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
@@ -19,9 +20,11 @@ fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
-    ["%T", "%T%.3f", "%T%.6f", "%T%.9f"]
-        .into_iter()
-        .find(|&fmt| convert(val, fmt).is_ok())
+    patterns::TIME_H_M_S
+        .iter()
+        .chain(patterns::TIME_H_M_S)
+        .find(|fmt| convert(val, fmt).is_ok())
+        .copied()
 }
 
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -52,22 +55,8 @@ struct ParseErrorByteCopy(ParseErrorKind);
 
 impl From<ParseError> for ParseErrorByteCopy {
     fn from(e: ParseError) -> Self {
-        // We need to do this until chrono ParseErrorKind is public
-        // blocked by https://github.com/chronotope/chrono/pull/588.
-        unsafe { std::mem::transmute(e) }
+        ParseErrorByteCopy(e.kind())
     }
-}
-
-#[allow(dead_code)]
-enum ParseErrorKind {
-    OutOfRange,
-    Impossible,
-    NotEnough,
-    Invalid,
-    /// The input string has been prematurely ended.
-    TooShort,
-    TooLong,
-    BadFormat,
 }
 
 fn get_first_val(ca: &StringChunked) -> PolarsResult<&str> {

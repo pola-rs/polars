@@ -25,9 +25,9 @@ from polars.exceptions import NoDataError
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
+    from polars._typing import Orientation, SchemaDefinition, SchemaDict
     from polars.dependencies import numpy as np
     from polars.interchange.protocol import SupportsInterchange
-    from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 
 def from_dict(

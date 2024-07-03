@@ -76,7 +76,10 @@ def test_string_concat() -> None:
 )
 def test_string_concat_errors(invalid_concat: str) -> None:
     lf = pl.LazyFrame({"x": ["a", "b", "c"]})
-    with pytest.raises(SQLSyntaxError, match="invalid number of arguments"):
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
+    ):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
 
 
@@ -216,15 +219,15 @@ def test_string_lengths() -> None:
         ("_0%_", "LIKE", [2, 4]),
         ("%0", "LIKE", [2]),
         ("0%", "LIKE", [2]),
-        ("__0%", "LIKE", [2, 3]),
-        ("%*%", "ILIKE", [3]),
-        ("____", "LIKE", [4]),
-        ("a%C", "LIKE", []),
-        ("a%C", "ILIKE", [0, 1, 3]),
-        ("%C?", "ILIKE", [4]),
-        ("a0c?", "LIKE", [4]),
-        ("000", "LIKE", [2]),
-        ("00", "LIKE", []),
+        ("__0%", "~~", [2, 3]),
+        ("%*%", "~~*", [3]),
+        ("____", "~~", [4]),
+        ("a%C", "~~", []),
+        ("a%C", "~~*", [0, 1, 3]),
+        ("%C?", "~~*", [4]),
+        ("a0c?", "~~", [4]),
+        ("000", "~~", [2]),
+        ("00", "~~", []),
     ],
 )
 def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
@@ -235,9 +238,9 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
         }
     )
     with pl.SQLContext(df=df) as ctx:
-        for not_ in ("", "NOT "):
+        for not_ in ("", ("NOT " if like.endswith("LIKE") else "!")):
             out = ctx.execute(
-                f"""SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"""
+                f"SELECT idx FROM df WHERE txt {not_}{like} '{pattern}'"
             ).collect()
 
             res = out["idx"].to_list()
@@ -320,7 +323,9 @@ def test_string_replace() -> None:
         res = out["words"].to_list()
         assert res == ["English breakfast tea is the best tea", "", None]
 
-        with pytest.raises(SQLSyntaxError, match="invalid number of arguments"):
+        with pytest.raises(
+            SQLSyntaxError, match=r"REPLACE expects 3 arguments \(found 2\)"
+        ):
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
@@ -355,6 +360,12 @@ def test_string_substr() -> None:
             match=r"SUBSTR does not support negative length \(-99\)",
         ):
             ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match=r"SUBSTR expects 2-3 arguments \(found 1\)",
+        ):
+            pl.sql_expr("SUBSTR(s)")
 
     assert res.to_dict(as_series=False) == {
         "s1": ["abcdefg", "abcde", "abc", None],
