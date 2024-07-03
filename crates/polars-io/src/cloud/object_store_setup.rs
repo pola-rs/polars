@@ -45,7 +45,6 @@ pub fn object_path_from_string(path: String) -> object_store::path::Path {
     // We transmute because they don't expose a way to just create it from a string
     // without encoding or decoding it. If one day we can't use this transmute hack
     // anymore then we'll just have to `Path::from_url_path(percent_encode(path))`
-
     {
         const _: [(); std::mem::align_of::<String>()] =
             [(); std::mem::align_of::<object_store::path::Path>()];
