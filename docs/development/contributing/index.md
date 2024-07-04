@@ -176,10 +176,20 @@ Two other things to keep in mind:
 When you have resolved your issue, [open a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork) in the Polars repository.
 Please adhere to the following guidelines:
 
-- Start your pull request title with a [conventional commit](https://www.conventionalcommits.org/) tag. This helps us add your contribution to the right section of the changelog. We use the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type). Scope can be `rust` and/or `python`, depending on your contribution.
-- Use a descriptive title starting with an uppercase letter. This text will end up in the [changelog](https://github.com/pola-rs/polars/releases).
-- In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
-- Add any relevant information to the description that you think may help the maintainers review your code.
+- Title
+  - Start your pull request title with a [conventional commit](https://www.conventionalcommits.org/) tag.
+    This helps us add your contribution to the right section of the changelog.
+    We use the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#type).
+    Scope can be `rust` and/or `python`, depending on your contribution: this tag determines which changelog(s) will include your change.
+    Omit the scope if your change affects both Rust and Python.
+  - Use a descriptive title starting with an uppercase letter.
+    This text will end up in the [changelog](https://github.com/pola-rs/polars/releases), so make sure the text is meaningful to the user.
+    Use single backticks to annotate code snippets.
+    Use active language and do not end your title with punctuation.
+  - Example: ``fix(python): Fix `DataFrame.top_k` not handling nulls correctly``
+- Description
+  - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
+  - Add any relevant information to the description that you think may help the maintainers review your code.
 - Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.
 - Make sure all [GitHub Actions checks](./ci.md) pass.
 

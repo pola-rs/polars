@@ -1,0 +1,15 @@
+{
+  "LABEL": {
+    "name": "title needs formatting",
+    "color": "FF0000"
+  },
+  "CHECKS": {
+    "regexp": "^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\\((python|rust)\\!?(,(python|rust)\\!?)?\\))?\\!?\\: [A-Z].*[^\\.\\!\\?,… ]$",
+    "ignoreLabels": ["skip changelog"]
+  },
+  "MESSAGES": {
+    "success": "PR title OK!",
+    "failure": "Invalid PR title! Please update according to the contributing guidelines: https://docs.pola.rs/development/contributing/#pull-requests",
+    "notice": ""
+  }
+}
