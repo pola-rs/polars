@@ -5,7 +5,7 @@ use polars_core::error::{polars_bail, PolarsResult};
 use crate::dsl::Expr;
 use crate::plans::{DslFunction, DslPlan, FileScan, FunctionNode};
 
-fn is_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
+pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     let mut expr_stack = vec![];
     for plan_node in dsl.into_iter() {
         match plan_node {
@@ -37,7 +37,7 @@ fn is_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                             Expr::AnonymousFunction { .. } => {
                                 todo!()
                             },
-                            _ => {},
+                            _ => (),
                         }
                     }
                 }
