@@ -106,13 +106,11 @@ def is_simple_numpy_backed_pandas_series(
     if len(series.shape) > 1:
         # Pandas Series is actually a Pandas DataFrame when the original DataFrame
         # contains duplicated columns and a duplicated column is requested with df["a"].
-        msg = "duplicate column names found: "
-        raise ValueError(
-            msg,
-            f"{series.columns.tolist()!s}",  # type: ignore[union-attr]
-        )
+        msg = f"duplicate column names found: {series.columns.tolist()!s}"  # type: ignore[union-attr]
+        raise ValueError(msg)
     return (str(series.dtype) in PANDAS_SIMPLE_NUMPY_DTYPES) or (
         series.dtype == "object"
+        and not series.hasnans
         and not series.empty
         and isinstance(next(iter(series)), str)
     )
