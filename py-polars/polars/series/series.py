@@ -45,7 +45,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
-from polars._utils.unstable import issue_unstable_warning, unstable
+from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
@@ -98,6 +98,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
+from polars.interchange.protocol import Flavor
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -4342,7 +4343,7 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    def to_arrow(self, *, future: bool | int = False) -> pa.Array:
+    def to_arrow(self, *, flavor: Flavor = Flavor.Compatible) -> pa.Array:
         """
         Return the underlying Arrow array.
 
@@ -4350,16 +4351,8 @@ class Series:
 
         Parameters
         ----------
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-
-            Setting this to an integer will use a specific version
-            of Polars' internal data structures.
+        flavor
+            Use a specific version of Polars' internal data structures.
 
         Examples
         --------
@@ -4373,12 +4366,7 @@ class Series:
           3
         ]
         """
-        if future is True:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.to_arrow` is considered unstable."
-            )
-
-        return self._s.to_arrow(future)
+        return self._s.to_arrow(flavor.value)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any

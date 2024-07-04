@@ -234,7 +234,7 @@ def test_from_float16() -> None:
 def test_binview_ipc_mmap(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
-    df.write_ipc(file_path, future=True)
+    df.write_ipc(file_path)
     read = pl.read_ipc(file_path, memory_map=True)
     assert_frame_equal(df, read)
 
@@ -268,7 +268,7 @@ def test_ipc_view_gc_14448() -> None:
     df = pl.DataFrame(
         pl.Series(["small"] * 10 + ["looooooong string......."] * 750).slice(20, 20)
     )
-    df.write_ipc(f, future=True)
+    df.write_ipc(f)
     f.seek(0)
     assert_frame_equal(pl.read_ipc(f), df)
 

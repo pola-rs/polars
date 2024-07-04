@@ -103,6 +103,7 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
+from polars.interchange.protocol import Flavor
 from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
@@ -1384,7 +1385,7 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self, *, future: bool | int = False) -> pa.Table:
+    def to_arrow(self, *, flavor: Flavor = Flavor.Compatible) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
@@ -1395,16 +1396,8 @@ class DataFrame:
 
         Parameters
         ----------
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-
-            Setting this to an integer will use a specific version
-            of Polars' internal data structures.
+        flavor
+            Use a specific version of Polars' internal data structures.
 
         Examples
         --------
@@ -1422,12 +1415,7 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        if future is True:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.to_arrow` is considered unstable."
-            )
-
-        record_batches = self._df.to_arrow(future)
+        record_batches = self._df.to_arrow(flavor.value)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3300,7 +3288,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | int | None = None,
+        flavor: Flavor = Flavor.Future1,
     ) -> BytesIO: ...
 
     @overload
@@ -3309,7 +3297,7 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | int | None = None,
+        flavor: Flavor = Flavor.Future1,
     ) -> None: ...
 
     def write_ipc(
@@ -3317,7 +3305,7 @@ class DataFrame:
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | int | None = None,
+        flavor: Flavor = Flavor.Future1,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3331,16 +3319,8 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-
-            Setting this to an integer will use a specific version
-            of Polars' internal data structures.
+        flavor
+            Use a specific version of Polars' internal data structures.
 
         Examples
         --------
@@ -3365,14 +3345,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        if future is True:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
-            )
-        if future is None:
-            future = True
-
-        self._df.write_ipc(file, compression, future)
+        self._df.write_ipc(file, compression, flavor.value)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3381,7 +3354,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | int | None = None,
+        flavor: Flavor = Flavor.Future1,
     ) -> BytesIO: ...
 
     @overload
@@ -3390,7 +3363,7 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | int | None = None,
+        flavor: Flavor = Flavor.Future1,
     ) -> None: ...
 
     def write_ipc_stream(
@@ -3398,7 +3371,7 @@ class DataFrame:
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | int | None = None,
+        flavor: Flavor = Flavor.Future1,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC record batch stream.
@@ -3412,16 +3385,8 @@ class DataFrame:
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-
-            Setting this to an integer will use a specific version
-            of Polars' internal data structures.
+        flavor
+            Use a specific version of Polars' internal data structures.
 
         Examples
         --------
@@ -3446,14 +3411,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        if future is True:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
-            )
-        if future is None:
-            future = True
-
-        self._df.write_ipc_stream(file, compression, future=future)
+        self._df.write_ipc_stream(file, compression, flavor.value)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(

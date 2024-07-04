@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import Enum, IntEnum
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -12,6 +12,8 @@ from typing import (
     Tuple,
     TypedDict,
 )
+
+from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
     import sys
@@ -255,3 +257,22 @@ class Endianness:
 
 class CopyNotAllowedError(RuntimeError):
     """Exception raised when a copy is required, but `allow_copy` is set to `False`."""
+
+
+class Flavor(Enum):
+    """Data structure versioning."""
+
+    Compatible = 0
+    Future1 = 1
+
+    @staticmethod
+    def highest() -> Flavor:
+        """
+        Get the highest supported flavor.
+
+        .. warning::
+            Highest flavor is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+        """
+        issue_unstable_warning("Using the highest flavor is considered unstable.")
+        return Flavor.Future1
