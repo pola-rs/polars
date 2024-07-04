@@ -4366,7 +4366,9 @@ class Series:
           3
         ]
         """
-        return self._s.to_arrow(flavor.value)
+        if isinstance(flavor, Flavor):
+            flavor = flavor.value  # type: ignore[assignment]
+        return self._s.to_arrow(flavor)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any

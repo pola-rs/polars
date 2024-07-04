@@ -1415,7 +1415,10 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        record_batches = self._df.to_arrow(flavor.value)
+        if isinstance(flavor, Flavor):
+            flavor = flavor.value  # type: ignore[assignment]
+
+        record_batches = self._df.to_arrow(flavor)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3342,10 +3345,13 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        if isinstance(flavor, Flavor):
+            flavor = flavor.value  # type: ignore[assignment]
+
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression, flavor.value)
+        self._df.write_ipc(file, compression, flavor)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3408,10 +3414,13 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        if isinstance(flavor, Flavor):
+            flavor = flavor.value  # type: ignore[assignment]
+
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc_stream(file, compression, flavor.value)
+        self._df.write_ipc_stream(file, compression, flavor)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
