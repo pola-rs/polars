@@ -88,7 +88,14 @@ def test_series_getitem_multiple_indices(indices: Any) -> None:
 @pytest.mark.parametrize(
     ("input", "match"),
     [
-        ([0.0, 1.0], "unexpected value while building Series of type Int64"),
+        (
+            [0.0, 1.0],
+            "cannot select elements using Sequence with elements of type 'float'",
+        ),
+        (
+            "foobar",
+            "cannot select elements using Sequence with elements of type 'str'",
+        ),
         (
             pl.Series([[1, 2], [3, 4]]),
             "cannot treat Series of type List\\(Int64\\) as indices",
@@ -97,7 +104,7 @@ def test_series_getitem_multiple_indices(indices: Any) -> None:
         (object(), "cannot select elements using key of type 'object'"),
     ],
 )
-def test_df_getitem_col_invalid_inputs(input: Any, match: str) -> None:
+def test_series_getitem_col_invalid_inputs(input: Any, match: str) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(TypeError, match=match):
         s[input]
