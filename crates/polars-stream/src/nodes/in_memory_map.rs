@@ -1,91 +1,100 @@
 use std::sync::Arc;
 
-use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
-use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_plan::plans::DataFrameUdf;
 
+use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
 use super::in_memory_source::InMemorySourceNode;
-use super::ComputeNode;
-use crate::async_executor::JoinHandle;
-use crate::async_primitives::pipe::{Receiver, Sender};
-use crate::graph::PortState;
-use crate::morsel::Morsel;
 
 pub enum InMemoryMapNode {
-    Sink(InMemorySinkNode, Arc<dyn DataFrameUdf>),
+    Sink {
+        sink_node: InMemorySinkNode,
+        num_pipelines: usize,
+        map: Arc<dyn DataFrameUdf>,
+    },
     Source(InMemorySourceNode),
+    Done,
 }
 
 impl InMemoryMapNode {
     pub fn new(input_schema: Arc<Schema>, map: Arc<dyn DataFrameUdf>) -> Self {
-        Self::Sink(InMemorySinkNode::new(input_schema), map)
+        Self::Sink {
+            sink_node: InMemorySinkNode::new(input_schema),
+            num_pipelines: 0,
+            map,
+        }
     }
 }
 
 impl ComputeNode for InMemoryMapNode {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "in_memory_map"
+    }
+
+    fn initialize(&mut self, num_pipelines_: usize) {
+        match self {
+            Self::Sink { num_pipelines, .. } => *num_pipelines = num_pipelines_,
+            _ => unreachable!(),
+        }
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        // If the output doesn't want any more data, we are always done.
-        if send[0] == PortState::Done {
-            recv[0] = PortState::Done;
-            return;
+        // If the output doesn't want any more data, transition to being done.
+        if send[0] == PortState::Done && !matches!(self, Self::Done) {
+            *self = Self::Done;
+        }
+
+        // If the input is done, transition to being a source.
+        if let Self::Sink {
+            sink_node,
+            num_pipelines,
+            map,
+        } = self
+        {
+            if recv[0] == PortState::Done {
+                let df = sink_node.get_output().unwrap();
+                let mut source_node =
+                    InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap()).unwrap()));
+                source_node.initialize(*num_pipelines);
+                *self = Self::Source(source_node);
+            }
         }
 
         match self {
-            Self::Sink(sink, _) => {
-                sink.update_state(recv, &mut []);
+            Self::Sink { sink_node, .. } => {
+                sink_node.update_state(recv, &mut []);
                 send[0] = PortState::Blocked;
             },
-            Self::Source(source) => {
-                source.update_state(&mut [], send);
+            Self::Source(source_node) => {
                 recv[0] = PortState::Done;
+                source_node.update_state(&mut [], send);
+            },
+            Self::Done => {
+                recv[0] = PortState::Done;
+                send[0] = PortState::Done;
             },
         }
     }
 
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self, Self::Sink(_, _))
-    }
-
-    fn initialize(&mut self, num_pipelines: usize) {
-        match self {
-            Self::Sink(sink, _) => sink.initialize(num_pipelines),
-            Self::Source(source) => source.initialize(num_pipelines),
-        }
+        matches!(self, Self::Sink { .. })
     }
 
     fn spawn<'env, 's>(
         &'env self,
-        scope: &'s crate::async_executor::TaskScope<'s, 'env>,
+        scope: &'s TaskScope<'s, 'env>,
         pipeline: usize,
         recv: &mut [Option<Receiver<Morsel>>],
         send: &mut [Option<Sender<Morsel>>],
         state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
         match self {
-            Self::Sink(sink, _) => sink.spawn(scope, pipeline, recv, &mut [], state),
+            Self::Sink { sink_node, .. } => sink_node.spawn(scope, pipeline, recv, &mut [], state),
             Self::Source(source) => source.spawn(scope, pipeline, &mut [], send, state),
+            Self::Done => unreachable!(),
         }
-    }
-
-    fn finalize(&mut self) -> PolarsResult<Option<DataFrame>> {
-        match self {
-            Self::Sink(sink, map) => {
-                let df = sink.finalize()?.unwrap();
-                *self = Self::Source(InMemorySourceNode::new(Arc::new(map.call_udf(df)?)));
-            },
-            Self::Source(source) => {
-                source.finalize()?;
-            },
-        };
-        Ok(None)
     }
 }

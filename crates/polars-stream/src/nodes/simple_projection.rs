@@ -1,25 +1,21 @@
-use polars_core::schema::SchemaRef;
-use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
+use std::sync::Arc;
 
-use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskScope};
-use crate::async_primitives::pipe::{Receiver, Sender};
-use crate::graph::PortState;
-use crate::morsel::Morsel;
+use polars_core::schema::Schema;
+
+use super::compute_node_prelude::*;
 
 pub struct SimpleProjectionNode {
-    schema: SchemaRef,
+    schema: Arc<Schema>,
 }
 
 impl SimpleProjectionNode {
-    pub fn new(schema: SchemaRef) -> Self {
+    pub fn new(schema: Arc<Schema>) -> Self {
         Self { schema }
     }
 }
 
 impl ComputeNode for SimpleProjectionNode {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "simple_projection"
     }
 
@@ -40,7 +36,7 @@ impl ComputeNode for SimpleProjectionNode {
         let mut recv = recv[0].take().unwrap();
         let mut send = send[0].take().unwrap();
 
-        scope.spawn_task(true, async move {
+        scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel.try_map(|df| {
                     // TODO: can this be unchecked?
