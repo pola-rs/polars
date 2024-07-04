@@ -58,9 +58,9 @@ impl ComputeNode for OrderedUnionNode {
         send: &mut [Option<Sender<Morsel>>],
         _state: &'s ExecutionState,
     ) -> JoinHandle<PolarsResult<()>> {
-        let ready_recv: Vec<_> = recv.iter_mut().flat_map(|r| r.take()).collect();
-        assert!(ready_recv.len() == 1 && send.len() == 1);
-        let mut recv = ready_recv.into_iter().next().unwrap();
+        let ready_count = recv.iter().filter(|r| r.is_some()).count();
+        assert!(ready_count == 1 && send.len() == 1);
+        let mut recv = recv[self.cur_input_idx].take().unwrap();
         let mut send = send[0].take().unwrap();
 
         scope.spawn_task(TaskPriority::High, async move {
