@@ -207,7 +207,7 @@ where
 pub struct IpcStreamWriter<W> {
     writer: W,
     compression: Option<IpcCompression>,
-    pl_flavor: bool,
+    pl_flavor: PlFlavor,
 }
 
 use arrow::record_batch::RecordBatch;
@@ -221,7 +221,7 @@ impl<W> IpcStreamWriter<W> {
         self
     }
 
-    pub fn with_pl_flavor(mut self, pl_flavor: bool) -> Self {
+    pub fn with_pl_flavor(mut self, pl_flavor: PlFlavor) -> Self {
         self.pl_flavor = pl_flavor;
         self
     }
@@ -235,7 +235,7 @@ where
         IpcStreamWriter {
             writer,
             compression: None,
-            pl_flavor: false,
+            pl_flavor: PlFlavor::Compatible,
         }
     }
 

@@ -2382,10 +2382,14 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self, pl_flavor: bool, parallel: bool) -> RecordBatchIter {
+    pub fn iter_chunks(&self, pl_flavor: PlFlavor, parallel: bool) -> RecordBatchIter {
         // If any of the columns is binview and we don't convert `pl_flavor` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let parallel = if parallel && !pl_flavor {
+        let parallel = if parallel
+            && match pl_flavor {
+                PlFlavor::Future1 => true,
+                PlFlavor::Compatible => false,
+            } {
             self.columns.len() > 1
                 && self
                     .columns
@@ -3018,7 +3022,7 @@ pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Series>,
     idx: usize,
     n_chunks: usize,
-    pl_flavor: bool,
+    pl_flavor: PlFlavor,
     parallel: bool,
 }
 
@@ -3117,7 +3121,7 @@ mod test {
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_chunks(true, false);
+        let mut iter = df.iter_chunks(PlFlavor::highest(), false);
         assert_eq!(5, iter.next().unwrap().len());
         assert!(iter.next().is_none());
     }

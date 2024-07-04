@@ -42,7 +42,7 @@ pub struct IpcWriter<W> {
     pub(super) writer: W,
     pub(super) compression: Option<IpcCompression>,
     /// Polars' flavor of arrow. This might be temporary.
-    pub(super) pl_flavor: bool,
+    pub(super) pl_flavor: PlFlavor,
 }
 
 impl<W: Write> IpcWriter<W> {
@@ -52,7 +52,7 @@ impl<W: Write> IpcWriter<W> {
         self
     }
 
-    pub fn with_pl_flavor(mut self, pl_flavor: bool) -> Self {
+    pub fn with_pl_flavor(mut self, pl_flavor: PlFlavor) -> Self {
         self.pl_flavor = pl_flavor;
         self
     }
@@ -84,7 +84,7 @@ where
         IpcWriter {
             writer,
             compression: None,
-            pl_flavor: true,
+            pl_flavor: PlFlavor::highest(),
         }
     }
 
@@ -111,7 +111,7 @@ where
 
 pub struct BatchedWriter<W: Write> {
     writer: write::FileWriter<W>,
-    pl_flavor: bool,
+    pl_flavor: PlFlavor,
 }
 
 impl<W: Write> BatchedWriter<W> {

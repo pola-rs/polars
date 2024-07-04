@@ -19,7 +19,7 @@ impl Series {
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/ categoricals, etc.
-    pub fn to_arrow(&self, chunk_idx: usize, pl_flavor: bool) -> ArrayRef {
+    pub fn to_arrow(&self, chunk_idx: usize, pl_flavor: PlFlavor) -> ArrayRef {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
@@ -116,21 +116,19 @@ impl Series {
                     object_series_to_arrow_array(&s)
                 }
             },
-            DataType::String => {
-                if pl_flavor {
-                    self.array_ref(chunk_idx).clone()
-                } else {
+            DataType::String => match pl_flavor {
+                PlFlavor::Future1 => self.array_ref(chunk_idx).clone(),
+                PlFlavor::Compatible => {
                     let arr = self.array_ref(chunk_idx);
                     cast_unchecked(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
-                }
+                },
             },
-            DataType::Binary => {
-                if pl_flavor {
-                    self.array_ref(chunk_idx).clone()
-                } else {
+            DataType::Binary => match pl_flavor {
+                PlFlavor::Future1 => self.array_ref(chunk_idx).clone(),
+                PlFlavor::Compatible => {
                     let arr = self.array_ref(chunk_idx);
                     cast_unchecked(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
-                }
+                },
             },
             _ => self.array_ref(chunk_idx).clone(),
         }

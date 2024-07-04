@@ -1182,3 +1182,28 @@ where
 {
     container.into_iter().map(|s| s.as_ref().into()).collect()
 }
+
+#[derive(Debug, Copy, Clone)]
+pub struct PyPlFlavor(pub PlFlavor);
+
+impl<'a> FromPyObject<'a> for PyPlFlavor {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+        Ok(PyPlFlavor(if let Ok(version) = ob.extract::<u32>() {
+            match version {
+                0 => PlFlavor::Compatible,
+                1 => PlFlavor::Future1,
+                _ => return Err(PyValueError::new_err("invalid flavor version")),
+            }
+        } else if let Ok(future) = ob.extract::<bool>() {
+            if future {
+                PlFlavor::highest()
+            } else {
+                PlFlavor::Compatible
+            }
+        } else {
+            return Err(PyTypeError::new_err(
+                "'future' argument accepts int or bool",
+            ));
+        }))
+    }
+}

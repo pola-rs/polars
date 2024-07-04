@@ -94,7 +94,7 @@ where
             .collect();
         let gathered =
             unsafe { gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.len()) };
-        let arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(true));
+        let arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(PlFlavor::highest()));
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
 }
@@ -140,7 +140,8 @@ where
             gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.as_ref().len())
         };
 
-        let mut arr = T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(true));
+        let mut arr =
+            T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(PlFlavor::highest()));
         if indices.null_count() > 0 {
             let array_refs: Vec<&dyn Array> = indices.chunks().iter().map(|x| &**x).collect();
             arr = arr.with_validity_typed(concatenate_validities(&array_refs));

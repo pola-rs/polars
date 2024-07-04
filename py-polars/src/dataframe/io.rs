@@ -18,6 +18,7 @@ use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
     read_if_bytesio, EitherRustPythonFile,
 };
+use crate::prelude::PyPlFlavor;
 
 #[pymethods]
 impl PyDataFrame {
@@ -431,7 +432,7 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<IpcCompression>>,
-        future: bool,
+        future: PyPlFlavor,
     ) -> PyResult<()> {
         let either = get_either_file(py_f, true)?;
         if let EitherRustPythonFile::Rust(ref f) = either {
@@ -441,7 +442,7 @@ impl PyDataFrame {
         py.allow_threads(|| {
             IpcWriter::new(&mut buf)
                 .with_compression(compression.0)
-                .with_pl_flavor(future)
+                .with_pl_flavor(future.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)
         })?;
@@ -454,13 +455,13 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<IpcCompression>>,
-        future: bool,
+        future: PyPlFlavor,
     ) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         py.allow_threads(|| {
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
-                .with_pl_flavor(future)
+                .with_pl_flavor(future.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)
         })?;

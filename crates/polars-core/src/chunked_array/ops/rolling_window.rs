@@ -270,7 +270,7 @@ mod inner_mod {
                 }
             }
             let arr = PrimitiveArray::new(
-                T::get_dtype().to_arrow(true),
+                T::get_dtype().to_arrow(PlFlavor::highest()),
                 values.into(),
                 Some(validity.into()),
             );

@@ -275,7 +275,7 @@ impl Sink for SortSinkMultiple {
 
         let sort_dtypes = self.sort_dtypes.take().map(|arr| {
             arr.iter()
-                .map(|dt| dt.to_physical().to_arrow(true))
+                .map(|dt| dt.to_physical().to_arrow(PlFlavor::highest()))
                 .collect::<Vec<_>>()
         });
 

@@ -1384,7 +1384,7 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self, *, future: bool = False) -> pa.Table:
+    def to_arrow(self, *, future: bool | int = False) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
@@ -1403,6 +1403,9 @@ class DataFrame:
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
+            Setting this to an integer will use a specific version
+            of Polars' internal data structures.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -1419,7 +1422,7 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        if future:
+        if future is True:
             issue_unstable_warning(
                 "The `future` parameter of `DataFrame.to_arrow` is considered unstable."
             )
@@ -3297,7 +3300,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        future: bool | int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3306,7 +3309,7 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        future: bool | int | None = None,
     ) -> None: ...
 
     def write_ipc(
@@ -3314,7 +3317,7 @@ class DataFrame:
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        future: bool | int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3335,6 +3338,9 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
+
+            Setting this to an integer will use a specific version
+            of Polars' internal data structures.
 
         Examples
         --------
@@ -3359,7 +3365,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        if future:
+        if future is True:
             issue_unstable_warning(
                 "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
             )
@@ -3375,7 +3381,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        future: bool | int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3384,7 +3390,7 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        future: bool | int | None = None,
     ) -> None: ...
 
     def write_ipc_stream(
@@ -3392,7 +3398,7 @@ class DataFrame:
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        future: bool | int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC record batch stream.
@@ -3413,6 +3419,9 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
+
+            Setting this to an integer will use a specific version
+            of Polars' internal data structures.
 
         Examples
         --------
@@ -3437,7 +3446,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        if future:
+        if future is True:
             issue_unstable_warning(
                 "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
             )

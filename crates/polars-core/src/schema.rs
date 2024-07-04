@@ -370,7 +370,7 @@ impl Schema {
     }
 
     /// Convert self to `ArrowSchema` by cloning the fields
-    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowSchema {
+    pub fn to_arrow(&self, pl_flavor: PlFlavor) -> ArrowSchema {
         let fields: Vec<_> = self
             .inner
             .iter()

@@ -3,16 +3,15 @@ use arrow::datatypes::IntegerType;
 
 use super::*;
 
-fn convert_values(arr: &Utf8ViewArray, pl_flavor: bool) -> ArrayRef {
-    if pl_flavor {
-        arr.clone().boxed()
-    } else {
-        utf8view_to_utf8::<i64>(arr).boxed()
+fn convert_values(arr: &Utf8ViewArray, pl_flavor: PlFlavor) -> ArrayRef {
+    match pl_flavor {
+        PlFlavor::Future1 => arr.clone().boxed(),
+        PlFlavor::Compatible => utf8view_to_utf8::<i64>(arr).boxed(),
     }
 }
 
 impl CategoricalChunked {
-    pub fn to_arrow(&self, pl_flavor: bool, as_i64: bool) -> ArrayRef {
+    pub fn to_arrow(&self, pl_flavor: PlFlavor, as_i64: bool) -> ArrayRef {
         if as_i64 {
             self.to_i64(pl_flavor).boxed()
         } else {
@@ -20,11 +19,10 @@ impl CategoricalChunked {
         }
     }
 
-    fn to_u32(&self, pl_flavor: bool) -> DictionaryArray<u32> {
-        let values_dtype = if pl_flavor {
-            ArrowDataType::Utf8View
-        } else {
-            ArrowDataType::LargeUtf8
+    fn to_u32(&self, pl_flavor: PlFlavor) -> DictionaryArray<u32> {
+        let values_dtype = match pl_flavor {
+            PlFlavor::Future1 => ArrowDataType::Utf8View,
+            PlFlavor::Compatible => ArrowDataType::LargeUtf8,
         };
         let keys = self.physical().rechunk();
         let keys = keys.downcast_iter().next().unwrap();
@@ -53,11 +51,10 @@ impl CategoricalChunked {
         }
     }
 
-    fn to_i64(&self, pl_flavor: bool) -> DictionaryArray<i64> {
-        let values_dtype = if pl_flavor {
-            ArrowDataType::Utf8View
-        } else {
-            ArrowDataType::LargeUtf8
+    fn to_i64(&self, pl_flavor: PlFlavor) -> DictionaryArray<i64> {
+        let values_dtype = match pl_flavor {
+            PlFlavor::Future1 => ArrowDataType::Utf8View,
+            PlFlavor::Compatible => ArrowDataType::LargeUtf8,
         };
         let keys = self.physical().rechunk();
         let keys = keys.downcast_iter().next().unwrap();

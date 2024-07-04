@@ -498,7 +498,7 @@ impl DataType {
     }
 
     /// Convert to an Arrow Field
-    pub fn to_arrow_field(&self, name: &str, pl_flavor: bool) -> ArrowField {
+    pub fn to_arrow_field(&self, name: &str, pl_flavor: PlFlavor) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => Some(BTreeMap::from([(
@@ -523,12 +523,12 @@ impl DataType {
 
     /// Convert to an Arrow data type.
     #[inline]
-    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowDataType {
+    pub fn to_arrow(&self, pl_flavor: PlFlavor) -> ArrowDataType {
         self.try_to_arrow(pl_flavor).unwrap()
     }
 
     #[inline]
-    pub fn try_to_arrow(&self, pl_flavor: bool) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, pl_flavor: PlFlavor) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -553,18 +553,16 @@ impl DataType {
                 ))
             },
             String => {
-                let dt = if pl_flavor {
-                    ArrowDataType::Utf8View
-                } else {
-                    ArrowDataType::LargeUtf8
+                let dt = match pl_flavor {
+                    PlFlavor::Future1 => ArrowDataType::Utf8View,
+                    PlFlavor::Compatible => ArrowDataType::LargeUtf8,
                 };
                 Ok(dt)
             },
             Binary => {
-                let dt = if pl_flavor {
-                    ArrowDataType::BinaryView
-                } else {
-                    ArrowDataType::LargeBinary
+                let dt = match pl_flavor {
+                    PlFlavor::Future1 => ArrowDataType::BinaryView,
+                    PlFlavor::Compatible => ArrowDataType::LargeBinary,
                 };
                 Ok(dt)
             },
@@ -592,10 +590,9 @@ impl DataType {
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
-                let values = if pl_flavor {
-                    ArrowDataType::Utf8View
-                } else {
-                    ArrowDataType::LargeUtf8
+                let values = match pl_flavor {
+                    PlFlavor::Future1 => ArrowDataType::Utf8View,
+                    PlFlavor::Compatible => ArrowDataType::LargeUtf8,
                 };
                 Ok(ArrowDataType::Dictionary(
                     IntegerType::UInt32,
@@ -788,4 +785,16 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
 pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
     let rev_map = RevMapping::build_local(categories);
     DataType::Enum(Some(Arc::new(rev_map)), Default::default())
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum PlFlavor {
+    Compatible,
+    Future1,
+}
+
+impl PlFlavor {
+    pub const fn highest() -> PlFlavor {
+        PlFlavor::Future1
+    }
 }

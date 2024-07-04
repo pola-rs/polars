@@ -120,7 +120,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
 pub(crate) fn schema_to_arrow_checked(
     schema: &Schema,
-    pl_flavor: bool,
+    pl_flavor: PlFlavor,
     _file_name: &str,
 ) -> PolarsResult<ArrowSchema> {
     let fields = schema.iter_fields().map(|field| {

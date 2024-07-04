@@ -145,12 +145,12 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self, future: bool) -> PyResult<PyObject> {
+    fn to_arrow(&mut self, future: PyPlFlavor) -> PyResult<PyObject> {
         self.rechunk(true);
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
 
-            interop::arrow::to_py::to_py_array(self.series.to_arrow(0, future), py, &pyarrow)
+            interop::arrow::to_py::to_py_array(self.series.to_arrow(0, future.0), py, &pyarrow)
         })
     }
 }

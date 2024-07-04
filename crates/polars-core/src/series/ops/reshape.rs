@@ -157,7 +157,8 @@ impl Series {
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
             prev_array =
-                FixedSizeListArray::new(prev_dtype.to_arrow(true), prev_array, None).boxed();
+                FixedSizeListArray::new(prev_dtype.to_arrow(PlFlavor::highest()), prev_array, None)
+                    .boxed();
         }
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
