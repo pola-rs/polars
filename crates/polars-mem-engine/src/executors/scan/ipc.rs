@@ -151,6 +151,8 @@ impl IpcExec {
 
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<DataFrame> {
+        // TODO: Better async impl that can download only the parts of the file it needs, and do it
+        // concurrently.
         use polars_io::file_cache::init_entries_from_uri_list;
 
         tokio::task::block_in_place(|| {
