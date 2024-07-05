@@ -575,12 +575,12 @@ def test_hive_partition_columns_contained_in_file(
                 df.select(projection),
             )
 
-    lf = scan_func(path, hive_partitioning=True)
+    lf = scan_func(path, hive_partitioning=True)  # type: ignore[call-arg]
     rhs = df
     assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
     assert_with_projections(lf, rhs)
 
-    lf = scan_func(
+    lf = scan_func(  # type: ignore[call-arg]
         path,
         hive_schema={"a": pl.String, "b": pl.String},
         hive_partitioning=True,
@@ -683,6 +683,6 @@ def test_projection_only_hive_parts_gives_correct_number_of_rows(
     write_func(pl.DataFrame({"x": [1, 1, 1]}), path)
 
     assert_frame_equal(
-        scan_func(path, hive_partitioning=True).select("a").collect(),
+        scan_func(path, hive_partitioning=True).select("a").collect(),  # type: ignore[call-arg]
         pl.DataFrame({"a": [3, 3, 3]}),
     )
