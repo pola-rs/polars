@@ -3383,6 +3383,7 @@ dependencies = [
  "rayon",
  "recursive",
  "slotmap",
+ "tokio",
  "version_check",
 ]
 

@@ -150,6 +150,11 @@ fn run_subgraph(
                     }
                 }
             }
+            
+            // Spawn the global task, if any.
+            if let Some(handle) = node.compute.spawn_global(scope, &execution_state) {
+                join_handles.push(handle);
+            }
 
             // Spawn a task per pipeline.
             for pipeline in 0..num_pipelines {

@@ -14,7 +14,7 @@ pub fn get_ideal_morsel_size() -> usize {
     })
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct MorselSeq(u64);
 
 impl MorselSeq {
