@@ -3347,6 +3347,9 @@ class DataFrame:
 
         if isinstance(future, Flavor):
             future = future.value  # type: ignore[assignment]
+        elif future is None:
+            # this is for backward compatibility
+            future = True
 
         if compression is None:
             compression = "uncompressed"
@@ -3416,6 +3419,9 @@ class DataFrame:
 
         if isinstance(future, Flavor):
             future = future.value  # type: ignore[assignment]
+        elif future is None:
+            # this is for backward compatibility
+            future = True
 
         if compression is None:
             compression = "uncompressed"
