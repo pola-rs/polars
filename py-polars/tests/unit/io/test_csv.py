@@ -2221,3 +2221,29 @@ a,b,c,d
 
     out = pl.scan_csv(path).select(columns).collect().columns
     assert out == columns
+
+
+@pytest.mark.write_disk()
+def test_write_csv_to_dangling_file_17328(
+    df_no_lists: pl.DataFrame, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df_no_lists.write_csv((tmp_path / "dangling.csv").open("w"))
+
+
+def test_write_csv_raise_on_non_utf8_17328(
+    df_no_lists: pl.DataFrame, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    with pytest.raises(InvalidOperationError, match="file encoding is not UTF-8"):
+        df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
+
+
+@pytest.mark.write_disk()
+def test_write_csv_appending_17328(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    with (tmp_path / "append.csv").open("w") as f:
+        f.write("# test\n")
+        pl.DataFrame({"col": ["value"]}).write_csv(f)
+    with (tmp_path / "append.csv").open("r") as f:
+        assert f.read() == "# test\ncol\nvalue\n"
