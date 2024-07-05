@@ -231,6 +231,8 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         let hive_partition_columns = self.hive_partition_columns.take();
 
+        // In case only hive columns are projected, the df would be empty, but we need the row count
+        // of the file in order to project the correct number of rows for the hive columns.
         let (mut df, row_count) = (|| {
             if self
                 .projection

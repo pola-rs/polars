@@ -154,14 +154,14 @@ impl IpcExec {
         use polars_io::file_cache::init_entries_from_uri_list;
 
         tokio::task::block_in_place(|| {
-            let cache_entries = Arc::<[_]>::from(init_entries_from_uri_list(
+            let cache_entries = init_entries_from_uri_list(
                 self.paths
                     .iter()
                     .map(|x| Arc::from(x.to_str().unwrap()))
                     .collect::<Vec<_>>()
                     .as_slice(),
                 self.cloud_options.as_ref(),
-            )?);
+            )?;
 
             self.read_impl(move |i| cache_entries[i].try_open_check_latest())
         })
