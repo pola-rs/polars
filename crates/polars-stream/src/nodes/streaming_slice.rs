@@ -122,8 +122,9 @@ impl ComputeNode for StreamingSliceNode {
         assert!(recv.len() == 1 && send.len() == 1);
         let mut recv = recv[0].take().unwrap();
         let mut send = send[0].take().unwrap();
-        let (mut inserter, mut distr_recv) = self.per_pipeline_resources.lock()[pipeline].take().unwrap();
-        
+        let (mut inserter, mut distr_recv) =
+            self.per_pipeline_resources.lock()[pipeline].take().unwrap();
+
         let insert_join = scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 if inserter.insert(morsel).await.is_err() {
@@ -133,14 +134,14 @@ impl ComputeNode for StreamingSliceNode {
 
             PolarsResult::Ok(())
         });
-        
+
         scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = distr_recv.recv().await {
                 if send.send(morsel).await.is_err() {
                     break;
                 }
             }
-            
+
             insert_join.await?;
             Ok(())
         })

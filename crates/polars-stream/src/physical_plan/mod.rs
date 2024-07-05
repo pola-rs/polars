@@ -33,7 +33,7 @@ pub enum PhysNode {
         extend_original: bool,
         output_schema: Arc<Schema>,
     },
-    
+
     StreamingSlice {
         input: PhysNodeKey,
         offset: usize,

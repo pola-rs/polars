@@ -59,12 +59,16 @@ fn to_graph_rec<'a>(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
             [],
         ),
-        
-        StreamingSlice { input, offset, length } => {
+
+        StreamingSlice {
+            input,
+            offset,
+            length,
+        } => {
             let input_key = to_graph_rec(*input, ctx)?;
             ctx.graph.add_node(
                 nodes::streaming_slice::StreamingSliceNode::new(*offset, *length),
-                [input_key]
+                [input_key],
             )
         },
 

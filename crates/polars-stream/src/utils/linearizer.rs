@@ -49,7 +49,7 @@ impl Linearizer {
         // always ensure we have the morsel with the lowest global sequence id.
         let poll_range = match self.poll_state {
             PollState::NoPoll => 0..0,
-            PollState::Poll(i) => i..i+1,
+            PollState::Poll(i) => i..i + 1,
             PollState::PollAll => 0..self.receivers.len(),
         };
         for recv_idx in poll_range {
@@ -57,10 +57,11 @@ impl Linearizer {
             // stream is done and thus we no longer need to consider it for the
             // global order.
             if let Some(morsel) = self.receivers[recv_idx].recv().await {
-                self.heap.push(Priority(Reverse(morsel.seq()), (recv_idx, morsel)));
+                self.heap
+                    .push(Priority(Reverse(morsel.seq()), (recv_idx, morsel)));
             }
         }
-        
+
         if let Some(first_in_merged_streams) = self.heap.pop() {
             let (receiver_idx, morsel) = first_in_merged_streams.1;
             self.poll_state = PollState::Poll(receiver_idx);

@@ -62,13 +62,17 @@ pub fn lower_ir(
                 extend_original: true,
             }))
         },
-        
+
         IR::Slice { input, offset, len } => {
             if *offset >= 0 {
                 let offset = *offset as usize;
                 let length = *len as usize;
                 let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
-                Ok(phys_sm.insert(PhysNode::StreamingSlice { input, offset, length }))
+                Ok(phys_sm.insert(PhysNode::StreamingSlice {
+                    input,
+                    offset,
+                    length,
+                }))
             } else {
                 todo!()
             }

@@ -49,7 +49,7 @@ pub trait ComputeNode: Send + Sync {
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
         false
     }
-    
+
     /// Opportunity to spawn task(s) without being beholden to a specific
     /// pipeline. Called once per execution phase.
     fn spawn_global<'env, 's>(
