@@ -55,11 +55,11 @@ pub enum PolarsError {
     ComputeError(ErrString),
     #[error("duplicate: {0}")]
     Duplicate(ErrString),
-    #[error("invalid operation: {0}")]
+    #[error("{0}")]
     InvalidOperation(ErrString),
     #[error("{}", match msg {
-     Some(msg) => format!("{}", msg),
-     None => format!("{}", error)
+        Some(msg) => format!("{}", msg),
+        None => format!("{}", error)
     })]
     IO {
         error: Arc<io::Error>,

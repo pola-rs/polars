@@ -1,6 +1,6 @@
 mod dsl;
 
-use polars_core::error::{polars_bail, PolarsResult};
+use polars_core::error::{polars_err, PolarsResult};
 
 use crate::dsl::Expr;
 use crate::plans::{DslFunction, DslPlan, FileScan, FunctionNode};
@@ -14,21 +14,17 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 function: DslFunction::FunctionNode(function),
                 ..
             } => match function {
-                FunctionNode::Opaque { .. } => {
-                    polars_bail!(InvalidOperation: "opaque function not eligible for cloud")
-                },
+                FunctionNode::Opaque { .. } => return ineligible_error("contains opaque function"),
                 #[cfg(feature = "python")]
                 FunctionNode::OpaquePython { .. } => {
-                    polars_bail!(InvalidOperation: "python function not eligible for cloud")
+                    return ineligible_error("contains Python function")
                 },
                 _ => {},
             },
             DslPlan::Scan {
                 scan_type: FileScan::Anonymous { .. },
                 ..
-            } => {
-                polars_bail!(InvalidOperation: "anonymous scan not eligible for cloud")
-            },
+            } => return ineligible_error("contains anonymous scan"),
             plan => {
                 plan.get_expr(&mut expr_stack);
 
@@ -36,7 +32,7 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     for expr_node in expr.into_iter() {
                         match expr_node {
                             Expr::AnonymousFunction { .. } => {
-                                todo!()
+                                return ineligible_error("contains anonymous function")
                             },
                             _ => (),
                         }
@@ -46,4 +42,11 @@ pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
         }
     }
     Ok(())
+}
+
+fn ineligible_error(message: &str) -> PolarsResult<()> {
+    Err(polars_err!(
+        InvalidOperation:
+        "logical plan ineligible for execution on Polars Cloud: {message}"
+    ))
 }

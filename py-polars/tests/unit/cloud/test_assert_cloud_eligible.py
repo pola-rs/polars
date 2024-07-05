@@ -23,5 +23,7 @@ def test_assert_cloud_eligible_pass(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_assert_cloud_eligible_fail(lf: pl.LazyFrame) -> None:
-    with pytest.raises(AssertionError):
+    with pytest.raises(
+        AssertionError, match="logical plan ineligible for execution on Polars Cloud"
+    ):
         assert_cloud_eligible(lf)
