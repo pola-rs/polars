@@ -244,6 +244,52 @@ pub(crate) fn det_join_schema(
         // the schema will never change.
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
+        JoinType::Right => {
+            // Get join names.
+            let mut arena = Arena::with_capacity(8);
+            let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
+            for e in left_on {
+                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                join_on_left.insert(field.name);
+            }
+
+            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            for e in right_on {
+                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                join_on_right.insert(field.name);
+            }
+
+            // init
+            let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
+            let should_coalesce = options.args.should_coalesce();
+
+            // Prepare left table schema
+            if !should_coalesce {
+                for (name, dtype) in schema_left.iter() {
+                    new_schema.with_column(name.clone(), dtype.clone());
+                }
+            } else {
+                for (name, dtype) in schema_left.iter() {
+                    if !join_on_left.contains(name) {
+                        new_schema.with_column(name.clone(), dtype.clone());
+                    }
+                }
+            }
+
+            // Prepare right table schema
+            for (name, dtype) in schema_right.iter() {
+                {
+                    let left_is_removed = join_on_left.contains(name.as_str()) && should_coalesce;
+                    if schema_left.contains(name.as_str()) && !left_is_removed {
+                        let new_name = format_smartstring!("{}{}", name, options.args.suffix());
+                        new_schema.with_column(new_name, dtype.clone());
+                    } else {
+                        new_schema.with_column(name.clone(), dtype.clone());
+                    }
+                }
+            }
+            Ok(Arc::new(new_schema))
+        },
         _how => {
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
@@ -252,17 +298,10 @@ pub(crate) fn det_join_schema(
             }
             let should_coalesce = options.args.should_coalesce();
 
-            // make sure that expression are assigned to the schema
-            // an expression can have an alias, and change a dtype.
-            // we only do this for the left hand side as the right hand side
-            // is dropped.
             let mut arena = Arena::with_capacity(8);
-            for e in left_on {
-                let field = e.to_field_amortized(schema_left, Context::Default, &mut arena)?;
-                new_schema.with_column(field.name, field.dtype);
-                arena.clear();
-            }
-            // Except in asof joins. Asof joins are not equi-joins
+
+            // Handles coalescing of asof-joins.
+            // Asof joins are not equi-joins
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
@@ -284,7 +323,6 @@ pub(crate) fn det_join_schema(
                     }
                 }
             }
-
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
                 let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;

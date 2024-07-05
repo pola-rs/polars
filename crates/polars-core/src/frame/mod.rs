@@ -1122,6 +1122,9 @@ impl DataFrame {
 
     /// Drop columns that are in `names` without allocating a [`HashSet`](std::collections::HashSet).
     pub fn drop_many_amortized(&self, names: &PlHashSet<&str>) -> DataFrame {
+        if names.is_empty() {
+            return self.clone();
+        }
         let mut new_cols = Vec::with_capacity(self.columns.len().saturating_sub(names.len()));
         self.columns.iter().for_each(|s| {
             if !names.contains(&s.name()) {

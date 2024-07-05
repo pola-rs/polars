@@ -4060,6 +4060,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
+            * *right*
+                Returns all rows from the right table, and the matched rows from the
+                left table
             * *full*
                  Returns all rows when there is a match in either left or right table
             * *cross*
