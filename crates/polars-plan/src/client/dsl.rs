@@ -29,7 +29,9 @@ impl DslPlan {
                 scratch.extend(contexts);
             },
             IR { dsl, .. } => scratch.push(dsl),
-            Scan { .. } | DataFrameScan { .. } | PythonScan { .. } => (),
+            Scan { .. } | DataFrameScan { .. } => (),
+            #[cfg(feature = "python")]
+            PythonScan { .. } => (),
         }
     }
 
@@ -60,8 +62,7 @@ impl DslPlan {
                 scratch.extend(left_on);
                 scratch.extend(right_on);
             },
-            PythonScan { .. }
-            | Cache { .. }
+            Cache { .. }
             | Distinct { .. }
             | Slice { .. }
             | MapFunction { .. }
@@ -70,6 +71,8 @@ impl DslPlan {
             | ExtContext { .. }
             | Sink { .. }
             | IR { .. } => (),
+            #[cfg(feature = "python")]
+            PythonScan { .. } => (),
         }
     }
 }

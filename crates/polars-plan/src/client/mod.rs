@@ -5,6 +5,7 @@ use polars_core::error::{polars_bail, PolarsResult};
 use crate::dsl::Expr;
 use crate::plans::{DslFunction, DslPlan, FileScan, FunctionNode};
 
+/// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     let mut expr_stack = vec![];
     for plan_node in dsl.into_iter() {
