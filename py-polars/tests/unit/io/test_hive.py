@@ -336,6 +336,7 @@ def test_read_parquet_hive_schema_with_pyarrow() -> None:
     ("scan_func", "write_func"),
     [
         (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
     ],
 )
 @pytest.mark.parametrize(
@@ -368,7 +369,10 @@ def test_hive_partition_directory_scan(
     hive_schema = df.lazy().select("a", "b").collect_schema()
 
     scan = scan_func
-    scan = partial(scan_func, hive_schema=hive_schema, glob=glob)
+    scan = partial(scan_func, hive_schema=hive_schema)
+
+    if scan_func is pl.scan_parquet:
+        scan = partial(scan, glob=glob)
 
     out = scan(
         tmp_path,
@@ -529,10 +533,20 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
     )
 
 
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+    ],
+)
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("projection_pushdown", [True, False])
 def test_hive_partition_columns_contained_in_file(
-    tmp_path: Path, projection_pushdown: bool
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    projection_pushdown: bool,
 ) -> None:
     path = tmp_path / "a=1/b=2/data.bin"
     path.parent.mkdir(exist_ok=True, parents=True)
@@ -540,7 +554,7 @@ def test_hive_partition_columns_contained_in_file(
         {"x": 1, "a": 1, "b": 2, "y": 1},
         schema={"x": pl.Int32, "a": pl.Int8, "b": pl.Int16, "y": pl.Int32},
     )
-    df.write_parquet(path)
+    write_func(df, path)
 
     def assert_with_projections(lf: pl.LazyFrame, df: pl.DataFrame) -> None:
         for projection in [
@@ -561,12 +575,12 @@ def test_hive_partition_columns_contained_in_file(
                 df.select(projection),
             )
 
-    lf = pl.scan_parquet(path, hive_partitioning=True)
+    lf = scan_func(path, hive_partitioning=True)  # type: ignore[call-arg]
     rhs = df
     assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
     assert_with_projections(lf, rhs)
 
-    lf = pl.scan_parquet(
+    lf = scan_func(  # type: ignore[call-arg]
         path,
         hive_schema={"a": pl.String, "b": pl.String},
         hive_partitioning=True,
@@ -646,3 +660,29 @@ def test_hive_partition_dates(tmp_path: Path, monkeypatch: Any) -> None:
             lf.collect(),
             df.with_columns(pl.col("date1", "date2").cast(pl.String)),
         )
+
+
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+    ],
+)
+@pytest.mark.write_disk()
+def test_projection_only_hive_parts_gives_correct_number_of_rows(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+) -> None:
+    # Check the number of rows projected when projecting only hive parts, which
+    # should be the same as the number of rows in the file.
+    path = tmp_path / "a=3/data.bin"
+    path.parent.mkdir(exist_ok=True, parents=True)
+
+    write_func(pl.DataFrame({"x": [1, 1, 1]}), path)
+
+    assert_frame_equal(
+        scan_func(path, hive_partitioning=True).select("a").collect(),  # type: ignore[call-arg]
+        pl.DataFrame({"a": [3, 3, 3]}),
+    )

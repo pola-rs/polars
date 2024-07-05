@@ -1,29 +1,27 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::RwLock;
 
+use hive::HivePartitions;
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::apply_predicate;
 use polars_io::utils::is_cloud_url;
-use polars_io::RowIndex;
 use rayon::prelude::*;
 
 use super::*;
 
 pub struct IpcExec {
     pub(crate) paths: Arc<[PathBuf]>,
-    pub(crate) schema: SchemaRef,
+    pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
+    pub(crate) hive_parts: Option<Arc<[HivePartitions]>>,
     pub(crate) cloud_options: Option<CloudOptions>,
-    pub(crate) metadata: Option<arrow::io::ipc::read::FileMetadata>,
 }
 
 impl IpcExec {
-    fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
+    fn read(&mut self) -> PolarsResult<DataFrame> {
         let is_cloud = self.paths.iter().any(is_cloud_url);
         let force_async = config::force_async();
 
@@ -35,12 +33,11 @@ impl IpcExec {
 
             #[cfg(feature = "cloud")]
             {
-                if force_async && verbose {
+                if force_async && config::verbose() {
                     eprintln!("ASYNC READING FORCED");
                 }
 
-                polars_io::pl_async::get_runtime()
-                    .block_on_potential_spawn(self.read_async(verbose))?
+                polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             }
         } else {
             self.read_sync()?
@@ -53,7 +50,10 @@ impl IpcExec {
         Ok(out)
     }
 
-    fn read_sync(&mut self) -> PolarsResult<DataFrame> {
+    fn read_impl<F: Fn(usize) -> PolarsResult<std::fs::File> + Send + Sync>(
+        &mut self,
+        path_idx_to_file: F,
+    ) -> PolarsResult<DataFrame> {
         if config::verbose() {
             eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
@@ -65,209 +65,109 @@ impl IpcExec {
 
         let projection = materialize_projection(
             self.file_options.with_columns.as_deref(),
-            &self.schema,
+            &self.file_info.schema,
             None,
             self.file_options.row_index.is_some(),
         );
 
-        let n_rows = self
-            .file_options
-            .n_rows
-            .map(|n| IdxSize::try_from(n).unwrap());
+        let read_path = |path_index: usize, n_rows: Option<usize>| {
+            IpcReader::new(path_idx_to_file(path_index)?)
+                .with_n_rows(n_rows)
+                .with_row_index(self.file_options.row_index.clone())
+                .with_projection(projection.clone())
+                .with_hive_partition_columns(
+                    self.hive_parts
+                        .as_ref()
+                        .map(|x| x[path_index].materialize_partition_columns()),
+                )
+                .memory_mapped(
+                    self.options
+                        .memory_map
+                        .then(|| self.paths[path_index].clone()),
+                )
+                .finish()
+        };
 
-        let row_limit = n_rows.unwrap_or(IdxSize::MAX);
+        let mut dfs = if let Some(mut n_rows) = self.file_options.n_rows {
+            let mut out = Vec::with_capacity(self.paths.len());
 
-        // Used to determine the next file to open. This guarantees the order.
-        let path_index = AtomicUsize::new(0);
-        let row_counter = RwLock::new(ConsecutiveCountState::new(self.paths.len()));
+            for i in 0..self.paths.len() {
+                let df = read_path(i, Some(n_rows))?;
+                let df_height = df.height();
+                out.push(df);
 
-        let index_and_dfs = (0..self.paths.len())
-            .into_par_iter()
-            .map(|_| -> PolarsResult<(usize, DataFrame)> {
-                let index = path_index.fetch_add(1, Ordering::Relaxed);
-                let path = &self.paths[index];
-
-                let already_read_in_sequence = row_counter.read().unwrap().sum();
-                if already_read_in_sequence >= row_limit {
-                    return Ok((index, Default::default()));
+                assert!(
+                    df_height <= n_rows,
+                    "impl error: got more rows than expected"
+                );
+                if df_height == n_rows {
+                    break;
                 }
+                n_rows -= df_height;
+            }
 
-                let file = std::fs::File::open(path)?;
+            out
+        } else {
+            POOL.install(|| {
+                (0..self.paths.len())
+                    .into_par_iter()
+                    .map(|i| read_path(i, None))
+                    .collect::<PolarsResult<Vec<_>>>()
+            })?
+        };
 
-                let memory_mapped = if self.options.memory_map {
-                    Some(path.clone())
-                } else {
-                    None
-                };
+        if let Some(ref row_index) = self.file_options.row_index {
+            let mut offset = 0;
+            for df in &mut dfs {
+                df.apply(&row_index.name, |series| series.idx().unwrap() + offset)
+                    .unwrap();
+                offset += df.height();
+            }
+        };
 
-                let df = IpcReader::new(file)
-                    .with_n_rows(
-                        // NOTE: If there is any file that by itself exceeds the
-                        // row limit, passing the total row limit to each
-                        // individual reader helps.
-                        n_rows.map(|n| {
-                            n.saturating_sub(already_read_in_sequence)
-                                .try_into()
-                                .unwrap()
-                        }),
-                    )
-                    .with_row_index(self.file_options.row_index.clone())
-                    .with_projection(projection.clone())
-                    .memory_mapped(memory_mapped)
-                    .finish()?;
+        let dfs = if let Some(predicate) = self.predicate.clone() {
+            let predicate = phys_expr_to_io_expr(predicate);
+            let predicate = Some(predicate.as_ref());
 
-                row_counter
-                    .write()
-                    .unwrap()
-                    .write(index, df.height().try_into().unwrap());
+            POOL.install(|| {
+                dfs.into_par_iter()
+                    .map(|mut df| {
+                        apply_predicate(&mut df, predicate, true)?;
+                        Ok(df)
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()
+            })?
+        } else {
+            dfs
+        };
 
-                Ok((index, df))
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+        accumulate_dataframes_vertical(dfs)
+    }
 
-        finish_index_and_dfs(
-            index_and_dfs,
-            row_counter.into_inner().unwrap(),
-            self.file_options.row_index.as_ref(),
-            row_limit,
-            self.predicate.as_ref(),
-        )
+    fn read_sync(&mut self) -> PolarsResult<DataFrame> {
+        let paths = self.paths.clone();
+        self.read_impl(move |i| std::fs::File::open(&paths[i]).map_err(Into::into))
     }
 
     #[cfg(feature = "cloud")]
-    async fn read_async(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
-        use futures::stream::{self, StreamExt};
-        use futures::TryStreamExt;
+    async fn read_async(&mut self) -> PolarsResult<DataFrame> {
+        // TODO: Better async impl that can download only the parts of the file it needs, and do it
+        // concurrently.
+        use polars_io::file_cache::init_entries_from_uri_list;
 
-        /// See https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough-with-async-block/83427/3.
-        trait AssertSend {
-            fn assert_send<R>(self) -> impl Send + stream::Stream<Item = R>
-            where
-                Self: Send + stream::Stream<Item = R> + Sized,
-            {
-                self
-            }
-        }
+        tokio::task::block_in_place(|| {
+            let cache_entries = init_entries_from_uri_list(
+                self.paths
+                    .iter()
+                    .map(|x| Arc::from(x.to_str().unwrap()))
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                self.cloud_options.as_ref(),
+            )?;
 
-        impl<T: Send + stream::Stream + Sized> AssertSend for T {}
-
-        let n_rows = self
-            .file_options
-            .n_rows
-            .map(|limit| limit.try_into().unwrap());
-
-        let row_limit = n_rows.unwrap_or(IdxSize::MAX);
-
-        let row_counter = RwLock::new(ConsecutiveCountState::new(self.paths.len()));
-
-        let index_and_dfs = stream::iter(&*self.paths)
-            .enumerate()
-            .map(|(index, path)| {
-                let this = &*self;
-                let row_counter = &row_counter;
-                async move {
-                    let already_read_in_sequence = row_counter.read().unwrap().sum();
-                    if already_read_in_sequence >= row_limit {
-                        return Ok((index, Default::default()));
-                    }
-
-                    let reader = IpcReaderAsync::from_uri(
-                        path.to_str().unwrap(),
-                        this.cloud_options.as_ref(),
-                    )
-                    .await?;
-                    let df = reader
-                        .data(
-                            this.metadata.as_ref(),
-                            IpcReadOptions::default()
-                                .with_row_limit(
-                                    // NOTE: If there is any file that by itself
-                                    // exceeds the row limit, passing the total
-                                    // row limit to each individual reader
-                                    // helps.
-                                    n_rows.map(|n| {
-                                        n.saturating_sub(already_read_in_sequence)
-                                            .try_into()
-                                            .unwrap()
-                                    }),
-                                )
-                                .with_row_index(this.file_options.row_index.clone())
-                                .with_projection(this.file_options.with_columns.as_ref().cloned()),
-                            verbose,
-                        )
-                        .await?;
-
-                    row_counter
-                        .write()
-                        .unwrap()
-                        .write(index, df.height().try_into().unwrap());
-
-                    PolarsResult::Ok((index, df))
-                }
-            })
-            .assert_send()
-            .buffer_unordered(config::get_file_prefetch_size())
-            .try_collect::<Vec<_>>()
-            .await?;
-
-        finish_index_and_dfs(
-            index_and_dfs,
-            row_counter.into_inner().unwrap(),
-            self.file_options.row_index.as_ref(),
-            row_limit,
-            self.predicate.as_ref(),
-        )
+            self.read_impl(move |i| cache_entries[i].try_open_check_latest())
+        })
     }
-}
-
-fn finish_index_and_dfs(
-    mut index_and_dfs: Vec<(usize, DataFrame)>,
-    row_counter: ConsecutiveCountState,
-    row_index: Option<&RowIndex>,
-    row_limit: IdxSize,
-    predicate: Option<&Arc<dyn PhysicalExpr>>,
-) -> PolarsResult<DataFrame> {
-    index_and_dfs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-    debug_assert!(
-        index_and_dfs.iter().enumerate().all(|(a, &(b, _))| a == b),
-        "expected dataframe indices in order from 0 to len"
-    );
-
-    debug_assert_eq!(index_and_dfs.len(), row_counter.len());
-    let mut offset = 0;
-    let mut df = accumulate_dataframes_vertical(
-        index_and_dfs
-            .into_iter()
-            .zip(row_counter.counts())
-            .filter_map(|((_, mut df), count)| {
-                let count = count?;
-
-                let remaining = row_limit.checked_sub(offset)?;
-
-                // If necessary, correct having read too much from a single file.
-                if remaining < count {
-                    df = df.slice(0, remaining.try_into().unwrap());
-                }
-
-                // If necessary, correct row indices now that we know the offset.
-                if let Some(row_index) = row_index {
-                    df.apply(&row_index.name, |series| {
-                        series.idx().expect("index column should be of index type") + offset
-                    })
-                    .expect("index column should exist");
-                }
-
-                offset += count;
-
-                Some(df)
-            }),
-    )?;
-
-    let predicate = predicate.cloned().map(phys_expr_to_io_expr);
-    apply_predicate(&mut df, predicate.as_deref(), true)?;
-
-    Ok(df)
 }
 
 impl Executor for IpcExec {
@@ -283,6 +183,6 @@ impl Executor for IpcExec {
             Cow::Borrowed("")
         };
 
-        state.record(|| self.read(state.verbose()), profile_name)
+        state.record(|| self.read(), profile_name)
     }
 }
