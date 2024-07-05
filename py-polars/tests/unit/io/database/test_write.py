@@ -236,7 +236,7 @@ class TestWriteDatabase:
         ):
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
 
-
+@pytest.mark.write_disk()
 def test_write_database_using_sa_session(tmp_path: str) -> None:
     df = pl.DataFrame(
         {
