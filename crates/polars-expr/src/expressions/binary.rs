@@ -14,6 +14,7 @@ pub struct BinaryExpr {
     right: Arc<dyn PhysicalExpr>,
     expr: Expr,
     has_literal: bool,
+    allow_threading: bool,
 }
 
 impl BinaryExpr {
@@ -23,6 +24,7 @@ impl BinaryExpr {
         right: Arc<dyn PhysicalExpr>,
         expr: Expr,
         has_literal: bool,
+        allow_threading: bool,
     ) -> Self {
         Self {
             left,
@@ -30,6 +32,7 @@ impl BinaryExpr {
             right,
             expr,
             has_literal,
+            allow_threading,
         }
     }
 }
@@ -175,21 +178,13 @@ impl PhysicalExpr for BinaryExpr {
         // they also saturate the thread pool by themselves, so that's fine.
         let has_window = state.has_window();
 
-        // Streaming takes care of parallelism, don't parallelize here, as it
-        // increases contention.
-        #[cfg(feature = "streaming")]
-        let in_streaming = state.in_streaming_engine();
-
-        #[cfg(not(feature = "streaming"))]
-        let in_streaming = false;
-
         let (lhs, rhs);
         if has_window {
             let mut state = state.split();
             state.remove_cache_window_flag();
             lhs = self.left.evaluate(df, &state)?;
             rhs = self.right.evaluate(df, &state)?;
-        } else if in_streaming || self.has_literal {
+        } else if !self.allow_threading || self.has_literal {
             // Literals are free, don't pay par cost.
             lhs = self.left.evaluate(df, state)?;
             rhs = self.right.evaluate(df, state)?;

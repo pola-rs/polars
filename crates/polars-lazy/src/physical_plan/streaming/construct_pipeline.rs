@@ -248,12 +248,11 @@ fn get_pipeline_node(
     IR::MapFunction {
         function: FunctionNode::Pipeline {
             function: Arc::new(Mutex::new(move |_df: DataFrame| {
-                let mut state = ExecutionState::new();
+                let state = ExecutionState::new();
                 if state.verbose() {
                     eprintln!("RUN STREAMING PIPELINE");
                     eprintln!("{:?}", &pipelines)
                 }
-                state.set_in_streaming_engine();
                 execute_pipeline(state, std::mem::take(&mut pipelines))
             })),
             schema,

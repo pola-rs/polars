@@ -321,6 +321,7 @@ fn create_physical_expr_inner(
                 rhs,
                 node_to_expr(expression, expr_arena),
                 state.local.has_lit,
+                state.allow_threading,
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -516,7 +517,7 @@ fn create_physical_expr_inner(
                 function.clone(),
                 node_to_expr(expression, expr_arena),
                 *options,
-                true,
+                state.allow_threading,
                 schema.cloned(),
                 output_dtype,
             )))
@@ -554,7 +555,7 @@ fn create_physical_expr_inner(
                 function.clone().into(),
                 node_to_expr(expression, expr_arena),
                 *options,
-                true,
+                state.allow_threading,
                 schema.cloned(),
                 output_dtype,
             )))
