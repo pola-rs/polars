@@ -65,6 +65,7 @@ nav:
       - user-guide/io/parquet.md
       - user-guide/io/json.md
       - user-guide/io/multiple.md
+      - user-guide/io/hive.md
       - user-guide/io/database.md
       - user-guide/io/cloud-storage.md
       - user-guide/io/bigquery.md
