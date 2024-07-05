@@ -3802,12 +3802,15 @@ class DataFrame:
             )
             # note: the catalog (database) should be a part of the connection string
             from sqlalchemy.engine import create_engine
+            from sqlalchemy.orm import Session
 
-            engine_sa = (
-                create_engine(connection)
-                if isinstance(connection, str)
-                else connection.engine  # type: ignore[union-attr]
-            )
+            if isinstance(connection, str):
+                engine_sa = create_engine(connection)
+            elif isinstance(connection, Session):
+                engine_sa = connection.connection().engine
+            else:
+                engine_sa = connection.engine  # type: ignore[union-attr]
+
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
