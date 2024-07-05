@@ -13,6 +13,8 @@ mod build {
 mod allocator;
 #[cfg(feature = "csv")]
 mod batched_csv;
+#[cfg(feature = "polars_cloud")]
+mod cloud;
 mod conversion;
 mod dataframe;
 mod datatypes;
@@ -401,6 +403,11 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         py.get_type_bound::<pyo3::panic::PanicException>(),
     )
     .unwrap();
+
+    // Cloud
+    #[cfg(feature = "polars_cloud")]
+    m.add_wrapped(wrap_pyfunction!(cloud::assert_cloud_eligible))
+        .unwrap();
 
     // Build info
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
