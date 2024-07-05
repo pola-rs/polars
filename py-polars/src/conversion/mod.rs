@@ -775,6 +775,7 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
+            "right" => JoinType::Right,
             "full" => JoinType::Full,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,

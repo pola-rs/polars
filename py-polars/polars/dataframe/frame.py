@@ -6643,7 +6643,7 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'full', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
             * *inner*
@@ -6651,6 +6651,9 @@ class DataFrame:
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
+            * *right*
+                Returns all rows from the right table, and the matched rows from the
+                left table
             * *full*
                  Returns all rows when there is a match in either left or right table
             * *cross*

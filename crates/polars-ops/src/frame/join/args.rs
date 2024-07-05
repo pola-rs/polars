@@ -49,7 +49,7 @@ impl JoinCoalesce {
         use JoinCoalesce::*;
         use JoinType::*;
         match join_type {
-            Left | Inner => {
+            Left | Inner | Right => {
                 matches!(self, JoinSpecific | CoalesceColumns)
             },
             Full { .. } => {
@@ -109,6 +109,7 @@ impl JoinArgs {
 pub enum JoinType {
     Inner,
     Left,
+    Right,
     Full,
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
@@ -130,6 +131,7 @@ impl Display for JoinType {
         use JoinType::*;
         let val = match self {
             Left => "LEFT",
+            Right => "RIGHT",
             Inner => "INNER",
             Full { .. } => "FULL",
             #[cfg(feature = "asof_join")]
