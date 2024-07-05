@@ -32,7 +32,7 @@ impl BinaryExpr {
             right,
             expr,
             has_literal,
-            allow_threading
+            allow_threading,
         }
     }
 }
