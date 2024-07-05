@@ -1385,7 +1385,7 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self, *, flavor: Flavor = Flavor.Compatible) -> pa.Table:
+    def to_arrow(self, *, future: Flavor = Flavor.Compatible) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
@@ -1396,7 +1396,7 @@ class DataFrame:
 
         Parameters
         ----------
-        flavor
+        future
             Use a specific version of Polars' internal data structures.
 
         Examples
@@ -1415,10 +1415,10 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        if isinstance(flavor, Flavor):
-            flavor = flavor.value  # type: ignore[assignment]
+        if isinstance(future, Flavor):
+            future = future.value  # type: ignore[assignment]
 
-        record_batches = self._df.to_arrow(flavor)
+        record_batches = self._df.to_arrow(future)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3291,7 +3291,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        flavor: Flavor = Flavor.Future1,
+        future: Flavor = Flavor.Future1,
     ) -> BytesIO: ...
 
     @overload
@@ -3300,7 +3300,7 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        flavor: Flavor = Flavor.Future1,
+        future: Flavor = Flavor.Future1,
     ) -> None: ...
 
     def write_ipc(
@@ -3308,7 +3308,7 @@ class DataFrame:
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        flavor: Flavor = Flavor.Future1,
+        future: Flavor = Flavor.Future1,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3322,7 +3322,7 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        flavor
+        future
             Use a specific version of Polars' internal data structures.
 
         Examples
@@ -3345,13 +3345,13 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
-        if isinstance(flavor, Flavor):
-            flavor = flavor.value  # type: ignore[assignment]
+        if isinstance(future, Flavor):
+            future = future.value  # type: ignore[assignment]
 
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression, flavor)
+        self._df.write_ipc(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3360,7 +3360,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        flavor: Flavor = Flavor.Future1,
+        future: Flavor = Flavor.Future1,
     ) -> BytesIO: ...
 
     @overload
@@ -3369,7 +3369,7 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        flavor: Flavor = Flavor.Future1,
+        future: Flavor = Flavor.Future1,
     ) -> None: ...
 
     def write_ipc_stream(
@@ -3377,7 +3377,7 @@ class DataFrame:
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        flavor: Flavor = Flavor.Future1,
+        future: Flavor = Flavor.Future1,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC record batch stream.
@@ -3391,7 +3391,7 @@ class DataFrame:
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        flavor
+        future
             Use a specific version of Polars' internal data structures.
 
         Examples
@@ -3414,13 +3414,13 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
-        if isinstance(flavor, Flavor):
-            flavor = flavor.value  # type: ignore[assignment]
+        if isinstance(future, Flavor):
+            future = future.value  # type: ignore[assignment]
 
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc_stream(file, compression, flavor)
+        self._df.write_ipc_stream(file, compression, future)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(

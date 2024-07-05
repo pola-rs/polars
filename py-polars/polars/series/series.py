@@ -4343,7 +4343,7 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    def to_arrow(self, *, flavor: Flavor = Flavor.Compatible) -> pa.Array:
+    def to_arrow(self, *, future: Flavor = Flavor.Compatible) -> pa.Array:
         """
         Return the underlying Arrow array.
 
@@ -4351,7 +4351,7 @@ class Series:
 
         Parameters
         ----------
-        flavor
+        future
             Use a specific version of Polars' internal data structures.
 
         Examples
@@ -4366,9 +4366,9 @@ class Series:
           3
         ]
         """
-        if isinstance(flavor, Flavor):
-            flavor = flavor.value  # type: ignore[assignment]
-        return self._s.to_arrow(flavor)
+        if isinstance(future, Flavor):
+            future = future.value  # type: ignore[assignment]
+        return self._s.to_arrow(future)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any
