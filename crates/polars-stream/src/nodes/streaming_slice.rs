@@ -72,8 +72,7 @@ impl ComputeNode for StreamingSliceNode {
         {
             let per_pipeline_resources = &mut *self.per_pipeline_resources.lock();
             per_pipeline_resources.clear();
-            per_pipeline_resources
-                .extend(inserters.into_iter().zip(receivers).map(Some));
+            per_pipeline_resources.extend(inserters.into_iter().zip(receivers).map(Some));
         }
 
         Some(scope.spawn_task(TaskPriority::High, async move {
