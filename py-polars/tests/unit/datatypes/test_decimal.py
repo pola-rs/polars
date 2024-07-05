@@ -472,3 +472,10 @@ def test_decimal_supertype() -> None:
         pl.col("column_0").cast(pl.Decimal(scale=6)) * 1
     )
     assert q.collect().dtypes[0].is_decimal()
+
+
+def test_decimal_raise_oob_precision() -> None:
+    df = pl.DataFrame({"a": [1.0]})
+    # max precision is 38.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(b=pl.col("a").cast(pl.Decimal(76, 38)))

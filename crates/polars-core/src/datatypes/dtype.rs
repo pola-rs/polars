@@ -55,6 +55,7 @@ pub enum DataType {
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.
     /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
+    /// Meaning max precision is 38.
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
@@ -542,11 +543,15 @@ impl DataType {
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
-            // note: what else can we do here other than setting precision to 38?..
-            Decimal(precision, scale) => Ok(ArrowDataType::Decimal(
-                (*precision).unwrap_or(38),
-                scale.unwrap_or(0), // and what else can we do here?
-            )),
+            Decimal(precision, scale) => {
+                let precision = (*precision).unwrap_or(38);
+                polars_ensure!(precision <= 38 && precision > 0, InvalidOperation: "decimal precision should be <= 38 & >= 1");
+
+                Ok(ArrowDataType::Decimal(
+                    precision,
+                    scale.unwrap_or(0), // and what else can we do here?
+                ))
+            },
             String => {
                 let dt = if pl_flavor {
                     ArrowDataType::Utf8View
