@@ -25,6 +25,7 @@ pub struct StreamingSliceNode {
     global_state: Mutex<GlobalState>,
 
     num_pipelines: usize,
+    #[allow(clippy::type_complexity)]
     per_pipeline_resources: Mutex<Vec<Option<(Inserter, DistrReceiver<Morsel>)>>>,
 }
 
@@ -72,7 +73,7 @@ impl ComputeNode for StreamingSliceNode {
             let per_pipeline_resources = &mut *self.per_pipeline_resources.lock();
             per_pipeline_resources.clear();
             per_pipeline_resources
-                .extend(inserters.into_iter().zip(receivers.into_iter()).map(Some));
+                .extend(inserters.into_iter().zip(receivers).map(Some));
         }
 
         Some(scope.spawn_task(TaskPriority::High, async move {
