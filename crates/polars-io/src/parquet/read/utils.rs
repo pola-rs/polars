@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use polars_core::prelude::{ArrowSchema, DataFrame, Series, IDX_DTYPE};
 
-use super::read_impl::materialize_hive_partitions;
+use crate::hive::materialize_hive_partitions;
 use crate::utils::apply_projection;
 use crate::RowIndex;
 

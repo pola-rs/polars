@@ -27,6 +27,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
+    from polars._typing import SchemaDict
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -313,6 +314,9 @@ def scan_ipc(
     memory_map: bool = True,
     retries: int = 0,
     file_cache_ttl: int | None = None,
+    hive_partitioning: bool | None = None,
+    hive_schema: SchemaDict | None = None,
+    try_parse_hive_dates: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -349,6 +353,20 @@ def scan_ipc(
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+    hive_partitioning
+        Infer statistics and schema from Hive partitioned URL and use them
+        to prune reads. This is unset by default (i.e. `None`), meaning it is
+        automatically enabled when a single directory is passed, and otherwise
+        disabled.
+    hive_schema
+        The column names and data types of the columns by which the data is partitioned.
+        If set to `None` (default), the schema of the Hive partitions is inferred.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+    try_parse_hive_dates
+        Whether to try parsing hive values as date/datetime types.
 
     """
     if isinstance(source, (str, Path)):
@@ -382,5 +400,8 @@ def scan_ipc(
         cloud_options=storage_options,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
+        hive_partitioning=hive_partitioning,
+        hive_schema=hive_schema,
+        try_parse_hive_dates=try_parse_hive_dates,
     )
     return wrap_ldf(pylf)

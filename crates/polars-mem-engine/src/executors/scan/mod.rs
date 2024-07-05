@@ -24,8 +24,6 @@ use polars_io::predicates::PhysicalIoExpr;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
-#[cfg(feature = "ipc")]
-pub(crate) use support::ConsecutiveCountState;
 
 use super::*;
 use crate::prelude::*;

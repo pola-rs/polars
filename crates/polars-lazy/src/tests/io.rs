@@ -419,6 +419,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             row_index: None,
             memory_map: true,
             cloud_options: None,
+            hive_options: Default::default(),
         },
     )?
     .collect()?;

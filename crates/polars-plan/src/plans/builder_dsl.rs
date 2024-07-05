@@ -115,6 +115,7 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "ipc")]
+    #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc<P: Into<Arc<[std::path::PathBuf]>>>(
         paths: P,
         options: IpcScanOptions,
@@ -123,6 +124,7 @@ impl DslBuilder {
         row_index: Option<RowIndex>,
         rechunk: bool,
         cloud_options: Option<CloudOptions>,
+        hive_options: HiveOptions,
     ) -> PolarsResult<Self> {
         let paths = paths.into();
 
@@ -137,11 +139,7 @@ impl DslBuilder {
                 rechunk,
                 row_index,
                 file_counter: Default::default(),
-                // TODO: Support Hive partitioning.
-                hive_options: HiveOptions {
-                    enabled: Some(false),
-                    ..Default::default()
-                },
+                hive_options,
             },
             predicate: None,
             scan_type: FileScan::Ipc {
