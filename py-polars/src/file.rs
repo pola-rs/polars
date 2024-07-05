@@ -211,6 +211,10 @@ fn get_either_file_and_path(
                 let encoding = encoding.extract::<Cow<str>>()?;
                 Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
             };
+            let flush_file = |py_f: &Bound<PyAny>| -> PyResult<()> {
+                py_f.getattr("flush")?.call0()?;
+                Ok(())
+            };
             #[cfg(target_family = "unix")]
             if let Some(fd) = ((py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
                 || py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
@@ -219,11 +223,7 @@ fn get_either_file_and_path(
                 || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
                 || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
                     && is_utf8_encoding(&py_f)?))
-                && (!write
-                    || py_f
-                        .getattr("flush")
-                        .and_then(|flush| flush.call0())
-                        .is_ok()))
+                && (!write || flush_file(&py_f).is_ok()))
             .then(|| {
                 py_f.getattr("fileno")
                     .and_then(|fileno| fileno.call0())
@@ -260,6 +260,9 @@ fn get_either_file_and_path(
                         polars_err!(InvalidOperation: "file encoding is not UTF-8"),
                     )
                     .into());
+                }
+                if write {
+                    flush_file(&py_f)?;
                 }
                 py_f.getattr("buffer")?
             } else {
