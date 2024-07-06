@@ -170,17 +170,37 @@ pub(super) fn set_cache_states(
         match lp {
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
-            Join { options, .. } if options.allow_parallel => {
-                if let Join { options, .. } = lp_arena.get_mut(frame.current) {
-                    let options = Arc::make_mut(options);
-                    options.allow_parallel = false;
+            Join {
+                options,
+                input_left,
+                input_right,
+                ..
+            } if options.allow_parallel => {
+                let has_cache_in_children = [*input_left, *input_right].iter().any(|node| {
+                    (&*lp_arena)
+                        .iter(*node)
+                        .any(|(_, ir)| matches!(ir, IR::Cache { .. }))
+                });
+                if has_cache_in_children {
+                    if let Join { options, .. } = lp_arena.get_mut(frame.current) {
+                        let options = Arc::make_mut(options);
+                        options.allow_parallel = false;
+                    }
                 }
             },
             // don't allow parallelism as caches need each others work
             // also self-referencing plans can deadlock on the files they lock
-            Union { options, .. } if options.parallel => {
-                if let Union { options, .. } = lp_arena.get_mut(frame.current) {
-                    options.parallel = false;
+            Union { options, inputs } if options.parallel => {
+                // Only toggle if children have a cache, otherwise we loose potential parallelism for nothing.
+                let has_cache_in_children = inputs.iter().any(|node| {
+                    (&*lp_arena)
+                        .iter(*node)
+                        .any(|(_, ir)| matches!(ir, IR::Cache { .. }))
+                });
+                if has_cache_in_children {
+                    if let Union { options, .. } = lp_arena.get_mut(frame.current) {
+                        options.parallel = false;
+                    }
                 }
             },
             Cache { input, id, .. } => {
