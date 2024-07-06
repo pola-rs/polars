@@ -42,7 +42,7 @@ For more examples on the CSV file format and other data formats, start with the 
 
 ## Expressions
 
-`Expressions` are the core strength of Polars. The `expressions` offer a modular structure that allows you to combine simple concepts into complex queries. Below we cover the basic components that serve as building block (or in Polars terminology contexts) for all your queries:
+`Expressions` are the core strength of Polars. The `expressions` offer a modular structure that allows you to combine simple concepts into complex queries. Below we cover the basic components that serve as building blocks (or in Polars terminology contexts) for all your queries:
 
 - `select`
 - `filter`
