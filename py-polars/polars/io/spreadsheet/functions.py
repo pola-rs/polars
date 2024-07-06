@@ -22,6 +22,7 @@ from polars.datatypes import (
     Int64,
     Null,
     String,
+    UInt8,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
 from polars.dependencies import import_optional
@@ -506,6 +507,7 @@ def _read_spreadsheet(
 
     read_options = (read_options or {}).copy()
     engine_options = (engine_options or {}).copy()
+    schema_overrides = dict(schema_overrides or {})
 
     # normalise some top-level parameters to 'read_options' entries
     if engine == "calamine":
@@ -872,7 +874,7 @@ def _read_spreadsheet_calamine(
                 elif base_dtype == Duration:
                     parser_dtypes[name] = "duration"
                 elif base_dtype == Boolean:
-                    parser_dtypes[name] = "bool"
+                    parser_dtypes[name] = "boolean"
 
         read_options["dtypes"] = parser_dtypes
 
@@ -936,6 +938,13 @@ def _read_spreadsheet_xlsx2csv(
     if columns:
         read_options["columns"] = columns
 
+    cast_to_boolean = []
+    if schema_overrides:
+        for col, dtype in schema_overrides.items():
+            if dtype == Boolean:
+                schema_overrides[col] = UInt8  # type: ignore[index]
+                cast_to_boolean.append(F.col(col).cast(Boolean))
+
     df = _csv_buffer_to_frame(
         csv_buffer,
         separator=",",
@@ -943,4 +952,7 @@ def _read_spreadsheet_xlsx2csv(
         schema_overrides=schema_overrides,
         raise_if_empty=raise_if_empty,
     )
+    if cast_to_boolean:
+        df = df.with_columns(*cast_to_boolean)
+
     return _reorder_columns(df, columns)
