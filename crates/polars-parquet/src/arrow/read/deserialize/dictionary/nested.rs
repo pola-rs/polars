@@ -10,7 +10,7 @@ use super::super::super::PagesIter;
 use super::super::nested_utils::*;
 use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
 use super::finish_key;
-use crate::parquet::encoding::hybrid_rle::BufferedHybridRleDecoderIter;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
@@ -18,13 +18,13 @@ use crate::parquet::schema::Repetition;
 // The state of a required DataPage with a boolean physical type
 #[derive(Debug)]
 pub struct Required<'a> {
-    values: BufferedHybridRleDecoderIter<'a>,
+    values: HybridRleDecoder<'a>,
     length: usize,
 }
 
 impl<'a> Required<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?.into_iter();
+        let values = dict_indices_decoder(page)?;
         let length = page.num_values();
         Ok(Self { values, length })
     }
@@ -34,7 +34,7 @@ impl<'a> Required<'a> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum State<'a> {
-    Optional(BufferedHybridRleDecoderIter<'a>),
+    Optional(HybridRleDecoder<'a>),
     Required(Required<'a>),
 }
 

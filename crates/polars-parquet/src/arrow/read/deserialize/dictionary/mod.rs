@@ -15,7 +15,7 @@ use super::utils::{
 };
 use super::PagesIter;
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::hybrid_rle::BufferedHybridRleDecoderIter;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
@@ -26,32 +26,29 @@ pub enum State<'a> {
     Optional(Optional<'a>),
     Required(Required<'a>),
     FilteredRequired(FilteredRequired<'a>),
-    FilteredOptional(
-        FilteredOptionalPageValidity<'a>,
-        BufferedHybridRleDecoderIter<'a>,
-    ),
+    FilteredOptional(FilteredOptionalPageValidity<'a>, HybridRleDecoder<'a>),
 }
 
 #[derive(Debug)]
 pub struct Required<'a> {
-    values: BufferedHybridRleDecoderIter<'a>,
+    values: HybridRleDecoder<'a>,
 }
 
 impl<'a> Required<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?.into_iter();
+        let values = dict_indices_decoder(page)?;
         Ok(Self { values })
     }
 }
 
 #[derive(Debug)]
 pub struct FilteredRequired<'a> {
-    values: SliceFilteredIter<BufferedHybridRleDecoderIter<'a>>,
+    values: SliceFilteredIter<HybridRleDecoder<'a>>,
 }
 
 impl<'a> FilteredRequired<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?.into_iter();
+        let values = dict_indices_decoder(page)?;
 
         let rows = get_selected_rows(page);
         let values = SliceFilteredIter::new(values, rows);
@@ -62,13 +59,13 @@ impl<'a> FilteredRequired<'a> {
 
 #[derive(Debug)]
 pub struct Optional<'a> {
-    values: BufferedHybridRleDecoderIter<'a>,
+    values: HybridRleDecoder<'a>,
     validity: OptionalPageValidity<'a>,
 }
 
 impl<'a> Optional<'a> {
     fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?.into_iter();
+        let values = dict_indices_decoder(page)?;
 
         Ok(Self {
             values,
@@ -138,7 +135,7 @@ where
             (Encoding::PlainDictionary | Encoding::RleDictionary, true, true) => {
                 Ok(State::FilteredOptional(
                     FilteredOptionalPageValidity::try_new(page)?,
-                    dict_indices_decoder(page)?.into_iter(),
+                    dict_indices_decoder(page)?,
                 ))
             },
             _ => Err(utils::not_implemented(page)),
@@ -173,7 +170,7 @@ where
                             Err(_) => panic!("The maximum key is too small"),
                         }
                     }),
-                );
+                )?;
                 page.values.get_result()?;
             },
             State::Required(page) => {
@@ -210,7 +207,7 @@ where
                         };
                         x
                     }),
-                );
+                )?;
                 page_values.get_result()?;
             },
             State::FilteredRequired(page) => {

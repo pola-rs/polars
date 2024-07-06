@@ -171,7 +171,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 Some(remaining),
                 values,
                 &mut page_values.0,
-            ),
+            )?,
             State::Required(page) => {
                 let remaining = remaining.min(page.length - page.offset);
                 values.extend_from_slice(page.values, page.offset, remaining);
@@ -190,7 +190,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                     Some(remaining),
                     values,
                     page_values.0.by_ref(),
-                );
+                )?;
             },
             State::RleOptional(page_validity, page_values) => {
                 utils::extend_from_decoder(
@@ -199,7 +199,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                     Some(remaining),
                     values,
                     &mut *page_values,
-                );
+                )?;
             },
         }
         Ok(())

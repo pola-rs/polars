@@ -89,7 +89,97 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     }
 }
 
+/// A iterator over the exact chunks in a [`Decoder`].
+///
+/// The remainder can be accessed using `remainder` or `next_inexact`.
+pub struct ChunkedDecoder<'a, 'b, T: Unpackable> {
+    pub(crate) decoder: &'b mut Decoder<'a, T>,
+}
+
+impl<'a, 'b, T: Unpackable> Iterator for ChunkedDecoder<'a, 'b, T> {
+    type Item = T::Unpacked;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.decoder.len() < T::Unpacked::LENGTH {
+            return None;
+        }
+
+        let mut unpacked = T::Unpacked::zero();
+        let packed = self.decoder.packed.next()?;
+        decode_pack::<T>(packed, self.decoder.num_bits, &mut unpacked);
+        self.decoder.length -= T::Unpacked::LENGTH;
+        Some(unpacked)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let is_exact = self.decoder.len() % T::Unpacked::LENGTH == 0;
+        let (low, high) = self.decoder.packed.size_hint();
+
+        let delta = usize::from(!is_exact);
+
+        (low - delta, high.map(|h| h - delta))
+    }
+}
+
+impl<'a, 'b, T: Unpackable> ExactSizeIterator for ChunkedDecoder<'a, 'b, T> {}
+
+impl<'a, 'b, T: Unpackable> ChunkedDecoder<'a, 'b, T> {
+    /// Get and consume the remainder chunk if it exists
+    pub fn remainder(&mut self) -> Option<(T::Unpacked, usize)> {
+        let remainder_len = self.decoder.len() % T::Unpacked::LENGTH;
+
+        if remainder_len > 0 {
+            let mut unpacked = T::Unpacked::zero();
+            let packed = self.decoder.packed.next_back().unwrap();
+            decode_pack::<T>(packed, self.decoder.num_bits, &mut unpacked);
+            self.decoder.length -= remainder_len;
+            return Some((unpacked, remainder_len));
+        }
+
+        None
+    }
+
+    /// Get the next (possibly partial) chunk and its filled length
+    pub fn next_inexact(&mut self) -> Option<(T::Unpacked, usize)> {
+        if self.decoder.len() >= T::Unpacked::LENGTH {
+            Some((self.next().unwrap(), T::Unpacked::LENGTH))
+        } else {
+            self.remainder()
+        }
+    }
+}
+
 impl<'a, T: Unpackable> Decoder<'a, T> {
+    pub fn chunked<'b>(&'b mut self) -> ChunkedDecoder<'a, 'b, T> {
+        ChunkedDecoder { decoder: self }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn skip_chunks(&mut self, n: usize) {
+        for _ in (&mut self.packed).take(n) {}
+    }
+
+    pub fn take(&mut self) -> Self {
+        let block_size = std::mem::size_of::<T>() * self.num_bits;
+        let packed = std::mem::replace(&mut self.packed, [].chunks(block_size));
+        let length = self.length;
+        self.length = 0;
+
+        debug_assert_eq!(self.len(), 0);
+
+        Self {
+            packed,
+            num_bits: self.num_bits,
+            length,
+            _pd: Default::default(),
+        }
+    }
+
+    #[inline]
     pub fn collect_into(mut self, vec: &mut Vec<T>) {
         // @NOTE:
         // When microbenchmarking changing this from a element-wise iterator to a collect into

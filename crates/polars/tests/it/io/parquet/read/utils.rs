@@ -1,7 +1,5 @@
 use polars_parquet::parquet::deserialize::{HybridDecoderBitmapIter, HybridEncoded, HybridRleIter};
-use polars_parquet::parquet::encoding::hybrid_rle::{
-    self, BitmapIter, BufferedHybridRleDecoderIter, HybridRleDecoder,
-};
+use polars_parquet::parquet::encoding::hybrid_rle::{self, BitmapIter, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
@@ -41,7 +39,7 @@ pub enum DefLevelsDecoder<'a> {
     /// that decodes the runs, but not the individual values
     Bitmap(HybridDecoderBitmapIter<'a>),
     /// When the maximum definition level is larger than 1
-    Levels(BufferedHybridRleDecoderIter<'a>, u32),
+    Levels(HybridRleDecoder<'a>, u32),
 }
 
 impl<'a> DefLevelsDecoder<'a> {
@@ -59,8 +57,7 @@ impl<'a> DefLevelsDecoder<'a> {
             Self::Bitmap(iter)
         } else {
             let iter =
-                HybridRleDecoder::new(def_levels, get_bit_width(max_def_level), page.num_values())
-                    .iter();
+                HybridRleDecoder::new(def_levels, get_bit_width(max_def_level), page.num_values());
             Self::Levels(iter, max_def_level as u32)
         })
     }
@@ -141,7 +138,7 @@ fn deserialize_bitmap<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
 }
 
 fn deserialize_levels<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
-    levels: BufferedHybridRleDecoderIter,
+    levels: HybridRleDecoder,
     max: u32,
     mut values: I,
 ) -> Result<Vec<Option<C>>, ParquetError> {

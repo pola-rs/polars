@@ -5,16 +5,17 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
-use polars_utils::iter::FallibleIterator;
 
 use super::super::utils::{
     get_selected_rows, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
 use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
 use crate::parquet::encoding::{byte_stream_split, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::read::deserialize::utils::TranslatedHybridRle;
 
 #[derive(Debug)]
 pub(super) struct FilteredRequiredValues<'a> {
@@ -65,23 +66,23 @@ pub(super) struct ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
-    pub dict: &'a Vec<T>,
+    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub dict: &'a [T],
 }
 
 impl<'a, T> ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> PolarsResult<Self> {
-        let values = utils::dict_indices_decoder(page)?.into_iter();
+    pub fn try_new(page: &'a DataPage, dict: &'a [T]) -> PolarsResult<Self> {
+        let values = utils::dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.values.size_hint().0
+        self.values.len()
     }
 }
 
@@ -233,8 +234,8 @@ where
                 page_validity,
                 Some(remaining),
                 values,
-                page_values.values.by_ref().map(decode).map(self.op),
-            ),
+                &mut page_values.values.by_ref().map(decode).map(self.op),
+            )?,
             State::Required(page) => {
                 values.extend(
                     page.values
@@ -245,20 +246,22 @@ where
                 );
             },
             State::OptionalDictionary(page_validity, page_values) => {
-                let op1 = |index: u32| page_values.dict[index as usize];
+                let translator = DictionaryTranslator(page_values.dict);
+                let translated_hybridrle =
+                    TranslatedHybridRle::new(&mut page_values.values, &translator);
+
                 utils::extend_from_decoder(
                     validity,
                     page_validity,
                     Some(remaining),
                     values,
-                    &mut page_values.values.by_ref().map(op1),
-                );
-                page_values.values.get_result()?;
+                    translated_hybridrle,
+                )?;
             },
             State::RequiredDictionary(page) => {
-                let op1 = |index: u32| page.dict[index as usize];
-                values.extend(page.values.by_ref().map(op1).take(remaining));
-                page.values.get_result()?;
+                let translator = DictionaryTranslator(page.dict);
+                page.values
+                    .translate_and_collect_n_into(values, remaining, &translator)?;
             },
             State::FilteredRequired(page) => {
                 values.extend(
@@ -275,8 +278,8 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values.values.by_ref().map(decode).map(self.op),
-                );
+                    &mut page_values.values.by_ref().map(decode).map(self.op),
+                )?;
             },
             State::RequiredByteStreamSplit(decoder) => {
                 values.extend(decoder.iter_converted(decode).map(self.op).take(remaining));
@@ -286,8 +289,8 @@ where
                 page_validity,
                 Some(remaining),
                 values,
-                decoder.iter_converted(decode).map(self.op),
-            ),
+                &mut decoder.iter_converted(decode).map(self.op),
+            )?,
         }
         Ok(())
     }
