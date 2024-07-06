@@ -207,6 +207,16 @@ impl SlicePushDown {
                 };
 
                 Ok(lp)
+            },
+            (DataFrameScan {df, schema, output_schema, filter, }, Some(state)) if filter.is_none() => {
+                let df = df.slice(state.offset, state.len as usize);
+                let lp = DataFrameScan {
+                    df: Arc::new(df),
+                    schema,
+                    output_schema,
+                    filter
+                };
+                Ok(lp)
             }
             (Union {mut inputs, mut options }, Some(state)) => {
                 if state.offset == 0 {
