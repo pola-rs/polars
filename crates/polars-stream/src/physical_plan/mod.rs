@@ -34,6 +34,12 @@ pub enum PhysNode {
         output_schema: Arc<Schema>,
     },
 
+    StreamingSlice {
+        input: PhysNodeKey,
+        offset: usize,
+        length: usize,
+    },
+
     Filter {
         input: PhysNodeKey,
         predicate: ExprIR,

@@ -60,6 +60,18 @@ fn to_graph_rec<'a>(
             [],
         ),
 
+        StreamingSlice {
+            input,
+            offset,
+            length,
+        } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::streaming_slice::StreamingSliceNode::new(*offset, *length),
+                [input_key],
+            )
+        },
+
         Filter { predicate, input } => {
             let phys_predicate_expr = create_physical_expr(
                 predicate,

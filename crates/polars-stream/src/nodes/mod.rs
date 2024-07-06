@@ -6,6 +6,7 @@ pub mod map;
 pub mod ordered_union;
 pub mod select;
 pub mod simple_projection;
+pub mod streaming_slice;
 
 /// The imports you'll always need for implementing a ComputeNode.
 mod compute_node_prelude {
@@ -49,8 +50,18 @@ pub trait ComputeNode: Send + Sync {
         false
     }
 
+    /// Opportunity to spawn task(s) without being beholden to a specific
+    /// pipeline. Called once per execution phase.
+    fn spawn_global<'env, 's>(
+        &'env self,
+        scope: &'s TaskScope<'s, 'env>,
+        state: &'s ExecutionState,
+    ) -> Option<JoinHandle<PolarsResult<()>>> {
+        None
+    }
+
     /// Spawn a task that should receive input(s), process it and send to its
-    /// output(s). Called once for each pipeline.
+    /// output(s). Called once for each pipeline per execution phase.
     fn spawn<'env, 's>(
         &'env self,
         scope: &'s TaskScope<'s, 'env>,
