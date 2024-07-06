@@ -47,12 +47,12 @@ fn get_scan_columns(
             // we shouldn't project the row-count column, as that is generated
             // in the scan
             let push = match row_index {
-                Some(rc) if name != rc.name => true,
+                Some(rc) if (*name).as_ref() != rc.name.as_ref() => true,
                 None => true,
                 _ => false,
             };
             if push {
-                columns.push((*name).to_owned())
+                columns.push((**name).to_owned())
             }
         }
         with_columns = Some(Arc::from(columns));
@@ -83,7 +83,7 @@ fn split_acc_projections(
             .partition(|expr| check_input_column_node(*expr, down_schema, expr_arena));
         let mut names = init_set();
         for proj in &acc_projections {
-            let name = column_node_to_name(*proj, expr_arena);
+            let name = column_node_to_name(*proj, expr_arena).clone();
             names.insert(name);
         }
         (acc_projections, local_projections, names)
@@ -98,7 +98,7 @@ fn add_expr_to_accumulated(
     expr_arena: &Arena<AExpr>,
 ) {
     for root_node in aexpr_to_column_nodes_iter(expr, expr_arena) {
-        let name = column_node_to_name(root_node, expr_arena);
+        let name = column_node_to_name(root_node, expr_arena).clone();
         if projected_names.insert(name) {
             acc_projections.push(root_node)
         }
@@ -128,7 +128,7 @@ fn update_scan_schema(
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
         let name = column_node_to_name(*node, expr_arena);
-        let item = schema.try_get_full(&name)?;
+        let item = schema.try_get_full(name)?;
         new_cols.push(item);
     }
     // make sure that the projections are sorted by the schema.
@@ -227,8 +227,8 @@ impl ProjectionPushDown {
         let mut already_projected = false;
 
         let name = column_node_to_name(proj, expr_arena);
-        let is_in_left = names_left.contains(&name);
-        let is_in_right = names_right.contains(&name);
+        let is_in_left = names_left.contains(name);
+        let is_in_right = names_right.contains(name);
         already_projected |= is_in_left;
         already_projected |= is_in_right;
 

@@ -253,9 +253,9 @@ pub(crate) fn aexpr_to_column_nodes_iter<'a>(
     })
 }
 
-pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> Arc<str> {
+pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &Arc<str> {
     if let AExpr::Column(name) = arena.get(node.0) {
-        name.clone()
+        name
     } else {
         unreachable!()
     }
