@@ -149,3 +149,14 @@ def test_rename_schema_order_6660() -> None:
 
     assert renamed.collect_schema() == renamed.collect().schema
     assert computed.collect_schema() == computed.collect().schema
+
+
+def test_rename_schema_17427() -> None:
+    assert (
+        pl.LazyFrame({"A": [1]})
+        .with_columns(B=2)
+        .select(["A", "B"])
+        .rename({"A": "C", "B": "A"})
+        .select(["C", "A"])
+        .collect()
+    ).to_dict(as_series=False) == {"C": [1], "A": [2]}
