@@ -172,9 +172,15 @@ def test_from_pandas_include_indexes() -> None:
     assert df.to_dict(as_series=False) == data
 
 
+def test_duplicate_cols_diff_types() -> None:
+    df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["0", 0, "1", 1])
+    with pytest.raises(ValueError, match="Polars dataframes must have unique string"):
+        pl.from_pandas(df)
+
+
 def test_from_pandas_duplicated_columns() -> None:
     df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["a", "b", "c", "b"])
-    with pytest.raises(ValueError, match="duplicate column names found: "):
+    with pytest.raises(ValueError, match="Polars dataframes must have unique string"):
         pl.from_pandas(df)
 
 
