@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use percent_encoding::percent_decode;
-use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
@@ -68,25 +66,21 @@ pub fn hive_partitions_from_paths(
     reader_schema: &Schema,
     try_parse_dates: bool,
 ) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
-    let paths = paths
-        .iter()
-        .map(|x| {
-            Ok(PathBuf::from(
-                percent_decode(x.to_str().unwrap().as_bytes())
-                    .decode_utf8()
-                    .map_err(to_compute_err)?
-                    .as_ref(),
-            ))
-        })
-        .collect::<PolarsResult<Vec<PathBuf>>>()?;
-    let paths = paths.as_slice();
-
     let Some(path) = paths.first() else {
         return Ok(None);
     };
 
     let sep = separator(path);
     let path_string = path.to_str().unwrap();
+
+    fn parse_hive_string_and_decode(part: &'_ str) -> Option<(&'_ str, std::borrow::Cow<'_, str>)> {
+        let (k, v) = parse_hive_string(part)?;
+        let v = percent_encoding::percent_decode(v.as_bytes())
+            .decode_utf8()
+            .ok()?;
+
+        Some((k, v))
+    }
 
     macro_rules! get_hive_parts_iter {
         ($e:expr) => {{
@@ -97,7 +91,8 @@ pub fn hive_partitions_from_paths(
                 if index == file_index {
                     return None;
                 }
-                parse_hive_string(part)
+
+                parse_hive_string_and_decode(part)
             })
         }};
     }
@@ -158,7 +153,7 @@ pub fn hive_partitions_from_paths(
                         continue;
                     }
 
-                    entry.insert(infer_field_schema(value, try_parse_dates, false));
+                    entry.insert(infer_field_schema(value.as_ref(), try_parse_dates, false));
                 }
             }
 
@@ -264,7 +259,7 @@ fn parse_hive_string(part: &'_ str) -> Option<(&'_ str, &'_ str)> {
     // Files are not Hive partitions, so globs are not valid.
     if value.contains('*') {
         return None;
-    }
+    };
 
     Some((name, value))
 }

@@ -23,7 +23,7 @@ fn round_trip(
         statistics: StatisticsOptions::full(),
         compression,
         version,
-        data_pagesize_limit: None,
+        data_page_size: None,
     };
 
     let iter = vec![RecordBatchT::try_new(vec![array.clone()])];

@@ -9,6 +9,7 @@ use polars_core::series::IsSorted;
 use polars_core::POOL;
 use rayon::prelude::*;
 
+use crate::parquet::write::ParquetWriteOptions;
 use crate::utils::resolve_homedir;
 use crate::WriterFactory;
 
@@ -126,4 +127,112 @@ where
         path.push(format!("{}={}", key.as_ref(), value))
     }
     path
+}
+
+pub fn write_partitioned_dataset<S>(
+    df: &DataFrame,
+    path: &Path,
+    partition_by: &[S],
+    file_write_options: &ParquetWriteOptions,
+    chunk_size: usize,
+) -> PolarsResult<()>
+where
+    S: AsRef<str>,
+{
+    let base_path = path;
+
+    for (path_part, part_df) in get_hive_partitions_iter(df, partition_by)? {
+        let dir = base_path.join(path_part);
+        std::fs::create_dir_all(&dir)?;
+
+        let n_files = (part_df.estimated_size() / chunk_size).clamp(1, 0xf_ffff_ffff_ffff);
+        let rows_per_file = (df.height() / n_files).saturating_add(1);
+
+        fn get_path_for_index(i: usize) -> String {
+            // Use a fixed-width file name so that it sorts properly.
+            format!("{:013x}.parquet", i)
+        }
+
+        for (i, slice_start) in (0..part_df.height()).step_by(rows_per_file).enumerate() {
+            let f = std::fs::File::create(dir.join(get_path_for_index(i)))?;
+
+            file_write_options
+                .to_writer(f)
+                .finish(&mut part_df.slice(slice_start as i64, rows_per_file))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Creates an iterator of (hive partition path, DataFrame) pairs, e.g.:
+/// ("a=1/b=1", DataFrame)
+fn get_hive_partitions_iter<'a, S>(
+    df: &'a DataFrame,
+    partition_by: &'a [S],
+) -> PolarsResult<Box<dyn Iterator<Item = (String, DataFrame)> + 'a>>
+where
+    S: AsRef<str>,
+{
+    let schema = df.schema();
+
+    let partition_by_col_idx = partition_by
+        .iter()
+        .map(|x| {
+            let Some(i) = schema.index_of(x.as_ref()) else {
+                polars_bail!(ColumnNotFound: "{}", x.as_ref())
+            };
+            Ok(i)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let get_hive_path_part = move |df: &DataFrame| {
+        const CHAR_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+            .add(b'/')
+            .add(b'=')
+            .add(b':')
+            .add(b' ');
+
+        let cols = df.get_columns();
+
+        partition_by_col_idx
+            .iter()
+            .map(|&i| {
+                let s = &cols[i].slice(0, 1).cast(&DataType::String).unwrap();
+
+                format!(
+                    "{}={}",
+                    s.name(),
+                    percent_encoding::percent_encode(
+                        s.str()
+                            .unwrap()
+                            .get(0)
+                            .unwrap_or("__HIVE_DEFAULT_PARTITION__")
+                            .as_bytes(),
+                        CHAR_SET
+                    )
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+
+    let groups = df.group_by(partition_by)?;
+    let groups = groups.take_groups();
+
+    let out: Box<dyn Iterator<Item = (String, DataFrame)>> = match groups {
+        GroupsProxy::Idx(idx) => Box::new(idx.into_iter().map(move |(_, group)| {
+            let part_df =
+                unsafe { df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending) };
+            (get_hive_path_part(&part_df), part_df)
+        })),
+        GroupsProxy::Slice { groups, .. } => {
+            Box::new(groups.into_iter().map(move |[offset, len]| {
+                let part_df = df.slice(offset as i64, len as usize);
+                (get_hive_path_part(&part_df), part_df)
+            }))
+        },
+    };
+
+    Ok(out)
 }

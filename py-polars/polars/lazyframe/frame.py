@@ -2154,7 +2154,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression_level: int | None = None,
         statistics: bool | str | dict[str, bool] = True,
         row_group_size: int | None = None,
-        data_pagesize_limit: int | None = None,
+        data_page_size: int | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
@@ -2209,7 +2209,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If None (default), the chunks of the `DataFrame` are
             used. Writing in smaller chunks may reduce memory pressure and improve
             writing speeds.
-        data_pagesize_limit
+        data_page_size
             Size limit of individual data pages.
             If not set defaults to 1024 * 1024 bytes
         maintain_order
@@ -2269,7 +2269,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
-            data_pagesize_limit=data_pagesize_limit,
+            data_page_size=data_page_size,
             maintain_order=maintain_order,
         )
 
