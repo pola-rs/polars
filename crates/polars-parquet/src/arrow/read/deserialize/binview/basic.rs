@@ -69,7 +69,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 Some(additional),
                 values,
                 page_values,
-            ),
+            )?,
             BinaryState::Required(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push_value_ignore_validity(x)
@@ -87,7 +87,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     Some(additional),
                     values,
                     page_values,
-                );
+                )?;
             },
             BinaryState::FilteredRequired(page) => {
                 for x in page.values.by_ref().take(additional) {
@@ -112,7 +112,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                         .values
                         .by_ref()
                         .map(|index| page_dict.value(index as usize)),
-                );
+                )?;
                 page_values.values.get_result()?;
             },
             BinaryState::RequiredDictionary(page) => {
@@ -137,7 +137,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     Some(additional),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
             BinaryState::FilteredOptionalDelta(page_validity, page_values) => {
                 extend_from_decoder(
@@ -146,7 +146,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                     Some(additional),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
             BinaryState::FilteredRequiredDictionary(page) => {
                 // TODO! directly set the dict as buffers and only insert the proper views.
@@ -179,7 +179,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                         .values
                         .by_ref()
                         .map(|index| page_dict.value(index as usize)),
-                );
+                )?;
                 page_values.values.get_result()?;
             },
             BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
@@ -188,7 +188,7 @@ impl<'a> utils::Decoder<'a> for BinViewDecoder {
                 Some(additional),
                 values,
                 page_values,
-            ),
+            )?,
             BinaryState::DeltaByteArray(page_values) => {
                 for x in page_values.take(additional) {
                     values.push_value_ignore_validity(x)

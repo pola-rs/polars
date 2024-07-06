@@ -9,7 +9,8 @@ use super::super::PagesIter;
 use crate::parquet::deserialize::{
     FilteredHybridEncoded, FilteredHybridRleDecoderIter, HybridDecoderBitmapIter, HybridEncoded,
 };
-use crate::parquet::encoding::hybrid_rle;
+use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder, Translator};
+use crate::parquet::error::ParquetResult;
 use crate::parquet::indexes::Interval;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
@@ -31,6 +32,91 @@ pub fn not_implemented(page: &DataPage) -> PolarsError {
 /// The state of a partially deserialized page
 pub(super) trait PageValidity<'a> {
     fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>>;
+}
+
+pub trait BatchableCollector<I, T> {
+    fn reserve(target: &mut T, n: usize);
+    fn push_n(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
+    fn push_n_nulls(&mut self, target: &mut T, n: usize) -> ParquetResult<()>;
+    fn skip_n(&mut self, n: usize) -> ParquetResult<()>;
+}
+
+/// This batches sequential collect operations to try and prevent unnecessary buffering and
+/// `Iterator::next` polling.
+#[must_use]
+pub struct BatchedCollector<'a, I, T, C: BatchableCollector<I, T>> {
+    num_waiting_valids: usize,
+    num_waiting_invalids: usize,
+
+    target: &'a mut T,
+    collector: C,
+    _pd: std::marker::PhantomData<I>,
+}
+
+impl<'a, I, T, C: BatchableCollector<I, T>> BatchedCollector<'a, I, T, C> {
+    pub fn new(collector: C, target: &'a mut T) -> Self {
+        Self {
+            num_waiting_valids: 0,
+            num_waiting_invalids: 0,
+            target,
+            collector,
+            _pd: Default::default(),
+        }
+    }
+
+    #[inline]
+    pub fn push_n_valids(&mut self, n: usize) -> ParquetResult<()> {
+        if self.num_waiting_invalids == 0 {
+            self.num_waiting_valids += n;
+            return Ok(());
+        }
+
+        self.collector
+            .push_n(self.target, self.num_waiting_valids)?;
+        self.collector
+            .push_n_nulls(self.target, self.num_waiting_invalids)?;
+
+        self.num_waiting_valids = n;
+        self.num_waiting_invalids = 0;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn push_n_invalids(&mut self, n: usize) {
+        self.num_waiting_invalids += n;
+    }
+
+    #[inline]
+    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        if n == 0 {
+            return Ok(());
+        }
+
+        if self.num_waiting_valids > 0 {
+            self.collector
+                .push_n(self.target, self.num_waiting_valids)?;
+        }
+        if self.num_waiting_invalids > 0 {
+            self.collector
+                .push_n_nulls(self.target, self.num_waiting_invalids)?;
+        }
+        self.collector.skip_n(n)?;
+
+        self.num_waiting_valids = 0;
+        self.num_waiting_invalids = 0;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn finalize(mut self) -> ParquetResult<()> {
+        self.collector
+            .push_n(self.target, self.num_waiting_valids)?;
+        self.collector
+            .push_n_nulls(self.target, self.num_waiting_invalids)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -121,33 +207,6 @@ impl<'a> PageValidity<'a> for FilteredOptionalPageValidity<'a> {
     }
 }
 
-pub struct Zip<V, I> {
-    validity: V,
-    values: I,
-}
-
-impl<V, I> Zip<V, I> {
-    pub fn new(validity: V, values: I) -> Self {
-        Self { validity, values }
-    }
-}
-
-impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> Iterator for Zip<V, I> {
-    type Item = Option<T>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.validity
-            .next()
-            .map(|x| if x { self.values.next() } else { None })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.validity.size_hint()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct OptionalPageValidity<'a> {
     iter: HybridDecoderBitmapIter<'a>,
@@ -227,11 +286,11 @@ impl<'a> PageValidity<'a> for OptionalPageValidity<'a> {
     }
 }
 
-fn reserve_pushable_and_validity<'a, T, P: Pushable<T>>(
+fn reserve_pushable_and_validity<'a, I, T, C: BatchableCollector<I, T>>(
     validity: &mut MutableBitmap,
     page_validity: &'a mut dyn PageValidity,
     limit: Option<usize>,
-    pushable: &mut P,
+    target: &mut T,
 ) -> Vec<FilteredHybridEncoded<'a>> {
     let limit = limit.unwrap_or(usize::MAX);
 
@@ -257,20 +316,22 @@ fn reserve_pushable_and_validity<'a, T, P: Pushable<T>>(
         };
         runs.push(run)
     }
-    pushable.reserve(reserve_pushable);
+    C::reserve(target, reserve_pushable);
     validity.reserve(reserve_pushable);
     runs
 }
 
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
-pub(super) fn extend_from_decoder<T, P: Pushable<T>, I: Iterator<Item = T>>(
+pub(super) fn extend_from_decoder<I, T: std::fmt::Debug, C: BatchableCollector<I, T>>(
     validity: &mut MutableBitmap,
     page_validity: &mut dyn PageValidity,
     limit: Option<usize>,
-    pushable: &mut P,
-    mut values_iter: I,
-) {
-    let runs = reserve_pushable_and_validity(validity, page_validity, limit, pushable);
+    target: &mut T,
+    collector: C,
+) -> ParquetResult<()> {
+    let runs = reserve_pushable_and_validity::<I, T, C>(validity, page_validity, limit, target);
+
+    let mut batched_collector = BatchedCollector::new(collector, target);
 
     // then a second loop to really fill the buffers
     for run in runs {
@@ -281,30 +342,121 @@ pub(super) fn extend_from_decoder<T, P: Pushable<T>, I: Iterator<Item = T>>(
                 length,
             } => {
                 // consume `length` items
-                let iter = BitmapIter::new(values, offset, length);
-                let iter = Zip::new(iter, &mut values_iter);
+                let mut validity_iter = BitmapIter::new(values, offset, length);
 
-                for item in iter {
-                    if let Some(item) = item {
-                        pushable.push(item)
-                    } else {
-                        pushable.push_null()
-                    }
+                let mut bit_sum = 0;
+                while validity_iter.num_remaining() != 0 {
+                    let num_valid = validity_iter.take_leading_ones();
+                    bit_sum += num_valid;
+                    batched_collector.push_n_valids(num_valid)?;
+
+                    let num_invalid = validity_iter.take_leading_zeros();
+                    bit_sum += num_invalid;
+                    batched_collector.push_n_invalids(num_invalid);
                 }
+
+                debug_assert_eq!(bit_sum, length);
+
                 validity.extend_from_slice(values, offset, length);
             },
             FilteredHybridEncoded::Repeated { is_set, length } => {
                 validity.extend_constant(length, is_set);
                 if is_set {
-                    for v in (&mut values_iter).take(length) {
-                        pushable.push(v)
-                    }
+                    batched_collector.push_n_valids(length)?;
                 } else {
-                    pushable.extend_null_constant(length);
+                    batched_collector.push_n_invalids(length);
                 }
             },
-            FilteredHybridEncoded::Skipped(valids) => for _ in values_iter.by_ref().take(valids) {},
+            FilteredHybridEncoded::Skipped(valids) => batched_collector.skip_in_place(valids)?,
         };
+    }
+
+    batched_collector.finalize()?;
+
+    Ok(())
+}
+
+/// This translates and collects items from a [`HybridRleDecoder`] into a target [`Vec`].
+///
+/// This batches sequential collect operations to try and prevent unnecessary buffering.
+pub struct TranslatedHybridRle<'a, 'b, 'c, O, T>
+where
+    O: Clone + Default,
+    T: Translator<O>,
+{
+    decoder: &'a mut HybridRleDecoder<'b>,
+    translator: &'c T,
+    _pd: std::marker::PhantomData<O>,
+}
+
+impl<'a, 'b, 'c, O, T> TranslatedHybridRle<'a, 'b, 'c, O, T>
+where
+    O: Clone + Default,
+    T: Translator<O>,
+{
+    pub fn new(decoder: &'a mut HybridRleDecoder<'b>, translator: &'c T) -> Self {
+        Self {
+            decoder,
+            translator,
+            _pd: Default::default(),
+        }
+    }
+}
+
+impl<'a, 'b, 'c, O, T> BatchableCollector<u32, Vec<O>> for TranslatedHybridRle<'a, 'b, 'c, O, T>
+where
+    O: Clone + Default,
+    T: Translator<O>,
+{
+    #[inline]
+    fn reserve(target: &mut Vec<O>, n: usize) {
+        target.reserve(n);
+    }
+
+    #[inline]
+    fn push_n(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
+        self.decoder
+            .translate_and_collect_n_into(target, n, self.translator)
+    }
+
+    #[inline]
+    fn push_n_nulls(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
+        target.resize(target.len() + n, O::default());
+        Ok(())
+    }
+
+    #[inline]
+    fn skip_n(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
+}
+
+impl<T, P: Pushable<T>, I: Iterator<Item = T>> BatchableCollector<T, P> for I {
+    #[inline]
+    fn reserve(target: &mut P, n: usize) {
+        target.reserve(n);
+    }
+
+    #[inline]
+    fn push_n(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
+        target.extend_n(n, self);
+        Ok(())
+    }
+
+    #[inline]
+    fn push_n_nulls(&mut self, target: &mut P, n: usize) -> ParquetResult<()> {
+        target.extend_null_constant(n);
+        Ok(())
+    }
+
+    #[inline]
+    fn skip_n(&mut self, n: usize) -> ParquetResult<()> {
+        if n == 0 {
+            return Ok(());
+        }
+
+        _ = self.nth(n);
+        Ok(())
     }
 }
 

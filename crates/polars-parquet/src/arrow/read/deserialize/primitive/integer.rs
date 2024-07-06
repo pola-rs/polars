@@ -155,11 +155,11 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values
+                    &mut page_values
                         .by_ref()
                         .map(|x| x.unwrap().as_())
                         .map(self.0.op),
-                )
+                )?
             },
             State::FilteredDeltaBinaryPackedRequired(page) => {
                 values.extend(
@@ -175,11 +175,11 @@ where
                     page_validity,
                     Some(remaining),
                     values,
-                    page_values
+                    &mut page_values
                         .by_ref()
                         .map(|x| x.unwrap().as_())
                         .map(self.0.op),
-                );
+                )?;
             },
         }
         Ok(())

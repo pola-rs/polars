@@ -8,7 +8,7 @@ use polars_utils::slice::GetSaferUnchecked;
 
 use super::super::PagesIter;
 use super::utils::{DecodedState, MaybeNext, PageState};
-use crate::parquet::encoding::hybrid_rle::{BufferedHybridRleDecoderIter, HybridRleDecoder};
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::read::levels::get_bit_width;
 
@@ -239,7 +239,7 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
 }
 
 pub struct NestedPage<'a> {
-    iter: Peekable<Zip<BufferedHybridRleDecoderIter<'a>, BufferedHybridRleDecoderIter<'a>>>,
+    iter: Peekable<Zip<HybridRleDecoder<'a>, HybridRleDecoder<'a>>>,
 }
 
 impl<'a> NestedPage<'a> {

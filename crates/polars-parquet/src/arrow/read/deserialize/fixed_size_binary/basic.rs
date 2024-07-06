@@ -84,13 +84,13 @@ impl<'a> FilteredRequired<'a> {
 
 #[derive(Debug)]
 pub(super) struct RequiredDictionary<'a> {
-    pub values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
+    pub values: hybrid_rle::HybridRleDecoder<'a>,
     pub dict: &'a Dict,
 }
 
 impl<'a> RequiredDictionary<'a> {
     pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?.into_iter();
+        let values = dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
     }
@@ -103,14 +103,14 @@ impl<'a> RequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(super) struct OptionalDictionary<'a> {
-    pub(super) values: hybrid_rle::BufferedHybridRleDecoderIter<'a>,
+    pub(super) values: hybrid_rle::HybridRleDecoder<'a>,
     pub(super) validity: OptionalPageValidity<'a>,
     pub(super) dict: &'a Dict,
 }
 
 impl<'a> OptionalDictionary<'a> {
     pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
-        let values = dict_indices_decoder(page)?.into_iter();
+        let values = dict_indices_decoder(page)?;
 
         Ok(Self {
             values,
@@ -219,7 +219,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                 Some(remaining),
                 values,
                 &mut page.values,
-            ),
+            )?,
             State::Required(page) => {
                 for x in page.values.by_ref().take(remaining) {
                     values.push(x)
@@ -236,11 +236,11 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                     &mut page.validity,
                     Some(remaining),
                     values,
-                    page.values.by_ref().map(|index| {
+                    &mut page.values.by_ref().map(|index| {
                         let index = index as usize;
                         &page.dict[index * self.size..(index + 1) * self.size]
                     }),
-                );
+                )?;
                 page.values.get_result()?;
             },
             State::RequiredDictionary(page) => {
@@ -264,7 +264,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                     Some(remaining),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
         }
         Ok(())

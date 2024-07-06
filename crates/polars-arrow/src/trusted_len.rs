@@ -87,8 +87,13 @@ impl<I, J> TrustMyLength<I, J>
 where
     I: Iterator<Item = J>,
 {
+    /// Create a new `TrustMyLength` iterator
+    ///
+    /// # Safety
+    ///
+    /// This is safe if the iterator always has the exact length given by `len`.
     #[inline]
-    pub fn new(iter: I, len: usize) -> Self {
+    pub unsafe fn new(iter: I, len: usize) -> Self {
         Self { iter, len }
     }
 }
@@ -104,6 +109,7 @@ where
         self.iter.next()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }

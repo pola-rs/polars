@@ -18,7 +18,7 @@ pub trait CustomIterTools: Iterator {
     where
         Self: Sized,
     {
-        TrustMyLength::new(self, length)
+        unsafe { TrustMyLength::new(self, length) }
     }
 
     fn collect_trusted<T: FromTrustedLenIterator<Self::Item>>(self) -> T
