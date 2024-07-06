@@ -594,9 +594,12 @@ impl Series {
         match self.dtype() {
             // NOTE: Don't use cast here, as it might rechunk (if all nulls)
             // which is not allowed in a phys repr.
+            #[cfg(feature = "dtype-date")]
             Date => Cow::Owned(self.date().unwrap().0.clone().into_series()),
+            #[cfg(feature = "dtype-duration")]
             Datetime(_, _) => Cow::Owned(self.datetime().unwrap().0.clone().into_series()),
             Duration(_) => Cow::Owned(self.duration().unwrap().0.clone().into_series()),
+            #[cfg(feature = "dtype-time")]
             Time => Cow::Owned(self.time().unwrap().0.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
