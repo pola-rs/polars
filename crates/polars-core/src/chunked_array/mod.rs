@@ -934,7 +934,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
     PrimitiveArray::new(
-        T::get_dtype().to_arrow(PlFlavor::highest()),
+        T::get_dtype().to_arrow(CompatLevel::newest()),
         values.into(),
         validity,
     )

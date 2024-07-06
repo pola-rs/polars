@@ -21,7 +21,7 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(PlFlavor::highest()), length);
+        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(CompatLevel::newest()), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -55,7 +55,7 @@ impl<'a> ChunkFull<&'a str> for StringChunked {
 
 impl ChunkFullNull for StringChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = Utf8ViewArray::new_null(DataType::String.to_arrow(PlFlavor::highest()), length);
+        let arr = Utf8ViewArray::new_null(DataType::String.to_arrow(CompatLevel::newest()), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -72,7 +72,8 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
-        let arr = BinaryViewArray::new_null(DataType::Binary.to_arrow(PlFlavor::highest()), length);
+        let arr =
+            BinaryViewArray::new_null(DataType::Binary.to_arrow(CompatLevel::newest()), length);
         ChunkedArray::with_chunk(name, arr)
     }
 }
@@ -91,7 +92,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
 impl ChunkFullNull for BinaryOffsetChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = BinaryArray::<i64>::new_null(
-            DataType::BinaryOffset.to_arrow(PlFlavor::highest()),
+            DataType::BinaryOffset.to_arrow(CompatLevel::newest()),
             length,
         );
         ChunkedArray::with_chunk(name, arr)
@@ -127,7 +128,7 @@ impl ArrayChunked {
             ArrowDataType::FixedSizeList(
                 Box::new(ArrowField::new(
                     "item",
-                    inner_dtype.to_arrow(PlFlavor::highest()),
+                    inner_dtype.to_arrow(CompatLevel::newest()),
                     true,
                 )),
                 width,
@@ -146,7 +147,7 @@ impl ChunkFull<&Series> for ArrayChunked {
         let arrow_dtype = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new(
                 "item",
-                dtype.to_arrow(PlFlavor::highest()),
+                dtype.to_arrow(CompatLevel::newest()),
                 true,
             )),
             width,
@@ -169,7 +170,7 @@ impl ListChunked {
         let arr: ListArray<i64> = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",
-                inner_dtype.to_physical().to_arrow(PlFlavor::highest()),
+                inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
                 true,
             ))),
             length,

@@ -99,7 +99,7 @@ where
         }
 
         let array = PrimitiveArray::new(
-            T::get_dtype().to_arrow(PlFlavor::highest()),
+            T::get_dtype().to_arrow(CompatLevel::newest()),
             out.into(),
             Some(validity.into()),
         );

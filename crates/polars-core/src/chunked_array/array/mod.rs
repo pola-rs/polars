@@ -46,7 +46,7 @@ impl ArrayChunked {
         let ca = self.rechunk();
         let field = self
             .inner_dtype()
-            .to_arrow_field("item", PlFlavor::highest());
+            .to_arrow_field("item", CompatLevel::newest());
 
         let chunks = ca.downcast_iter().map(|arr| {
             let elements = unsafe {
@@ -69,7 +69,7 @@ impl ArrayChunked {
             let values = out.chunks()[0].clone();
 
             let inner_dtype = FixedSizeListArray::default_datatype(
-                out.dtype().to_arrow(PlFlavor::highest()),
+                out.dtype().to_arrow(CompatLevel::newest()),
                 ca.width(),
             );
             let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());

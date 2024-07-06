@@ -55,7 +55,7 @@ where
                         self.downcast_iter().next().unwrap(),
                         idx,
                         value,
-                        T::get_dtype().to_arrow(PlFlavor::highest()),
+                        T::get_dtype().to_arrow(CompatLevel::newest()),
                     )?;
                     return Ok(Self::with_chunk(self.name(), arr));
                 }
@@ -106,7 +106,7 @@ where
                         arr,
                         mask,
                         value,
-                        T::get_dtype().to_arrow(PlFlavor::highest()),
+                        T::get_dtype().to_arrow(CompatLevel::newest()),
                     )
                 });
             Ok(ChunkedArray::from_chunk_iter(self.name(), chunks))

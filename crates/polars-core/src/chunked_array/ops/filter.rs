@@ -121,7 +121,7 @@ impl ChunkFilter<ListType> for ListChunked {
                 _ => Ok(ListChunked::from_chunk_iter(
                     self.name(),
                     [ListArray::new_empty(
-                        self.dtype().to_arrow(PlFlavor::highest()),
+                        self.dtype().to_arrow(CompatLevel::newest()),
                     )],
                 )),
             };
@@ -149,7 +149,7 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
                 _ => Ok(ArrayChunked::from_chunk_iter(
                     self.name(),
                     [FixedSizeListArray::new_empty(
-                        self.dtype().to_arrow(PlFlavor::highest()),
+                        self.dtype().to_arrow(CompatLevel::newest()),
                     )],
                 )),
             };

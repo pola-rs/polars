@@ -7,7 +7,7 @@ use pyo3::types::{PyList, PyTuple};
 use super::*;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::interop;
-use crate::prelude::PyPlFlavor;
+use crate::prelude::PyCompatLevel;
 
 #[pymethods]
 impl PyDataFrame {
@@ -64,7 +64,7 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&mut self, future: PyPlFlavor) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(&mut self, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
         self.df.align_chunks();
         Python::with_gil(|py| {
             let pyarrow = py.import_bound("pyarrow")?;
@@ -72,7 +72,7 @@ impl PyDataFrame {
 
             let rbs = self
                 .df
-                .iter_chunks(future.0, true)
+                .iter_chunks(compat_level.0, true)
                 .map(|rb| interop::arrow::to_py::to_py_rb(&rb, &names, py, &pyarrow))
                 .collect::<PyResult<_>>()?;
             Ok(rbs)
@@ -105,7 +105,7 @@ impl PyDataFrame {
                 .collect::<Vec<_>>();
             let rbs = self
                 .df
-                .iter_chunks(PlFlavor::compatible(), true)
+                .iter_chunks(CompatLevel::oldest(), true)
                 .map(|rb| {
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {

@@ -12,7 +12,7 @@ fn cast_and_apply<
     ca: &DatetimeChunked,
     func: F,
 ) -> ChunkedArray<T> {
-    let dtype = ca.dtype().to_arrow(PlFlavor::highest());
+    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
     let chunks = ca.downcast_iter().map(|arr| {
         let arr = cast(
             arr,

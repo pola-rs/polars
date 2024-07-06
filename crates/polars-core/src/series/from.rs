@@ -105,7 +105,7 @@ impl Series {
             Struct(_) => Series::_try_from_arrow_unchecked(
                 name,
                 chunks,
-                &dtype.to_arrow(PlFlavor::highest()),
+                &dtype.to_arrow(CompatLevel::newest()),
             )
             .unwrap(),
             #[cfg(feature = "object")]

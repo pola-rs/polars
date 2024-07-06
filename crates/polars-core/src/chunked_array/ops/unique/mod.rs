@@ -130,7 +130,7 @@ where
                             .field
                             .as_ref()
                             .data_type()
-                            .to_arrow(PlFlavor::compatible());
+                            .to_arrow(CompatLevel::oldest());
                         if let Some(mut state) = PrimitiveRangedUniqueState::new(
                             *min,
                             *max,
@@ -276,7 +276,7 @@ impl ChunkUnique for BooleanChunked {
             .field
             .as_ref()
             .data_type()
-            .to_arrow(PlFlavor::compatible());
+            .to_arrow(CompatLevel::oldest());
         let has_null = self.null_count() > 0;
         let mut state = BooleanUniqueKernelState::new(has_null, data_type);
 

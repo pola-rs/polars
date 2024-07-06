@@ -1184,25 +1184,25 @@ where
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct PyPlFlavor(pub PlFlavor);
+pub struct PyCompatLevel(pub CompatLevel);
 
-impl<'a> FromPyObject<'a> for PyPlFlavor {
+impl<'a> FromPyObject<'a> for PyCompatLevel {
     fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
-        Ok(PyPlFlavor(if let Ok(version) = ob.extract::<u16>() {
-            if let Ok(flavor) = PlFlavor::with_version(version) {
-                flavor
+        Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
+            if let Ok(compat_level) = CompatLevel::with_level(level) {
+                compat_level
             } else {
-                return Err(PyValueError::new_err("invalid flavor version"));
+                return Err(PyValueError::new_err("invalid compat level"));
             }
         } else if let Ok(future) = ob.extract::<bool>() {
             if future {
-                PlFlavor::highest()
+                CompatLevel::newest()
             } else {
-                PlFlavor::compatible()
+                CompatLevel::oldest()
             }
         } else {
             return Err(PyTypeError::new_err(
-                "'future' argument accepts int or bool",
+                "'compat_level' argument accepts int or bool",
             ));
         }))
     }

@@ -70,12 +70,12 @@ where
                 };
 
                 let array = PrimitiveArray::new(
-                    T::get_dtype().to_arrow(PlFlavor::highest()),
+                    T::get_dtype().to_arrow(CompatLevel::newest()),
                     list_values.into(),
                     validity,
                 );
                 let data_type = ListArray::<i64>::default_datatype(
-                    T::get_dtype().to_arrow(PlFlavor::highest()),
+                    T::get_dtype().to_arrow(CompatLevel::newest()),
                 );
                 // SAFETY:
                 // offsets are monotonically increasing
@@ -135,12 +135,12 @@ where
                 };
 
                 let array = PrimitiveArray::new(
-                    T::get_dtype().to_arrow(PlFlavor::highest()),
+                    T::get_dtype().to_arrow(CompatLevel::newest()),
                     list_values.into(),
                     validity,
                 );
                 let data_type = ListArray::<i64>::default_datatype(
-                    T::get_dtype().to_arrow(PlFlavor::highest()),
+                    T::get_dtype().to_arrow(CompatLevel::newest()),
                 );
                 let arr = ListArray::<i64>::new(
                     data_type,

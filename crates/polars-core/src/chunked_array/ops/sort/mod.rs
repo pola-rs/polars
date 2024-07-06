@@ -201,7 +201,7 @@ where
         }
 
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(PlFlavor::highest()),
+            T::get_dtype().to_arrow(CompatLevel::newest()),
             vals.into(),
             Some(create_validity(len, null_count, options.nulls_last)),
         );

@@ -498,7 +498,7 @@ impl DataType {
     }
 
     /// Convert to an Arrow Field
-    pub fn to_arrow_field(&self, name: &str, pl_flavor: PlFlavor) -> ArrowField {
+    pub fn to_arrow_field(&self, name: &str, compat_level: CompatLevel) -> ArrowField {
         let metadata = match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => Some(BTreeMap::from([(
@@ -512,7 +512,7 @@ impl DataType {
             _ => None,
         };
 
-        let field = ArrowField::new(name, self.to_arrow(pl_flavor), true);
+        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
 
         if let Some(metadata) = metadata {
             field.with_metadata(metadata)
@@ -523,12 +523,12 @@ impl DataType {
 
     /// Convert to an Arrow data type.
     #[inline]
-    pub fn to_arrow(&self, pl_flavor: PlFlavor) -> ArrowDataType {
-        self.try_to_arrow(pl_flavor).unwrap()
+    pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowDataType {
+        self.try_to_arrow(compat_level).unwrap()
     }
 
     #[inline]
-    pub fn try_to_arrow(&self, pl_flavor: PlFlavor) -> PolarsResult<ArrowDataType> {
+    pub fn try_to_arrow(&self, compat_level: CompatLevel) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
             Boolean => Ok(ArrowDataType::Boolean),
@@ -553,7 +553,7 @@ impl DataType {
                 ))
             },
             String => {
-                let dt = if pl_flavor.version >= 1 {
+                let dt = if compat_level.0 >= 1 {
                     ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
@@ -561,7 +561,7 @@ impl DataType {
                 Ok(dt)
             },
             Binary => {
-                let dt = if pl_flavor.version >= 1 {
+                let dt = if compat_level.0 >= 1 {
                     ArrowDataType::BinaryView
                 } else {
                     ArrowDataType::LargeBinary
@@ -574,11 +574,11 @@ impl DataType {
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
             Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
-                Box::new(dt.to_arrow_field("item", pl_flavor)),
+                Box::new(dt.to_arrow_field("item", compat_level)),
                 *size,
             )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
-                dt.to_arrow_field("item", pl_flavor),
+                dt.to_arrow_field("item", compat_level),
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
@@ -592,7 +592,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
-                let values = if pl_flavor.version >= 1 {
+                let values = if compat_level.0 >= 1 {
                     ArrowDataType::Utf8View
                 } else {
                     ArrowDataType::LargeUtf8
@@ -605,7 +605,10 @@ impl DataType {
             },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
-                let fields = fields.iter().map(|fld| fld.to_arrow(pl_flavor)).collect();
+                let fields = fields
+                    .iter()
+                    .map(|fld| fld.to_arrow(compat_level))
+                    .collect();
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
@@ -615,7 +618,7 @@ impl DataType {
                     UnknownKind::Float => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
-                        return materialize_dyn_int(*v).dtype().try_to_arrow(pl_flavor)
+                        return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level)
                     },
                 };
                 Ok(dt)
@@ -791,24 +794,22 @@ pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct PlFlavor {
-    pub(crate) version: u16,
-}
+pub struct CompatLevel(pub(crate) u16);
 
-impl PlFlavor {
-    pub const fn highest() -> PlFlavor {
-        PlFlavor { version: 1 }
+impl CompatLevel {
+    pub const fn newest() -> CompatLevel {
+        CompatLevel(1)
     }
 
-    pub const fn compatible() -> PlFlavor {
-        PlFlavor { version: 0 }
+    pub const fn oldest() -> CompatLevel {
+        CompatLevel(0)
     }
 
-    /// DO NO USE! This is only for py-polars.
-    pub fn with_version(version: u16) -> PolarsResult<PlFlavor> {
-        if version > PlFlavor::highest().version {
-            polars_bail!(InvalidOperation: "invalid flavor version");
+    #[doc(hidden)]
+    pub fn with_level(level: u16) -> PolarsResult<CompatLevel> {
+        if level > CompatLevel::newest().0 {
+            polars_bail!(InvalidOperation: "invalid compat level");
         }
-        Ok(PlFlavor { version })
+        Ok(CompatLevel(level))
     }
 }
