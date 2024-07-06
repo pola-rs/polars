@@ -173,10 +173,10 @@ def test_slice_nullcount(ref: list[int | None]) -> None:
 
 def test_slice_pushdown_set_sorted() -> None:
     ldf = pl.LazyFrame({"foo": [1, 2, 3]})
-    ldf = ldf.set_sorted("foo").head(5)
+    ldf = ldf.set_sorted("foo").head(2)
     plan = ldf.explain()
-    # check the set sorted is above slice
-    assert plan.index("set_sorted") < plan.index("SLICE")
+    assert "SLICE" not in plan
+    assert ldf.collect().height == 2
 
 
 def test_slice_pushdown_literal_projection_14349() -> None:
@@ -197,19 +197,17 @@ def test_slice_pushdown_literal_projection_14349() -> None:
 
     # For select, slice pushdown should happen when at least 1 input column is selected
     q = lf.select("a", x=1).head(0)
-    plan = q.explain()
-    assert plan.index("SELECT") < plan.index("SLICE")
+    # slice isn't in plan if it has been pushed down to the dataframe
+    assert "SLICE" not in q.explain()
     assert q.collect().height == 0
 
     # For with_columns, slice pushdown should happen if the input has at least 1 column
     q = lf.with_columns(x=1).head(0)
-    plan = q.explain()
-    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert "SLICE" not in q.explain()
     assert q.collect().height == 0
 
     q = lf.with_columns(pl.col("a") + 1).head(0)
-    plan = q.explain()
-    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert "SLICE" not in q.explain()
     assert q.collect().height == 0
 
     # This does not project any of the original columns
@@ -219,8 +217,7 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     assert q.collect().height == 0
 
     q = lf.with_columns(b=1, c=2).head(0)
-    plan = q.explain()
-    assert plan.index("WITH_COLUMNS") < plan.index("SLICE")
+    assert "SLICE" not in q.explain()
     assert q.collect().height == 0
 
 
