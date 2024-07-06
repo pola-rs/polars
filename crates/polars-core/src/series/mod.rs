@@ -592,8 +592,12 @@ impl Series {
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
-            Date => Cow::Owned(self.cast(&Int32).unwrap()),
-            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
+            // NOTE: Don't use cast here, as it might rechunk (if all nulls)
+            // which is not allowed in a phys repr.
+            Date => Cow::Owned(self.date().unwrap().0.clone().into_series()),
+            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().0.clone().into_series()),
+            Duration(_) => Cow::Owned(self.duration().unwrap().0.clone().into_series()),
+            Time => Cow::Owned(self.time().unwrap().0.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let ca = self.categorical().unwrap();
