@@ -259,43 +259,45 @@ class CopyNotAllowedError(RuntimeError):
     """Exception raised when a copy is required, but `allow_copy` is set to `False`."""
 
 
-class Flavor:
-    """Data structure flavor."""
+class CompatLevel:
+    """Data structure compatibility level."""
 
     def __init__(self) -> None:
-        msg = "it is not allowed to create a Flavor object"
+        msg = "it is not allowed to create a CompatLevel object"
         raise TypeError(msg)
 
     @staticmethod
-    def _with_version(version: int) -> Flavor:
-        flavor = Flavor.__new__(Flavor)
-        flavor._version = version  # type: ignore[attr-defined]
-        return flavor
+    def _with_version(version: int) -> CompatLevel:
+        compat_level = CompatLevel.__new__(CompatLevel)
+        compat_level._version = version  # type: ignore[attr-defined]
+        return compat_level
 
     @staticmethod
-    def _highest() -> Flavor:
-        return Flavor._future1  # type: ignore[attr-defined]
+    def _newest() -> CompatLevel:
+        return CompatLevel._future1  # type: ignore[attr-defined]
 
     @staticmethod
-    def highest() -> Flavor:
+    def newest() -> CompatLevel:
         """
-        Get the highest supported flavor.
+        Get the highest supported compatibility level.
 
         .. warning::
-            Highest flavor is considered **unstable**. It may be changed
+            Highest compatibility level is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
         """
-        issue_unstable_warning("Using the highest flavor is considered unstable.")
-        return Flavor._highest()
+        issue_unstable_warning(
+            "Using the highest compatibility level is considered unstable."
+        )
+        return CompatLevel._newest()
 
     @staticmethod
-    def compatible() -> Flavor:
-        """Get the flavor that is compatible with older arrow implementation."""
-        return Flavor._compatible  # type: ignore[attr-defined]
+    def oldest() -> CompatLevel:
+        """Get the most compatible level."""
+        return CompatLevel._compatible  # type: ignore[attr-defined]
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__module__}.{self.__class__.__qualname__}: {self._version}>"  # type: ignore[attr-defined]
 
 
-Flavor._compatible = Flavor._with_version(0)  # type: ignore[attr-defined]
-Flavor._future1 = Flavor._with_version(1)  # type: ignore[attr-defined]
+CompatLevel._compatible = CompatLevel._with_version(0)  # type: ignore[attr-defined]
+CompatLevel._future1 = CompatLevel._with_version(1)  # type: ignore[attr-defined]

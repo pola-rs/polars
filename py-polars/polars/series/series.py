@@ -98,7 +98,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
-from polars.interchange.protocol import Flavor
+from polars.interchange.protocol import CompatLevel
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -503,14 +503,14 @@ class Series:
             validity = validity._s
         return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
-    def _highest_flavor(self) -> int:
+    def _newest_compat_level(self) -> int:
         """
         Get the highest supported flavor version.
 
         This is only used by pyo3-polars,
         and it is simpler not to make it a static method.
         """
-        return Flavor._highest()._version  # type: ignore[attr-defined]
+        return CompatLevel._newest()._version  # type: ignore[attr-defined]
 
     @property
     def dtype(self) -> DataType:
@@ -4352,7 +4352,8 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    def to_arrow(self, *, future: Flavor | None = None) -> pa.Array:
+    @deprecate_renamed_parameter("future", "compat_level", version="1.0.1")
+    def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Array:
         """
         Return the underlying Arrow array.
 
@@ -4360,8 +4361,9 @@ class Series:
 
         Parameters
         ----------
-        future
-            Use a specific version of Polars' internal data structures.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -4375,11 +4377,11 @@ class Series:
           3
         ]
         """
-        if future is None:
-            future = False  # type: ignore[assignment]
-        elif isinstance(future, Flavor):
-            future = future._version  # type: ignore[attr-defined]
-        return self._s.to_arrow(future)
+        if compat_level is None:
+            compat_level = False  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
+        return self._s.to_arrow(compat_level)
 
     def to_pandas(
         self, *, use_pyarrow_extension_array: bool = False, **kwargs: Any

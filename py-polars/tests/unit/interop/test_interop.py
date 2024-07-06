@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, UnstableWarning
-from polars.interchange.protocol import Flavor
+from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -708,7 +708,7 @@ def test_from_numpy_different_resolution_invalid() -> None:
 def test_highest_flavor(monkeypatch: pytest.MonkeyPatch) -> None:
     # change these if flavor version bumped
     monkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
-    assert Flavor.compatible()._version == 0  # type: ignore[attr-defined]
+    assert CompatLevel.oldest()._version == 0  # type: ignore[attr-defined]
     with pytest.warns(UnstableWarning):
-        assert Flavor.highest()._version == 1  # type: ignore[attr-defined]
-    assert pl.Series([1])._highest_flavor() == 1
+        assert CompatLevel.newest()._version == 1  # type: ignore[attr-defined]
+    assert pl.Series([1])._newest_compat_level() == 1
