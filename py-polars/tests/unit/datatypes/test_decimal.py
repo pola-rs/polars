@@ -479,3 +479,9 @@ def test_decimal_raise_oob_precision() -> None:
     # max precision is 38.
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(b=pl.col("a").cast(pl.Decimal(76, 38)))
+
+
+def test_decimal_dynamic_float_st() -> None:
+    assert pl.LazyFrame({"a": [D("2.0"), D("0.5")]}).filter(
+        pl.col("a").is_between(0.45, 0.9)
+    ).collect().to_dict(as_series=False) == {"a": [D("0.5")]}
