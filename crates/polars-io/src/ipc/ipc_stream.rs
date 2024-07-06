@@ -235,7 +235,7 @@ where
         IpcStreamWriter {
             writer,
             compression: None,
-            pl_flavor: PlFlavor::Compatible,
+            pl_flavor: PlFlavor::compatible(),
         }
     }
 

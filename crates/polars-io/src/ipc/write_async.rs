@@ -10,14 +10,14 @@ impl<W: AsyncWrite + Unpin + Send> IpcWriter<W> {
         IpcWriter {
             writer,
             compression: None,
-            pl_flavor: PlFlavor::Compatible,
+            pl_flavor: PlFlavor::compatible(),
         }
     }
 
     pub fn batched_async(self, schema: &Schema) -> PolarsResult<BatchedWriterAsync<W>> {
         let writer = FileSink::new(
             self.writer,
-            schema.to_arrow(PlFlavor::Compatible),
+            schema.to_arrow(PlFlavor::compatible()),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
@@ -44,7 +44,7 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub async fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let iter = df.iter_chunks(PlFlavor::Compatible, true);
+        let iter = df.iter_chunks(PlFlavor::compatible(), true);
         for batch in iter {
             self.writer.feed(batch.into()).await?;
         }

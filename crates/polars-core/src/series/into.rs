@@ -116,19 +116,21 @@ impl Series {
                     object_series_to_arrow_array(&s)
                 }
             },
-            DataType::String => match pl_flavor {
-                PlFlavor::Future1 => self.array_ref(chunk_idx).clone(),
-                PlFlavor::Compatible => {
+            DataType::String => {
+                if pl_flavor.version >= 1 {
+                    self.array_ref(chunk_idx).clone()
+                } else {
                     let arr = self.array_ref(chunk_idx);
                     cast_unchecked(arr.as_ref(), &ArrowDataType::LargeUtf8).unwrap()
-                },
+                }
             },
-            DataType::Binary => match pl_flavor {
-                PlFlavor::Future1 => self.array_ref(chunk_idx).clone(),
-                PlFlavor::Compatible => {
+            DataType::Binary => {
+                if pl_flavor.version >= 1 {
+                    self.array_ref(chunk_idx).clone()
+                } else {
                     let arr = self.array_ref(chunk_idx);
                     cast_unchecked(arr.as_ref(), &ArrowDataType::LargeBinary).unwrap()
-                },
+                }
             },
             _ => self.array_ref(chunk_idx).clone(),
         }

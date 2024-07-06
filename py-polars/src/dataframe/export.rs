@@ -105,7 +105,7 @@ impl PyDataFrame {
                 .collect::<Vec<_>>();
             let rbs = self
                 .df
-                .iter_chunks(PlFlavor::Compatible, true)
+                .iter_chunks(PlFlavor::compatible(), true)
                 .map(|rb| {
                     let mut rb = rb.into_arrays();
                     for i in &cat_columns {

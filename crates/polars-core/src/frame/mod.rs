@@ -2385,11 +2385,7 @@ impl DataFrame {
     pub fn iter_chunks(&self, pl_flavor: PlFlavor, parallel: bool) -> RecordBatchIter {
         // If any of the columns is binview and we don't convert `pl_flavor` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let parallel = if parallel
-            && match pl_flavor {
-                PlFlavor::Future1 => true,
-                PlFlavor::Compatible => false,
-            } {
+        let parallel = if parallel && pl_flavor.version >= 1 {
             self.columns.len() > 1
                 && self
                     .columns

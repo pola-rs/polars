@@ -82,7 +82,7 @@ fn test_read_ipc_with_columns() {
         .unwrap();
     df_read.equals(&expected);
 
-    for pl_flavor in [PlFlavor::Compatible, PlFlavor::Future1] {
+    for pl_flavor in [0, 1].map(|version| PlFlavor::with_version(version).unwrap()) {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = df![
             "letters" => ["x", "y", "z"],

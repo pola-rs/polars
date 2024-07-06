@@ -1188,17 +1188,17 @@ pub struct PyPlFlavor(pub PlFlavor);
 
 impl<'a> FromPyObject<'a> for PyPlFlavor {
     fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
-        Ok(PyPlFlavor(if let Ok(version) = ob.extract::<u32>() {
-            match version {
-                0 => PlFlavor::Compatible,
-                1 => PlFlavor::Future1,
-                _ => return Err(PyValueError::new_err("invalid flavor version")),
+        Ok(PyPlFlavor(if let Ok(version) = ob.extract::<u16>() {
+            if let Ok(flavor) = PlFlavor::with_version(version) {
+                flavor
+            } else {
+                return Err(PyValueError::new_err("invalid flavor version"));
             }
         } else if let Ok(future) = ob.extract::<bool>() {
             if future {
                 PlFlavor::highest()
             } else {
-                PlFlavor::Compatible
+                PlFlavor::compatible()
             }
         } else {
             return Err(PyTypeError::new_err(

@@ -553,16 +553,18 @@ impl DataType {
                 ))
             },
             String => {
-                let dt = match pl_flavor {
-                    PlFlavor::Future1 => ArrowDataType::Utf8View,
-                    PlFlavor::Compatible => ArrowDataType::LargeUtf8,
+                let dt = if pl_flavor.version >= 1 {
+                    ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
                 };
                 Ok(dt)
             },
             Binary => {
-                let dt = match pl_flavor {
-                    PlFlavor::Future1 => ArrowDataType::BinaryView,
-                    PlFlavor::Compatible => ArrowDataType::LargeBinary,
+                let dt = if pl_flavor.version >= 1 {
+                    ArrowDataType::BinaryView
+                } else {
+                    ArrowDataType::LargeBinary
                 };
                 Ok(dt)
             },
@@ -590,9 +592,10 @@ impl DataType {
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
-                let values = match pl_flavor {
-                    PlFlavor::Future1 => ArrowDataType::Utf8View,
-                    PlFlavor::Compatible => ArrowDataType::LargeUtf8,
+                let values = if pl_flavor.version >= 1 {
+                    ArrowDataType::Utf8View
+                } else {
+                    ArrowDataType::LargeUtf8
                 };
                 Ok(ArrowDataType::Dictionary(
                     IntegerType::UInt32,
@@ -788,13 +791,24 @@ pub fn create_enum_data_type(categories: Utf8ViewArray) -> DataType {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PlFlavor {
-    Compatible,
-    Future1,
+pub struct PlFlavor {
+    pub(crate) version: u16,
 }
 
 impl PlFlavor {
     pub const fn highest() -> PlFlavor {
-        PlFlavor::Future1
+        PlFlavor { version: 1 }
+    }
+
+    pub const fn compatible() -> PlFlavor {
+        PlFlavor { version: 0 }
+    }
+
+    /// DO NO USE! This is only for py-polars.
+    pub fn with_version(version: u16) -> PolarsResult<PlFlavor> {
+        if version > PlFlavor::highest().version {
+            polars_bail!(InvalidOperation: "invalid flavor version");
+        }
+        Ok(PlFlavor { version })
     }
 }
