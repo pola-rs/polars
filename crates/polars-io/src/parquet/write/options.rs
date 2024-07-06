@@ -16,7 +16,7 @@ pub struct ParquetWriteOptions {
     /// If `None` will be all written to a single row group.
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
-    pub data_pagesize_limit: Option<usize>,
+    pub data_page_size: Option<usize>,
     /// maintain the order the data was processed
     pub maintain_order: bool,
 }
