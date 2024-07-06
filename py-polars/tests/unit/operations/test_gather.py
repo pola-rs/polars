@@ -137,3 +137,14 @@ def test_list_get_null_on_oob_true() -> None:
     df = s_no_nulls.to_frame().with_columns(pl.lit(2).alias("idx"))
     out = df.select(pl.col("a").list.get("idx", null_on_oob=True)).to_series()
     assert_series_equal(out, expected)
+
+
+def test_chunked_gather_phys_repr_17446() -> None:
+    dfa = pl.DataFrame({"replace_unique_id": range(2)})
+
+    for dt in [pl.Date, pl.Time, pl.Duration]:
+        dfb = dfa.clone()
+        dfb = dfb.with_columns(ds_start_date_right=pl.lit(None).cast(dt))
+        dfb = pl.concat([dfb, dfb])
+
+        assert dfa.join(dfb, how="left", on=pl.col("replace_unique_id")).shape == (4, 2)
