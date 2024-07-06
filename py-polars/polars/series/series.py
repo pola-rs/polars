@@ -503,6 +503,15 @@ class Series:
             validity = validity._s
         return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
+    def _highest_flavor(self) -> int:
+        """
+        Get the highest supported flavor version.
+
+        This is only used by pyo3-polars,
+        and it is simpler not to make it a static method.
+        """
+        return Flavor._highest()._version  # type: ignore[attr-defined]
+
     @property
     def dtype(self) -> DataType:
         """
@@ -4343,7 +4352,7 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    def to_arrow(self, *, future: Flavor = Flavor.Compatible) -> pa.Array:
+    def to_arrow(self, *, future: Flavor | None = None) -> pa.Array:
         """
         Return the underlying Arrow array.
 
@@ -4366,8 +4375,10 @@ class Series:
           3
         ]
         """
-        if isinstance(future, Flavor):
-            future = future.value  # type: ignore[assignment]
+        if future is None:
+            future = False  # type: ignore[assignment]
+        elif isinstance(future, Flavor):
+            future = future._version  # type: ignore[attr-defined]
         return self._s.to_arrow(future)
 
     def to_pandas(
