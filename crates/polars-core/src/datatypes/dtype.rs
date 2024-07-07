@@ -805,11 +805,18 @@ impl CompatLevel {
         CompatLevel(0)
     }
 
+    // The following methods are only used internally
+
     #[doc(hidden)]
     pub fn with_level(level: u16) -> PolarsResult<CompatLevel> {
         if level > CompatLevel::newest().0 {
             polars_bail!(InvalidOperation: "invalid compat level");
         }
         Ok(CompatLevel(level))
+    }
+
+    #[doc(hidden)]
+    pub fn get_level(&self) -> u16 {
+        self.0
     }
 }
