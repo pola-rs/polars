@@ -503,12 +503,12 @@ class Series:
             validity = validity._s
         return cls._from_pyseries(PySeries._from_buffers(dtype, data, validity))
 
-    def _newest_compat_level(self) -> int:
+    @staticmethod
+    def _newest_compat_level() -> int:
         """
-        Get the highest supported flavor version.
+        Get the newest supported compat level.
 
-        This is only used by pyo3-polars,
-        and it is simpler not to make it a static method.
+        This is for pyo3-polars.
         """
         return CompatLevel._newest()._version  # type: ignore[attr-defined]
 
