@@ -3878,15 +3878,19 @@ class DataFrame:
                 min_err_prefix="pandas >= 2.2 requires",
             )
             # note: the catalog (database) should be a part of the connection string
-            from sqlalchemy.engine import create_engine
+            from sqlalchemy.engine import Connectable, create_engine
             from sqlalchemy.orm import Session
 
+            sa_object: Connectable
             if isinstance(connection, str):
-                engine_sa = create_engine(connection)
+                sa_object = create_engine(connection)
             elif isinstance(connection, Session):
-                engine_sa = connection.connection().engine
+                sa_object = connection.connection()
+            elif isinstance(connection, Connectable):
+                sa_object = connection
             else:
-                engine_sa = connection.engine  # type: ignore[union-attr]
+                error_msg = f"unexpected connection type {type(connection)}"
+                raise TypeError(error_msg)
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
@@ -3900,7 +3904,7 @@ class DataFrame:
             ).to_sql(
                 name=unpacked_table_name,
                 schema=db_schema,
-                con=engine_sa,
+                con=sa_object,
                 if_exists=if_table_exists,
                 index=False,
                 **(engine_options or {}),
