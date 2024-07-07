@@ -156,8 +156,12 @@ impl Series {
         while let Some(dim) = dims.pop_back() {
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
-            prev_array =
-                FixedSizeListArray::new(prev_dtype.to_arrow(true), prev_array, None).boxed();
+            prev_array = FixedSizeListArray::new(
+                prev_dtype.to_arrow(CompatLevel::newest()),
+                prev_array,
+                None,
+            )
+            .boxed();
         }
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(

@@ -150,7 +150,7 @@ where
             unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
         let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(true),
+            T::get_dtype().to_arrow(CompatLevel::newest()),
             new_values.into(),
             Some(validity.into()),
         );
@@ -269,7 +269,9 @@ impl ExplodeByOffsets for ListChunked {
             last = o;
         }
         process_range(start, last, &mut builder);
-        let arr = builder.finish(Some(&inner_type.to_arrow(true))).unwrap();
+        let arr = builder
+            .finish(Some(&inner_type.to_arrow(CompatLevel::newest())))
+            .unwrap();
         let mut ca = unsafe { self.copy_with_chunks(vec![Box::new(arr)]) };
 
         use MetadataProperties as P;

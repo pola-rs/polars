@@ -41,7 +41,7 @@ where
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         let array_builder = MutablePrimitiveArray::<T::Native>::with_capacity(capacity)
-            .to(T::get_dtype().to_arrow(true));
+            .to(T::get_dtype().to_arrow(CompatLevel::newest()));
 
         PrimitiveChunkedBuilder {
             array_builder,

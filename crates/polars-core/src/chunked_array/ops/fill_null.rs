@@ -306,7 +306,7 @@ where
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
-            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(true))
+            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
                 .with_validity_typed(Some(bm.into())),
         ],
     )
@@ -340,7 +340,7 @@ where
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
-            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(true))
+            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
                 .with_validity_typed(Some(bm.into())),
         ],
     )

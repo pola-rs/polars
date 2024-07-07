@@ -97,7 +97,7 @@ where
     }
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
-        let schema = schema_to_arrow_checked(schema, true, "parquet")?;
+        let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();

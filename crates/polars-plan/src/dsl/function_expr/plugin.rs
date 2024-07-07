@@ -130,7 +130,7 @@ pub(super) unsafe fn plugin_field(
     // we deallocate the fields buffer
     let ffi_fields = fields
         .iter()
-        .map(|field| arrow::ffi::export_field_to_c(&field.to_arrow(true)))
+        .map(|field| arrow::ffi::export_field_to_c(&field.to_arrow(CompatLevel::newest())))
         .collect::<Vec<_>>()
         .into_boxed_slice();
     let n_args = ffi_fields.len();

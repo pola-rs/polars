@@ -120,13 +120,13 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
 pub(crate) fn schema_to_arrow_checked(
     schema: &Schema,
-    pl_flavor: bool,
+    compat_level: CompatLevel,
     _file_name: &str,
 ) -> PolarsResult<ArrowSchema> {
     let fields = schema.iter_fields().map(|field| {
         #[cfg(feature = "object")]
         polars_ensure!(!matches!(field.data_type(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to {}", _file_name);
-        Ok(field.data_type().to_arrow_field(field.name().as_str(), pl_flavor))
+        Ok(field.data_type().to_arrow_field(field.name().as_str(), compat_level))
     }).collect::<PolarsResult<Vec<_>>>()?;
     Ok(ArrowSchema::from(fields))
 }

@@ -1182,3 +1182,28 @@ where
 {
     container.into_iter().map(|s| s.as_ref().into()).collect()
 }
+
+#[derive(Debug, Copy, Clone)]
+pub struct PyCompatLevel(pub CompatLevel);
+
+impl<'a> FromPyObject<'a> for PyCompatLevel {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+        Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
+            if let Ok(compat_level) = CompatLevel::with_level(level) {
+                compat_level
+            } else {
+                return Err(PyValueError::new_err("invalid compat level"));
+            }
+        } else if let Ok(future) = ob.extract::<bool>() {
+            if future {
+                CompatLevel::newest()
+            } else {
+                CompatLevel::oldest()
+            }
+        } else {
+            return Err(PyTypeError::new_err(
+                "'compat_level' argument accepts int or bool",
+            ));
+        }))
+    }
+}

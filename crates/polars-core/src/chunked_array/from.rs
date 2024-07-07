@@ -217,7 +217,10 @@ where
         #[cfg(debug_assertions)]
         {
             if !chunks.is_empty() && !chunks[0].is_empty() && dtype.is_primitive() {
-                assert_eq!(chunks[0].data_type(), &dtype.to_arrow(true))
+                assert_eq!(
+                    chunks[0].data_type(),
+                    &dtype.to_arrow(CompatLevel::newest())
+                )
             }
         }
         let field = Arc::new(Field::new(name, dtype));
@@ -234,7 +237,10 @@ where
     }
 
     pub fn full_null_like(ca: &Self, length: usize) -> Self {
-        let chunks = std::iter::once(T::Array::full_null(length, ca.dtype().to_arrow(true)));
+        let chunks = std::iter::once(T::Array::full_null(
+            length,
+            ca.dtype().to_arrow(CompatLevel::newest()),
+        ));
         Self::from_chunk_iter_like(ca, chunks)
     }
 }

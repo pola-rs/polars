@@ -124,7 +124,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
             .finish(
                 self.inner_dtype
                     .as_ref()
-                    .map(|dt| dt.to_arrow(true))
+                    .map(|dt| dt.to_arrow(CompatLevel::newest()))
                     .as_ref(),
             )
             .unwrap();

@@ -94,12 +94,12 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
         DataType::Categorical(_, _) | DataType::Enum(_, _) => {
             let ca = by.categorical().unwrap();
             if ca.uses_lexical_ordering() {
-                by.to_arrow(0, true)
+                by.to_arrow(0, CompatLevel::newest())
             } else {
                 ca.physical().chunks[0].clone()
             }
         },
-        _ => by.to_arrow(0, true),
+        _ => by.to_arrow(0, CompatLevel::newest()),
     };
     Ok(out)
 }

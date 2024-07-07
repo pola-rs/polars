@@ -18,7 +18,7 @@ impl PyDataFrame {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
         IpcStreamWriter::new(&mut buf)
-            .with_pl_flavor(true)
+            .with_compat_level(CompatLevel::newest())
             .finish(&mut self.df.clone())
             .expect("ipc writer");
         Ok(PyBytes::new_bound(py, &buf).to_object(py))

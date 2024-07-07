@@ -146,11 +146,11 @@ where
             .map(|s| {
                 #[cfg(feature = "object")]
                 polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
-                Ok(s.field().to_arrow(true))
+                Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
-            .iter_chunks(true, false)
+            .iter_chunks(CompatLevel::newest(), false)
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
 
         match self.json_format {
@@ -191,10 +191,10 @@ where
             .map(|s| {
                 #[cfg(feature = "object")]
                 polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
-                Ok(s.field().to_arrow(true))
+                Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let chunks = df.iter_chunks(true, false);
+        let chunks = df.iter_chunks(CompatLevel::newest(), false);
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
@@ -267,7 +267,7 @@ where
                         overwrite_schema(mut_schema, overwrite)?;
                     }
 
-                    DataType::Struct(schema.iter_fields().collect()).to_arrow(true)
+                    DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest())
                 } else {
                     // infer
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
@@ -276,7 +276,7 @@ where
                             self.infer_schema_len
                                 .unwrap_or(NonZeroUsize::new(usize::MAX).unwrap()),
                         )?
-                        .to_arrow(true)
+                        .to_arrow(CompatLevel::newest())
                     } else {
                         polars_json::json::infer(&json_value)?
                     };
@@ -295,7 +295,7 @@ where
                                 .map(|(name, dt)| Field::new(&name, dt))
                                 .collect(),
                         )
-                        .to_arrow(true)
+                        .to_arrow(CompatLevel::newest())
                     } else {
                         inner_dtype
                     }

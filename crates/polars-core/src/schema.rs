@@ -370,11 +370,11 @@ impl Schema {
     }
 
     /// Convert self to `ArrowSchema` by cloning the fields
-    pub fn to_arrow(&self, pl_flavor: bool) -> ArrowSchema {
+    pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowSchema {
         let fields: Vec<_> = self
             .inner
             .iter()
-            .map(|(name, dtype)| dtype.to_arrow_field(name.as_str(), pl_flavor))
+            .map(|(name, dtype)| dtype.to_arrow_field(name.as_str(), compat_level))
             .collect();
         ArrowSchema::from(fields)
     }

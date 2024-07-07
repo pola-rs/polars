@@ -130,7 +130,7 @@ where
                 }
             };
         });
-    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(true));
+    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(CompatLevel::newest()));
     if (times.null_count() > 0) || (values.null_count() > 0) {
         let validity = binary_concatenate_validities(times, values);
         arr = arr.with_validity_typed(validity);
@@ -179,7 +179,7 @@ where
                 }
             };
         });
-    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(true));
+    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(CompatLevel::newest()));
     if (times.null_count() > 0) || (values.null_count() > 0) {
         let validity = binary_concatenate_validities(times, values);
         arr = arr.with_validity_typed(validity);

@@ -103,6 +103,7 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
+from polars.interchange.protocol import CompatLevel
 from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
@@ -1384,7 +1385,8 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self, *, future: bool = False) -> pa.Table:
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
@@ -1395,13 +1397,9 @@ class DataFrame:
 
         Parameters
         ----------
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -1419,12 +1417,12 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        if future:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.to_arrow` is considered unstable."
-            )
+        if compat_level is None:
+            compat_level = False  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
 
-        record_batches = self._df.to_arrow(future)
+        record_batches = self._df.to_arrow(compat_level)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -3297,7 +3295,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3306,15 +3304,16 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> None: ...
 
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3328,13 +3327,9 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -3356,17 +3351,15 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        if compat_level is None:
+            compat_level = True  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
+
         if compression is None:
             compression = "uncompressed"
 
-        if future:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
-            )
-        if future is None:
-            future = True
-
-        self._df.write_ipc(file, compression, future)
+        self._df.write_ipc(file, compression, compat_level)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3375,7 +3368,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3384,15 +3377,16 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> None: ...
 
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC record batch stream.
@@ -3406,13 +3400,9 @@ class DataFrame:
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -3434,17 +3424,15 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        if compat_level is None:
+            compat_level = True  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
+
         if compression is None:
             compression = "uncompressed"
 
-        if future:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
-            )
-        if future is None:
-            future = True
-
-        self._df.write_ipc_stream(file, compression, future=future)
+        self._df.write_ipc_stream(file, compression, compat_level)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
