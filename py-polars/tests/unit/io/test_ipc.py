@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -234,7 +235,7 @@ def test_from_float16() -> None:
 def test_binview_ipc_mmap(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
-    df.write_ipc(file_path)
+    df.write_ipc(file_path, compat_level=CompatLevel.newest())
     read = pl.read_ipc(file_path, memory_map=True)
     assert_frame_equal(df, read)
 
@@ -243,7 +244,7 @@ def test_list_nested_enum() -> None:
     dtype = pl.List(pl.Enum(["a", "b", "c"]))
     df = pl.DataFrame(pl.Series("list_cat", [["a", "b", "c", None]], dtype=dtype))
     buffer = io.BytesIO()
-    df.write_ipc(buffer)
+    df.write_ipc(buffer, compat_level=CompatLevel.newest())
     df = pl.read_ipc(buffer)
     assert df.get_column("list_cat").dtype == dtype
 
@@ -256,7 +257,7 @@ def test_struct_nested_enum() -> None:
         )
     )
     buffer = io.BytesIO()
-    df.write_ipc(buffer)
+    df.write_ipc(buffer, compat_level=CompatLevel.newest())
     df = pl.read_ipc(buffer)
     assert df.get_column("struct_cat").dtype == dtype
 
@@ -268,7 +269,7 @@ def test_ipc_view_gc_14448() -> None:
     df = pl.DataFrame(
         pl.Series(["small"] * 10 + ["looooooong string......."] * 750).slice(20, 20)
     )
-    df.write_ipc(f)
+    df.write_ipc(f, compat_level=CompatLevel.newest())
     f.seek(0)
     assert_frame_equal(pl.read_ipc(f), df)
 
