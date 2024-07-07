@@ -15,6 +15,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from sqlalchemy.engine import Connection
+
     from polars._typing import DbWriteEngine
 
 
@@ -252,6 +254,63 @@ def test_write_database_using_sa_session(tmp_path: str) -> None:
     with Session(engine) as session:
         df.write_database(table_name, session)
         session.commit()
+
+    with Session(engine) as session:
+        result = pl.read_database(
+            query=f"select * from {table_name}", connection=session
+        )
+
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("pass_connection", [True, False])
+def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "zz"],
+            "value": [123, None, 789],
+            "other": [5.5, 7.0, None],
+        }
+    )
+    table_name = "test_sa_rollback"
+    test_db_uri = f"sqlite:///{tmp_path}/test_sa_rollback.db"
+    engine = create_engine(test_db_uri, poolclass=NullPool)
+    conn: Session | Connection
+    with Session(engine) as conn:
+        if pass_connection:
+            conn = conn.connection()
+        df.write_database(table_name, conn)
+        conn.rollback()
+
+    with Session(engine) as session:
+        count = pl.read_database(
+            query=f"select count(*) from {table_name}", connection=session
+        ).item(0, 0)
+
+    assert isinstance(count, int)
+    assert count == 0
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("pass_connection", [True, False])
+def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "zz"],
+            "value": [123, None, 789],
+            "other": [5.5, 7.0, None],
+        }
+    )
+    table_name = "test_sa_commit"
+    test_db_uri = f"sqlite:///{tmp_path}/test_sa_commit.db"
+    engine = create_engine(test_db_uri, poolclass=NullPool)
+    conn: Session | Connection
+    with Session(engine) as conn:
+        if pass_connection:
+            conn = conn.connection()
+        df.write_database(table_name, conn)
+        conn.commit()
 
     with Session(engine) as session:
         result = pl.read_database(
