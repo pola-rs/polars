@@ -283,6 +283,7 @@ pub(crate) fn deserialize_plain(values: &[u8], num_values: usize) -> BinaryDict 
     for v in all {
         dict_values.push(v)
     }
+
     dict_values.into()
 }
 

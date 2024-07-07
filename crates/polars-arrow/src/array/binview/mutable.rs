@@ -189,6 +189,18 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     #[inline]
+    pub fn push_buffer(&mut self, buffer: Buffer<u8>) -> u32 {
+        if !self.in_progress_buffer.is_empty() {
+            self.completed_buffers
+                .push(Buffer::from(std::mem::take(&mut self.in_progress_buffer)));
+        }
+
+        let buffer_idx = self.completed_buffers.len();
+        self.completed_buffers.push(buffer);
+        buffer_idx as u32
+    }
+
+    #[inline]
     pub fn push_value<V: AsRef<T>>(&mut self, value: V) {
         if let Some(validity) = &mut self.validity {
             validity.push(true)

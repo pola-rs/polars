@@ -1,8 +1,9 @@
 use polars_parquet::parquet::deserialize::{
     HybridRleDecoderIter, HybridRleIter, SliceFilteredIter,
 };
-use polars_parquet::parquet::encoding::hybrid_rle::Decoder;
+use polars_parquet::parquet::encoding::hybrid_rle::{Decoder, FnTranslator};
 use polars_parquet::parquet::encoding::Encoding;
+use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
 use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::types::NativeType;
@@ -90,7 +91,7 @@ impl<'a, T: NativeType> PageState<'a, T> {
 pub fn page_to_vec<T: NativeType>(
     page: &DataPage,
     dict: Option<&PrimitivePageDict<T>>,
-) -> Result<Vec<Option<T>>, ParquetError> {
+) -> ParquetResult<Vec<Option<T>>> {
     assert_eq!(page.descriptor.max_rep_level, 0);
     let state = PageState::<T>::try_new(page, dict)?;
 
@@ -100,10 +101,10 @@ pub fn page_to_vec<T: NativeType>(
                 deserialize_optional(validity, values.by_ref().map(Ok))
             },
             NativePageState::Required(values) => Ok(values.map(Some).collect()),
-            NativePageState::RequiredDictionary(dict) => dict
-                .indexes
-                .map(|x| dict.dict.value(x as usize).copied().map(Some))
-                .collect(),
+            NativePageState::RequiredDictionary(dict) => {
+                let dictionary = FnTranslator(|x| dict.dict.value(x as usize).copied().map(Some));
+                dict.indexes.translate_and_collect(&dictionary)
+            },
             NativePageState::OptionalDictionary(validity, dict) => {
                 let values = dict.indexes.map(|x| dict.dict.value(x as usize).copied());
                 deserialize_optional(validity, values)
