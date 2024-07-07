@@ -1,14 +1,13 @@
 use std::io::{BufReader, BufWriter, Cursor};
 
 use polars::lazy::prelude::Expr;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use crate::error::PyPolarsErr;
+use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
-use crate::prelude::polars_err;
 use crate::PyExpr;
 
 #[pymethods]
@@ -40,7 +39,7 @@ impl PyExpr {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         ciborium::into_writer(&self.inner, writer)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+            .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
     /// Serialize into a JSON string.
@@ -49,7 +48,7 @@ impl PyExpr {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, &self.inner)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+            .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
     /// Deserialize a file-like object containing binary data into an Expr.
@@ -58,7 +57,7 @@ impl PyExpr {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let expr = ciborium::from_reader::<Expr, _>(reader)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())
     }
 
@@ -83,7 +82,7 @@ impl PyExpr {
 
         let inner: Expr = serde_json::from_str(json).map_err(|_| {
             let msg = "could not deserialize input into an expression";
-            PyPolarsErr::from(polars_err!(ComputeError: msg))
+            ComputeError::new_err(msg)
         })?;
         Ok(inner.into())
     }

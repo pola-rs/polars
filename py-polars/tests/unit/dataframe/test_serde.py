@@ -226,6 +226,6 @@ def test_df_deserialize_validation() -> None:
 def test_df_serialize_invalid_type() -> None:
     df = pl.DataFrame({"a": [object()]})
     with pytest.raises(
-        ValueError, match="serializing data of type Object is not supported"
+        ComputeError, match="serializing data of type Object is not supported"
     ):
         df.serialize()
