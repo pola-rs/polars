@@ -15,8 +15,6 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from sqlalchemy.engine import Connection
-
     from polars._typing import DbWriteEngine
 
 
@@ -276,12 +274,13 @@ def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> Non
     table_name = "test_sa_rollback"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_rollback.db"
     engine = create_engine(test_db_uri, poolclass=NullPool)
-    conn: Session | Connection
-    with Session(engine) as conn:
+    with Session(engine) as session:
         if pass_connection:
-            conn = conn.connection()
-        df.write_database(table_name, conn)
-        conn.rollback()
+            conn = session.connection()
+            df.write_database(table_name, conn)
+        else:
+            df.write_database(table_name, session)
+        session.rollback()
 
     with Session(engine) as session:
         count = pl.read_database(
@@ -305,12 +304,13 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     table_name = "test_sa_commit"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_commit.db"
     engine = create_engine(test_db_uri, poolclass=NullPool)
-    conn: Session | Connection
-    with Session(engine) as conn:
+    with Session(engine) as session:
         if pass_connection:
-            conn = conn.connection()
-        df.write_database(table_name, conn)
-        conn.commit()
+            conn = session.connection()
+            df.write_database(table_name, conn)
+        else:
+            df.write_database(table_name, session)
+        session.commit()
 
     with Session(engine) as session:
         result = pl.read_database(
