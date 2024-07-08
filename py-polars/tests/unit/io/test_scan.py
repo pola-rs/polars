@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 from math import ceil
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -11,8 +12,6 @@ import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars._typing import SchemaDict
 
 
@@ -570,3 +569,20 @@ def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) 
         match="parquet: File out of specification: The file must end with PAR1",
     ):
         pl.scan_parquet(tmp_path / "*").collect()
+
+
+@pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc"])
+def test_scan_nonexistent_path(format: str) -> None:
+    path_str = f"my-nonexistent-data.{format}"
+    path = Path(path_str)
+    assert not path.exists()
+
+    scan_function = getattr(pl, f"scan_{format}")
+
+    # Just calling the scan function should not raise any errors
+    result = scan_function(path)
+    assert isinstance(result, pl.LazyFrame)
+
+    # Upon collection, it should fail
+    with pytest.raises(FileNotFoundError):
+        result.collect()
