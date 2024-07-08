@@ -68,35 +68,41 @@ impl StructNameSpace {
             .map_private(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
 
-    pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
-        fn materialize_field(this: &Expr, field: Expr) -> Expr {
-            field.map_expr(|e| match e {
+    pub fn with_fields(self, fields: Vec<Expr>) -> PolarsResult<Expr> {
+        fn materialize_field(this: &Expr, field: Expr) -> PolarsResult<Expr> {
+            field.try_map_expr(|e| match e {
                 Expr::Field(names) => {
                     let this = this.clone().struct_();
-                    if names.len() == 1 {
+                    Ok(if names.len() == 1 {
                         this.field_by_name(names[0].as_ref())
                     } else {
                         this.field_by_names_impl(names)
-                    }
+                    })
                 },
-                _ => e,
+                Expr::Exclude(_, _) => {
+                    polars_bail!(InvalidOperation: "'exclude' not allowed in 'field'")
+                },
+                _ => Ok(e),
             })
         }
 
         let mut new_fields = Vec::with_capacity(fields.len());
         new_fields.push(Default::default());
 
-        new_fields.extend(fields.into_iter().map(|e| materialize_field(&self.0, e)));
+        for e in fields.into_iter().map(|e| materialize_field(&self.0, e)) {
+            new_fields.push(e?)
+        }
         new_fields[0] = self.0;
-        Expr::Function {
+        Ok(Expr::Function {
             input: new_fields,
             function: FunctionExpr::StructExpr(StructFunction::WithFields),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 pass_name_to_apply: true,
                 allow_group_aware: false,
+                input_wildcard_expansion: true,
                 ..Default::default()
             },
-        }
+        })
     }
 }
