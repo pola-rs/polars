@@ -1,3 +1,5 @@
+use arrow::array::{BinaryArray, View};
+
 use crate::parquet::encoding::bitpacked::{Decoder, Unpackable, Unpacked};
 use crate::parquet::encoding::hybrid_rle::{BufferedBitpacked, HybridRleBuffered};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -234,6 +236,52 @@ impl<'a, T: Copy> Translator<T> for DictionaryTranslator<'a, T> {
                 .iter()
                 .map(|&src_idx| unsafe { *self.0.get_unchecked(src_idx as usize) }),
         );
+
+        Ok(())
+    }
+}
+
+/// This is a binary dictionary translation variant of [`Translator`].
+///
+/// All the [`HybridRleDecoder`] values are regarded as a offset into a binary array regarded as a
+/// dictionary.
+///
+/// [`HybridRleDecoder`]: super::HybridRleDecoder
+pub struct BinaryDictionaryTranslator<'a> {
+    pub dictionary: &'a BinaryArray<i64>,
+    pub buffer_idx: u32,
+}
+
+impl<'a> Translator<View> for BinaryDictionaryTranslator<'a> {
+    fn translate(&self, index: u32) -> ParquetResult<View> {
+        if index as usize >= self.dictionary.len() {
+            return Err(ParquetError::oos("Dictionary index is out of range"));
+        }
+
+        let value = self.dictionary.value(index as usize);
+        let (start, _) = self.dictionary.offsets().start_end(index as usize);
+        Ok(View::new_from_bytes(value, self.buffer_idx, start as u32))
+    }
+
+    fn translate_slice(&self, target: &mut Vec<View>, source: &[u32]) -> ParquetResult<()> {
+        let Some(source_max) = source.iter().copied().max() else {
+            return Ok(());
+        };
+
+        if source_max as usize >= self.dictionary.len() {
+            return Err(ParquetError::oos("Dictionary index is out of range"));
+        }
+
+        let offsets = self.dictionary.offsets();
+
+        target.extend(source.iter().map(|&src_idx| {
+            // Safety: We have checked before that source only has indexes that are smaller than
+            // the dictionary length.
+            let value = unsafe { self.dictionary.value_unchecked(src_idx as usize) };
+            debug_assert!((src_idx as usize) < offsets.len_proxy());
+            let (start, _) = unsafe { offsets.start_end_unchecked(src_idx as usize) };
+            View::new_from_bytes(value, self.buffer_idx, start as u32)
+        }));
 
         Ok(())
     }

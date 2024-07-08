@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use arrow::array::{MutableBinaryViewArray, View};
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::pushable::Pushable;
@@ -322,7 +323,7 @@ fn reserve_pushable_and_validity<'a, I, T, C: BatchableCollector<I, T>>(
 }
 
 /// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
-pub(super) fn extend_from_decoder<I, T: std::fmt::Debug, C: BatchableCollector<I, T>>(
+pub(super) fn extend_from_decoder<I, T, C: BatchableCollector<I, T>>(
     validity: &mut MutableBitmap,
     page_validity: &mut dyn PageValidity,
     limit: Option<usize>,
@@ -422,6 +423,44 @@ where
     #[inline]
     fn push_n_nulls(&mut self, target: &mut Vec<O>, n: usize) -> ParquetResult<()> {
         target.resize(target.len() + n, O::default());
+        Ok(())
+    }
+
+    #[inline]
+    fn skip_n(&mut self, n: usize) -> ParquetResult<()> {
+        self.decoder.skip_in_place(n)
+    }
+}
+
+impl<'a, 'b, 'c, T> BatchableCollector<u32, MutableBinaryViewArray<[u8]>>
+    for TranslatedHybridRle<'a, 'b, 'c, View, T>
+where
+    T: Translator<View>,
+{
+    #[inline]
+    fn reserve(target: &mut MutableBinaryViewArray<[u8]>, n: usize) {
+        target.reserve(n);
+    }
+
+    #[inline]
+    fn push_n(&mut self, target: &mut MutableBinaryViewArray<[u8]>, n: usize) -> ParquetResult<()> {
+        self.decoder
+            .translate_and_collect_n_into(target.views_mut(), n, self.translator)?;
+
+        if let Some(validity) = target.validity() {
+            validity.extend_constant(n, true);
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn push_n_nulls(
+        &mut self,
+        target: &mut MutableBinaryViewArray<[u8]>,
+        n: usize,
+    ) -> ParquetResult<()> {
+        target.extend_null(n);
         Ok(())
     }
 

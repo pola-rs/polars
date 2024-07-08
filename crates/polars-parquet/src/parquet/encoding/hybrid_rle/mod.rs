@@ -14,7 +14,9 @@ pub use decoder::Decoder;
 pub use encoder::encode;
 use polars_utils::iter::FallibleIterator;
 use polars_utils::slice::GetSaferUnchecked;
-pub use translator::{DictionaryTranslator, Translator, UnitTranslator};
+pub use translator::{
+    BinaryDictionaryTranslator, DictionaryTranslator, FnTranslator, Translator, UnitTranslator,
+};
 
 use self::buffered::HybridRleBuffered;
 use super::{bitpacked, ceil8, uleb128};
