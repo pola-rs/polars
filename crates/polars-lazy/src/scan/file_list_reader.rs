@@ -87,7 +87,7 @@ fn expand_paths(
                             ))],
                         )
                     } else {
-                        use futures::{StreamExt, TryStreamExt};
+                        use futures::TryStreamExt;
 
                         if !is_cloud {
                             // FORCE_ASYNC in the test suite wants us to raise a proper error message
@@ -107,10 +107,12 @@ fn expand_paths(
                             }
                         }
 
+                        let cloud_location = &cloud_location;
+
                         let mut paths = store
                             .list(Some(&prefix))
-                            .map(|x| {
-                                x.map(|x| {
+                            .try_filter_map(|x| async move {
+                                let out = (x.size > 0).then(|| {
                                     PathBuf::from({
                                         format_path(
                                             &cloud_location.scheme,
@@ -118,7 +120,8 @@ fn expand_paths(
                                             x.location.as_ref(),
                                         )
                                     })
-                                })
+                                });
+                                Ok(out)
                             })
                             .try_collect::<Vec<_>>()
                             .await
@@ -194,7 +197,7 @@ fn expand_paths(
                     for path in paths {
                         if path.is_dir() {
                             stack.push_back(path);
-                        } else {
+                        } else if path.metadata()?.len() > 0 {
                             out_paths.push(path);
                         }
                     }
@@ -214,7 +217,7 @@ fn expand_paths(
 
                 for path in paths {
                     let path = path.map_err(to_compute_err)?;
-                    if !path.is_dir() {
+                    if !path.is_dir() && path.metadata()?.len() > 0 {
                         out_paths.push(path);
                     }
                 }

@@ -529,3 +529,14 @@ def test_scan_async_whitespace_in_path(
     assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
     assert_frame_equal(pl.scan_parquet(tmp_path / "*.parquet").collect(), df)
     path.unlink()
+
+
+def test_path_expansion_excludes_empty_files(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(tmp_path / "data.parquet")
+    (tmp_path / "empty").touch()
+
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
