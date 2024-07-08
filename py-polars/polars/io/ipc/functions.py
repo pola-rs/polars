@@ -339,9 +339,17 @@ def scan_ipc(
     row_index_offset
         Offset to start the row index column (only use if the name is set)
     storage_options
-        Extra options that make sense for `fsspec.open()` or a
-        particular storage connection.
-        e.g. host, port, username, password, etc.
+        Options that indicate how to connect to a cloud provider.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
     memory_map
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
@@ -366,7 +374,6 @@ def scan_ipc(
             at any point without it being considered a breaking change.
     try_parse_hive_dates
         Whether to try parsing hive values as date/datetime types.
-
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
