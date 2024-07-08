@@ -2475,7 +2475,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         return lf.sink_csv(
-            path=path,
+            path=normalize_filepath(path),
             include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
