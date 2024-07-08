@@ -281,10 +281,6 @@ def is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
 
 
-def is_supported_cloud(file: str) -> bool:
-    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://", file))
-
-
 def is_local_file(file: str) -> bool:
     try:
         next(glob.iglob(file, recursive=True))  # noqa: PTH207
