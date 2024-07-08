@@ -1,12 +1,12 @@
 use std::io::{BufReader, BufWriter};
 
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use super::PyLazyFrame;
 use crate::error::PyPolarsErr;
+use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
 use crate::prelude::*;
 
@@ -40,7 +40,7 @@ impl PyLazyFrame {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         ciborium::into_writer(&self.ldf.logical_plan, writer)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+            .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
     /// Serialize into a JSON string.
@@ -49,7 +49,7 @@ impl PyLazyFrame {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, &self.ldf.logical_plan)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+            .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
     /// Deserialize a file-like object containing binary data into a LazyFrame.
@@ -58,7 +58,7 @@ impl PyLazyFrame {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let lp = ciborium::from_reader::<DslPlan, _>(reader)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(LazyFrame::from(lp).into())
     }
 
@@ -82,7 +82,7 @@ impl PyLazyFrame {
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
         let lp = serde_json::from_str::<DslPlan>(json)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(LazyFrame::from(lp).into())
     }
 }

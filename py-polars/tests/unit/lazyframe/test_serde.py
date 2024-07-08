@@ -91,7 +91,7 @@ def test_lf_serde_to_from_file(lf: pl.LazyFrame, tmp_path: Path) -> None:
 def test_lf_deserialize_validation() -> None:
     f = io.BytesIO(b"hello world!")
     with pytest.raises(ComputeError, match="expected value at line 1 column 1"):
-        pl.DataFrame.deserialize(f, format="json")
+        pl.LazyFrame.deserialize(f, format="json")
 
 
 @pytest.mark.write_disk()
