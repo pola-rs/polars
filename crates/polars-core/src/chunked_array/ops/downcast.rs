@@ -60,6 +60,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     #[inline]
     pub fn downcast_iter(&self) -> impl DoubleEndedIterator<Item = &T::Array> {
+        eprintln!("LEN OF CHUNK: {}", self.chunks.len());
         self.chunks.iter().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &**arr;

@@ -2176,7 +2176,6 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let iter = self
                 .into_iter()
                 .skip(init_null_count + 1)
-                .take(self.len() - 1 - init_null_count)
                 .map(|opt_val| {
                     let out_wrapped = match opt_val {
                         None => Wrap(AnyValue::Null),
@@ -2186,10 +2185,16 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 });
             avs.extend(iter);
         } else {
+
+            let k = self.into_no_null_iter();
+            eprintln!("Len of no null iter: {}", k.len());
+            for i in k {
+                // Use pointer arithmetic to get the address of the ith element
+                eprintln!("Location of k {:p}", i);
+            }
             let iter = self
                 .into_no_null_iter()
                 .skip(init_null_count + 1)
-                .take(self.len() - 1 - init_null_count)
                 .map(|val| {
                     call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
                         .unwrap()
