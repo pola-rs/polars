@@ -19,7 +19,6 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
@@ -370,24 +369,13 @@ def scan_ipc(
 
     """
     if isinstance(source, (str, Path)):
-        can_use_fsspec = True
         source = normalize_filepath(source, check_not_directory=False)
         sources = []
     else:
-        can_use_fsspec = False
         sources = [
             normalize_filepath(source, check_not_directory=False) for source in source
         ]
         source = None  # type: ignore[assignment]
-
-    # try fsspec scanner
-    if can_use_fsspec and not is_local_file(source):  # type: ignore[arg-type]
-        scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
-        if n_rows:
-            scan = scan.head(n_rows)
-        if row_index_name is not None:
-            scan = scan.with_row_index(row_index_name, row_index_offset)
-        return scan
 
     pylf = PyLazyFrame.new_from_ipc(
         source,
