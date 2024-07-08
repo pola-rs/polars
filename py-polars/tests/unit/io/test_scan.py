@@ -586,3 +586,19 @@ def test_scan_nonexistent_path(format: str) -> None:
     # Upon collection, it should fail
     with pytest.raises(FileNotFoundError):
         result.collect()
+
+
+@pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc"])
+def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
+    # https://github.com/pola-rs/polars/issues/17444
+
+    path_str = f"s3://my-nonexistent-bucket/data.{format}"
+    scan_function = getattr(pl, f"scan_{format}")
+
+    # Just calling the scan function should not raise any errors
+    result = scan_function(path_str)
+    assert isinstance(result, pl.LazyFrame)
+
+    # Upon collection, it should fail
+    with pytest.raises(FileNotFoundError):
+        result.collect()
