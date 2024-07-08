@@ -1,7 +1,6 @@
 mod convert;
 mod extrema;
 mod sum;
-mod nth;
 
 use std::any::Any;
 

@@ -10,7 +10,4 @@ pub mod frame;
 pub mod global;
 pub mod plans;
 pub mod prelude;
-// Activate later
-// mod reduce;
 pub mod utils;
-mod reduce;
