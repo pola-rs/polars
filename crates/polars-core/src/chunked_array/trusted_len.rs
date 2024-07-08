@@ -17,7 +17,8 @@ where
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
         let arr = unsafe {
-            PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow(true))
+            PrimitiveArray::from_trusted_len_iter_unchecked(iter)
+                .to(T::get_dtype().to_arrow(CompatLevel::newest()))
         };
         arr.into()
     }
@@ -37,7 +38,7 @@ where
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
         let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
-        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(true), values, None);
+        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(CompatLevel::newest()), values, None);
         NoNull::new(arr.into())
     }
 }

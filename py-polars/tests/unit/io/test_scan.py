@@ -496,6 +496,7 @@ def test_scan_directory(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.write_disk()
 def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
     for dir in ["dir1", "dir2", "dir3"]:
         (tmp_path / dir).mkdir()
@@ -515,6 +516,7 @@ def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("file_name", ["a b", "a %25 b"])
+@pytest.mark.write_disk()
 def test_scan_async_whitespace_in_path(
     tmp_path: Path, monkeypatch: Any, file_name: str
 ) -> None:
@@ -529,3 +531,42 @@ def test_scan_async_whitespace_in_path(
     assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
     assert_frame_equal(pl.scan_parquet(tmp_path / "*.parquet").collect(), df)
     path.unlink()
+
+
+@pytest.mark.write_disk()
+def test_path_expansion_excludes_empty_files_17362(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(tmp_path / "data.parquet")
+    (tmp_path / "empty").touch()
+
+    assert_frame_equal(pl.scan_parquet(tmp_path).collect(), df)
+    assert_frame_equal(pl.scan_parquet(tmp_path / "*").collect(), df)
+
+
+@pytest.mark.write_disk()
+def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(tmp_path / "data.parquet")
+    df.write_ipc(tmp_path / "data.ipc")
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="different file extensions"
+    ):
+        pl.scan_parquet(tmp_path).collect()
+
+    for lf in [
+        pl.scan_parquet(tmp_path / "*.parquet"),
+        pl.scan_ipc(tmp_path / "*.ipc"),
+    ]:
+        assert_frame_equal(lf.collect(), df)
+
+    # Ensure passing a glob doesn't trigger file extension checking
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="parquet: File out of specification: The file must end with PAR1",
+    ):
+        pl.scan_parquet(tmp_path / "*").collect()

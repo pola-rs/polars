@@ -933,7 +933,11 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
-    PrimitiveArray::new(T::get_dtype().to_arrow(true), values.into(), validity)
+    PrimitiveArray::new(
+        T::get_dtype().to_arrow(CompatLevel::newest()),
+        values.into(),
+        validity,
+    )
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(

@@ -13,7 +13,6 @@ use slotmap::{SecondaryMap, SlotMap};
 use super::{PhysNode, PhysNodeKey};
 use crate::graph::{Graph, GraphNodeKey};
 use crate::nodes;
-use crate::nodes::in_memory_map::InMemoryMapNode;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 struct GraphConversionContext<'a> {
@@ -60,6 +59,18 @@ fn to_graph_rec<'a>(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
             [],
         ),
+
+        StreamingSlice {
+            input,
+            offset,
+            length,
+        } => {
+            let input_key = to_graph_rec(*input, ctx)?;
+            ctx.graph.add_node(
+                nodes::streaming_slice::StreamingSliceNode::new(*offset, *length),
+                [input_key],
+            )
+        },
 
         Filter { predicate, input } => {
             let phys_predicate_expr = create_physical_expr(
@@ -173,6 +184,15 @@ fn to_graph_rec<'a>(
                 ),
                 [input_key],
             )
+        },
+
+        OrderedUnion { inputs } => {
+            let input_keys = inputs
+                .iter()
+                .map(|i| to_graph_rec(*i, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            ctx.graph
+                .add_node(nodes::ordered_union::OrderedUnionNode::new(), input_keys)
         },
     };
 

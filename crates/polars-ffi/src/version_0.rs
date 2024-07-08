@@ -1,3 +1,5 @@
+use polars_core::prelude::CompatLevel;
+
 use super::*;
 
 /// An FFI exported `Series`.
@@ -52,13 +54,13 @@ unsafe extern "C" fn c_release_series_export(e: *mut SeriesExport) {
 }
 
 pub fn export_series(s: &Series) -> SeriesExport {
-    let field = ArrowField::new(s.name(), s.dtype().to_arrow(true), true);
+    let field = ArrowField::new(s.name(), s.dtype().to_arrow(CompatLevel::newest()), true);
     let schema = Box::new(ffi::export_field_to_c(&field));
 
     let mut arrays = (0..s.chunks().len())
         .map(|i| {
             // Make sure we export the logical type.
-            let arr = s.to_arrow(i, true);
+            let arr = s.to_arrow(i, CompatLevel::newest());
             Box::into_raw(Box::new(ffi::export_array_to_c(arr.clone())))
         })
         .collect::<Box<_>>();

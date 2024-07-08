@@ -21,7 +21,7 @@ pub fn extend_validity(val: &mut Vec<bool>, page: &DataPage) -> ParquetResult<()
     );
 
     let mut def_levels =
-        HybridRleDecoder::new(def_levels, get_bit_width(def_level_encoding.1), length).iter();
+        HybridRleDecoder::new(def_levels, get_bit_width(def_level_encoding.1), length);
 
     val.reserve(length);
     def_levels.try_for_each(|x| {

@@ -203,7 +203,7 @@ def _infer_dtype_from_cursor_description(
     description: tuple[Any, ...],
 ) -> PolarsDataType | None:
     """Attempt to infer Polars dtype from database cursor description `type_code`."""
-    type_code, _disp_size, internal_size, precision, scale, _null_ok = description
+    type_code, _disp_size, internal_size, precision, scale, *_ = description
     dtype: PolarsDataType | None = None
 
     if isclass(type_code):

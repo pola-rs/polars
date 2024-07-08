@@ -43,7 +43,8 @@ impl SeriesWrap<DecimalChunked> {
                     Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], dtype)
                 };
                 let new_values = s.array_ref(0).clone();
-                let data_type = ListArray::<i64>::default_datatype(dtype.to_arrow(true));
+                let data_type =
+                    ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
                 let new_arr = ListArray::<i64>::new(
                     data_type,
                     arr.offsets().clone(),

@@ -229,20 +229,6 @@ impl ExecutionState {
             flags
         });
     }
-
-    #[cfg(feature = "streaming")]
-    pub fn set_in_streaming_engine(&mut self) {
-        self.set_flags(&|mut flags| {
-            flags.insert(StateFlags::IN_STREAMING);
-            flags
-        });
-    }
-
-    #[cfg(feature = "streaming")]
-    pub fn in_streaming_engine(&self) -> bool {
-        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
-        flags.contains(StateFlags::IN_STREAMING)
-    }
 }
 
 impl Default for ExecutionState {

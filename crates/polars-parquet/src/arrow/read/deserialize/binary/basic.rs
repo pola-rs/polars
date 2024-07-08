@@ -70,7 +70,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 Some(additional),
                 values,
                 page_values,
-            ),
+            )?,
             BinaryState::Required(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
@@ -92,7 +92,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     Some(additional),
                     offsets,
                     page_values.lengths.by_ref(),
-                );
+                )?;
 
                 let length = *offsets.last() - last_offset;
 
@@ -123,7 +123,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .values
                         .by_ref()
                         .map(|index| page_dict.value(index as usize)),
-                );
+                )?;
                 page_values.values.get_result()?;
             },
             BinaryState::RequiredDictionary(page) => {
@@ -148,7 +148,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     Some(additional),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
             BinaryState::FilteredOptionalDelta(page_validity, page_values) => {
                 extend_from_decoder(
@@ -157,7 +157,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     Some(additional),
                     values,
                     page_values.by_ref(),
-                );
+                )?;
             },
             BinaryState::FilteredRequiredDictionary(page) => {
                 // Already done on the dict.
@@ -186,7 +186,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .values
                         .by_ref()
                         .map(|index| page_dict.value(index as usize)),
-                );
+                )?;
                 page_values.values.get_result()?;
             },
             BinaryState::OptionalDeltaByteArray(page_validity, page_values) => extend_from_decoder(
@@ -195,7 +195,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 Some(additional),
                 values,
                 page_values,
-            ),
+            )?,
             BinaryState::DeltaByteArray(page_values) => {
                 for x in page_values.take(additional) {
                     values.push(x)

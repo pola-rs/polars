@@ -17,7 +17,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+    from polars._typing import ExcelSpreadsheetEngine, SelectorType
 
 pytestmark = pytest.mark.slow()
 
@@ -209,39 +209,35 @@ def test_read_excel_all_sheets(
 
 
 @pytest.mark.parametrize(
-    ("engine", "schema_overrides"),
-    [
-        ("xlsx2csv", {"datetime": pl.Datetime}),
-        ("calamine", None),
-        ("openpyxl", None),
-    ],
+    "engine",
+    ["xlsx2csv", "calamine", "openpyxl"],
 )
-def test_read_excel_basic_datatypes(
-    engine: ExcelSpreadsheetEngine,
-    schema_overrides: SchemaDict | None,
-) -> None:
+def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
             "fruits": ["banana", "banana", "apple", "apple", "banana"],
             "floats": [1.1, 1.2, 1.3, 1.4, 1.5],
             "datetime": [datetime(2023, 1, x) for x in range(1, 6)],
-            "nulls": [1, None, None, None, 1],
-        }
+            "nulls": [1, None, None, None, 0],
+        },
     )
     xls = BytesIO()
     df.write_excel(xls, position="C5")
 
-    # check if can be read as it was written
+    schema_overrides = {"datetime": pl.Datetime, "nulls": pl.Boolean}
+    df_compare = df.with_columns(
+        pl.col(nm).cast(tp) for nm, tp in schema_overrides.items()
+    )
     for sheet_id, sheet_name in ((None, None), (1, None), (None, "Sheet1")):
-        df = pl.read_excel(
+        df_from_excel = pl.read_excel(
             xls,
             sheet_id=sheet_id,
             sheet_name=sheet_name,
             engine=engine,
             schema_overrides=schema_overrides,
         )
-        assert_frame_equal(df, df)
+        assert_frame_equal(df_compare, df_from_excel)
 
     # check some additional overrides
     # (note: xlsx2csv can't currently convert datetime with trailing '00:00:00' to date)

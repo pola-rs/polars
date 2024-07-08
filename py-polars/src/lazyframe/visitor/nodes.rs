@@ -448,6 +448,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             options: (
                 match options.args.how {
                     JoinType::Left => "left",
+                    JoinType::Right => "right",
                     JoinType::Inner => "inner",
                     JoinType::Full => "full",
                     JoinType::AsOf(_) => return Err(PyNotImplementedError::new_err("asof join")),

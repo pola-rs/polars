@@ -102,9 +102,12 @@ impl Series {
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             BinaryOffset => BinaryOffsetChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => {
-                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow(true)).unwrap()
-            },
+            Struct(_) => Series::_try_from_arrow_unchecked(
+                name,
+                chunks,
+                &dtype.to_arrow(CompatLevel::newest()),
+            )
+            .unwrap(),
             #[cfg(feature = "object")]
             Object(_, _) => {
                 assert_eq!(chunks.len(), 1);

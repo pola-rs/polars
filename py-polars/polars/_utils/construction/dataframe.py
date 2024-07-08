@@ -1040,6 +1040,14 @@ def pandas_to_pydf(
     include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
+    stringified_cols = {str(col) for col in data.columns}
+    if len(stringified_cols) < len(data.columns):
+        msg = (
+            "Polars dataframes must have unique string column names."
+            "Please check your pandas dataframe for duplicates."
+        )
+        raise ValueError(msg)
+
     convert_index = include_index and not _pandas_has_default_index(data)
     if not convert_index and all(
         is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns

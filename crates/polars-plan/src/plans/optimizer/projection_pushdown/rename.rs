@@ -33,46 +33,29 @@ pub(super) fn process_rename(
     new: &[SmartString],
     swapping: bool,
 ) -> PolarsResult<()> {
-    let mut processed = BTreeSet::new();
     if swapping {
-        // We clone otherwise we update a data structure whilst we rename it.
-        let mut new_projected_names = projected_names.clone();
-        for (existing, new) in existing.iter().zip(new.iter()) {
-            let has_existing = projected_names.contains(existing.as_str());
-            // Only if the new column name is projected by the upper node we must update the name.
-            let has_new = projected_names.contains(new.as_str());
-            let has_both = has_existing && has_new;
+        let reverse_map: PlHashMap<_, _> = new
+            .iter()
+            .map(|s| s.as_str())
+            .zip(existing.iter().map(|s| s.as_str()))
+            .collect();
+        let mut new_projected_names = PlHashSet::with_capacity(projected_names.len());
 
-            if has_new {
-                // swapping path
-                // this must leave projected names intact, as we only swap
-                if has_both {
-                    iter_and_update_nodes(
-                        existing,
-                        new,
-                        acc_projections,
-                        expr_arena,
-                        &mut processed,
-                    );
-                }
-                // simple new name path
-                // this must add and remove names
-                else {
-                    new_projected_names.remove(new.as_str());
-                    let name = ColumnName::from(existing.as_str());
-                    new_projected_names.insert(name);
-                    iter_and_update_nodes(
-                        existing,
-                        new,
-                        acc_projections,
-                        expr_arena,
-                        &mut processed,
-                    );
-                }
+        for col in acc_projections {
+            let name = column_node_to_name(*col, expr_arena);
+
+            if let Some(previous) = reverse_map.get(name.as_ref()) {
+                let previous: Arc<str> = Arc::from(*previous);
+                let new = expr_arena.add(AExpr::Column(previous.clone()));
+                *col = ColumnNode(new);
+                let _ = new_projected_names.insert(previous);
+            } else {
+                let _ = new_projected_names.insert(name.clone());
             }
         }
         *projected_names = new_projected_names;
     } else {
+        let mut processed = BTreeSet::new();
         for (existing, new) in existing.iter().zip(new.iter()) {
             if projected_names.remove(new.as_str()) {
                 let name: Arc<str> = ColumnName::from(existing.as_str());

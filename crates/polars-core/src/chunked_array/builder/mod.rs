@@ -66,7 +66,7 @@ where
     T: PolarsNumericType,
 {
     fn from_slice(name: &str, v: &[T::Native]) -> Self {
-        let arr = PrimitiveArray::from_slice(v).to(T::get_dtype().to_arrow(true));
+        let arr = PrimitiveArray::from_slice(v).to(T::get_dtype().to_arrow(CompatLevel::newest()));
         ChunkedArray::with_chunk(name, arr)
     }
 

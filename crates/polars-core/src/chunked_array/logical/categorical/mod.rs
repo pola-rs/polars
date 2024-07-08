@@ -464,7 +464,7 @@ mod test {
         let ca = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let ca = ca.categorical().unwrap();
 
-        let arr = ca.to_arrow(true, false);
+        let arr = ca.to_arrow(CompatLevel::newest(), false);
         let s = Series::try_from(("foo", arr))?;
         assert!(matches!(s.dtype(), &DataType::Categorical(_, _)));
         assert_eq!(s.null_count(), 1);

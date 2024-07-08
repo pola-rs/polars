@@ -592,8 +592,16 @@ impl Series {
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
-            Date => Cow::Owned(self.cast(&Int32).unwrap()),
-            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
+            // NOTE: Don't use cast here, as it might rechunk (if all nulls)
+            // which is not allowed in a phys repr.
+            #[cfg(feature = "dtype-date")]
+            Date => Cow::Owned(self.date().unwrap().0.clone().into_series()),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().0.clone().into_series()),
+            #[cfg(feature = "dtype-duration")]
+            Duration(_) => Cow::Owned(self.duration().unwrap().0.clone().into_series()),
+            #[cfg(feature = "dtype-time")]
+            Time => Cow::Owned(self.time().unwrap().0.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let ca = self.categorical().unwrap();
@@ -906,7 +914,9 @@ impl Series {
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow(true));
+        let data_type = LargeListArray::default_datatype(
+            s.dtype().to_physical().to_arrow(CompatLevel::newest()),
+        );
         let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
         let mut out = ListChunked::with_chunk(s.name(), new_arr);
         out.set_inner_dtype(s.dtype().clone());

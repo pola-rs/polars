@@ -155,7 +155,7 @@ where
         }
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
-            ca.dtype().to_arrow(true),
+            ca.dtype().to_arrow(CompatLevel::newest()),
             &targets,
             ca.null_count() > 0,
             indices.as_ref(),
@@ -192,7 +192,7 @@ where
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().to_arrow(true);
+            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {

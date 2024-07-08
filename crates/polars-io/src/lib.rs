@@ -19,7 +19,7 @@ pub mod ndjson;
 mod options;
 #[cfg(feature = "parquet")]
 pub mod parquet;
-#[cfg(feature = "partition")]
+#[cfg(feature = "parquet")]
 pub mod partition;
 #[cfg(feature = "async")]
 pub mod pl_async;
@@ -32,3 +32,5 @@ pub mod utils;
 pub use cloud::glob as async_glob;
 pub use options::*;
 pub use shared::*;
+
+pub mod hive;

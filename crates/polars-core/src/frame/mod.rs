@@ -1122,6 +1122,9 @@ impl DataFrame {
 
     /// Drop columns that are in `names` without allocating a [`HashSet`](std::collections::HashSet).
     pub fn drop_many_amortized(&self, names: &PlHashSet<&str>) -> DataFrame {
+        if names.is_empty() {
+            return self.clone();
+        }
         let mut new_cols = Vec::with_capacity(self.columns.len().saturating_sub(names.len()));
         self.columns.iter().for_each(|s| {
             if !names.contains(&s.name()) {
@@ -2379,10 +2382,10 @@ impl DataFrame {
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
-    pub fn iter_chunks(&self, pl_flavor: bool, parallel: bool) -> RecordBatchIter {
-        // If any of the columns is binview and we don't convert `pl_flavor` we allow parallelism
+    pub fn iter_chunks(&self, compat_level: CompatLevel, parallel: bool) -> RecordBatchIter {
+        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let parallel = if parallel && !pl_flavor {
+        let parallel = if parallel && compat_level.0 >= 1 {
             self.columns.len() > 1
                 && self
                     .columns
@@ -2396,7 +2399,7 @@ impl DataFrame {
             columns: &self.columns,
             idx: 0,
             n_chunks: self.n_chunks(),
-            pl_flavor,
+            compat_level,
             parallel,
         }
     }
@@ -3015,7 +3018,7 @@ pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Series>,
     idx: usize,
     n_chunks: usize,
-    pl_flavor: bool,
+    compat_level: CompatLevel,
     parallel: bool,
 }
 
@@ -3031,12 +3034,12 @@ impl<'a> Iterator for RecordBatchIter<'a> {
                 let iter = self
                     .columns
                     .par_iter()
-                    .map(|s| s.to_arrow(self.idx, self.pl_flavor));
+                    .map(|s| s.to_arrow(self.idx, self.compat_level));
                 POOL.install(|| iter.collect())
             } else {
                 self.columns
                     .iter()
-                    .map(|s| s.to_arrow(self.idx, self.pl_flavor))
+                    .map(|s| s.to_arrow(self.idx, self.compat_level))
                     .collect()
             };
             self.idx += 1;
@@ -3114,7 +3117,7 @@ mod test {
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_chunks(true, false);
+        let mut iter = df.iter_chunks(CompatLevel::newest(), false);
         assert_eq!(5, iter.next().unwrap().len());
         assert!(iter.next().is_none());
     }

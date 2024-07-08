@@ -39,7 +39,7 @@ where
     ) -> Self {
         let values = MutablePrimitiveArray::<T::Native>::with_capacity_from(
             values_capacity,
-            values_type.to_arrow(true),
+            values_type.to_arrow(CompatLevel::newest()),
         );
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(logical_type)));

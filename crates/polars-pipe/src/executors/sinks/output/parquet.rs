@@ -63,7 +63,7 @@ impl ParquetSink {
         let file = std::fs::File::create(path)?;
         let writer = ParquetWriter::new(file)
             .with_compression(options.compression)
-            .with_data_page_size(options.data_pagesize_limit)
+            .with_data_page_size(options.data_page_size)
             .with_statistics(options.statistics)
             .with_row_group_size(options.row_group_size)
             // This is important! Otherwise we will deadlock
@@ -154,7 +154,7 @@ impl ParquetCloudSink {
         let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
         let writer = ParquetWriter::new(cloud_writer)
             .with_compression(parquet_options.compression)
-            .with_data_page_size(parquet_options.data_pagesize_limit)
+            .with_data_page_size(parquet_options.data_page_size)
             .with_statistics(parquet_options.statistics)
             .with_row_group_size(parquet_options.row_group_size)
             // This is important! Otherwise we will deadlock

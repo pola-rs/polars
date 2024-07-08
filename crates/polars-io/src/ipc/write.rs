@@ -42,7 +42,7 @@ pub struct IpcWriter<W> {
     pub(super) writer: W,
     pub(super) compression: Option<IpcCompression>,
     /// Polars' flavor of arrow. This might be temporary.
-    pub(super) pl_flavor: bool,
+    pub(super) compat_level: CompatLevel,
 }
 
 impl<W: Write> IpcWriter<W> {
@@ -52,13 +52,13 @@ impl<W: Write> IpcWriter<W> {
         self
     }
 
-    pub fn with_pl_flavor(mut self, pl_flavor: bool) -> Self {
-        self.pl_flavor = pl_flavor;
+    pub fn with_compat_level(mut self, compat_level: CompatLevel) -> Self {
+        self.compat_level = compat_level;
         self
     }
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
-        let schema = schema_to_arrow_checked(schema, self.pl_flavor, "ipc")?;
+        let schema = schema_to_arrow_checked(schema, self.compat_level, "ipc")?;
         let mut writer = write::FileWriter::new(
             self.writer,
             Arc::new(schema),
@@ -71,7 +71,7 @@ impl<W: Write> IpcWriter<W> {
 
         Ok(BatchedWriter {
             writer,
-            pl_flavor: self.pl_flavor,
+            compat_level: self.compat_level,
         })
     }
 }
@@ -84,12 +84,12 @@ where
         IpcWriter {
             writer,
             compression: None,
-            pl_flavor: true,
+            compat_level: CompatLevel::newest(),
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        let schema = schema_to_arrow_checked(&df.schema(), self.pl_flavor, "ipc")?;
+        let schema = schema_to_arrow_checked(&df.schema(), self.compat_level, "ipc")?;
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             Arc::new(schema),
@@ -99,7 +99,7 @@ where
             },
         )?;
         df.align_chunks();
-        let iter = df.iter_chunks(self.pl_flavor, true);
+        let iter = df.iter_chunks(self.compat_level, true);
 
         for batch in iter {
             ipc_writer.write(&batch, None)?
@@ -111,7 +111,7 @@ where
 
 pub struct BatchedWriter<W: Write> {
     writer: write::FileWriter<W>,
-    pl_flavor: bool,
+    compat_level: CompatLevel,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -120,7 +120,7 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let iter = df.iter_chunks(self.pl_flavor, true);
+        let iter = df.iter_chunks(self.compat_level, true);
         for batch in iter {
             self.writer.write(&batch, None)?
         }

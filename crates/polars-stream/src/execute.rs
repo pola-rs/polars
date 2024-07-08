@@ -2,7 +2,7 @@ use polars_core::frame::DataFrame;
 use polars_core::POOL;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
-use polars_utils::aliases::{InitHashMaps, PlHashSet};
+use polars_utils::aliases::PlHashSet;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 
 use crate::async_executor;
@@ -10,21 +10,26 @@ use crate::async_primitives::pipe::{pipe, Receiver, Sender};
 use crate::graph::{Graph, GraphNodeKey, LogicalPipeKey, PortState};
 use crate::morsel::Morsel;
 
-/// Finds all pipeline blockers in the graph, that is, those nodes which do not
-/// have ready outputs but do have ready inputs.
-fn find_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
+/// Finds all runnable pipeline blockers in the graph, that is, nodes which:
+///  - Only have blocked output ports.
+///  - Have at least one ready input port connected to a ready output port.
+fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
     let mut blockers = Vec::new();
     for (node_key, node) in graph.nodes.iter() {
         // TODO: how does the multiplexer fit into this?
-        let no_output_ready = node
+        let only_has_blocked_outputs = node
             .outputs
             .iter()
-            .all(|o| graph.pipes[*o].send_state != PortState::Ready);
-        let has_input_ready = node
-            .inputs
-            .iter()
-            .any(|o| graph.pipes[*o].send_state == PortState::Ready);
-        if no_output_ready && has_input_ready {
+            .all(|o| graph.pipes[*o].send_state == PortState::Blocked);
+        if !only_has_blocked_outputs {
+            continue;
+        }
+
+        let has_input_ready = node.inputs.iter().any(|i| {
+            graph.pipes[*i].send_state == PortState::Ready
+                && graph.pipes[*i].recv_state == PortState::Ready
+        });
+        if has_input_ready {
             blockers.push(node_key);
         }
     }
@@ -63,16 +68,27 @@ fn expand_ready_subgraph(
 fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<LogicalPipeKey>) {
     // Find pipeline blockers, choose a subset with at most one memory intensive
     // pipeline blocker, and return the subgraph needed to feed them.
-    let blockers = find_pipeline_blockers(graph);
-    let (expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
+    let blockers = find_runnable_pipeline_blockers(graph);
+    let (mut expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
         graph.nodes[*b]
             .compute
             .is_memory_intensive_pipeline_blocker()
     });
 
+    // TODO: choose which expensive pipeline blocker to run more intelligently.
+    expensive.sort_by_key(|node_key| {
+        // Prefer to run nodes whose outputs are ready to be consumed.
+        let outputs_ready_to_receive = graph.nodes[*node_key]
+            .outputs
+            .iter()
+            .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
+            .count();
+        outputs_ready_to_receive
+    });
+
     let mut to_run = cheap;
-    if let Some(node) = expensive.into_iter().next() {
-        to_run.push(node); // TODO: choose which expensive pipeline blocker to run intelligently.
+    if let Some(node) = expensive.pop() {
+        to_run.push(node);
     }
     expand_ready_subgraph(graph, to_run)
 }
@@ -82,12 +98,8 @@ fn run_subgraph(
     graph: &mut Graph,
     nodes: &PlHashSet<GraphNodeKey>,
     pipes: &[LogicalPipeKey],
-    finalize_output: &mut SparseSecondaryMap<GraphNodeKey, DataFrame>,
+    num_pipelines: usize,
 ) -> PolarsResult<()> {
-    // Get the number of threads from the rayon thread-pool as that respects our config.
-    let num_pipes = POOL.current_num_threads();
-    async_executor::set_num_threads(num_pipes);
-
     // Construct pipes.
     let mut physical_senders = SecondaryMap::new();
     let mut physical_receivers = SecondaryMap::new();
@@ -96,7 +108,7 @@ fn run_subgraph(
     // The first step is to create N physical pipes for every logical pipe in the graph.
     for pipe_key in pipes.iter().copied() {
         let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
-            (0..num_pipes).map(|_| pipe()).unzip();
+            (0..num_pipelines).map(|_| pipe()).unzip();
 
         physical_senders.insert(pipe_key, senders);
         physical_receivers.insert(pipe_key, receivers);
@@ -117,12 +129,11 @@ fn run_subgraph(
             if !nodes.contains(&node_key) {
                 continue;
             }
-            node.compute.initialize(num_pipes);
 
             // Scatter inputs/outputs per pipeline.
             let num_inputs = node.inputs.len();
             let num_outputs = node.outputs.len();
-            phys_recv.resize_with(num_inputs * num_pipes, || None);
+            phys_recv.resize_with(num_inputs * num_pipelines, || None);
             for (input_idx, input) in node.inputs.iter().copied().enumerate() {
                 if let Some(receivers) = physical_receivers.remove(input) {
                     for (recv_idx, recv) in receivers.into_iter().enumerate() {
@@ -131,7 +142,7 @@ fn run_subgraph(
                 }
             }
 
-            phys_send.resize_with(num_outputs * num_pipes, || None);
+            phys_send.resize_with(num_outputs * num_pipelines, || None);
             for (output_idx, output) in node.outputs.iter().copied().enumerate() {
                 if let Some(senders) = physical_senders.remove(output) {
                     for (send_idx, send) in senders.into_iter().enumerate() {
@@ -140,8 +151,13 @@ fn run_subgraph(
                 }
             }
 
+            // Spawn the global task, if any.
+            if let Some(handle) = node.compute.spawn_global(scope, &execution_state) {
+                join_handles.push(handle);
+            }
+
             // Spawn a task per pipeline.
-            for pipeline in 0..num_pipes {
+            for pipeline in 0..num_pipelines {
                 join_handles.push(node.compute.spawn(
                     scope,
                     pipeline,
@@ -161,31 +177,52 @@ fn run_subgraph(
         })
     })?;
 
-    // Finalize computation and get any in-memory results.
-    for node_key in nodes.iter().copied() {
-        if let Some(df) = graph.nodes[node_key].compute.finalize()? {
-            finalize_output.insert(node_key, df);
-        }
-    }
-
     Ok(())
 }
 
 pub fn execute_graph(
     graph: &mut Graph,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
-    let mut out = SparseSecondaryMap::new();
+    // Get the number of threads from the rayon thread-pool as that respects our config.
+    let num_pipelines = POOL.current_num_threads();
+    async_executor::set_num_threads(num_pipelines);
+
+    for node in graph.nodes.values_mut() {
+        node.compute.initialize(num_pipelines);
+    }
+
     loop {
-        // println!("updating state");
+        if polars_core::config::verbose() {
+            eprintln!("polars-stream: updating graph state");
+        }
         graph.update_all_states();
         let (nodes, pipes) = find_runnable_subgraph(graph);
-        // for node in &nodes {
-        //     println!("running {}", graph.nodes[*node].compute.name());
-        // }
+        if polars_core::config::verbose() {
+            for node in &nodes {
+                eprintln!(
+                    "polars-stream: running {} in subgraph",
+                    graph.nodes[*node].compute.name()
+                );
+            }
+        }
         if nodes.is_empty() {
             break;
         }
-        run_subgraph(graph, &nodes, &pipes, &mut out)?;
+        run_subgraph(graph, &nodes, &pipes, num_pipelines)?;
     }
+
+    // Ensure everything is done.
+    for pipe in graph.pipes.values() {
+        assert!(pipe.send_state == PortState::Done && pipe.recv_state == PortState::Done);
+    }
+
+    // Extract output from in-memory nodes.
+    let mut out = SparseSecondaryMap::new();
+    for (node_key, node) in graph.nodes.iter_mut() {
+        if let Some(df) = node.compute.get_output()? {
+            out.insert(node_key, df);
+        }
+    }
+
     Ok(out)
 }

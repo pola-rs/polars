@@ -34,7 +34,7 @@ use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
-pub use view::{View, INLINE_VIEW_SIZE};
+pub use view::View;
 
 use super::Splitable;
 

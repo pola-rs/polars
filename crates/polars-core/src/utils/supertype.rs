@@ -276,11 +276,11 @@ pub fn get_supertype_with_options(
             },
             (dt, Unknown(kind)) => {
                 match kind {
-                    // numeric vs float|str -> always float|str
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() => Some(dt.clone()),
+                    // numeric vs float|str -> always float|str|decimal
+                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() | dt.is_string() | dt.is_decimal() => Some(dt.clone()),
                     UnknownKind::Float if dt.is_integer() => Some(Unknown(UnknownKind::Float)),
-                    // Materialize float
-                    UnknownKind::Float if dt.is_float() => Some(dt.clone()),
+                    // Materialize float to float or decimal
+                    UnknownKind::Float if dt.is_float() | dt.is_decimal() => Some(dt.clone()),
                     // Materialize str
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     // Materialize str

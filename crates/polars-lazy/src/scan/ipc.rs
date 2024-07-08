@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use file_list_reader::expanded_from_single_directory;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
-use polars_io::RowIndex;
+use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
 
@@ -15,6 +16,7 @@ pub struct ScanArgsIpc {
     pub row_index: Option<RowIndex>,
     pub memory_map: bool,
     pub cloud_options: Option<CloudOptions>,
+    pub hive_options: HiveOptions,
 }
 
 impl Default for ScanArgsIpc {
@@ -26,6 +28,7 @@ impl Default for ScanArgsIpc {
             row_index: None,
             memory_map: true,
             cloud_options: Default::default(),
+            hive_options: Default::default(),
         }
     }
 }
@@ -46,8 +49,14 @@ impl LazyIpcReader {
 }
 
 impl LazyFileListReader for LazyIpcReader {
-    fn finish(self) -> PolarsResult<LazyFrame> {
-        let paths = self.expand_paths(false)?.0;
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        let (paths, hive_start_idx) =
+            self.expand_paths(self.args.hive_options.enabled.unwrap_or(false))?;
+        self.args.hive_options.enabled =
+            Some(self.args.hive_options.enabled.unwrap_or_else(|| {
+                expanded_from_single_directory(self.paths.as_ref(), paths.as_ref())
+            }));
+        self.args.hive_options.hive_start_idx = hive_start_idx;
         let args = self.args;
 
         let options = IpcScanOptions {
@@ -62,6 +71,7 @@ impl LazyFileListReader for LazyIpcReader {
             args.row_index,
             args.rechunk,
             args.cloud_options,
+            args.hive_options,
         )?
         .build()
         .into();

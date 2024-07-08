@@ -19,11 +19,11 @@ impl Series {
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/ categoricals, etc.
-    pub fn to_arrow(&self, chunk_idx: usize, pl_flavor: bool) -> ArrayRef {
+    pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx, pl_flavor),
+            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx, compat_level),
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
@@ -45,10 +45,10 @@ impl Series {
                         .unwrap()
                     };
 
-                    s.to_arrow(0, pl_flavor)
+                    s.to_arrow(0, compat_level)
                 };
 
-                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(pl_flavor));
+                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(compat_level));
                 let arr = ListArray::<i64>::new(
                     data_type,
                     arr.offsets().clone(),
@@ -74,30 +74,30 @@ impl Series {
                     )
                 };
 
-                new.to_arrow(pl_flavor, false)
+                new.to_arrow(compat_level, false)
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => cast(
                 &*self.chunks()[chunk_idx],
-                &DataType::Date.to_arrow(pl_flavor),
+                &DataType::Date.to_arrow(compat_level),
             )
             .unwrap(),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => cast(
                 &*self.chunks()[chunk_idx],
-                &self.dtype().to_arrow(pl_flavor),
+                &self.dtype().to_arrow(compat_level),
             )
             .unwrap(),
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => cast(
                 &*self.chunks()[chunk_idx],
-                &self.dtype().to_arrow(pl_flavor),
+                &self.dtype().to_arrow(compat_level),
             )
             .unwrap(),
             #[cfg(feature = "dtype-time")]
             DataType::Time => cast(
                 &*self.chunks()[chunk_idx],
-                &DataType::Time.to_arrow(pl_flavor),
+                &DataType::Time.to_arrow(compat_level),
             )
             .unwrap(),
             #[cfg(feature = "object")]
@@ -117,7 +117,7 @@ impl Series {
                 }
             },
             DataType::String => {
-                if pl_flavor {
+                if compat_level.0 >= 1 {
                     self.array_ref(chunk_idx).clone()
                 } else {
                     let arr = self.array_ref(chunk_idx);
@@ -125,7 +125,7 @@ impl Series {
                 }
             },
             DataType::Binary => {
-                if pl_flavor {
+                if compat_level.0 >= 1 {
                     self.array_ref(chunk_idx).clone()
                 } else {
                     let arr = self.array_ref(chunk_idx);

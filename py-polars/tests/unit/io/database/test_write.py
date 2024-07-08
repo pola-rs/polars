@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 import polars as pl
 from polars.io.database._utils import _open_adbc_connection
@@ -233,3 +235,86 @@ class TestWriteDatabase:
             match="unrecognised connection type",
         ):
             df.write_database(connection=True, table_name="misc")  # type: ignore[arg-type]
+
+
+@pytest.mark.write_disk()
+def test_write_database_using_sa_session(tmp_path: str) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "zz"],
+            "value": [123, None, 789],
+            "other": [5.5, 7.0, None],
+        }
+    )
+    table_name = "test_sa_session"
+    test_db_uri = f"sqlite:///{tmp_path}/test_sa_session.db"
+    engine = create_engine(test_db_uri, poolclass=NullPool)
+    with Session(engine) as session:
+        df.write_database(table_name, session)
+        session.commit()
+
+    with Session(engine) as session:
+        result = pl.read_database(
+            query=f"select * from {table_name}", connection=session
+        )
+
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("pass_connection", [True, False])
+def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "zz"],
+            "value": [123, None, 789],
+            "other": [5.5, 7.0, None],
+        }
+    )
+    table_name = "test_sa_rollback"
+    test_db_uri = f"sqlite:///{tmp_path}/test_sa_rollback.db"
+    engine = create_engine(test_db_uri, poolclass=NullPool)
+    with Session(engine) as session:
+        if pass_connection:
+            conn = session.connection()
+            df.write_database(table_name, conn)
+        else:
+            df.write_database(table_name, session)
+        session.rollback()
+
+    with Session(engine) as session:
+        count = pl.read_database(
+            query=f"select count(*) from {table_name}", connection=session
+        ).item(0, 0)
+
+    assert isinstance(count, int)
+    assert count == 0
+
+
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("pass_connection", [True, False])
+def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["xx", "yy", "zz"],
+            "value": [123, None, 789],
+            "other": [5.5, 7.0, None],
+        }
+    )
+    table_name = "test_sa_commit"
+    test_db_uri = f"sqlite:///{tmp_path}/test_sa_commit.db"
+    engine = create_engine(test_db_uri, poolclass=NullPool)
+    with Session(engine) as session:
+        if pass_connection:
+            conn = session.connection()
+            df.write_database(table_name, conn)
+        else:
+            df.write_database(table_name, session)
+        session.commit()
+
+    with Session(engine) as session:
+        result = pl.read_database(
+            query=f"select * from {table_name}", connection=session
+        )
+
+    assert_frame_equal(result, df)

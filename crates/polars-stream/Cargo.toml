@@ -20,6 +20,7 @@ rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
+tokio = { workspace = true }
 
 polars-core = { workspace = true }
 polars-error = { workspace = true }

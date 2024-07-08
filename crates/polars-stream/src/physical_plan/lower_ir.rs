@@ -63,6 +63,21 @@ pub fn lower_ir(
             }))
         },
 
+        IR::Slice { input, offset, len } => {
+            if *offset >= 0 {
+                let offset = *offset as usize;
+                let length = *len as usize;
+                let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
+                Ok(phys_sm.insert(PhysNode::StreamingSlice {
+                    input,
+                    offset,
+                    length,
+                }))
+            } else {
+                todo!()
+            }
+        },
+
         IR::Filter { input, predicate } if is_streamable(predicate.node(), expr_arena) => {
             let predicate = predicate.clone();
             let input = lower_ir(*input, ir_arena, expr_arena, phys_sm)?;
@@ -145,6 +160,19 @@ pub fn lower_ir(
                 input: lower_ir(*input, ir_arena, expr_arena, phys_sm)?,
             };
             Ok(phys_sm.insert(phys_node))
+        },
+
+        IR::Union { inputs, options } => {
+            if options.slice.is_some() {
+                todo!()
+            }
+
+            let inputs = inputs
+                .clone() // Needed to borrow ir_arena mutably.
+                .into_iter()
+                .map(|input| lower_ir(input, ir_arena, expr_arena, phys_sm))
+                .collect::<Result<_, _>>()?;
+            Ok(phys_sm.insert(PhysNode::OrderedUnion { inputs }))
         },
 
         _ => todo!(),

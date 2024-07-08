@@ -310,7 +310,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, retries, file_cache_ttl))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_index, memory_map, cloud_options, hive_partitioning, hive_schema, try_parse_hive_dates, retries, file_cache_ttl))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -320,6 +320,9 @@ impl PyLazyFrame {
         row_index: Option<(String, IdxSize)>,
         memory_map: bool,
         cloud_options: Option<Vec<(String, String)>>,
+        hive_partitioning: Option<bool>,
+        hive_schema: Option<Wrap<Schema>>,
+        try_parse_hive_dates: bool,
         retries: usize,
         file_cache_ttl: Option<u64>,
     ) -> PyResult<Self> {
@@ -357,6 +360,13 @@ impl PyLazyFrame {
             Some(cloud_options)
         };
 
+        let hive_options = HiveOptions {
+            enabled: hive_partitioning,
+            hive_start_idx: 0,
+            schema: hive_schema.map(|x| Arc::new(x.0)),
+            try_parse_dates: try_parse_hive_dates,
+        };
+
         let args = ScanArgsIpc {
             n_rows,
             cache,
@@ -365,6 +375,7 @@ impl PyLazyFrame {
             memory_map,
             #[cfg(feature = "cloud")]
             cloud_options,
+            hive_options,
         };
 
         let lf = if let Some(path) = &path {
@@ -614,7 +625,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "streaming", feature = "parquet"))]
-    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
+    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_page_size, maintain_order))]
     fn sink_parquet(
         &self,
         py: Python,
@@ -623,7 +634,7 @@ impl PyLazyFrame {
         compression_level: Option<i32>,
         statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
-        data_pagesize_limit: Option<usize>,
+        data_page_size: Option<usize>,
         maintain_order: bool,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
@@ -632,7 +643,7 @@ impl PyLazyFrame {
             compression,
             statistics: statistics.0,
             row_group_size,
-            data_pagesize_limit,
+            data_page_size,
             maintain_order,
         };
 

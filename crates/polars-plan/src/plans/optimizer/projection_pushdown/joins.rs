@@ -143,7 +143,7 @@ pub(super) fn process_asof_join(
                 true
             } else {
                 let name = column_node_to_name(proj, expr_arena);
-                !local_projected_names.contains(&name)
+                !local_projected_names.contains(name)
             };
 
             process_projection(
@@ -327,7 +327,7 @@ pub(super) fn process_join(
                 true
             } else {
                 let name = column_node_to_name(proj, expr_arena);
-                !local_projected_names.contains(&name)
+                !local_projected_names.contains(name)
             };
 
             process_projection(
@@ -414,7 +414,7 @@ fn process_projection(
     // this branch tries to pushdown the column without suffix
     {
         // Column name of the projection without any alias.
-        let leaf_column_name = column_node_to_name(proj, expr_arena);
+        let leaf_column_name = column_node_to_name(proj, expr_arena).clone();
 
         let suffix = options.args.suffix();
         // If _right suffix exists we need to push a projection down without this
@@ -479,14 +479,14 @@ fn resolve_join_suffixes(
     let projections = local_projection
         .iter()
         .map(|proj| {
-            let name = column_node_to_name(*proj, expr_arena);
+            let name = column_node_to_name(*proj, expr_arena).clone();
             if name.ends_with(suffix) && schema_after_join.get(&name).is_none() {
                 let downstream_name = &name.as_ref()[..name.len() - suffix.len()];
                 let col = AExpr::Column(ColumnName::from(downstream_name));
                 let node = expr_arena.add(col);
-                ExprIR::new(node, OutputName::Alias(name))
+                ExprIR::new(node, OutputName::Alias(name.clone()))
             } else {
-                ExprIR::new(proj.0, OutputName::ColumnLhs(name))
+                ExprIR::new(proj.0, OutputName::ColumnLhs(name.clone()))
             }
         })
         .collect::<Vec<_>>();

@@ -120,7 +120,9 @@ impl ChunkFilter<ListType> for ListChunked {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(ListChunked::from_chunk_iter(
                     self.name(),
-                    [ListArray::new_empty(self.dtype().to_arrow(true))],
+                    [ListArray::new_empty(
+                        self.dtype().to_arrow(CompatLevel::newest()),
+                    )],
                 )),
             };
         }
@@ -146,7 +148,9 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
                 Some(true) => Ok(self.clone()),
                 _ => Ok(ArrayChunked::from_chunk_iter(
                     self.name(),
-                    [FixedSizeListArray::new_empty(self.dtype().to_arrow(true))],
+                    [FixedSizeListArray::new_empty(
+                        self.dtype().to_arrow(CompatLevel::newest()),
+                    )],
                 )),
             };
         }

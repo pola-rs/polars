@@ -775,6 +775,7 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
         let parsed = match &*ob.extract::<PyBackedStr>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
+            "right" => JoinType::Right,
             "full" => JoinType::Full,
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
@@ -1180,4 +1181,29 @@ where
     S: AsRef<str>,
 {
     container.into_iter().map(|s| s.as_ref().into()).collect()
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PyCompatLevel(pub CompatLevel);
+
+impl<'a> FromPyObject<'a> for PyCompatLevel {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+        Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
+            if let Ok(compat_level) = CompatLevel::with_level(level) {
+                compat_level
+            } else {
+                return Err(PyValueError::new_err("invalid compat level"));
+            }
+        } else if let Ok(future) = ob.extract::<bool>() {
+            if future {
+                CompatLevel::newest()
+            } else {
+                CompatLevel::oldest()
+            }
+        } else {
+            return Err(PyTypeError::new_err(
+                "'compat_level' argument accepts int or bool",
+            ));
+        }))
+    }
 }

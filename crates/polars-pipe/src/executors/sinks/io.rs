@@ -177,7 +177,7 @@ impl IOThread {
                         path.push(format!("{count}.ipc"));
 
                         let file = File::create(path).unwrap();
-                        let writer = IpcWriter::new(file).with_pl_flavor(true);
+                        let writer = IpcWriter::new(file).with_compat_level(CompatLevel::newest());
                         let mut writer = writer.batched(&schema).unwrap();
                         writer.write_batch(&df).unwrap();
                         writer.finish().unwrap();
@@ -188,7 +188,7 @@ impl IOThread {
                     path.push(format!("{count}_0_pass.ipc"));
 
                     let file = File::create(path).unwrap();
-                    let writer = IpcWriter::new(file).with_pl_flavor(true);
+                    let writer = IpcWriter::new(file).with_compat_level(CompatLevel::newest());
                     let mut writer = writer.batched(&schema).unwrap();
 
                     for mut df in iter {
@@ -227,7 +227,7 @@ impl IOThread {
             path.push(format!("_{count}_full.ipc"));
 
             let file = File::create(path).unwrap();
-            let mut writer = IpcWriter::new(file).with_pl_flavor(true);
+            let mut writer = IpcWriter::new(file).with_compat_level(CompatLevel::newest());
             writer.finish(&mut df).unwrap();
         } else {
             let iter = Box::new(std::iter::once(df));
@@ -260,7 +260,7 @@ impl IOThread {
         // duplicates
         path.push(format!("_{count}.ipc"));
         let file = File::create(path).unwrap();
-        let writer = IpcWriter::new(file).with_pl_flavor(true);
+        let writer = IpcWriter::new(file).with_compat_level(CompatLevel::newest());
         let mut writer = writer.batched(&self.schema).unwrap();
         writer.write_batch(&df).unwrap();
         writer.finish().unwrap();

@@ -107,7 +107,7 @@ pub trait Utf8JsonPathImpl: AsString {
 
         let array = polars_json::ndjson::deserialize::deserialize_iter(
             iter,
-            dtype.to_arrow(true),
+            dtype.to_arrow(CompatLevel::newest()),
             buf_size,
             ca.len(),
         )

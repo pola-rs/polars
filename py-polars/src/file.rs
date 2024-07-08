@@ -51,36 +51,34 @@ impl PyFileLikeObject {
         Cursor::new(buf)
     }
 
-    /// Same as `PyFileLikeObject::new`, but validates that the underlying
+    /// Validates that the underlying
     /// python object has a `read`, `write`, and `seek` methods in respect to parameters.
     /// Will return a `TypeError` if object does not have `read`, `seek`, and `write` methods.
-    pub fn with_requirements(
-        object: PyObject,
+    pub fn ensure_requirements(
+        object: &Bound<PyAny>,
         read: bool,
         write: bool,
         seek: bool,
-    ) -> PyResult<Self> {
-        Python::with_gil(|py| {
-            if read && object.getattr(py, "read").is_err() {
-                return Err(PyErr::new::<PyTypeError, _>(
-                    "Object does not have a .read() method.",
-                ));
-            }
+    ) -> PyResult<()> {
+        if read && object.getattr("read").is_err() {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "Object does not have a .read() method.",
+            ));
+        }
 
-            if seek && object.getattr(py, "seek").is_err() {
-                return Err(PyErr::new::<PyTypeError, _>(
-                    "Object does not have a .seek() method.",
-                ));
-            }
+        if seek && object.getattr("seek").is_err() {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "Object does not have a .seek() method.",
+            ));
+        }
 
-            if write && object.getattr(py, "write").is_err() {
-                return Err(PyErr::new::<PyTypeError, _>(
-                    "Object does not have a .write() method.",
-                ));
-            }
+        if write && object.getattr("write").is_err() {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "Object does not have a .write() method.",
+            ));
+        }
 
-            Ok(PyFileLikeObject::new(object))
-        })
+        Ok(())
     }
 }
 
@@ -196,7 +194,7 @@ fn get_either_file_and_path(
     write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {
     Python::with_gil(|py| {
-        let py_f = py_f.bind(py);
+        let py_f = py_f.into_bound(py);
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = std::path::Path::new(&*s);
             let file_path = resolve_homedir(file_path);
@@ -208,6 +206,15 @@ fn get_either_file_and_path(
             Ok((EitherRustPythonFile::Rust(f), Some(file_path)))
         } else {
             let io = py.import_bound("io").unwrap();
+            let is_utf8_encoding = |py_f: &Bound<PyAny>| -> PyResult<bool> {
+                let encoding = py_f.getattr("encoding")?;
+                let encoding = encoding.extract::<Cow<str>>()?;
+                Ok(encoding.eq_ignore_ascii_case("utf-8") || encoding.eq_ignore_ascii_case("utf8"))
+            };
+            let flush_file = |py_f: &Bound<PyAny>| -> PyResult<()> {
+                py_f.getattr("flush")?.call0()?;
+                Ok(())
+            };
             #[cfg(target_family = "unix")]
             if let Some(fd) = ((py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
                 || py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
@@ -215,22 +222,8 @@ fn get_either_file_and_path(
                 || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
                 || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
                 || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
-                    && py_f
-                        .getattr("encoding")
-                        .ok()
-                        .filter(|encoding| match encoding.extract::<Cow<str>>() {
-                            Ok(encoding) => {
-                                encoding.eq_ignore_ascii_case("utf-8")
-                                    || encoding.eq_ignore_ascii_case("utf8")
-                            },
-                            Err(_) => false,
-                        })
-                        .is_some()))
-                && (!write
-                    || py_f
-                        .getattr("flush")
-                        .and_then(|flush| flush.call0())
-                        .is_ok()))
+                    && is_utf8_encoding(&py_f)?))
+                && (!write || flush_file(&py_f).is_ok()))
             .then(|| {
                 py_f.getattr("fileno")
                     .and_then(|fileno| fileno.call0())
@@ -256,7 +249,27 @@ fn get_either_file_and_path(
                 Ensure you pass a path to the file instead of a python file object when possible for best \
                 performance.");
             }
-            let f = PyFileLikeObject::with_requirements(py_f.to_object(py), !write, write, !write)?;
+            // Unwrap TextIOWrapper
+            // Allow subclasses to allow things like pytest.capture.CaptureIO
+            let py_f = if py_f
+                .is_instance(&io.getattr("TextIOWrapper").unwrap())
+                .unwrap_or_default()
+            {
+                if !is_utf8_encoding(&py_f)? {
+                    return Err(PyPolarsErr::from(
+                        polars_err!(InvalidOperation: "file encoding is not UTF-8"),
+                    )
+                    .into());
+                }
+                if write {
+                    flush_file(&py_f)?;
+                }
+                py_f.getattr("buffer")?
+            } else {
+                py_f
+            };
+            PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
+            let f = PyFileLikeObject::new(py_f.to_object(py));
             Ok((EitherRustPythonFile::Py(f), None))
         }
     })

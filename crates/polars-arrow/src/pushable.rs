@@ -19,6 +19,12 @@ pub trait Pushable<T>: Sized + Default {
     fn push(&mut self, value: T);
     fn len(&self) -> usize;
     fn push_null(&mut self);
+    #[inline]
+    fn extend_n(&mut self, n: usize, iter: impl Iterator<Item = T>) {
+        for item in iter.take(n) {
+            self.push(item);
+        }
+    }
     fn extend_constant(&mut self, additional: usize, value: T);
     fn extend_null_constant(&mut self, additional: usize);
     fn freeze(self) -> Self::Freeze;
@@ -31,6 +37,7 @@ impl Pushable<bool> for MutableBitmap {
     fn reserve(&mut self, additional: usize) {
         MutableBitmap::reserve(self, additional)
     }
+
     #[inline]
     fn len(&self) -> usize {
         self.len()
@@ -80,6 +87,11 @@ impl<T: Copy + Default> Pushable<T> for Vec<T> {
     #[inline]
     fn push(&mut self, value: T) {
         self.push(value)
+    }
+
+    #[inline]
+    fn extend_n(&mut self, n: usize, iter: impl Iterator<Item = T>) {
+        self.extend(iter.take(n));
     }
 
     #[inline]

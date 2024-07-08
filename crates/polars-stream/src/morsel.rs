@@ -14,7 +14,7 @@ pub fn get_ideal_morsel_size() -> usize {
     })
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct MorselSeq(u64);
 
 impl MorselSeq {
@@ -29,6 +29,11 @@ impl MorselSeq {
         // We increment by two because in the future we want to use the least
         // significant bit to indicate the final morsel with that sequence id.
         Self(self.0.checked_add(2).unwrap())
+    }
+
+    // Ensures this morsel sequence comes after the offset.
+    pub fn offset_by(self, offset: Self) -> Self {
+        Self(self.0 + offset.0)
     }
 
     pub fn to_u64(self) -> u64 {
@@ -67,6 +72,10 @@ impl Morsel {
 
     pub fn seq(&self) -> MorselSeq {
         self.seq
+    }
+
+    pub fn set_seq(&mut self, seq: MorselSeq) {
+        self.seq = seq;
     }
 
     pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {

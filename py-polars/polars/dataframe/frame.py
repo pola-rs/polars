@@ -7,7 +7,7 @@ import os
 import random
 from collections import defaultdict
 from collections.abc import Sized
-from io import BytesIO, StringIO, TextIOWrapper
+from io import BytesIO, StringIO
 from operator import itemgetter
 from pathlib import Path
 from typing import (
@@ -24,7 +24,6 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
-    cast,
     get_args,
     overload,
 )
@@ -104,6 +103,7 @@ from polars.exceptions import (
     TooManyRowsReturnedError,
 )
 from polars.functions import col, lit
+from polars.interchange.protocol import CompatLevel
 from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
@@ -1385,7 +1385,8 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    def to_arrow(self, *, future: bool = False) -> pa.Table:
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
 
@@ -1396,13 +1397,9 @@ class DataFrame:
 
         Parameters
         ----------
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -1420,12 +1417,12 @@ class DataFrame:
         if not self.width:  # 0x0 dataframe, cannot infer schema from batches
             return pa.table({})
 
-        if future:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.to_arrow` is considered unstable."
-            )
+        if compat_level is None:
+            compat_level = False  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
 
-        record_batches = self._df.to_arrow(future)
+        record_batches = self._df.to_arrow(compat_level)
         return pa.Table.from_batches(record_batches)
 
     @overload
@@ -2695,8 +2692,6 @@ class DataFrame:
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
-        elif isinstance(file, TextIOWrapper):
-            file = cast(TextIOWrapper, file.buffer)
 
         self._df.write_csv(
             file,
@@ -3300,7 +3295,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3309,15 +3304,16 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> None: ...
 
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3331,13 +3327,9 @@ class DataFrame:
             written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -3359,17 +3351,15 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        if compat_level is None:
+            compat_level = True  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
+
         if compression is None:
             compression = "uncompressed"
 
-        if future:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
-            )
-        if future is None:
-            future = True
-
-        self._df.write_ipc(file, compression, future)
+        self._df.write_ipc(file, compression, compat_level)
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3378,7 +3368,7 @@ class DataFrame:
         file: None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3387,15 +3377,16 @@ class DataFrame:
         file: str | Path | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> None: ...
 
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
-        future: bool | None = None,
+        compat_level: CompatLevel | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC record batch stream.
@@ -3409,13 +3400,9 @@ class DataFrame:
             be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
-        future
-            Setting this to `True` will write Polars' internal data structures that
-            might not be available by other Arrow implementations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
 
         Examples
         --------
@@ -3437,17 +3424,15 @@ class DataFrame:
         elif isinstance(file, (str, Path)):
             file = normalize_filepath(file)
 
+        if compat_level is None:
+            compat_level = True  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
+
         if compression is None:
             compression = "uncompressed"
 
-        if future:
-            issue_unstable_warning(
-                "The `future` parameter of `DataFrame.write_ipc` is considered unstable."
-            )
-        if future is None:
-            future = True
-
-        self._df.write_ipc_stream(file, compression, future=future)
+        self._df.write_ipc_stream(file, compression, compat_level)
         return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
@@ -3617,6 +3602,98 @@ class DataFrame:
                 row_group_size,
                 data_page_size,
             )
+
+    @unstable()
+    def write_parquet_partitioned(
+        self,
+        path: str | Path,
+        partition_by: str | Collection[str],
+        *,
+        chunk_size_bytes: int = 4_294_967_296,
+        compression: ParquetCompression = "zstd",
+        compression_level: int | None = None,
+        statistics: bool | str | dict[str, bool] = True,
+        row_group_size: int | None = None,
+        data_page_size: int | None = None,
+    ) -> None:
+        """
+        Write a partitioned directory of parquet files.
+
+        Parameters
+        ----------
+        path
+            Path to the base directory for the partitioned dataset.
+        partition_by
+            Columns to partition by.
+        chunk_size_bytes
+            Approximate size to split DataFrames within a single partition when
+            writing. Note this is calculated using the size of the DataFrame in
+            memory - the size of the output file may differ depending on the
+            file format / compression.
+        compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
+            Choose "zstd" for good compression performance.
+            Choose "lz4" for fast compression/decompression.
+            Choose "snappy" for more backwards compatibility guarantees
+            when you deal with older parquet readers.
+        compression_level
+            The level of compression to use. Higher compression means smaller files on
+            disk.
+
+            - "gzip" : min-level: 0, max-level: 10.
+            - "brotli" : min-level: 0, max-level: 11.
+            - "zstd" : min-level: 1, max-level: 22.
+
+        statistics
+            Write statistics to the parquet headers. This is the default behavior.
+
+            Possible values:
+
+            - `True`: enable default set of statistics (default)
+            - `False`: disable all statistics
+            - "full": calculate and write all available statistics. Cannot be
+              combined with `use_pyarrow`.
+            - `{ "statistic-key": True / False, ... }`. Cannot be combined with
+              `use_pyarrow`. Available keys:
+
+              - "min": column minimum value (default: `True`)
+              - "max": column maximum value (default: `True`)
+              - "distinct_count": number of unique column values (default: `False`)
+              - "null_count": number of null values in column (default: `True`)
+        row_group_size
+            Size of the row groups in number of rows. Defaults to 512^2 rows.
+        data_page_size
+            Size of the data page in bytes. Defaults to 1024^2 bytes.
+        """
+        path = normalize_filepath(path, check_not_directory=False)
+        partition_by = [partition_by] if isinstance(partition_by, str) else partition_by
+
+        if isinstance(statistics, bool) and statistics:
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": False,
+                "null_count": True,
+            }
+        elif isinstance(statistics, bool) and not statistics:
+            statistics = {}
+        elif statistics == "full":
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": True,
+                "null_count": True,
+            }
+
+        self._df.write_parquet_partitioned(
+            path,
+            partition_by,
+            chunk_size_bytes,
+            compression,
+            compression_level,
+            statistics,
+            row_group_size,
+            data_page_size,
+        )
 
     def write_database(
         self,
@@ -3801,13 +3878,20 @@ class DataFrame:
                 min_err_prefix="pandas >= 2.2 requires",
             )
             # note: the catalog (database) should be a part of the connection string
-            from sqlalchemy.engine import create_engine
+            from sqlalchemy.engine import Connectable, create_engine
+            from sqlalchemy.orm import Session
 
-            engine_sa = (
-                create_engine(connection)
-                if isinstance(connection, str)
-                else connection.engine  # type: ignore[union-attr]
-            )
+            sa_object: Connectable
+            if isinstance(connection, str):
+                sa_object = create_engine(connection)
+            elif isinstance(connection, Session):
+                sa_object = connection.connection()
+            elif isinstance(connection, Connectable):
+                sa_object = connection
+            else:
+                error_msg = f"unexpected connection type {type(connection)}"
+                raise TypeError(error_msg)
+
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
@@ -3820,7 +3904,7 @@ class DataFrame:
             ).to_sql(
                 name=unpacked_table_name,
                 schema=db_schema,
-                con=engine_sa,
+                con=sa_object,
                 if_exists=if_table_exists,
                 index=False,
                 **(engine_options or {}),
@@ -6643,7 +6727,7 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'full', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
             * *inner*
@@ -6651,6 +6735,9 @@ class DataFrame:
             * *left*
                 Returns all rows from the left table, and the matched rows from the
                 right table
+            * *right*
+                Returns all rows from the right table, and the matched rows from the
+                left table
             * *full*
                  Returns all rows when there is a match in either left or right table
             * *cross*

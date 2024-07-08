@@ -211,7 +211,7 @@ pub(super) fn suffix_fields(s: &Series, suffix: Arc<str>) -> PolarsResult<Series
 #[cfg(feature = "json")]
 pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
     let ca = s.struct_()?;
-    let dtype = ca.dtype().to_arrow(true);
+    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
 
     let iter = ca.chunks().iter().map(|arr| {
         let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();

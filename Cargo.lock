@@ -3383,6 +3383,7 @@ dependencies = [
  "rayon",
  "recursive",
  "slotmap",
+ "tokio",
  "version_check",
 ]
 
@@ -3503,7 +3504,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "ahash",
  "arboard",

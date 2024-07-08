@@ -2,12 +2,12 @@ use std::io::{BufReader, BufWriter, Cursor};
 use std::ops::Deref;
 
 use polars_io::mmap::ReaderBytes;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use super::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::exceptions::ComputeError;
 use crate::file::{get_file_like, get_mmap_bytes_reader};
 use crate::prelude::*;
 
@@ -18,7 +18,7 @@ impl PyDataFrame {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
         IpcStreamWriter::new(&mut buf)
-            .with_pl_flavor(true)
+            .with_compat_level(CompatLevel::newest())
             .finish(&mut self.df.clone())
             .expect("ipc writer");
         Ok(PyBytes::new_bound(py, &buf).to_object(py))
@@ -48,7 +48,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         ciborium::into_writer(&self.df, writer)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+            .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
     /// Serialize into a JSON string.
@@ -57,7 +57,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, &self.df)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))
+            .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
     /// Deserialize a file-like object containing binary data into a DataFrame.
@@ -66,7 +66,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let df = ciborium::from_reader::<DataFrame, _>(reader)
-            .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(df.into())
     }
 
@@ -81,14 +81,9 @@ impl PyDataFrame {
         py.allow_threads(move || {
             let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
             let bytes = mmap_read.deref();
-            match serde_json::from_slice::<DataFrame>(bytes) {
-                Ok(df) => Ok(df.into()),
-                Err(e) => {
-                    let msg = format!("{e}");
-                    let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
-                    Err(PyErr::from(e))
-                },
-            }
+            let df = serde_json::from_slice::<DataFrame>(bytes)
+                .map_err(|err| ComputeError::new_err(err.to_string()))?;
+            Ok(df.into())
         })
     }
 }

@@ -269,12 +269,12 @@ fn create_physical_plan_impl(
                     metadata,
                 } => Ok(Box::new(executors::IpcExec {
                     paths,
-                    schema: file_info.schema,
+                    file_info,
                     predicate,
                     options,
                     file_options,
+                    hive_parts,
                     cloud_options,
-                    metadata,
                 })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {

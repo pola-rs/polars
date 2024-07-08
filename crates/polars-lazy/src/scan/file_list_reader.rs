@@ -17,6 +17,27 @@ pub(super) fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
     memchr::memchr3(b'*', b'?', b'[', path)
 }
 
+/// Checks if `expanded_paths` were expanded from a single directory
+pub(super) fn expanded_from_single_directory<P: AsRef<std::path::Path>>(
+    paths: &[P],
+    expanded_paths: &[P],
+) -> bool {
+    // Single input that isn't a glob
+    paths.len() == 1 && get_glob_start_idx(paths[0].as_ref().to_str().unwrap().as_bytes()).is_none()
+    // And isn't a file
+    && {
+        (
+            // For local paths, we can just use `is_dir`
+            !is_cloud_url(paths[0].as_ref()) && paths[0].as_ref().is_dir()
+        )
+        || (
+            // Otherwise we check the output path is different from the input path, so that we also
+            // handle the case of a directory containing a single file.
+            !expanded_paths.is_empty() && (paths[0].as_ref() != expanded_paths[0].as_ref())
+        )
+    }
+}
+
 /// Recursively traverses directories and expands globs if `glob` is `true`.
 /// Returns the expanded paths and the index at which to start parsing hive
 /// partitions from the path.
@@ -72,7 +93,7 @@ fn expand_paths(
                     let (cloud_location, store) =
                         polars_io::cloud::build_object_store(path, cloud_options).await?;
 
-                    let prefix = object_path_from_string(cloud_location.prefix.clone());
+                    let prefix = object_path_from_string(cloud_location.prefix.clone())?;
 
                     let out = if !path.ends_with("/")
                         && cloud_location.expansion.is_none()
@@ -87,7 +108,7 @@ fn expand_paths(
                             ))],
                         )
                     } else {
-                        use futures::{StreamExt, TryStreamExt};
+                        use futures::TryStreamExt;
 
                         if !is_cloud {
                             // FORCE_ASYNC in the test suite wants us to raise a proper error message
@@ -107,10 +128,12 @@ fn expand_paths(
                             }
                         }
 
+                        let cloud_location = &cloud_location;
+
                         let mut paths = store
                             .list(Some(&prefix))
-                            .map(|x| {
-                                x.map(|x| {
+                            .try_filter_map(|x| async move {
+                                let out = (x.size > 0).then(|| {
                                     PathBuf::from({
                                         format_path(
                                             &cloud_location.scheme,
@@ -118,7 +141,8 @@ fn expand_paths(
                                             x.location.as_ref(),
                                         )
                                     })
-                                })
+                                });
+                                Ok(out)
                             })
                             .try_collect::<Vec<_>>()
                             .await
@@ -194,7 +218,7 @@ fn expand_paths(
                     for path in paths {
                         if path.is_dir() {
                             stack.push_back(path);
-                        } else {
+                        } else if path.metadata()?.len() > 0 {
                             out_paths.push(path);
                         }
                     }
@@ -214,7 +238,7 @@ fn expand_paths(
 
                 for path in paths {
                     let path = path.map_err(to_compute_err)?;
-                    if !path.is_dir() {
+                    if !path.is_dir() && path.metadata()?.len() > 0 {
                         out_paths.push(path);
                     }
                 }
@@ -225,10 +249,31 @@ fn expand_paths(
         }
     }
 
-    Ok((
-        out_paths.into_iter().collect::<Arc<[_]>>(),
-        *expand_start_idx,
-    ))
+    let out_paths = if expanded_from_single_directory(paths, out_paths.as_ref()) {
+        // Require all file extensions to be the same when expanding a single directory.
+        let ext = out_paths[0].extension();
+
+        (0..out_paths.len())
+            .map(|i| {
+                let path = out_paths[i].clone();
+
+                if path.extension() != ext {
+                    polars_bail!(
+                        InvalidOperation: r#"directory contained paths with different file extensions: \
+                        first path: {}, second path: {}. Please use a glob pattern to explicitly specify
+                        which files to read (e.g. "dir/**/*", "dir/**/*.parquet")"#,
+                        out_paths[i - 1].to_str().unwrap(), path.to_str().unwrap()
+                    );
+                };
+
+                Ok(path)
+            })
+            .collect::<PolarsResult<Arc<[_]>>>()?
+    } else {
+        Arc::<[_]>::from(out_paths)
+    };
+
+    Ok((out_paths, *expand_start_idx))
 }
 
 /// Reads [LazyFrame] from a filesystem or a cloud storage.
@@ -242,7 +287,7 @@ pub trait LazyFileListReader: Clone {
             return self.finish_no_glob();
         }
 
-        let paths = self.expand_paths(false)?.0;
+        let paths = self.expand_paths_default()?;
 
         let lfs = paths
             .iter()
@@ -344,5 +389,11 @@ pub trait LazyFileListReader: Clone {
             self.glob(),
             check_directory_level,
         )
+    }
+
+    /// Expand paths without performing any directory level or file extension
+    /// checks.
+    fn expand_paths_default(&self) -> PolarsResult<Arc<[PathBuf]>> {
+        self.expand_paths(false).map(|x| x.0)
     }
 }

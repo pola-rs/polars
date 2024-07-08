@@ -76,32 +76,33 @@ impl ParquetExec {
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
             // files in parallel even if we add row index columns or slices.
-            let readers_and_metadata = (0..paths.len())
-                .map(|i| {
-                    let path = &paths[i];
-                    let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
+            let iter = (0..paths.len()).into_par_iter().map(|i| {
+                let path = &paths[i];
+                let hive_partitions = hive_parts.map(|x| x[i].materialize_partition_columns());
 
-                    let file = std::fs::File::open(path)?;
-                    let (projection, predicate) = prepare_scan_args(
-                        self.predicate.clone(),
-                        &mut self.file_options.with_columns.clone(),
-                        &mut self.file_info.schema.clone(),
-                        base_row_index.is_some(),
-                        hive_partitions.as_deref(),
-                    );
+                let file = std::fs::File::open(path)?;
+                let (projection, predicate) = prepare_scan_args(
+                    self.predicate.clone(),
+                    &mut self.file_options.with_columns.clone(),
+                    &mut self.file_info.schema.clone(),
+                    base_row_index.is_some(),
+                    hive_partitions.as_deref(),
+                );
 
-                    let mut reader = ParquetReader::new(file)
-                        .read_parallel(parallel)
-                        .set_low_memory(self.options.low_memory)
-                        .use_statistics(self.options.use_statistics)
-                        .set_rechunk(false)
-                        .with_hive_partition_columns(hive_partitions);
+                let mut reader = ParquetReader::new(file)
+                    .read_parallel(parallel)
+                    .set_low_memory(self.options.low_memory)
+                    .use_statistics(self.options.use_statistics)
+                    .set_rechunk(false)
+                    .with_hive_partition_columns(hive_partitions);
 
-                    reader
-                        .num_rows()
-                        .map(|num_rows| (reader, num_rows, predicate, projection))
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
+                reader
+                    .num_rows()
+                    .map(|num_rows| (reader, num_rows, predicate, projection))
+            });
+
+            // We do this in parallel because wide tables can take a long time deserializing metadata.
+            let readers_and_metadata = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
 
             let iter = readers_and_metadata
                 .iter()

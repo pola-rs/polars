@@ -12,7 +12,7 @@ fn test_ipc_compression_variadic_buffers() {
     let mut file = std::io::Cursor::new(vec![]);
     IpcWriter::new(&mut file)
         .with_compression(Some(IpcCompression::LZ4))
-        .with_pl_flavor(true)
+        .with_compat_level(CompatLevel::newest())
         .finish(&mut df)
         .unwrap();
 
@@ -82,7 +82,7 @@ fn test_read_ipc_with_columns() {
         .unwrap();
     df_read.equals(&expected);
 
-    for pl_flavor in [false, true] {
+    for compat_level in [0, 1].map(|level| CompatLevel::with_level(level).unwrap()) {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = df![
             "letters" => ["x", "y", "z"],
@@ -92,7 +92,7 @@ fn test_read_ipc_with_columns() {
         ]
         .unwrap();
         IpcWriter::new(&mut buf)
-            .with_pl_flavor(pl_flavor)
+            .with_compat_level(compat_level)
             .finish(&mut df)
             .expect("ipc writer");
         buf.set_position(0);

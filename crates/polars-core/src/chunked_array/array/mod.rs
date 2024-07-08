@@ -44,7 +44,9 @@ impl ArrayChunked {
     ) -> PolarsResult<ArrayChunked> {
         // Rechunk or the generated Series will have wrong length.
         let ca = self.rechunk();
-        let field = self.inner_dtype().to_arrow_field("item", true);
+        let field = self
+            .inner_dtype()
+            .to_arrow_field("item", CompatLevel::newest());
 
         let chunks = ca.downcast_iter().map(|arr| {
             let elements = unsafe {
@@ -66,8 +68,10 @@ impl ArrayChunked {
             let out = out.rechunk();
             let values = out.chunks()[0].clone();
 
-            let inner_dtype =
-                FixedSizeListArray::default_datatype(out.dtype().to_arrow(true), ca.width());
+            let inner_dtype = FixedSizeListArray::default_datatype(
+                out.dtype().to_arrow(CompatLevel::newest()),
+                ca.width(),
+            );
             let arr = FixedSizeListArray::new(inner_dtype, values, arr.validity().cloned());
             Ok(arr)
         });
