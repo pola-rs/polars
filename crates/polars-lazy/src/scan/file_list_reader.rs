@@ -259,9 +259,9 @@ fn expand_paths(
 
                 if path.extension() != ext {
                     polars_bail!(
-                        InvalidOperation: "directory contained paths with different file extensions: \
-                        first path: {}, second path: {}. If you would like to read all the files despite \
-                        this, please pass a glob pattern (i.e. dir/* or dir/**/*)",
+                        InvalidOperation: r#"directory contained paths with different file extensions: \
+                        first path: {}, second path: {}. Please use a glob pattern to explicitly specify
+                        which files to read (e.g. "dir/**/*", "dir/**/*.parquet")"#,
                         out_paths[i - 1].to_str().unwrap(), path.to_str().unwrap()
                     );
                 };
