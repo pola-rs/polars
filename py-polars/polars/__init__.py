@@ -317,8 +317,6 @@ __all__ = [
     "cum_count",
     "cum_fold",
     "cum_reduce",
-    "cumfold",
-    "cumreduce",
     "date",
     "datetime",
     "duration",
