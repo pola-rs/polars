@@ -72,12 +72,12 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
-pub(super) use array::ArrayFunction;
+pub(crate) use array::ArrayFunction;
 #[cfg(feature = "cov")]
 pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
-pub(super) use list::ListFunction;
+pub(crate) use list::ListFunction;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
 pub(crate) use random::RandomMethod;

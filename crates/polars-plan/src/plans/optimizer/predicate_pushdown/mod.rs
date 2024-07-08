@@ -90,7 +90,7 @@ impl<'a> PredicatePushDown<'a> {
             let input = inputs[inputs.len() - 1];
 
             let (eligibility, alias_rename_map) =
-                pushdown_eligibility(&exprs, &acc_predicates, expr_arena)?;
+                pushdown_eligibility(&exprs, &[], &acc_predicates, expr_arena)?;
 
             let local_predicates = match eligibility {
                 PushdownEligibility::Full => vec![],
@@ -265,22 +265,28 @@ impl<'a> PredicatePushDown<'a> {
                 let tmp_key = Arc::<str>::from(&*temporary_unique_key(&acc_predicates));
                 acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
-                let local_predicates =
-                    match pushdown_eligibility(&[], &acc_predicates, expr_arena)?.0 {
-                        PushdownEligibility::Full => vec![],
-                        PushdownEligibility::Partial { to_local } => {
-                            let mut out = Vec::with_capacity(to_local.len());
-                            for key in to_local {
-                                out.push(acc_predicates.remove(&key).unwrap());
-                            }
-                            out
-                        },
-                        PushdownEligibility::NoPushdown => {
-                            let out = acc_predicates.drain().map(|t| t.1).collect();
-                            acc_predicates.clear();
-                            out
-                        },
-                    };
+                let local_predicates = match pushdown_eligibility(
+                    &[],
+                    &[(tmp_key.clone(), predicate.clone())],
+                    &acc_predicates,
+                    expr_arena,
+                )?
+                .0
+                {
+                    PushdownEligibility::Full => vec![],
+                    PushdownEligibility::Partial { to_local } => {
+                        let mut out = Vec::with_capacity(to_local.len());
+                        for key in to_local {
+                            out.push(acc_predicates.remove(&key).unwrap());
+                        }
+                        out
+                    },
+                    PushdownEligibility::NoPushdown => {
+                        let out = acc_predicates.drain().map(|t| t.1).collect();
+                        acc_predicates.clear();
+                        out
+                    },
+                };
 
                 if let Some(predicate) = acc_predicates.remove(&tmp_key) {
                     insert_and_combine_predicate(&mut acc_predicates, &predicate, expr_arena);
@@ -327,10 +333,6 @@ impl<'a> PredicatePushDown<'a> {
                 file_options: options,
                 output_schema,
             } => {
-                for e in acc_predicates.values() {
-                    debug_assert_aexpr_allows_predicate_pushdown(e.node(), expr_arena);
-                }
-
                 let local_predicates = match &scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => vec![],

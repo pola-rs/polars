@@ -193,8 +193,6 @@ pub(super) fn process_join(
         let mut filter_left = false;
         let mut filter_right = false;
 
-        debug_assert_aexpr_allows_predicate_pushdown(predicate.node(), expr_arena);
-
         if !block_pushdown_left && check_input_node(predicate.node(), &schema_left, expr_arena) {
             insert_and_combine_predicate(&mut pushdown_left, &predicate, expr_arena);
             filter_left = true;
