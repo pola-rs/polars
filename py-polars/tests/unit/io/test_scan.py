@@ -531,7 +531,7 @@ def test_scan_async_whitespace_in_path(
     path.unlink()
 
 
-def test_path_expansion_excludes_empty_files(tmp_path: Path) -> None:
+def test_path_expansion_excludes_empty_files_17362(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame({"x": 1})
