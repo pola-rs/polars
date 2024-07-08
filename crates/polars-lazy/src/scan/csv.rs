@@ -216,7 +216,7 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let paths = self.expand_paths(false)?.0;
+        let paths = self.expand_paths_default()?;
         let Some(path) = paths.first() else {
             polars_bail!(ComputeError: "no paths specified for this reader");
         };
@@ -262,7 +262,7 @@ impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
         // `expand_paths` respects globs
-        let paths = self.expand_paths(false)?.0;
+        let paths = self.expand_paths_default()?;
 
         let mut lf: LazyFrame =
             DslBuilder::scan_csv(paths, self.read_options, self.cache, self.cloud_options)?
