@@ -496,6 +496,7 @@ def test_scan_directory(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.write_disk()
 def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
     for dir in ["dir1", "dir2", "dir3"]:
         (tmp_path / dir).mkdir()
@@ -515,6 +516,7 @@ def test_scan_glob_excludes_directories(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("file_name", ["a b", "a %25 b"])
+@pytest.mark.write_disk()
 def test_scan_async_whitespace_in_path(
     tmp_path: Path, monkeypatch: Any, file_name: str
 ) -> None:
@@ -531,6 +533,7 @@ def test_scan_async_whitespace_in_path(
     path.unlink()
 
 
+@pytest.mark.write_disk()
 def test_path_expansion_excludes_empty_files_17362(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
