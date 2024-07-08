@@ -2586,7 +2586,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @deprecate_function(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
         "instead, in conjunction with a call to `head`.",
-        version="1.0",
+        version="1.0.0",
     )
     def fetch(
         self,

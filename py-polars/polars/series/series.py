@@ -4352,7 +4352,7 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1.0")
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Array:
         """
         Return the underlying Arrow array.

@@ -1385,7 +1385,7 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1.0")
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -3307,7 +3307,7 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1.0")
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
@@ -3380,7 +3380,7 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @deprecate_renamed_parameter("future", "compat_level", version="1.1.0")
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
