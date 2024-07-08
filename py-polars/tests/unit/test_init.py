@@ -35,3 +35,7 @@ def test_type_aliases_deprecated() -> None:
     ):
         from polars.type_aliases import PolarsDataType
     assert str(PolarsDataType).startswith("typing.Union")
+
+
+def test_import_all() -> None:
+    from polars import *
