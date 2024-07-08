@@ -38,4 +38,4 @@ def test_type_aliases_deprecated() -> None:
 
 
 def test_import_all() -> None:
-    eval('from polars import *')
+    exec('from polars import *')
