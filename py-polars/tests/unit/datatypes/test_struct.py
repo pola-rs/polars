@@ -932,3 +932,32 @@ def test_struct_split_16536() -> None:
 
     df = pl.concat([df, df, df, df], rechunk=False)
     assert df.filter(pl.col("int") == 1).shape == (4, 3)
+
+
+def test_struct_wildcard_expansion_and_exclude() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "meta_data": [
+                {"system_data": "to_remove", "user_data": "keep"},
+                {"user_data": "keep_"},
+            ],
+        }
+    )
+
+    # ensure wildcard expansion is on input
+    assert df.lazy().select(
+        pl.col("meta_data").struct.with_fields("*")
+    ).collect().schema["meta_data"].fields == [  # type: ignore[attr-defined]
+        pl.Field("system_data", pl.String),
+        pl.Field("user_data", pl.String),
+        pl.Field("id", pl.Int64),
+        pl.Field(
+            "meta_data", pl.Struct({"system_data": pl.String, "user_data": pl.String})
+        ),
+    ]
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.lazy().select(
+            pl.col("meta_data").struct.with_fields(pl.field("*").exclude("user_data"))
+        ).collect()
