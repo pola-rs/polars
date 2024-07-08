@@ -38,4 +38,4 @@ def test_type_aliases_deprecated() -> None:
 
 
 def test_import_all() -> None:
-    from polars import *  # noqa: F406, F403
+    exec("from polars import *")
