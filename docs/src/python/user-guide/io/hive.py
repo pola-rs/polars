@@ -116,3 +116,16 @@ df = pl.scan_parquet(
 print(df)
 
 # --8<-- [end:scan_file_hive]
+
+# --8<-- [start:write_parquet_partitioned_show_data]
+df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [1, 1, 1, 2, 2], "c": 1})
+print(df)
+# --8<-- [end:write_parquet_partitioned_show_data]
+
+# --8<-- [start:write_parquet_partitioned]
+df.write_parquet_partitioned("docs/data/hive_write/", ["a", "b"])
+# --8<-- [end:write_parquet_partitioned]
+
+# --8<-- [start:write_parquet_partitioned_show_paths]
+print_paths("docs/data/hive_write/")
+# --8<-- [end:write_parquet_partitioned_show_paths]
