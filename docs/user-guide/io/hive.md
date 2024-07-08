@@ -1,4 +1,4 @@
-## Hive partitioned data
+## Scanning hive partitioned data
 
 Polars supports scanning hive partitioned parquet and IPC datasets, with planned support for other
 formats in the future.
@@ -68,4 +68,34 @@ Pass `hive_partitioning=True` to enable hive partition parsing:
 
 ```python exec="on" result="text" session="user-guide/io/hive"
 --8<-- "python/user-guide/io/hive.py:scan_file_hive"
+```
+
+## Writing hive partitioned data
+
+> Note: The following functionality is considered _unstable_, and is subject to change.
+
+Polars supports writing hive partitioned parquet datasets, with planned support for other formats.
+
+### Example
+
+For this example the following DataFrame is used:
+
+{{code_block('user-guide/io/hive','write_parquet_partitioned_show_data',['write_parquet_partitioned'])}}
+
+```python exec="on" result="text" session="user-guide/io/hive"
+--8<-- "python/user-guide/io/hive.py:write_parquet_partitioned_show_data"
+```
+
+We will write it to a hive-partitioned parquet dataset, partitioned by the columns `a` and `b`:
+
+{{code_block('user-guide/io/hive','write_parquet_partitioned',['write_parquet_partitioned'])}}
+
+```python exec="on" result="text" session="user-guide/io/hive"
+--8<-- "python/user-guide/io/hive.py:write_parquet_partitioned"
+```
+
+The output is a hive partitioned parquet dataset with the following paths:
+
+```python exec="on" result="text" session="user-guide/io/hive"
+--8<-- "python/user-guide/io/hive.py:write_parquet_partitioned_show_paths"
 ```
