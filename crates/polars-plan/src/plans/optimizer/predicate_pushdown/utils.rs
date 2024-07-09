@@ -137,6 +137,9 @@ where
     local_predicates
 }
 
+/// Extends a stack of nodes with new nodes from `ae` (with some filtering), to support traversing
+/// an expression tree to check predicate PD eligibility. Generally called repeatedly with the same
+/// stack until all nodes are exhausted.
 fn check_and_extend_predicate_pd_nodes(
     stack: &mut Vec<Node>,
     ae: &AExpr,
@@ -148,6 +151,22 @@ fn check_and_extend_predicate_pd_nodes(
         // rely on the height of the dataframe at this level and thus need
         // to block pushdown.
         AExpr::Literal(lit) => !lit.projects_as_scalar(),
+        // Rows that go OOB on get/gather may be filtered out in earlier operations,
+        // so we don't push these down.
+        AExpr::Function {
+            function: FunctionExpr::ListExpr(ListFunction::Get(false)),
+            ..
+        } => true,
+        #[cfg(feature = "list_gather")]
+        AExpr::Function {
+            function: FunctionExpr::ListExpr(ListFunction::Gather(false)),
+            ..
+        } => true,
+        #[cfg(feature = "dtype-array")]
+        AExpr::Function {
+            function: FunctionExpr::ArrayExpr(ArrayFunction::Get(false)),
+            ..
+        } => true,
         ae => ae.groups_sensitive(),
     } {
         false
@@ -185,31 +204,6 @@ fn check_and_extend_predicate_pd_nodes(
     }
 }
 
-/// An expression blocks predicates from being pushed past it if its results for
-/// the subset where the predicate evaluates as true becomes different compared
-/// to if it was performed before the predicate was applied. This is in general
-/// any expression that produces outputs based on groups of values
-/// (i.e. groups-wise) rather than individual values (i.e. element-wise).
-///
-/// Examples of expressions whose results would change, and thus block push-down:
-/// - any aggregation - sum, mean, first, last, min, max etc.
-/// - sorting - as the sort keys would change between filters
-pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    let mut stack = Vec::<Node>::with_capacity(4);
-    stack.push(node);
-
-    // Cannot use `has_aexpr` because we need to ignore any literals in the RHS
-    // of an `is_in` operation.
-    while let Some(node) = stack.pop() {
-        let ae = expr_arena.get(node);
-
-        if !check_and_extend_predicate_pd_nodes(&mut stack, ae, expr_arena) {
-            return true;
-        }
-    }
-    false
-}
-
 /// * `col(A).alias(B).alias(C) => (C, A)`
 /// * `col(A)                   => (A, A)`
 /// * `col(A).sum().alias(B)    => None`
@@ -240,6 +234,7 @@ pub enum PushdownEligibility {
 #[allow(clippy::type_complexity)]
 pub fn pushdown_eligibility(
     projection_nodes: &[ExprIR],
+    new_predicates: &[(Arc<str>, ExprIR)],
     acc_predicates: &PlHashMap<Arc<str>, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(PushdownEligibility, PlHashMap<Arc<str>, Arc<str>>)> {
@@ -376,7 +371,7 @@ pub fn pushdown_eligibility(
         common_window_inputs = new;
     }
 
-    for e in acc_predicates.values() {
+    for (_, e) in new_predicates.iter() {
         debug_assert!(ae_nodes_stack.is_empty());
         ae_nodes_stack.push(e.node());
 
@@ -446,14 +441,4 @@ pub fn pushdown_eligibility(
         },
         _ => Ok((PushdownEligibility::Partial { to_local }, alias_to_col_map)),
     }
-}
-
-/// Used in places that previously handled blocking exprs before refactoring.
-/// Can probably be eventually removed if it isn't catching anything.
-#[inline(always)]
-pub(super) fn debug_assert_aexpr_allows_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) {
-    debug_assert!(
-        !aexpr_blocks_predicate_pushdown(node, expr_arena),
-        "Predicate pushdown: Did not expect blocking exprs at this point, please open an issue."
-    );
 }
