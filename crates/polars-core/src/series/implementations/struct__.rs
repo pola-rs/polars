@@ -88,23 +88,24 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
     }
 
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series> {
-        todo!()
+        self.0.take(_indices).map(|ca|ca.into_series())
     }
 
     unsafe fn take_slice_unchecked(&self, _idx: &[IdxSize]) -> Series {
-        todo!()
+        self.0.take_unchecked(_idx).into_series()
     }
 
     fn len(&self) -> usize {
-        todo!()
+        self.0.len()
     }
 
     fn rechunk(&self) -> Series {
-        todo!()
+        let ca = self.0.rechunk();
+        ca.into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
-        todo!()
+        self.0.new_from_index(_length, _index).into_series()
     }
 
     fn cast(&self, _data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {

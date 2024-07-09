@@ -521,6 +521,23 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+impl ChunkExpandAtIndex<StructType> for StructChunked2 {
+    fn new_from_index(&self, length: usize, index: usize) -> ChunkedArray<StructType> {
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
+
+        let chunks = chunk.values().iter().map(|arr| {
+            let s = Series::try_from(("", arr.clone())).unwrap();
+            let s = s.new_from_index(idx, length);
+            s.chunks()[0].clone()
+        }).collect::<Vec<_>>();
+
+        // SAFETY: chunks are from self.
+        unsafe { self.copy_with_chunks(chunks) }
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ArrayChunked {

@@ -1,4 +1,3 @@
-use crate::chunked_array::StructChunked2;
 use crate::prelude::*;
 use crate::series::IsSorted;
 

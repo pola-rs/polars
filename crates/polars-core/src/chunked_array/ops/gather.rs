@@ -3,7 +3,6 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::take::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
-use crate::chunked_array::StructChunked2;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::align_chunks_binary;
@@ -279,6 +278,7 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 impl ChunkTakeUnchecked<IdxCa> for StructChunked2 {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let (a, b) = align_chunks_binary(self, indices);
@@ -290,6 +290,7 @@ impl ChunkTakeUnchecked<IdxCa> for StructChunked2 {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StructChunked2 {
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
         let idx = IdxCa::mmap_slice("", indices.as_ref());

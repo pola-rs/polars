@@ -184,7 +184,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// If you want to explicitly the `length` and `null_count`, look at
     /// [`ChunkedArray::new_with_dims`]
-    pub fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
+    fn new_with_compute_len(field: Arc<Field>, chunks: Vec<ArrayRef>) -> Self {
         unsafe {
             let mut chunked_arr = Self::new_with_dims(field, chunks, 0, 0);
             chunked_arr.compute_len();

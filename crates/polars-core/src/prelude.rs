@@ -53,3 +53,5 @@ pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
 pub use crate::{datatypes, df};
+#[cfg(feature = "dtype-struct")]
+pub use crate::chunked_array::StructChunked2;
