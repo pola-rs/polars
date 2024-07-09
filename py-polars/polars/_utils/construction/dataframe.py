@@ -37,6 +37,7 @@ from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
+    Datetime,
     Enum,
     String,
     Struct,
@@ -299,7 +300,6 @@ def _post_apply_columns(
     schema_overrides: SchemaDict | None = None,
     *,
     strict: bool = True,
-    cols_has_tz: list[str] | None = None,
 ) -> PyDataFrame:
     """Apply 'columns' param *after* PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
@@ -313,7 +313,6 @@ def _post_apply_columns(
         else:
             pydf.set_column_names(columns)
 
-    cols_has_tz = cols_has_tz if cols_has_tz else []
     column_casts = []
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
@@ -326,8 +325,6 @@ def _post_apply_columns(
             column_casts.append(F.col(col).cast(struct, strict=strict)._pyexpr)
         elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
-        elif col in cols_has_tz:
-            column_casts.append(F.col(col).dt.convert_time_zone("UTC")._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
@@ -683,7 +680,7 @@ def _sequence_of_tuple_to_pydf(
 
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: Any,
+    first_element: dict[str, Any],
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
@@ -700,17 +697,18 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    cols_has_tz = []
     for column_name, first_value in first_element.items():
-        has_tz = (
+        if (
             isinstance(first_value, datetime)
             and hasattr(first_value, "tzinfo")
             and first_value.tzinfo is not None
             and column_name not in schema_overrides
             and (schema is None or column_name not in schema)
-        )
-        if has_tz:
-            cols_has_tz.append(column_name)
+        ):
+            schema_overrides = {
+                **schema_overrides,
+                column_name: Datetime(time_zone="UTC"),
+            }
     pydf = PyDataFrame.from_dicts(
         data,
         dicts_schema,
@@ -721,13 +719,12 @@ def _sequence_of_dict_to_pydf(
 
     # TODO: we can remove this `schema_overrides` block completely
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed
-    if schema_overrides or len(cols_has_tz) > 0:
+    if schema_overrides:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,
             schema_overrides=schema_overrides,
             strict=strict,
-            cols_has_tz=cols_has_tz,
         )
     return pydf
 
