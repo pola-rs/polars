@@ -1,3 +1,5 @@
+use std::ops::Not;
+use arrow::bitmap::Bitmap;
 use crate::chunked_array::StructChunked2;
 use super::*;
 use crate::hashing::series_to_hashes;
@@ -108,43 +110,61 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
         self.0.new_from_index(_length, _index).into_series()
     }
 
-    fn cast(&self, _data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        todo!()
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, cast_options)
     }
 
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue> {
-        todo!()
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        self.0.get_any_value(index)
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        self.0.get_any_value_unchecked(index)
     }
 
     fn null_count(&self) -> usize {
-        todo!()
+        self.0.null_count()
     }
 
     fn has_validity(&self) -> bool {
-        todo!()
+        self.0.has_validity()
     }
 
     fn is_null(&self) -> BooleanChunked {
-        todo!()
+        let iter = self.downcast_iter().map(|arr| {
+            let bitmap = match arr.validity() {
+                Some(valid) => valid.not(),
+                None => Bitmap::new_with_value(false, arr.len())
+            };
+            BooleanArray::from_data_default(bitmap, None)
+        });
+        BooleanChunked::from_chunk_iter(self.name(), iter)
     }
 
     fn is_not_null(&self) -> BooleanChunked {
-        todo!()
+        let iter = self.downcast_iter().map(|arr| {
+            let bitmap = match arr.validity() {
+                Some(valid) => valid.clone(),
+                None => Bitmap::new_with_value(true, arr.len())
+            };
+            BooleanArray::from_data_default(bitmap, None)
+        });
+        BooleanChunked::from_chunk_iter(self.name(), iter)
     }
 
     fn reverse(&self) -> Series {
-        todo!()
+        self.0._apply_fields(|s| s.reverse()).unwrap().into_series()
     }
 
-    fn shift(&self, _periods: i64) -> Series {
-        todo!()
+    fn shift(&self, periods: i64) -> Series {
+        self.0._apply_fields(|s| s.shift(periods)).unwrap().into_series()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
-        todo!()
+        Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
     fn as_any(&self) -> &dyn Any {
-        todo!()
+        &self.0
     }
 }

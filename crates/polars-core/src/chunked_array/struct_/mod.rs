@@ -7,7 +7,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ChunkedArray;
 use crate::prelude::*;
 use crate::series::Series;
-use crate::utils::Container;
+use crate::utils::{Container, index_to_chunked_index};
 use std::fmt::Write;
 
 pub type StructChunked2 = ChunkedArray<StructType>;
@@ -144,6 +144,44 @@ impl StructChunked2 {
             return Ok(self.clone().into_series());
         }
         self.cast_impl(dtype, CastOptions::Overflowing, true)
+    }
+
+    // in case of a struct, a cast will coerce the inner types
+    pub fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
+        unsafe { self.cast_impl(dtype, cast_options, false) }
+    }
+
+    /// Gets AnyValue from LogicalType
+    pub(crate) fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        polars_ensure!(i < self.len(), oob = i, self.len());
+        unsafe { Ok(self.get_any_value_unchecked(i)) }
+    }
+
+    pub(crate) unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
+        if let DataType::Struct(flds) = self.dtype() {
+            // SAFETY: we already have a single chunk and we are
+            // guarded by the type system.
+            unsafe {
+                let arr = &**self.chunks.get_unchecked(chunk_idx);
+                let arr = &*(arr as *const dyn Array as *const StructArray);
+                AnyValue::Struct(idx, arr, flds)
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub(crate) fn _apply_fields<F>(&self, func: F) -> PolarsResult<Self>
+    where
+        F: FnMut(&Series) -> Series,
+    {
+        let fields = self.fields_as_series().iter().map(func).collect::<Vec<_>>();
+        Self::from_series(self.name(), &fields)
     }
 
 }
