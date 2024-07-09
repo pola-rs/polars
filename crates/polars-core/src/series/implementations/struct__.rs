@@ -54,7 +54,7 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
             .fields_as_series()
             .iter()
             .zip(other.fields_as_series())
-            .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, rhs))
+            .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, &rhs))
             .collect::<PolarsResult<Vec<_>>>()?;
         Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
     }
