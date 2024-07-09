@@ -2199,7 +2199,7 @@ class DataFrame:
         dtype: object
         """
         if use_pyarrow_extension_array:
-            if parse_version(pd.__version__) < parse_version("1.5"):
+            if parse_version(pd.__version__) < (1, 5):
                 msg = f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
                 raise ModuleUpgradeRequiredError(msg)
             if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
@@ -3874,7 +3874,7 @@ class DataFrame:
 
             import_optional(
                 module_name="sqlalchemy",
-                min_version=("2.0" if pd_version >= parse_version("2.2") else "1.4"),
+                min_version=("2.0" if pd_version >= (2, 2) else "1.4"),
                 min_err_prefix="pandas >= 2.2 requires",
             )
             # note: the catalog (database) should be a part of the connection string
@@ -10896,7 +10896,7 @@ class DataFrame:
         measured variables (value_vars), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
-        .. deprecated 1.0.0
+        .. deprecated:: 1.0.0
             Please use :meth:`.unpivot` instead.
 
         Parameters
