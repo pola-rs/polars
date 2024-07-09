@@ -14,6 +14,7 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 - [Visualization and presentation](#visualization-and-presentation)
 
 ---
+
 ### Database integration
 
 #### DuckDB
@@ -33,6 +34,7 @@ On this page you can find a non-exhaustive list of libraries and tools that supp
 ### Interchange and storage formats
 
 #### Apache Arrow
+
 [Apache Arrow](https://arrow.apache.org/) enables zero-copy reads of data within the same process, meaning that data can be directly accessed in its in-memory format without the need for copying or serialisation. This enhances performance when integrating with different tools using Apache Arrow. Polars is compatible with a wide range of libraries that also make use of Apache Arrow, like pandas and DuckDB.
 
 #### Delta Lake
@@ -46,7 +48,6 @@ Read how to use Delta Lake with Polars [at Delta Lake](https://delta-io.github.i
 [Iceberg](https://iceberg.apache.org/) is a high-performance format for huge analytic tables. It ensures reliable and efficient data handling by abstracting complex table operations and maintaining consistent table states across multiple platforms and services.
 
 Read more on [using Apache Iceberg with Polars](https://tabular.io/apache-iceberg-cookbook/pyiceberg-polars/).
-
 
 ### Machine learning
 
