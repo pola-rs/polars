@@ -994,3 +994,47 @@ def test_join_empty_literal_17027() -> None:
         .height
         == 1
     )
+
+
+@pytest.mark.parametrize(
+    ("left_on", "right_on"),
+    zip(
+        [pl.col("a"), pl.col("a").sort(), [pl.col("a"), pl.col("b")]],
+        [pl.col("a").slice(0, 2) * 2, pl.col("b"), [pl.col("a"), pl.col("b").head()]],
+    ),
+)
+def test_join_non_elementwise_keys_raises(left_on: pl.Expr, right_on: pl.Expr) -> None:
+    # https://github.com/pola-rs/polars/issues/17184
+    left = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    right = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+
+    q = left.join(
+        right,
+        left_on=left_on,
+        right_on=right_on,
+        how="inner",
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect()
+
+
+def test_join_coalesce_not_supported_warning() -> None:
+    # https://github.com/pola-rs/polars/issues/17184
+    left = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    right = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a") * 2],
+        right_on=[pl.col("a") * 2],
+        how="inner",
+        coalesce=True,
+    )
+    with pytest.warns(UserWarning, match="turning off key coalescing"):
+        got = q.collect()
+    expect = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [3, 4, 5], "a_right": [1, 2, 3], "b_right": [3, 4, 5]}
+    )
+
+    assert_frame_equal(expect, got, check_row_order=False)
