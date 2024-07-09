@@ -958,7 +958,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     TemporalFunction::TimeStamp(time_unit) => {
                         (PyTemporalFunction::TimeStamp, Wrap(*time_unit)).into_py(py)
                     },
-                    TemporalFunction::Truncate => (PyTemporalFunction::Truncate).into_py(py),
+                    TemporalFunction::Truncate => (PyTemporalFunction::Truncate,).into_py(py),
                     TemporalFunction::OffsetBy => (PyTemporalFunction::OffsetBy,).into_py(py),
                     TemporalFunction::MonthStart => (PyTemporalFunction::MonthStart,).into_py(py),
                     TemporalFunction::MonthEnd => (PyTemporalFunction::MonthEnd,).into_py(py),
@@ -966,7 +966,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyTemporalFunction::BaseUtcOffset,).into_py(py)
                     },
                     TemporalFunction::DSTOffset => (PyTemporalFunction::DSTOffset,).into_py(py),
-                    TemporalFunction::Round => (PyTemporalFunction::Round).into_py(py),
+                    TemporalFunction::Round => (PyTemporalFunction::Round,).into_py(py),
                     TemporalFunction::ReplaceTimeZone(time_zone, non_existent) => (
                         PyTemporalFunction::ReplaceTimeZone,
                         time_zone
