@@ -1,5 +1,8 @@
+use crate::chunked_array::ChunkedArray;
+use crate::prelude::StructType;
 
+pub type StructChunked2 = ChunkedArray<StructType>;
 
-pub struct StructChunked {
+impl StructChunked2 {
 
 }

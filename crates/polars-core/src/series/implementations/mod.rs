@@ -23,6 +23,8 @@ mod string;
 mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
+#[cfg(feature = "dtype-struct")]
+mod struct__;
 
 use std::any::Any;
 use std::borrow::Cow;

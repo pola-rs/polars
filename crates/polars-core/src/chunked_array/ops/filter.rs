@@ -16,14 +16,14 @@ macro_rules! check_filter_len {
 
 impl<T> ChunkFilter<T> for ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: PolarsDataType<HasViews = FalseT>,
 {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>> {
         // Broadcast.
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
+                _ => Ok(self.clear()),
             };
         }
         check_filter_len!(self, filter);
@@ -39,27 +39,27 @@ where
     }
 }
 
-impl ChunkFilter<BooleanType> for BooleanChunked {
-    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BooleanType>> {
-        // Broadcast.
-        if filter.len() == 1 {
-            return match filter.get(0) {
-                Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
-            };
-        }
-        check_filter_len!(self, filter);
-        Ok(unsafe {
-            arity::binary_unchecked_same_type(
-                self,
-                filter,
-                |left, mask| filter_fn(left, mask),
-                true,
-                true,
-            )
-        })
-    }
-}
+// impl ChunkFilter<BooleanType> for BooleanChunked {
+//     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BooleanType>> {
+//         // Broadcast.
+//         if filter.len() == 1 {
+//             return match filter.get(0) {
+//                 Some(true) => Ok(self.clone()),
+//                 _ => Ok(self.clear()),
+//             };
+//         }
+//         check_filter_len!(self, filter);
+//         Ok(unsafe {
+//             arity::binary_unchecked_same_type(
+//                 self,
+//                 filter,
+//                 |left, mask| filter_fn(left, mask),
+//                 true,
+//                 true,
+//             )
+//         })
+//     }
+// }
 
 impl ChunkFilter<StringType> for StringChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<StringType>> {
@@ -74,7 +74,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(BinaryChunked::full_null(self.name(), 0)),
+                _ => Ok(self.clear()),
             };
         }
         check_filter_len!(self, filter);
@@ -90,82 +90,92 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
     }
 }
 
-impl ChunkFilter<BinaryOffsetType> for BinaryOffsetChunked {
-    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<BinaryOffsetChunked> {
-        // Broadcast.
-        if filter.len() == 1 {
-            return match filter.get(0) {
-                Some(true) => Ok(self.clone()),
-                _ => Ok(BinaryOffsetChunked::full_null(self.name(), 0)),
-            };
-        }
-        check_filter_len!(self, filter);
-        Ok(unsafe {
-            arity::binary_unchecked_same_type(
-                self,
-                filter,
-                |left, mask| filter_fn(left, mask),
-                true,
-                true,
-            )
-        })
-    }
-}
-
-impl ChunkFilter<ListType> for ListChunked {
-    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ListChunked> {
-        // Broadcast.
-        if filter.len() == 1 {
-            return match filter.get(0) {
-                Some(true) => Ok(self.clone()),
-                _ => Ok(ListChunked::from_chunk_iter(
-                    self.name(),
-                    [ListArray::new_empty(
-                        self.dtype().to_arrow(CompatLevel::newest()),
-                    )],
-                )),
-            };
-        }
-        check_filter_len!(self, filter);
-        Ok(unsafe {
-            arity::binary_unchecked_same_type(
-                self,
-                filter,
-                |left, mask| filter_fn(left, mask),
-                true,
-                true,
-            )
-        })
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ChunkFilter<FixedSizeListType> for ArrayChunked {
-    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ArrayChunked> {
-        // Broadcast.
-        if filter.len() == 1 {
-            return match filter.get(0) {
-                Some(true) => Ok(self.clone()),
-                _ => Ok(ArrayChunked::from_chunk_iter(
-                    self.name(),
-                    [FixedSizeListArray::new_empty(
-                        self.dtype().to_arrow(CompatLevel::newest()),
-                    )],
-                )),
-            };
-        }
-        check_filter_len!(self, filter);
-        Ok(unsafe {
-            arity::binary_unchecked_same_type(
-                self,
-                filter,
-                |left, mask| filter_fn(left, mask),
-                true,
-                true,
-            )
-        })
-    }
-}
+// impl ChunkFilter<BinaryOffsetType> for BinaryOffsetChunked {
+//     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<BinaryOffsetChunked> {
+//         // Broadcast.
+//         if filter.len() == 1 {
+//             return match filter.get(0) {
+//                 Some(true) => Ok(self.clone()),
+//                 _ => Ok(self.clear()),
+//             };
+//         }
+//         check_filter_len!(self, filter);
+//         Ok(unsafe {
+//             arity::binary_unchecked_same_type(
+//                 self,
+//                 filter,
+//                 |left, mask| filter_fn(left, mask),
+//                 true,
+//                 true,
+//             )
+//         })
+//     }
+// }
+//
+// impl ChunkFilter<ListType> for ListChunked {
+//     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ListChunked> {
+//         // Broadcast.
+//         if filter.len() == 1 {
+//             return match filter.get(0) {
+//                 Some(true) => Ok(self.clone()),
+//                 _ => Ok(self.clear()),
+//             };
+//         }
+//         check_filter_len!(self, filter);
+//         Ok(unsafe {
+//             arity::binary_unchecked_same_type(
+//                 self,
+//                 filter,
+//                 |left, mask| filter_fn(left, mask),
+//                 true,
+//                 true,
+//             )
+//         })
+//     }
+// }
+//
+// #[cfg(feature = "dtype-struct")]
+// impl ChunkFilter<StructType> for StructChunked2 {
+//     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<StructType>>
+//     where
+//         Self: Sized
+//     {
+//         if filter.len() == 1 {
+//             return match filter.get(0) {
+//                 Some(true) => Ok(self.clone()),
+//                 _ => Ok(self.clear())
+//             }
+//         }
+//     }
+// }
+//
+// #[cfg(feature = "dtype-array")]
+// impl ChunkFilter<FixedSizeListType> for ArrayChunked {
+//     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ArrayChunked> {
+//         // Broadcast.
+//         if filter.len() == 1 {
+//             return match filter.get(0) {
+//                 Some(true) => Ok(self.clone()),
+//                 _ => Ok(ArrayChunked::from_chunk_iter(
+//                     self.name(),
+//                     [FixedSizeListArray::new_empty(
+//                         self.dtype().to_arrow(CompatLevel::newest()),
+//                     )],
+//                 )),
+//             };
+//         }
+//         check_filter_len!(self, filter);
+//         Ok(unsafe {
+//             arity::binary_unchecked_same_type(
+//                 self,
+//                 filter,
+//                 |left, mask| filter_fn(left, mask),
+//                 true,
+//                 true,
+//             )
+//         })
+//     }
+// }
 
 #[cfg(feature = "object")]
 impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T>

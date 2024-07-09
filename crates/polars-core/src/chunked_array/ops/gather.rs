@@ -3,9 +3,10 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::take::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
-
+use crate::chunked_array::StructChunked2;
 use crate::prelude::*;
 use crate::series::IsSorted;
+use crate::utils::align_chunks_binary;
 
 const BINARY_SEARCH_LIMIT: usize = 8;
 
@@ -143,7 +144,7 @@ unsafe fn gather_idx_array_unchecked<A: StaticArray>(
 
 impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ChunkedArray<T>
 where
-    T: PolarsDataType<HasViews = FalseT>,
+    T: PolarsDataType<HasViews = FalseT, IsStruct=FalseT>,
 {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
@@ -178,7 +179,7 @@ pub fn _update_gather_sorted_flag(sorted_arr: IsSorted, sorted_idx: IsSorted) ->
 
 impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T>
 where
-    T: PolarsDataType<HasViews = FalseT>,
+    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT>,
 {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
@@ -275,6 +276,24 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StringChunked {
         self.as_binary()
             .take_unchecked(indices)
             .to_string_unchecked()
+    }
+}
+
+impl ChunkTakeUnchecked<IdxCa> for StructChunked2 {
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
+        let (a, b) = align_chunks_binary(self, indices);
+
+        let chunks = a.downcast_iter().zip(b.downcast_iter()).map(|(arr, idx)| {
+            take_unchecked(arr, idx)
+        }).collect::<Vec<_>>();
+        self.copy_with_chunks(chunks)
+    }
+}
+
+impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for StructChunked2 {
+    unsafe fn take_unchecked(&self, indices: &I) -> Self {
+        let idx = IdxCa::mmap_slice("", indices.as_ref());
+        self.take_unchecked(&idx)
     }
 }
 

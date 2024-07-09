@@ -44,6 +44,11 @@ mod random;
 pub mod temporal;
 mod to_vec;
 mod trusted_len;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
+
+#[cfg(feature = "dtype-struct")]
+pub use struct_::StructChunked2;
 
 use std::mem;
 use std::slice::Iter;

@@ -1,6 +1,6 @@
 use arrow::compute::concatenate::concatenate;
 use arrow::Either;
-
+use crate::chunked_array::StructChunked2;
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -164,6 +164,17 @@ impl ListChunked {
 #[cfg(feature = "dtype-array")]
 #[doc(hidden)]
 impl ArrayChunked {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
+        // TODO! properly implement mutation
+        // this is harder because we don't know the inner type of the list
+        self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+#[doc(hidden)]
+impl StructChunked2 {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list

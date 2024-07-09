@@ -73,6 +73,7 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized {
     >;
     type IsNested;
     type HasViews;
+    type IsStruct;
 
     fn get_dtype() -> DataType
     where
@@ -88,6 +89,7 @@ where
         Array = PrimitiveArray<Self::Native>,
         IsNested = FalseT,
         HasViews = FalseT,
+        IsStruct = FalseT,
     >,
 {
     type Native: NumericNative;
@@ -108,6 +110,7 @@ macro_rules! impl_polars_num_datatype {
             type Array = PrimitiveArray<$physical>;
             type IsNested = FalseT;
             type HasViews = FalseT;
+            type IsStruct = FalseT;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -135,6 +138,7 @@ macro_rules! impl_polars_datatype_pass_dtype {
             type Array = $arr;
             type IsNested = FalseT;
             type HasViews = $has_views;
+            type IsStruct = FalseT;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -205,6 +209,7 @@ unsafe impl PolarsDataType for ListType {
     type Array = ListArray<i64>;
     type IsNested = TrueT;
     type HasViews = FalseT;
+    type IsStruct = FalseT;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -212,14 +217,22 @@ unsafe impl PolarsDataType for ListType {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 pub struct StructType {}
+#[cfg(feature = "dtype-struct")]
 unsafe impl PolarsDataType for StructType {
+    // The physical types are invalid.
+    // We don't want these to be used as that would be
+    // very expensive. We use const asserts to ensure
+    // traits/methods using the physical types are
+    // not called for structs.
     type Physical<'a> = ();
     type OwnedPhysical = ();
     type ZeroablePhysical<'a> = ();
     type Array = StructArray;
     type IsNested = TrueT;
     type HasViews = FalseT;
+    type IsStruct = TrueT;
 
     fn get_dtype() -> DataType
     where
@@ -239,6 +252,7 @@ unsafe impl PolarsDataType for FixedSizeListType {
     type Array = FixedSizeListArray;
     type IsNested = TrueT;
     type HasViews = FalseT;
+    type IsStruct = FalseT;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -255,6 +269,7 @@ unsafe impl PolarsDataType for Int128Type {
     type Array = PrimitiveArray<i128>;
     type IsNested = FalseT;
     type HasViews = FalseT;
+    type IsStruct = FalseT;
 
     fn get_dtype() -> DataType {
         // Scale is not None to allow for get_any_value() to work.
@@ -277,6 +292,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type Array = ObjectArray<T>;
     type IsNested = TrueT;
     type HasViews = FalseT;
+    type IsStruct = FalseT;
 
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name(), None)
