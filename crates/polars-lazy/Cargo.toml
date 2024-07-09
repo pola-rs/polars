@@ -25,7 +25,6 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
-glob = { version = "0.3" }
 memchr = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }

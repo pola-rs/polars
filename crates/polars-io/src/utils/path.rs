@@ -1,8 +1,14 @@
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use once_cell::sync::Lazy;
+use polars_core::config;
+use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use regex::Regex;
+
+use crate::cloud::CloudOptions;
 
 pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
     let path = std::env::var("POLARS_TEMP_DIR")
@@ -73,6 +79,244 @@ pub fn expanded_from_single_directory<P: AsRef<std::path::Path>>(
             !expanded_paths.is_empty() && (paths[0].as_ref() != expanded_paths[0].as_ref())
         )
     }
+}
+
+/// Recursively traverses directories and expands globs if `glob` is `true`.
+/// Returns the expanded paths and the index at which to start parsing hive
+/// partitions from the path.
+pub fn expand_paths(
+    paths: &[PathBuf],
+    #[allow(unused_variables)] cloud_options: Option<&CloudOptions>,
+    glob: bool,
+    check_directory_level: bool,
+) -> PolarsResult<(Arc<[PathBuf]>, usize)> {
+    let Some(first_path) = paths.first() else {
+        return Ok((vec![].into(), 0));
+    };
+
+    let is_cloud = is_cloud_url(first_path);
+    let mut out_paths = vec![];
+
+    let expand_start_idx = &mut usize::MAX.clone();
+    let mut update_expand_start_idx = |i, path_idx: usize| {
+        if check_directory_level
+            && ![usize::MAX, i].contains(expand_start_idx)
+            // They could still be the same directory level, just with different name length
+            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+        {
+            polars_bail!(
+                InvalidOperation:
+                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
+                paths[path_idx - 1].to_str().unwrap(),
+                paths[path_idx].to_str().unwrap(),
+            )
+        } else {
+            *expand_start_idx = std::cmp::min(*expand_start_idx, i);
+            Ok(())
+        }
+    };
+
+    if is_cloud || { cfg!(not(target_family = "windows")) && config::force_async() } {
+        #[cfg(feature = "async")]
+        {
+            use crate::cloud::object_path_from_string;
+
+            let format_path = |scheme: &str, bucket: &str, location: &str| {
+                if is_cloud {
+                    format!("{}://{}/{}", scheme, bucket, location)
+                } else {
+                    format!("/{}", location)
+                }
+            };
+
+            let expand_path_cloud = |path: &str,
+                                     cloud_options: Option<&CloudOptions>|
+             -> PolarsResult<(usize, Vec<PathBuf>)> {
+                crate::pl_async::get_runtime().block_on_potential_spawn(async {
+                    let (cloud_location, store) =
+                        crate::cloud::build_object_store(path, cloud_options).await?;
+
+                    let prefix = object_path_from_string(cloud_location.prefix.clone())?;
+
+                    let out = if !path.ends_with("/")
+                        && cloud_location.expansion.is_none()
+                        && store.head(&prefix).await.is_ok()
+                    {
+                        (
+                            0,
+                            vec![PathBuf::from(format_path(
+                                &cloud_location.scheme,
+                                &cloud_location.bucket,
+                                &cloud_location.prefix,
+                            ))],
+                        )
+                    } else {
+                        use futures::TryStreamExt;
+
+                        if !is_cloud {
+                            // FORCE_ASYNC in the test suite wants us to raise a proper error message
+                            // for non-existent file paths. Note we can't do this for cloud paths as
+                            // there is no concept of a "directory" - a non-existent path is
+                            // indistinguishable from an empty directory.
+                            let path = PathBuf::from(path);
+                            if !path.is_dir() {
+                                path.metadata().map_err(|err| {
+                                    let msg =
+                                        Some(format!("{}: {}", err, path.to_str().unwrap()).into());
+                                    PolarsError::IO {
+                                        error: err.into(),
+                                        msg,
+                                    }
+                                })?;
+                            }
+                        }
+
+                        let cloud_location = &cloud_location;
+
+                        let mut paths = store
+                            .list(Some(&prefix))
+                            .try_filter_map(|x| async move {
+                                let out = (x.size > 0).then(|| {
+                                    PathBuf::from({
+                                        format_path(
+                                            &cloud_location.scheme,
+                                            &cloud_location.bucket,
+                                            x.location.as_ref(),
+                                        )
+                                    })
+                                });
+                                Ok(out)
+                            })
+                            .try_collect::<Vec<_>>()
+                            .await
+                            .map_err(to_compute_err)?;
+
+                        paths.sort_unstable();
+                        (
+                            format_path(
+                                &cloud_location.scheme,
+                                &cloud_location.bucket,
+                                &cloud_location.prefix,
+                            )
+                            .len(),
+                            paths,
+                        )
+                    };
+
+                    PolarsResult::Ok(out)
+                })
+            };
+
+            for (path_idx, path) in paths.iter().enumerate() {
+                let glob_start_idx = get_glob_start_idx(path.to_str().unwrap().as_bytes());
+
+                let path = if glob_start_idx.is_some() {
+                    path.clone()
+                } else {
+                    let (expand_start_idx, paths) =
+                        expand_path_cloud(path.to_str().unwrap(), cloud_options)?;
+                    out_paths.extend_from_slice(&paths);
+                    update_expand_start_idx(expand_start_idx, path_idx)?;
+                    continue;
+                };
+
+                update_expand_start_idx(0, path_idx)?;
+
+                let iter = crate::pl_async::get_runtime().block_on_potential_spawn(
+                    crate::async_glob(path.to_str().unwrap(), cloud_options),
+                )?;
+
+                if is_cloud {
+                    out_paths.extend(iter.into_iter().map(PathBuf::from));
+                } else {
+                    // FORCE_ASYNC, remove leading file:// as not all readers support it.
+                    out_paths.extend(iter.iter().map(|x| &x[7..]).map(PathBuf::from))
+                }
+            }
+        }
+        #[cfg(not(feature = "async"))]
+        panic!("Feature `async` must be enabled to use globbing patterns with cloud urls.")
+    } else {
+        let mut stack = VecDeque::new();
+
+        for path_idx in 0..paths.len() {
+            let path = &paths[path_idx];
+            stack.clear();
+
+            if path.is_dir() {
+                let i = path.to_str().unwrap().len();
+
+                update_expand_start_idx(i, path_idx)?;
+
+                stack.push_back(path.clone());
+
+                while let Some(dir) = stack.pop_front() {
+                    let mut paths = std::fs::read_dir(dir)
+                        .map_err(PolarsError::from)?
+                        .map(|x| x.map(|x| x.path()))
+                        .collect::<std::io::Result<Vec<_>>>()
+                        .map_err(PolarsError::from)?;
+                    paths.sort_unstable();
+
+                    for path in paths {
+                        if path.is_dir() {
+                            stack.push_back(path);
+                        } else if path.metadata()?.len() > 0 {
+                            out_paths.push(path);
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            let i = get_glob_start_idx(path.to_str().unwrap().as_bytes());
+
+            if glob && i.is_some() {
+                update_expand_start_idx(0, path_idx)?;
+
+                let Ok(paths) = glob::glob(path.to_str().unwrap()) else {
+                    polars_bail!(ComputeError: "invalid glob pattern given")
+                };
+
+                for path in paths {
+                    let path = path.map_err(to_compute_err)?;
+                    if !path.is_dir() && path.metadata()?.len() > 0 {
+                        out_paths.push(path);
+                    }
+                }
+            } else {
+                update_expand_start_idx(0, path_idx)?;
+                out_paths.push(path.clone());
+            }
+        }
+    }
+
+    let out_paths = if expanded_from_single_directory(paths, out_paths.as_ref()) {
+        // Require all file extensions to be the same when expanding a single directory.
+        let ext = out_paths[0].extension();
+
+        (0..out_paths.len())
+            .map(|i| {
+                let path = out_paths[i].clone();
+
+                if path.extension() != ext {
+                    polars_bail!(
+                        InvalidOperation: r#"directory contained paths with different file extensions: \
+                        first path: {}, second path: {}. Please use a glob pattern to explicitly specify
+                        which files to read (e.g. "dir/**/*", "dir/**/*.parquet")"#,
+                        out_paths[i - 1].to_str().unwrap(), path.to_str().unwrap()
+                    );
+                };
+
+                Ok(path)
+            })
+            .collect::<PolarsResult<Arc<[_]>>>()?
+    } else {
+        Arc::<[_]>::from(out_paths)
+    };
+
+    Ok((out_paths, *expand_start_idx))
 }
 
 /// Ignores errors from `std::fs::create_dir_all` if the directory exists.
