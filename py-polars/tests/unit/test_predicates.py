@@ -495,3 +495,19 @@ def test_predicate_push_down_with_alias_15442() -> None:
         .collect(predicate_pushdown=True)
     )
     assert output.to_dict(as_series=False) == {"a": [1]}
+
+
+def test_predicate_push_down_list_gather_17492() -> None:
+    lf = pl.LazyFrame({"val": [[1], [1, 1]], "len": [1, 2]})
+
+    assert_frame_equal(
+        lf.filter(pl.col("len") == 2).filter(pl.col("val").list.get(1) == 1),
+        lf.slice(1, 1),
+    )
+
+    # null_on_oob=True can pass
+    assert "FILTER" not in (
+        lf.filter(pl.col("len") == 2)
+        .filter(pl.col("val").list.get(1, null_on_oob=True) == 1)
+        .explain()
+    )

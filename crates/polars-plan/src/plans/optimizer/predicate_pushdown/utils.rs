@@ -151,14 +151,17 @@ fn check_and_extend_predicate_pd_nodes(
         // Rows that go OOB on get/gather may be filtered out in earlier operations,
         // so we don't push these down.
         AExpr::Function {
-            function:
-                FunctionExpr::ListExpr(ListFunction::Get(false))
-                | FunctionExpr::ArrayExpr(ArrayFunction::Get(false)),
+            function: FunctionExpr::ListExpr(ListFunction::Get(false)),
             ..
         } => true,
         #[cfg(feature = "list_gather")]
         AExpr::Function {
             function: FunctionExpr::ListExpr(ListFunction::Gather(false)),
+            ..
+        } => true,
+        #[cfg(feature = "dtype-array")]
+        AExpr::Function {
+            function: FunctionExpr::ArrayExpr(ArrayFunction::Get(false)),
             ..
         } => true,
         ae => ae.groups_sensitive(),
