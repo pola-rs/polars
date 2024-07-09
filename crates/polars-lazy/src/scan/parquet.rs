@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use file_list_reader::expanded_from_single_directory;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
-use polars_io::utils::is_cloud_url;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
-use crate::scan::file_list_reader::get_glob_start_idx;
 
 #[derive(Clone)]
 pub struct ScanArgsParquet {
@@ -63,13 +62,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.expand_paths(self.args.hive_options.enabled.unwrap_or(false))?;
         self.args.hive_options.enabled =
             Some(self.args.hive_options.enabled.unwrap_or_else(|| {
-                self.paths.len() == 1
-                    && get_glob_start_idx(self.paths[0].to_str().unwrap().as_bytes()).is_none()
-                    && !paths.is_empty()
-                    && {
-                        (!is_cloud_url(&paths[0]) && paths[0].is_dir())
-                            || (paths[0] != self.paths[0])
-                    }
+                expanded_from_single_directory(self.paths.as_ref(), paths.as_ref())
             }));
         self.args.hive_options.hive_start_idx = hive_start_idx;
 

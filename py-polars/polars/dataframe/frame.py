@@ -338,7 +338,7 @@ class DataFrame:
     """
 
     _df: PyDataFrame
-    _accessors: ClassVar[set[str]] = {"plot"}
+    _accessors: ClassVar[set[str]] = {"plot", "style"}
 
     def __init__(
         self,
