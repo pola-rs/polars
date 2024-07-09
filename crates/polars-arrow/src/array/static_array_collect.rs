@@ -1,12 +1,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
-
+use polars_utils::no_call_const;
 use crate::array::static_array::{ParameterFreeDtypeStaticArray, StaticArray};
-use crate::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
-    MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray,
-    Utf8Array, Utf8ViewArray,
-};
+use crate::array::{Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
@@ -1014,5 +1010,48 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
     ) -> Result<Self, E> {
         let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
         Ok(Self::arr_from_iter_with_dtype(dtype, iter_values))
+    }
+}
+
+
+
+impl ArrayFromIter<Option<()>> for StructArray {
+    fn arr_from_iter<I: IntoIterator<Item=Option<()>>>(_iter: I) -> Self {
+        no_call_const!()
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item=Result<Option<()>, E>>>(_iter: I) -> Result<Self, E> {
+        no_call_const!()
+    }
+}
+
+impl ArrayFromIter<()> for StructArray {
+    fn arr_from_iter<I: IntoIterator<Item=()>>(_iter: I) -> Self {
+        no_call_const!()
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item=Result<(), E>>>(_iter: I) -> Result<Self, E> {
+        no_call_const!()
+    }
+}
+
+
+impl ArrayFromIterDtype<()> for StructArray {
+    fn arr_from_iter_with_dtype<I: IntoIterator<Item=()>>(_dtype: ArrowDataType, _iter: I) -> Self {
+        no_call_const!()
+    }
+
+    fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item=Result<(), E>>>(_dtype: ArrowDataType, _iter: I) -> Result<Self, E> {
+        no_call_const!()
+    }
+}
+
+impl ArrayFromIterDtype<Option<()>> for StructArray {
+    fn arr_from_iter_with_dtype<I: IntoIterator<Item=Option<()>>>(_dtype: ArrowDataType, _iter: I) -> Self {
+        no_call_const!()
+    }
+
+    fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item=Result<Option<()>, E>>>(_dtype: ArrowDataType, _iter: I) -> Result<Self, E> {
+        no_call_const!()
     }
 }

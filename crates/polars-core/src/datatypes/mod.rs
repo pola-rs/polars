@@ -212,6 +212,23 @@ unsafe impl PolarsDataType for ListType {
     }
 }
 
+pub struct StructType {}
+unsafe impl PolarsDataType for StructType {
+    type Physical<'a> = ();
+    type OwnedPhysical = ();
+    type ZeroablePhysical<'a> = ();
+    type Array = StructArray;
+    type IsNested = TrueT;
+    type HasViews = FalseT;
+
+    fn get_dtype() -> DataType
+    where
+        Self: Sized,
+    {
+        DataType::Struct(vec![])
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 pub struct FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
