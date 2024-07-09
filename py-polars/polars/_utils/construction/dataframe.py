@@ -518,8 +518,6 @@ def _sequence_to_pydf_dispatcher(
 
     elif is_pydantic_model(first_element):
         to_pydf = _sequence_of_pydantic_models_to_pydf
-    elif isinstance(first_element, dict):
-        to_pydf = _sequence_of_dict_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -721,10 +719,7 @@ def _sequence_of_dict_to_pydf(
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed
     if schema_overrides:
         pydf = _post_apply_columns(
-            pydf,
-            columns=column_names,
-            schema_overrides=schema_overrides,
-            strict=strict,
+            pydf, columns=column_names, schema_overrides=schema_overrides, strict=strict
         )
     return pydf
 
