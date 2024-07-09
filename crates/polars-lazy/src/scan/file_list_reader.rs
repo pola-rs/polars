@@ -11,8 +11,6 @@ use polars_plan::prelude::UnionArgs;
 
 use crate::prelude::*;
 
-pub type PathIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
-
 /// Recursively traverses directories and expands globs if `glob` is `true`.
 /// Returns the expanded paths and the index at which to start parsing hive
 /// partitions from the path.
