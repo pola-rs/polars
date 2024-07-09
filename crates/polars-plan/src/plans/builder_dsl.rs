@@ -99,8 +99,8 @@ impl DslBuilder {
             paths,
             file_info: None,
             hive_parts: None,
-            file_options: options,
             predicate: None,
+            file_options: options,
             scan_type: FileScan::Parquet {
                 options: ParquetOptions {
                     parallel,

@@ -5,7 +5,7 @@ use polars_core::config;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::{get_glob_start_idx, is_cloud_url, expanded_from_single_directory};
+use polars_io::utils::{expanded_from_single_directory, get_glob_start_idx, is_cloud_url};
 use polars_io::RowIndex;
 use polars_plan::prelude::UnionArgs;
 
