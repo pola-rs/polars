@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
-use polars_io::utils::expanded_from_single_directory;
 use polars_io::{HiveOptions, RowIndex};
 
 use crate::prelude::*;
@@ -49,14 +48,8 @@ impl LazyIpcReader {
 }
 
 impl LazyFileListReader for LazyIpcReader {
-    fn finish(mut self) -> PolarsResult<LazyFrame> {
-        let (paths, hive_start_idx) =
-            self.expand_paths(self.args.hive_options.enabled.unwrap_or(false))?;
-        self.args.hive_options.enabled =
-            Some(self.args.hive_options.enabled.unwrap_or_else(|| {
-                expanded_from_single_directory(self.paths.as_ref(), paths.as_ref())
-            }));
-        self.args.hive_options.hive_start_idx = hive_start_idx;
+    fn finish(self) -> PolarsResult<LazyFrame> {
+        let paths = self.paths;
         let args = self.args;
 
         let options = IpcScanOptions {

@@ -143,7 +143,7 @@ impl DslBuilder {
                 row_index,
                 file_counter: Default::default(),
                 hive_options,
-                glob: false,
+                glob: true,
             },
             predicate: None,
             scan_type: FileScan::Ipc {

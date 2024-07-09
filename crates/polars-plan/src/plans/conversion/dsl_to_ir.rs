@@ -111,6 +111,26 @@ pub fn to_alp_impl(
                     file_options.hive_options.enabled = Some(inferred_hive_enabled);
                     file_options.hive_options.hive_start_idx = hive_start_idx;
                 },
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc {
+                    ref cloud_options, ..
+                } => {
+                    // TODO: Remove duplication with Parquet branch
+                    let hive_enabled = file_options.hive_options.enabled;
+                    let (expanded_paths, hive_start_idx) = expand_paths(
+                        &paths,
+                        cloud_options.as_ref(),
+                        file_options.glob,
+                        hive_enabled.unwrap_or(false),
+                    )?;
+                    let inferred_hive_enabled = hive_enabled.unwrap_or_else(|| {
+                        expanded_from_single_directory(paths.as_ref(), expanded_paths.as_ref())
+                    });
+
+                    paths = expanded_paths;
+                    file_options.hive_options.enabled = Some(inferred_hive_enabled);
+                    file_options.hive_options.hive_start_idx = hive_start_idx;
+                },
                 #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => {
                     let hive_enabled = file_options.hive_options.enabled;
