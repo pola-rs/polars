@@ -248,8 +248,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.physical().null_count()
     }
 
-    fn has_validity(&self) -> bool {
-        self.0.physical().has_validity()
+    fn has_nulls(&self) -> bool {
+        self.0.physical().has_nulls()
     }
 
     #[cfg(feature = "algorithm_group_by")]

@@ -6,7 +6,7 @@ use crate::chunked_array::metadata::MetadataProperties;
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
-        if !self.has_validity() {
+        if !self.has_nulls() {
             return BooleanChunked::full(self.name(), false, self.len());
         }
         // dispatch to non-generic function

@@ -47,7 +47,7 @@ where
         idx: I,
         value: Option<T::Native>,
     ) -> PolarsResult<Self> {
-        if !self.has_validity() {
+        if !self.has_nulls() {
             if let Some(value) = value {
                 // Fast path uses kernel.
                 if self.chunks.len() == 1 {
@@ -94,7 +94,7 @@ where
         check_bounds!(self, mask);
 
         // Fast path uses the kernel in polars-arrow.
-        if let (Some(value), false) = (value, mask.has_validity()) {
+        if let (Some(value), false) = (value, mask.has_nulls()) {
             let (left, mask) = align_chunks_binary(self, mask);
 
             // Apply binary kernel.

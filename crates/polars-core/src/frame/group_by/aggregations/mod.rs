@@ -951,7 +951,7 @@ where
                     } else if idx.len() == 1 {
                         self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
-                        match (self.has_validity(), self.chunks.len()) {
+                        match (self.has_nulls(), self.chunks.len()) {
                             (false, 1) => {
                                 take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
                                     arr,
