@@ -5,38 +5,13 @@ use polars_core::config;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::is_cloud_url;
+use polars_io::utils::{get_glob_start_idx, is_cloud_url, expanded_from_single_directory};
 use polars_io::RowIndex;
 use polars_plan::prelude::UnionArgs;
 
 use crate::prelude::*;
 
 pub type PathIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
-
-pub(super) fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
-    memchr::memchr3(b'*', b'?', b'[', path)
-}
-
-/// Checks if `expanded_paths` were expanded from a single directory
-pub(super) fn expanded_from_single_directory<P: AsRef<std::path::Path>>(
-    paths: &[P],
-    expanded_paths: &[P],
-) -> bool {
-    // Single input that isn't a glob
-    paths.len() == 1 && get_glob_start_idx(paths[0].as_ref().to_str().unwrap().as_bytes()).is_none()
-    // And isn't a file
-    && {
-        (
-            // For local paths, we can just use `is_dir`
-            !is_cloud_url(paths[0].as_ref()) && paths[0].as_ref().is_dir()
-        )
-        || (
-            // Otherwise we check the output path is different from the input path, so that we also
-            // handle the case of a directory containing a single file.
-            !expanded_paths.is_empty() && (paths[0].as_ref() != expanded_paths[0].as_ref())
-        )
-    }
-}
 
 /// Recursively traverses directories and expands globs if `glob` is `true`.
 /// Returns the expanded paths and the index at which to start parsing hive
