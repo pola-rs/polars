@@ -137,6 +137,9 @@ where
     local_predicates
 }
 
+/// Extends a stack of nodes with new nodes from `ae` (with some filtering), to support traversing
+/// an expression tree to check predicate PD eligibility. Generally called repeatedly with the same
+/// stack until all nodes are exhausted.
 fn check_and_extend_predicate_pd_nodes(
     stack: &mut Vec<Node>,
     ae: &AExpr,
@@ -193,7 +196,6 @@ fn check_and_extend_predicate_pd_nodes(
                     ae.nodes(stack);
                 }
             },
-
             ae => {
                 ae.nodes(stack);
             },
