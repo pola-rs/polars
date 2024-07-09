@@ -178,7 +178,7 @@ impl StructChunked2 {
         }
     }
 
-    pub(crate) fn _apply_fields<F>(&self, func: F) -> PolarsResult<Self>
+    pub(crate) fn _apply_fields<F>(&self, mut func: F) -> PolarsResult<Self>
     where
         F: FnMut(&Series) -> Series,
     {

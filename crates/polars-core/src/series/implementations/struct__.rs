@@ -43,7 +43,7 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
             .fields_as_series()
             .iter()
             .zip(other.fields_as_series())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, other))
+            .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
     }
 
     #[cfg(feature = "zip_with")]
@@ -200,7 +200,7 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        self.0.sort_with(options).map(|ca| ca.into_series())
+        Ok(self.0.sort_with(options).into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

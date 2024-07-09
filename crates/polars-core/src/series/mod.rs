@@ -193,29 +193,17 @@ impl Series {
         ca.chunks_mut()
     }
 
+    // TODO! this probably can now be removed, now we don't have special case for structs.
     pub fn select_chunk(&self, i: usize) -> Self {
-        match self.dtype() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let mut ca = self.struct_().unwrap().clone();
-                for field in ca.fields_mut().iter_mut() {
-                    *field = field.select_chunk(i)
-                }
-                ca.update_chunks(0);
-                ca.into_series()
-            },
-            _ => {
-                let mut new = self.clear();
-                // Assign mut so we go through arc only once.
-                let mut_new = new._get_inner_mut();
-                let chunks = unsafe { mut_new.chunks_mut() };
-                let chunk = self.chunks()[i].clone();
-                chunks.clear();
-                chunks.push(chunk);
-                mut_new.compute_len();
-                new
-            },
-        }
+        let mut new = self.clear();
+        // Assign mut so we go through arc only once.
+        let mut_new = new._get_inner_mut();
+        let chunks = unsafe { mut_new.chunks_mut() };
+        let chunk = self.chunks()[i].clone();
+        chunks.clear();
+        chunks.push(chunk);
+        mut_new.compute_len();
+        new
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
@@ -613,7 +601,7 @@ impl Series {
             Struct(_) => {
                 let arr = self.struct_().unwrap();
                 let fields: Vec<_> = arr
-                    .fields()
+                    .fields_as_series()
                     .iter()
                     .map(|s| s.to_physical_repr().into_owned())
                     .collect();
@@ -622,7 +610,7 @@ impl Series {
                 if arr.null_count() > 0 {
                     unsafe {
                         ca.downcast_iter_mut().zip(arr.downcast_iter().map(|arr| arr.validity())).for_each(|(arr, validity)| {
-                           arr.set_validity(validity)
+                           arr.set_validity(validity.cloned())
                         })
                     }
                 }

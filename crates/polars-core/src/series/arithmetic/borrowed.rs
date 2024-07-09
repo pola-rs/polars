@@ -464,10 +464,10 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
             let mut s = s.into_owned();
             s.zip_outer_validity(rhs.as_ref());
 
-            let mut rhs_iter = rhs.fields_as_series().iter();
+            let mut rhs_iter = rhs.fields_as_series().into_iter();
 
             Ok(s.try_apply_fields(|s| match rhs_iter.next() {
-                Some(rhs) => func(s, rhs),
+                Some(rhs) => func(s, &rhs),
                 None => Ok(s.clone()),
             })?
             .into_series())

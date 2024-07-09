@@ -39,25 +39,27 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let other = other.struct_().unwrap();
-        self.0
-            .fields()
-            .iter()
-            .zip(other.fields())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, other))
+        // let other = other.struct_().unwrap();
+        // self.0
+        //     .fields()
+        //     .iter()
+        //     .zip(other.fields())
+        //     .all(|(s, other)| s.equal_element(idx_self, idx_other, other))
+        todo!()
     }
 
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
-        let other = other.struct_()?;
-        let fields = self
-            .0
-            .fields()
-            .iter()
-            .zip(other.fields())
-            .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, rhs))
-            .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
+        // let other = other.struct_()?;
+        // let fields = self
+        //     .0
+        //     .fields()
+        //     .iter()
+        //     .zip(other.fields())
+        //     .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, rhs))
+        //     .collect::<PolarsResult<Vec<_>>>()?;
+        // Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
+        todo!()
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -139,46 +141,48 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        let other = other.struct_()?;
-        if self.is_empty() {
-            self.0 = other.clone();
-            Ok(())
-        } else if other.is_empty() {
-            Ok(())
-        } else {
-            let offset = self.chunks().len();
-            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-                polars_ensure!(
-                    lhs.name() == rhs.name(), SchemaMismatch:
-                    "cannot append field with name {:?} to struct with field name {:?}",
-                    rhs.name(), lhs.name(),
-                );
-                lhs.append(rhs)?;
-            }
-            self.0.update_chunks(offset);
-            Ok(())
-        }
+        // let other = other.struct_()?;
+        // if self.is_empty() {
+        //     self.0 = other.clone();
+        //     Ok(())
+        // } else if other.is_empty() {
+        //     Ok(())
+        // } else {
+        //     let offset = self.chunks().len();
+        //     for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+        //         polars_ensure!(
+        //             lhs.name() == rhs.name(), SchemaMismatch:
+        //             "cannot append field with name {:?} to struct with field name {:?}",
+        //             rhs.name(), lhs.name(),
+        //         );
+        //         lhs.append(rhs)?;
+        //     }
+        //     self.0.update_chunks(offset);
+        //     Ok(())
+        // }
+        todo!()
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        let other = other.struct_()?;
-        if self.is_empty() {
-            self.0 = other.clone();
-            Ok(())
-        } else if other.is_empty() {
-            Ok(())
-        } else {
-            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-                polars_ensure!(
-                    lhs.name() == rhs.name(), SchemaMismatch:
-                    "cannot extend field with name {:?} to struct with field name {:?}",
-                    rhs.name(), lhs.name(),
-                );
-                lhs.extend(rhs)?;
-            }
-            self.0.update_chunks(0);
-            Ok(())
-        }
+        // let other = other.struct_()?;
+        // if self.is_empty() {
+        //     self.0 = other.clone();
+        //     Ok(())
+        // } else if other.is_empty() {
+        //     Ok(())
+        // } else {
+        //     for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+        //         polars_ensure!(
+        //             lhs.name() == rhs.name(), SchemaMismatch:
+        //             "cannot extend field with name {:?} to struct with field name {:?}",
+        //             rhs.name(), lhs.name(),
+        //         );
+        //         lhs.extend(rhs)?;
+        //     }
+        //     self.0.update_chunks(0);
+        //     Ok(())
+        // }
+        todo!()
     }
 
     /// Filter by boolean mask. This operation clones data.
