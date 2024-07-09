@@ -2993,8 +2993,9 @@ impl DataFrame {
         let mut count = 0;
         for s in &self.columns {
             if cols.contains(s.name()) {
-                let ca = s.struct_()?;
-                new_cols.extend_from_slice(ca.fields());
+                let mut ca = s.struct_()?.clone();
+                ca.propagate_nulls();
+                new_cols.extend_from_slice(&ca.fields_as_series());
                 count += 1;
             } else {
                 new_cols.push(s.clone())

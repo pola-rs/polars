@@ -16,7 +16,7 @@ macro_rules! check_filter_len {
 
 impl<T> ChunkFilter<T> for ChunkedArray<T>
 where
-    T: PolarsDataType<HasViews = FalseT>,
+    T: PolarsDataType<HasViews = FalseT, IsObject = FalseT>,
 {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<T>> {
         // Broadcast.

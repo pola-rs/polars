@@ -184,4 +184,21 @@ impl StructChunked2 {
         let fields = self.fields_as_series().iter().map(func).collect::<Vec<_>>();
         Self::from_series(self.name(), &fields)
     }
+
+    pub(crate) fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
+        let s = self.clone().into_series();
+        _get_rows_encoded_ca(self.name(), &[s], &[options.descending], &[options.nulls_last])
+    }
+
+    /// Set the outer nulls into the inner arrays, and clear the outer validity.
+    pub(crate) fn propagate_nulls(&mut self) {
+        // SAFETY:
+        // We keep length and dtypes the same.
+        unsafe {
+            for arr in self.downcast_iter_mut() {
+                *arr = arr.propagate_nulls()
+            }
+        }
+    }
+
 }

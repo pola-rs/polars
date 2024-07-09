@@ -74,6 +74,7 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized {
     type IsNested;
     type HasViews;
     type IsStruct;
+    type IsObject;
 
     fn get_dtype() -> DataType
     where
@@ -90,6 +91,7 @@ where
         IsNested = FalseT,
         HasViews = FalseT,
         IsStruct = FalseT,
+        IsObject = FalseT,
     >,
 {
     type Native: NumericNative;
@@ -111,6 +113,7 @@ macro_rules! impl_polars_num_datatype {
             type IsNested = FalseT;
             type HasViews = FalseT;
             type IsStruct = FalseT;
+            type IsObject = FalseT;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -139,6 +142,7 @@ macro_rules! impl_polars_datatype_pass_dtype {
             type IsNested = FalseT;
             type HasViews = $has_views;
             type IsStruct = FalseT;
+            type IsObject = FalseT;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -210,6 +214,7 @@ unsafe impl PolarsDataType for ListType {
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
+    type IsObject = FalseT;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -233,6 +238,7 @@ unsafe impl PolarsDataType for StructType {
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = TrueT;
+    type IsObject = FalseT;
 
     fn get_dtype() -> DataType
     where
@@ -253,6 +259,7 @@ unsafe impl PolarsDataType for FixedSizeListType {
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
+    type IsObject = FalseT;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -270,6 +277,7 @@ unsafe impl PolarsDataType for Int128Type {
     type IsNested = FalseT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
+    type IsObject = FalseT;
 
     fn get_dtype() -> DataType {
         // Scale is not None to allow for get_any_value() to work.
@@ -293,6 +301,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
+    type IsObject = TrueT;
 
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name(), None)

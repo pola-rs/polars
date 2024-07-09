@@ -208,19 +208,11 @@ pub fn _get_rows_encoded(
             // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                // A hack to make outer validity work.
-                // TODO! properly implement row encoding for struct.
+                let arr = arr.propagate_nulls();
                 for value_arr in arr.values() {
-                    let value_arr =if arr.null_count() > 0 {
-                        let new_validity = combine_validities_and(arr.validity(), value_arr.validity());
-                        value_arr.with_validity(new_validity)
-                    } else {
-                        value_arr.clone()
-                    };
-                    cols.push(value_arr as ArrayRef);
+                    cols.push(value_arr.clone() as ArrayRef);
                     fields.push(sort_field);
                 }
-
             },
             _ => {
                 cols.push(arr);

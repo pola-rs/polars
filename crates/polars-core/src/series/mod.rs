@@ -23,6 +23,7 @@ use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
+use arrow::array::Array;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
@@ -616,7 +617,15 @@ impl Series {
                     .iter()
                     .map(|s| s.to_physical_repr().into_owned())
                     .collect();
-                let ca = StructChunked::new(self.name(), &fields).unwrap();
+                let mut ca = StructChunked2::from_series(self.name(), &fields).unwrap();
+
+                if arr.null_count() > 0 {
+                    unsafe {
+                        ca.downcast_iter_mut().zip(arr.downcast_iter().map(|arr| arr.validity())).for_each(|(arr, validity)| {
+                           arr.set_validity(validity)
+                        })
+                    }
+                }
                 Cow::Owned(ca.into_series())
             },
             _ => Cow::Borrowed(self),

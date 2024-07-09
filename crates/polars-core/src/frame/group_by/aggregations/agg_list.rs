@@ -280,6 +280,13 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 #[cfg(feature = "dtype-struct")]
 impl AggList for StructChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        todo!()
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl AggList for StructChunked2 {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         let mut ca = self.clone();
         ca.rechunk();
         let (gather, offsets, can_fast_explode) = groups.prepare_list_agg(self.len());
@@ -304,6 +311,7 @@ impl AggList for StructChunked {
         chunk.into_series()
     }
 }
+
 
 unsafe fn agg_list_by_gather_and_offsets<T: PolarsDataType>(
     ca: &ChunkedArray<T>,

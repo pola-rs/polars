@@ -32,6 +32,37 @@ impl PrivateSeries for SeriesWrap<StructChunked2> {
 
     fn _set_flags(&mut self, _flags: MetadataFlags) {}
 
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        self._apply_fields(|s|s.explode_by_offsets(offsets)).unwrap().into_series()
+    }
+
+    // TODO! remove this. Very slow. Asof join should use row-encoding.
+    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
+        let other = other.struct_().unwrap();
+        self.0
+            .fields_as_series()
+            .iter()
+            .zip(other.fields_as_series())
+            .all(|(s, other)| s.equal_element(idx_self, idx_other, other))
+    }
+
+    #[cfg(feature = "zip_with")]
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        let other = other.struct_()?;
+        let fields = self
+            .0
+            .fields_as_series()
+            .iter()
+            .zip(other.fields_as_series())
+            .map(|(lhs, rhs)| lhs.zip_with_same_type(mask, rhs))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_list(groups)
+    }
 
 }
 
