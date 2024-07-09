@@ -695,6 +695,7 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
+    extra_schema_overrides = {}
     for column_name, first_value in first_element.items():
         if (
             isinstance(first_value, datetime)
@@ -703,10 +704,11 @@ def _sequence_of_dict_to_pydf(
             and column_name not in schema_overrides
             and (schema is None or column_name not in schema)
         ):
-            schema_overrides = {
-                **schema_overrides,
-                column_name: Datetime(time_zone="UTC"),
-            }
+            extra_schema_overrides[column_name] = Datetime(time_zone="UTC")
+    schema_overrides = {
+        **schema_overrides,
+        **extra_schema_overrides,
+    }
     pydf = PyDataFrame.from_dicts(
         data,
         dicts_schema,
