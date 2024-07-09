@@ -1,4 +1,4 @@
-use arrow::compute::utils::combine_validities_and_many;
+use arrow::compute::utils::{combine_validities_and, combine_validities_and_many};
 use compare_inner::NullOrderCmp;
 use polars_row::{convert_columns, EncodingField, RowsEncoded};
 use polars_utils::iter::EnumerateIdxTrait;
@@ -208,10 +208,19 @@ pub fn _get_rows_encoded(
             // Flatten the struct fields.
             ArrowDataType::Struct(_) => {
                 let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                for arr in arr.values() {
-                    cols.push(arr.clone() as ArrayRef);
+                // A hack to make outer validity work.
+                // TODO! properly implement row encoding for struct.
+                for value_arr in arr.values() {
+                    let value_arr =if arr.null_count() > 0 {
+                        let new_validity = combine_validities_and(arr.validity(), value_arr.validity());
+                        value_arr.with_validity(new_validity)
+                    } else {
+                        value_arr.clone()
+                    };
+                    cols.push(value_arr as ArrayRef);
                     fields.push(sort_field);
                 }
+
             },
             _ => {
                 cols.push(arr);

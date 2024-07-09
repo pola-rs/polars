@@ -167,4 +167,12 @@ impl SeriesTrait for SeriesWrap<StructChunked2> {
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        self.0.sort_with(options).map(|ca| ca.into_series())
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
+    }
 }

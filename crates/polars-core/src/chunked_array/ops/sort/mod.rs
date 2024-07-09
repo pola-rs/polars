@@ -599,6 +599,43 @@ impl StructChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+impl StructChunked2 {
+    pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let bin = _get_rows_encoded_ca(
+            self.name(),
+            &[self.clone().into_series()],
+            &[options.descending],
+            &[options.nulls_last],
+        )
+            .unwrap();
+        bin.arg_sort(Default::default())
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkSort<StructType>  for StructChunked2 {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<StructType> {
+        let idx = self.arg_sort(options);
+        unsafe { self.take_unchecked(&idx) }
+    }
+
+    fn sort(&self, descending: bool) -> ChunkedArray<StructType> {
+        self.sort_with(SortOptions::new().with_order_descending(descending))
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let bin = _get_rows_encoded_ca(
+            self.name(),
+            &[self.clone().into_series()],
+            &[options.descending],
+            &[options.nulls_last],
+        )
+            .unwrap();
+        bin.arg_sort(Default::default())
+    }
+}
+
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BooleanType> {
         sort_with_fast_path!(self, options);

@@ -9,6 +9,7 @@ use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::{Container, index_to_chunked_index};
 use std::fmt::Write;
+use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 
 pub type StructChunked2 = ChunkedArray<StructType>;
 
@@ -183,5 +184,4 @@ impl StructChunked2 {
         let fields = self.fields_as_series().iter().map(func).collect::<Vec<_>>();
         Self::from_series(self.name(), &fields)
     }
-
 }
